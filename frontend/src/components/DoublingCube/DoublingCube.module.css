@@ -1,0 +1,155 @@
+.cubeContainer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  border: 1px solid rgba(201, 169, 97, 0.2);
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gold);
+  text-transform: uppercase;
+}
+
+.cube {
+  width: 45px;
+  height: 45px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  transition: all var(--duration-normal) var(--ease-game);
+  border: 2px solid;
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  .cubeContainer {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .label {
+    font-size: 11px;
+  }
+
+  .cube {
+    width: 40px;
+    height: 40px;
+    font-size: 14px;
+  }
+
+  .availableValues {
+    font-size: 10px;
+  }
+
+  .availableValues span {
+    width: 18px;
+  }
+}
+
+/* Mobile */
+@media (max-width: 767px) {
+  .cubeContainer {
+    padding: 6px 8px;
+    gap: 6px;
+  }
+
+  .label {
+    font-size: 10px;
+    display: none;
+  }
+
+  .cube {
+    width: 36px;
+    height: 36px;
+    font-size: 13px;
+    border-width: 1px;
+  }
+
+  .availableValues {
+    font-size: 9px;
+    padding: 4px;
+  }
+
+  .availableValues span {
+    width: 16px;
+  }
+}
+
+/* Small mobile */
+@media (max-width: 479px) {
+  .cubeContainer {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+
+  .cube {
+    width: 32px;
+    height: 32px;
+    font-size: 11px;
+  }
+
+  .availableValues {
+    font-size: 8px;
+    padding: 3px;
+  }
+
+  .availableValues span {
+    width: 14px;
+  }
+}
+
+.cube.neutral {
+  background: linear-gradient(135deg, var(--gold) 0%, #c9a961 100%);
+  color: #000;
+  border-color: #8b7000;
+}
+
+.cube.white {
+  background: linear-gradient(135deg, var(--checker-white) 0%, #e8d4b0 100%);
+  color: #000;
+  border-color: #999;
+}
+
+.cube.black {
+  background: linear-gradient(135deg, var(--checker-black) 0%, #3d2817 100%);
+  color: var(--checker-white);
+  border-color: #1a0e08;
+}
+
+.cube:hover {
+  transform: scale(1.1);
+}
+
+.value {
+  display: block;
+  line-height: 1;
+}
+
+.availableValues {
+  font-size: 11px;
+  color: rgba(201, 169, 97, 0.6);
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.availableValues span {
+  width: 20px;
+  text-align: center;
+}
+
+.availableValues span.current {
+  color: var(--gold);
+  font-weight: bold;
+}

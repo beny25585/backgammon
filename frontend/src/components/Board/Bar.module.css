@@ -1,0 +1,12 @@
+.bar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 0;
+  width: clamp(28px, 4vw, 42px);
+  height: calc(clamp(140px, 28vw, 240px) * 2);
+  background: linear-gradient(180deg, #4a2f1a, #1a0e06);
+  box-shadow: inset 2px 0 4px rgba(0, 0, 0, 0.5), inset -2px 0 4px rgba(0, 0, 0, 0.5);
+}
