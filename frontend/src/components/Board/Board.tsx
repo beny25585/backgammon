@@ -1,25 +1,25 @@
 import { motion } from "motion/react";
-import type { GameState, Color } from "@/lib/backgammon/engine";
-import { BAR, OFF, type Source, type Target } from "@/lib/backgammon/engine";
+import { useMemo, useRef, useState, useCallback } from "react";
+import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
+import { BAR, OFF } from "@/lib/backgammon/engine";
+import UndoButton from "./buttons/undobutton/UndoButton";
+import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
+import PointCell from "./pieces/pointcell/PointCell";
+import Bar from "./pieces/bar/Bar";
+import BearOff from "./pieces/bearoff/BearOff";
+import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
 
 interface BoardProps {
   state: GameState;
   myColor: Color | null;
   selected: Source | null;
-  legalTargets: (Target)[];
+  legalTargets: Target[];
   onSelect: (from: Source | null) => void;
   onMove: (to: Target) => void;
-  legalFromPoints: (Source)[];
+  legalFromPoints: Source[];
+  onUndo?: () => void;
+  onConfirm?: () => void;
 }
-
-const TOP_POINTS = [23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12];
-const BOTTOM_POINTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
-
-// Fluid sizes: scale with viewport, capped for large screens
-const POINT_H = "clamp(140px, 28vw, 240px)";
-const BAR_W = "clamp(28px, 4vw, 42px)";
-const BEAROFF_W = "clamp(40px, 6vw, 58px)";
-const CHECKER = "clamp(22px, 4.2vw, 36px)";
 
 export function Board({
   state,
@@ -29,16 +29,62 @@ export function Board({
   onSelect,
   onMove,
   legalFromPoints,
+  onUndo,
+  onConfirm,
 }: BoardProps) {
+  const boardRef = useRef<HTMLDivElement>(null);
+  const [flyChecker, setFlyChecker] = useState<{
+    fromX: number; fromY: number;
+    toX: number; toY: number;
+    color: Color;
+  } | null>(null);
+
+  const lastMoveLast = useMemo(() => {
+    const lm = state.lastMove;
+    return lm && lm.length > 0 ? lm[lm.length - 1] : null;
+  }, [state.lastMove]);
+
+  const triggerFly = useCallback((from: Source, to: Target) => {
+    const board = boardRef.current;
+    if (!board) { onMove(to); return; }
+    const fromEl = board.querySelector(`[data-point-idx="${from}"]`);
+    const toEl = board.querySelector(`[data-point-idx="${to}"]`);
+    if (!fromEl || !toEl) { onMove(to); return; }
+
+    const bRect = board.getBoundingClientRect();
+    const fRect = fromEl.getBoundingClientRect();
+    const tRect = toEl.getBoundingClientRect();
+
+    const vw = window.innerWidth * 0.042;
+    const checkerPx = Math.min(36, Math.max(22, vw));
+
+    setFlyChecker({
+      fromX: fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2,
+      fromY: fRect.top + fRect.height / 2 - bRect.top - checkerPx / 2,
+      toX: tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2,
+      toY: tRect.top + tRect.height / 2 - bRect.top - checkerPx / 2,
+      color: myColor ?? "white",
+    });
+
+    setTimeout(() => {
+      setFlyChecker(null);
+      onMove(to);
+    }, 320);
+  }, [myColor, onMove]);
+
   function handleClick(idx: Source) {
+    if (flyChecker) return;
     if (typeof idx === "number" && legalTargets.includes(idx)) {
+      if (selected !== null) {
+        triggerFly(selected, idx);
+        return;
+      }
       onMove(idx);
       return;
     }
     if (selected === idx) {
-      // Double-click: auto-move if only one target
       if (legalTargets.length === 1) {
-        onMove(legalTargets[0]);
+        triggerFly(selected, legalTargets[0]);
       } else {
         onSelect(null);
       }
@@ -49,6 +95,7 @@ export function Board({
 
   return (
     <div
+      ref={boardRef}
       className="relative rounded-3xl p-2 sm:p-3 shadow-2xl mx-auto w-full"
       style={{
         background: "linear-gradient(145deg, #5a3a20, #2a1810)",
@@ -76,6 +123,8 @@ export function Board({
                 isLegalTarget={legalTargets.includes(idx)}
                 isLegalFrom={legalFromPoints.includes(idx)}
                 onClick={() => handleClick(idx)}
+                lastMoveFrom={lastMoveLast?.from ?? null}
+                lastMoveTo={lastMoveLast?.to ?? null}
               />
             ))}
           </div>
@@ -89,6 +138,8 @@ export function Board({
                 isLegalTarget={legalTargets.includes(idx)}
                 isLegalFrom={legalFromPoints.includes(idx)}
                 onClick={() => handleClick(idx)}
+                lastMoveFrom={lastMoveLast?.from ?? null}
+                lastMoveTo={lastMoveLast?.to ?? null}
               />
             ))}
           </div>
@@ -114,6 +165,8 @@ export function Board({
                 isLegalTarget={legalTargets.includes(idx)}
                 isLegalFrom={legalFromPoints.includes(idx)}
                 onClick={() => handleClick(idx)}
+                lastMoveFrom={lastMoveLast?.from ?? null}
+                lastMoveTo={lastMoveLast?.to ?? null}
               />
             ))}
           </div>
@@ -127,6 +180,8 @@ export function Board({
                 isLegalTarget={legalTargets.includes(idx)}
                 isLegalFrom={legalFromPoints.includes(idx)}
                 onClick={() => handleClick(idx)}
+                lastMoveFrom={lastMoveLast?.from ?? null}
+                lastMoveTo={lastMoveLast?.to ?? null}
               />
             ))}
           </div>
@@ -136,218 +191,47 @@ export function Board({
           state={state}
           myColor={myColor}
           isLegalTarget={legalTargets.includes(OFF)}
-          onClick={() => legalTargets.includes(OFF) && onMove(OFF)}
+          onClick={() => legalTargets.includes(OFF) && triggerFly(selected ?? 0, OFF)}
         />
       </div>
-    </div>
-  );
-}
 
-function PointCell({
-  index,
-  top,
-  state,
-  selected,
-  isLegalTarget,
-  isLegalFrom,
-  onClick,
-}: {
-  index: number;
-  top?: boolean;
-  state: GameState;
-  selected: boolean;
-  isLegalTarget: boolean;
-  isLegalFrom: boolean;
-  onClick: () => void;
-}) {
-  const isLight = index % 2 === 0;
-  const count = Math.abs(state.points[index]);
-  const color: "white" | "black" | null =
-    state.points[index] > 0
-      ? "white"
-      : state.points[index] < 0
-        ? "black"
-        : null;
+      {/* Undo button — left side */}
+      {onUndo &&
+        state.moveHistory &&
+        state.moveHistory.length > 0 &&
+        state.phase === "moving" && (
+          <UndoButton onClick={onUndo} />
+        )}
 
-  return (
-    <motion.button
-      whileHover={isLegalFrom || isLegalTarget ? { y: -2 } : undefined}
-      onClick={onClick}
-      className="relative flex flex-col items-center overflow-hidden focus:outline-none group"
-      style={{ direction: "ltr", height: POINT_H }}
-    >
-      <div
-        className="absolute inset-0"
-        style={{
-          background: isLight
-            ? `linear-gradient(${top ? "180deg" : "0deg"}, #e8bf87 0%, #b98548 100%)`
-            : `linear-gradient(${top ? "180deg" : "0deg"}, #4a2f1a 0%, #1a0e06 100%)`,
-          clipPath: top
-            ? "polygon(0 0, 100% 0, 50% 100%)"
-            : "polygon(50% 0, 100% 100%, 0 100%)",
-        }}
-      />
-      {(selected || isLegalTarget || isLegalFrom) && (
+      {/* Confirm button — right side */}
+      {onConfirm &&
+        state.phase === "moving" &&
+        state.turn === myColor &&
+        state.remaining.length === 0 && (
+          <ConfirmButton onClick={onConfirm} />
+        )}
+
+      {/* Flying checker animation */}
+      {flyChecker && (
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className={`absolute inset-0 pointer-events-none ${isLegalTarget ? "animate-pulse-glow" : ""}`}
+          initial={{ x: flyChecker.fromX, y: flyChecker.fromY, scale: 1, opacity: 1 }}
+          animate={{ x: flyChecker.toX, y: flyChecker.toY, scale: 0.85, opacity: 0.9 }}
+          transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+          className="absolute rounded-full z-50 pointer-events-none"
           style={{
-            background: isLegalTarget
-              ? "radial-gradient(circle at 50% 50%, rgba(232,191,135,0.55), transparent 70%)"
-              : selected
-                ? "radial-gradient(circle at 50% 50%, rgba(232,191,135,0.75), transparent 70%)"
-                : "radial-gradient(circle at 50% 50%, rgba(232,191,135,0.2), transparent 70%)",
+            top: 0,
+            left: 0,
+            width: "clamp(22px, 4.2vw, 36px)",
+            height: "clamp(22px, 4.2vw, 36px)",
+            background: flyChecker.color === "white"
+              ? "radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 55%, #b89660 100%)"
+              : "radial-gradient(circle at 30% 25%, #6a4830, #2a1810 55%, #0a0402 100%)",
+            boxShadow:
+              "0 6px 20px rgba(0,0,0,0.7), inset 0 -3px 4px rgba(0,0,0,0.35), inset 0 2px 2px rgba(255,255,255,0.15), 0 0 24px rgba(201,169,97,0.5)",
+            border: flyChecker.color === "white" ? "1px solid #c9a961" : "1px solid #000",
           }}
         />
       )}
-      <div
-        className={`flex items-center gap-0.5 py-2 ${
-          top ? "relative flex-col" : "absolute bottom-0 flex-col-reverse"
-        }`}
-      >
-        {Array.from({ length: Math.min(count, 5) }).map((_, i) => (
-          <Checker
-            key={i}
-            color={color!}
-            label={i === 4 && count > 5 ? String(count) : undefined}
-          />
-        ))}
-      </div>
-    </motion.button>
-  );
-}
-
-function Checker({
-  color,
-  label,
-}: {
-  color: "white" | "black";
-  label?: string;
-}) {
-  const isWhite = color === "white";
-  return (
-    <motion.div
-      layout
-      initial={{ scale: 0.5, opacity: 0, y: -8 }}
-      animate={{ scale: 1, opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 320, damping: 22 }}
-      className="rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-      style={{
-        width: CHECKER,
-        height: CHECKER,
-        background: isWhite
-          ? "radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 55%, #b89660 100%)"
-          : "radial-gradient(circle at 30% 25%, #6a4830, #2a1810 55%, #0a0402 100%)",
-        boxShadow:
-          "0 3px 6px rgba(0,0,0,0.55), inset 0 -3px 4px rgba(0,0,0,0.35), inset 0 2px 2px rgba(255,255,255,0.15)",
-        color: isWhite ? "#3d2817" : "#f4e4c1",
-        border: isWhite ? "1px solid #c9a961" : "1px solid #000",
-      }}
-    >
-      {label}
-    </motion.div>
-  );
-}
-
-function Bar({
-  state,
-  selected,
-  isLegalFrom,
-  onClick,
-}: {
-  state: GameState;
-  myColor: Color | null;
-  selected: boolean;
-  isLegalFrom: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="relative flex flex-col justify-between items-center py-3 focus:outline-none"
-      style={{
-        width: BAR_W,
-        height: `calc(${POINT_H} * 2)`,
-        background: "linear-gradient(180deg, #4a2f1a, #1a0e06)",
-        boxShadow:
-          "inset 2px 0 4px rgba(0,0,0,0.5), inset -2px 0 4px rgba(0,0,0,0.5)",
-      }}
-    >
-      {(selected || isLegalFrom) && (
-        <div className="absolute inset-0 bg-[rgba(232,191,135,0.28)] animate-pulse-glow" />
-      )}
-      <div className="flex flex-col gap-1 items-center relative">
-        {Array.from({ length: state.bar.black }).map((_, i) => (
-          <Checker key={i} color="black" />
-        ))}
-      </div>
-      <div className="flex flex-col gap-1 items-center relative">
-        {Array.from({ length: state.bar.white }).map((_, i) => (
-          <Checker key={i} color="white" />
-        ))}
-      </div>
-    </button>
-  );
-}
-
-function BearOff({
-  state,
-  isLegalTarget,
-  onClick,
-}: {
-  state: GameState;
-  myColor: Color | null;
-  isLegalTarget: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="relative flex flex-col justify-between p-1.5 sm:p-2 focus:outline-none"
-      style={{
-        width: BEAROFF_W,
-        height: `calc(${POINT_H} * 2)`,
-        background: "linear-gradient(180deg, #1a0e06, #0a0603)",
-      }}
-    >
-      {isLegalTarget && (
-        <div className="absolute inset-0 bg-[rgba(232,191,135,0.4)] animate-pulse-glow" />
-      )}
-      <div className="flex flex-col gap-0.5 items-center relative">
-        <div className="text-[9px] sm:text-[10px] text-gold mb-1">
-          שחור
-        </div>
-        {Array.from({ length: Math.min(state.home.black, 15) }).map((_, i) => (
-          <motion.div
-            key={i}
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="h-1.5 sm:h-2 rounded-sm"
-            style={{
-              width: `calc(${CHECKER} - 4px)`,
-              background: "linear-gradient(180deg, #4a3020, #2a1810)",
-              border: "1px solid #000",
-            }}
-          />
-        ))}
-      </div>
-      <div className="flex flex-col-reverse gap-0.5 items-center relative">
-        <div className="text-[9px] sm:text-[10px] text-gold mt-1">לבן</div>
-        {Array.from({ length: Math.min(state.home.white, 15) }).map((_, i) => (
-          <motion.div
-            key={i}
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="h-1.5 sm:h-2 rounded-sm"
-            style={{
-              width: `calc(${CHECKER} - 4px)`,
-              background: "linear-gradient(180deg, #fff7e0, #d4b880)",
-              border: "1px solid #c9a961",
-            }}
-          />
-        ))}
-      </div>
-    </button>
+    </div>
   );
 }

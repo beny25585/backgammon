@@ -114,6 +114,10 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
     socket.send("end_turn", {});
   }, [socket]);
 
+  const undoMove = useCallback(() => {
+    socket.send("undo_move", {});
+  }, [socket]);
+
   return (
     <GameContext.Provider
       value={{
@@ -131,6 +135,7 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         offerDouble,
         respondToDouble,
         endTurn,
+        undoMove,
       }}
     >
       {children}

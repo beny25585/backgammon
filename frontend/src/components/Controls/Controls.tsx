@@ -2,6 +2,7 @@ import styles from "./Controls.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import { useGame } from "../../services/gameContext";
 import DoublingCube from "../DoublingCube";
+import { DiceRow } from "../Dice";
 
 interface ControlsProps {
   playerColor: Color;
@@ -9,12 +10,10 @@ interface ControlsProps {
 }
 
 export default function Controls({ playerColor, state }: ControlsProps) {
-  const { endTurn, offerDouble, respondToDouble } = useGame();
+  const { offerDouble, respondToDouble } = useGame();
   const isPlayerTurn = state.turn === playerColor;
   const canDouble =
     state.phase === "rolling" && isPlayerTurn;
-  const canEndTurn =
-    state.phase === "moving" && isPlayerTurn && state.remaining.length === 0;
 
   return (
     <div className={styles.controlsContainer}>
@@ -34,14 +33,9 @@ export default function Controls({ playerColor, state }: ControlsProps) {
           </button>
         )}
 
-        {canEndTurn && (
-          <button
-            className={`${styles.btn} ${styles.secondary}`}
-            onClick={endTurn}
-            title="End your turn"
-          >
-            → End Turn
-          </button>
+        {/* Compact dice during play */}
+        {state.phase === "moving" && isPlayerTurn && state.remaining.length > 0 && (
+          <DiceRow dice={state.dice} remaining={state.remaining} color={playerColor} />
         )}
 
         {state.phase === "doubling_offered" && !isPlayerTurn && (

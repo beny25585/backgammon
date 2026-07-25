@@ -161,6 +161,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'offer_double': self.handle_offer_double,
                 'respond_double': lambda: self.handle_respond_double(payload),
                 'end_turn': self.handle_end_turn,
+                'undo_move': self.handle_undo_move,
             }
 
             handler = handlers.get(message_type)
@@ -221,6 +222,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             return await self._send_error('Not your turn')
         self.engine.end_turn()
         await self._save_and_broadcast('turn_ended', self.engine.state)
+
+    async def handle_undo_move(self):
+        if self.engine.state.get('turn') != self.player_color:
+            return await self._send_error('Not your turn')
+        if self.engine.state.get('phase') != 'moving':
+            return await self._send_error('Can only undo during your turn')
+        result = self.engine.undo_move()
+        if not result.get('success', False):
+            return await self._send_error(result.get('message', 'Cannot undo'))
+        await self._save_and_broadcast('state_update', self.engine.state)
 
     async def _save_and_broadcast(self, event_type, payload):
         room = await get_room(self.room_id)

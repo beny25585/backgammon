@@ -59,6 +59,8 @@ export interface GameState {
   winType: "single" | "gammon" | "backgammon" | null;
   openingRoll: { white: number | null; black: number | null };
   lastMove: { from: Source; to: Target }[] | null;
+  /** Stack of pre-move snapshots for undo during the current turn. Cleared at turn end. */
+  moveHistory: GameState[] | null;
   message: string;
 }
 
@@ -209,6 +211,7 @@ export function newGame(): GameState {
     winType: null,
     openingRoll: { white: null, black: null },
     lastMove: null,
+    moveHistory: null,
     message: "הטילו קובייה לפתיחה", // "Roll to start"
   };
 }
@@ -223,6 +226,7 @@ export function cloneState(state: GameState): GameState {
     remaining: [...state.remaining],
     openingRoll: { ...state.openingRoll },
     lastMove: state.lastMove ? state.lastMove.map((move) => ({ ...move })) : null,
+    moveHistory: state.moveHistory ? [...state.moveHistory] : null,
   };
 }
 
@@ -349,6 +353,9 @@ export function applyMove(state: GameState, move: Move, color: Color): GameState
   const next = cloneState(state);
   const opponentColor = opponent(color);
 
+  // Save pre-move snapshot for undo
+  next.moveHistory = [...(next.moveHistory ?? []), cloneState(state)];
+
   // --- Consume the die ---
   const dieIndex = next.remaining.indexOf(move.die);
   if (dieIndex >= 0) next.remaining.splice(dieIndex, 1);
@@ -382,8 +389,15 @@ export function applyMove(state: GameState, move: Move, color: Color): GameState
     return applyWin(next, color);
   }
 
-  // --- End turn if no dice left or no legal moves ---
-  if (next.remaining.length === 0 || allLegalMoves(next, color).length === 0) {
+  // --- End turn if no dice remain (needs player confirm) ---
+  if (next.remaining.length === 0) {
+    next.phase = "moving";
+    next.message = `תור ${next.turn === "white" ? "לבן" : "שחור"} – אשר סיום תור`;
+    return next;
+  }
+
+  // --- Auto-pass if no legal moves with remaining dice ---
+  if (allLegalMoves(next, color).length === 0) {
     return passTurn(next, color);
   }
 
@@ -413,6 +427,7 @@ export function applyRoll(state: GameState, customDice?: number[]): GameState {
   next.remaining = roll;
   next.phase = "moving";
   next.lastMove = [];
+  next.moveHistory = [];
 
   // If there are no legal moves with this roll, skip the turn.
   if (allLegalMoves(next, next.turn).length === 0) {
@@ -465,6 +480,7 @@ export function applyOpeningRoll(state: GameState, color: Color): GameState {
   next.remaining = [whiteRoll, blackRoll];
   next.phase = "moving";
   next.lastMove = [];
+  next.moveHistory = [];
   next.message = `${firstPlayer === "white" ? "לבן" : "שחור"} מתחיל`; // "White/Black starts"
   return next;
 }
@@ -502,6 +518,23 @@ export function respondDouble(state: GameState, accept: boolean): GameState {
   }
 
   return next;
+}
+
+// ============================================================
+// Undo
+// ============================================================
+
+/**
+ * Undo the last move of the current turn.
+ * Returns the state before the most recent move, or null if there's nothing to undo.
+ * Only valid during the "moving" phase of the player who made the move.
+ */
+export function undoLastMove(state: GameState): GameState | null {
+  if (!state.moveHistory || state.moveHistory.length === 0) return null;
+  const prev = state.moveHistory[state.moveHistory.length - 1];
+  const restored = cloneState(prev);
+  restored.moveHistory = state.moveHistory.slice(0, -1);
+  return restored;
 }
 
 export function canOfferDouble(state: GameState, color: Color): boolean {
@@ -563,6 +596,7 @@ function passTurn(state: GameState, currentPlayer: Color): GameState {
   state.dice = [];
   state.phase = "rolling";
   state.lastMove = null;
+  state.moveHistory = null;
   state.turn = nextPlayer;
   state.message = `תור ${nextPlayer === "white" ? "לבן" : "שחור"}`;
   return state;
@@ -575,6 +609,7 @@ function skipTurnNoMoves(state: GameState): GameState {
   state.dice = [];
   state.turn = skipped;
   state.phase = "rolling";
+  state.moveHistory = null;
   state.message = `אין מהלכים חוקיים – תור ${skipped === "white" ? "לבן" : "שחור"}`;
   return state;
 }

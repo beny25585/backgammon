@@ -28,12 +28,35 @@ class BackgammonEngine:
             'winType': None,
             'openingRoll': {'white': None, 'black': None},
             'lastMove': None,
+            'moveHistory': None,
             'message': 'New game started',
         }
 
     @staticmethod
     def _roll_die():
         return random.randint(1, 6)
+
+    @staticmethod
+    def _clone_state(state):
+        """Deep-copy a game state dict."""
+        return {
+            'points': list(state['points']),
+            'bar': dict(state['bar']),
+            'home': dict(state['home']),
+            'turn': state['turn'],
+            'dice': list(state['dice']),
+            'remaining': list(state['remaining']),
+            'phase': state['phase'],
+            'cube': state['cube'],
+            'cubeOwner': state['cubeOwner'],
+            'doubleOfferedBy': state['doubleOfferedBy'],
+            'winner': state['winner'],
+            'winType': state['winType'],
+            'openingRoll': dict(state['openingRoll']),
+            'lastMove': None if state.get('lastMove') is None else [dict(m) for m in state['lastMove']],
+            'moveHistory': None,
+            'message': state['message'],
+        }
 
     @staticmethod
     def _roll_dice():
@@ -136,6 +159,7 @@ class BackgammonEngine:
         self.state['remaining'] = roll
         self.state['phase'] = 'moving'
         self.state['lastMove'] = []
+        self.state['moveHistory'] = []
 
         if len(self.all_legal_moves(self.state['turn'])) == 0:
             self.state['remaining'] = []
@@ -170,6 +194,7 @@ class BackgammonEngine:
                 s['remaining'] = [white, black]
                 s['phase'] = 'moving'
                 s['lastMove'] = []
+                s['moveHistory'] = []
                 s['openingRoll'] = {'white': white, 'black': black}
                 s['message'] = f'{first} goes first'
                 s['version'] = s.get('version', 0) + 1
@@ -199,6 +224,11 @@ class BackgammonEngine:
     def _apply_move(self, move, color):
         s = self.state
         die_val = move['die']
+
+        # Save pre-move snapshot for undo
+        if s.get('moveHistory') is None:
+            s['moveHistory'] = []
+        s['moveHistory'].append(self._clone_state(self.state))
 
         if die_val in s['remaining']:
             s['remaining'].remove(die_val)
@@ -237,12 +267,18 @@ class BackgammonEngine:
             s['message'] = 'Game over'
             return
 
-        if len(s['remaining']) == 0 or len(self.all_legal_moves(color)) == 0:
+        if len(s['remaining']) == 0:
+            # All dice used — stay in moving, wait for confirm
+            s['message'] = 'אשר סיום תור'
+            return
+
+        if len(self.all_legal_moves(color)) == 0:
             s['remaining'] = []
             s['turn'] = 'black' if color == 'white' else 'white'
             s['phase'] = 'rolling'
             s['dice'] = []
             s['lastMove'] = None
+            s['moveHistory'] = None
             turn_he = 'לבן' if s['turn'] == 'white' else 'שחור'
             s['message'] = f'תור {turn_he}'
 
@@ -288,7 +324,20 @@ class BackgammonEngine:
         self.state['phase'] = 'rolling'
         self.state['dice'] = []
         self.state['lastMove'] = None
+        self.state['moveHistory'] = None
         self.state['version'] = self.state.get('version', 0) + 1
+        return {'success': True, 'state': self.state}
+
+    def undo_move(self):
+        s = self.state
+        history = s.get('moveHistory')
+        if not history or len(history) == 0:
+            return {'success': False, 'message': 'Nothing to undo'}
+        # Restore the last snapshot, trimming popped entry
+        s.clear()
+        restored = history[-1]
+        restored['moveHistory'] = history[:-1] or None
+        self.state = restored
         return {'success': True, 'state': self.state}
 
     def check_win_condition(self):

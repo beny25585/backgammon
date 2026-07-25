@@ -22,4 +22,5 @@ export interface GameContextType {
   offerDouble: () => void;
   respondToDouble: (accept: boolean) => void;
   endTurn: () => void;
+  undoMove: () => void;
 }

@@ -8,6 +8,7 @@ import {
   applyRoll,
   offerDouble,
   respondDouble,
+  undoLastMove,
   allLegalMoves,
   BAR, OFF,
   type Source, type Target,
@@ -231,8 +232,18 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       next.phase = "rolling";
       next.dice = [];
       next.lastMove = null;
+      next.moveHistory = null;
       setPlayerColor(next.turn);
       return next;
+    });
+  }, []);
+
+  const undoMove = useCallback(() => {
+    setState((prev) => {
+      const restored = undoLastMove(prev);
+      if (!restored) return prev;
+      setPlayerColor(restored.turn);
+      return restored;
     });
   }, []);
 
@@ -255,6 +266,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         offerDouble: offerDoubleAction,
         respondToDouble,
         endTurn,
+        undoMove,
       }}
     >
       {children}

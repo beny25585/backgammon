@@ -9,7 +9,10 @@ interface MatchSettingsProps {
 
 const TARGETS = [1, 3, 5, 7, 9, 11, 13, 15, 21];
 
-export default function MatchSettings({ onStart, onCancel }: MatchSettingsProps) {
+export default function MatchSettings({
+  onStart,
+  onCancel,
+}: MatchSettingsProps) {
   const [botColor, setBotColor] = useState<Color>("black");
   const [target, setTarget] = useState(7);
 
@@ -24,7 +27,8 @@ export default function MatchSettings({ onStart, onCancel }: MatchSettingsProps)
       <motion.div
         className="flex flex-col items-center gap-6 p-8 rounded-3xl"
         style={{
-          background: "linear-gradient(135deg, #1a0e06 0%, #2a1810 50%, #1a0e06 100%)",
+          background:
+            "linear-gradient(135deg, #1a0e06 0%, #2a1810 50%, #1a0e06 100%)",
           border: "2px solid rgba(255,200,100,0.3)",
           boxShadow: "0 20px 60px rgba(0,0,0,0.8)",
           maxWidth: "90vw",
@@ -45,13 +49,13 @@ export default function MatchSettings({ onStart, onCancel }: MatchSettingsProps)
             {(["white", "black"] as Color[]).map((c) => (
               <button
                 key={c}
-                onClick={() => setBotColor(c === "white" ? "black" : "white")}
+                onClick={() => setBotColor(c === "black" ? "white" : "black")}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
                 style={{
                   background:
                     botColor !== c
-                      ? "rgba(255,255,255,0.1)"
-                      : "linear-gradient(135deg, #f4e4c1, #d4b880)",
+                      ?"linear-gradient(135deg, #f4e4c1, #d4b880)"
+                      :  "rgba(255,255,255,0.1)",
                   color: botColor !== c ? "rgba(255,255,255,0.6)" : "#1a0e06",
                   border:
                     botColor !== c
@@ -83,9 +87,7 @@ export default function MatchSettings({ onStart, onCancel }: MatchSettingsProps)
                       : "rgba(255,255,255,0.06)",
                   color: target === t ? "#1a0e06" : "rgba(255,255,255,0.5)",
                   border:
-                    target === t
-                      ? "none"
-                      : "1px solid rgba(255,255,255,0.1)",
+                    target === t ? "none" : "1px solid rgba(255,255,255,0.1)",
                 }}
               >
                 {t}

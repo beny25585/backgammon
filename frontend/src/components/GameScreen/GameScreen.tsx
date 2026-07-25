@@ -14,7 +14,7 @@ interface GameScreenProps {
 }
 
 export default function GameScreen({ onLeave }: GameScreenProps) {
-  const { state, playerColor, isLoading, error, makeMove, rollDice, openingRollResult, setOpeningRollResult, reconnected, opponentConnected } = useGame();
+  const { state, playerColor, isLoading, error, makeMove, rollDice, openingRollResult, setOpeningRollResult, reconnected, opponentConnected, undoMove, endTurn } = useGame();
   const [selected, setSelected] = useState<Source | null>(null);
 
   const legalFromPoints = useMemo(() => {
@@ -99,6 +99,8 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
             onSelect={handleSelect}
             onMove={handleMove}
             legalFromPoints={legalFromPoints}
+            onUndo={undoMove}
+            onConfirm={endTurn}
           />
 
           {/* Opening roll overlay — full screen center */}
@@ -157,15 +159,6 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
               <div className="bg-black/85 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-gold/30">
                 <RollPrompt onRoll={handleRoll} />
-              </div>
-            </div>
-          )}
-
-          {/* Normal dice display — full screen center */}
-          {!isOpeningRoll && state.dice.length > 0 && (
-            <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center">
-              <div className="bg-black/80 backdrop-blur-md rounded-3xl p-6 shadow-2xl border border-gold/30">
-                <DiceRow dice={state.dice} remaining={state.remaining} color={playerColor} />
               </div>
             </div>
           )}
