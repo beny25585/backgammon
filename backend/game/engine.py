@@ -13,6 +13,17 @@ class BackgammonEngine:
     @staticmethod
     def get_initial_state():
         p = [0] * 24
+        # Standard backgammon starting position
+        # White (positive): 2 on 23, 5 on 12, 3 on 7, 5 on 5
+        # Black (negative): 2 on 0, 5 on 11, 3 on 16, 5 on 18
+        p[23] = 2   # white
+        p[12] = 5
+        p[7] = 3
+        p[5] = 5
+        p[0] = -2   # black
+        p[11] = -5
+        p[16] = -3
+        p[18] = -5
         return {
             'points': p,
             'bar': {'white': 0, 'black': 0},

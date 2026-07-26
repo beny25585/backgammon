@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .engine import BackgammonEngine
-from .models import GameRoom
+from .models import GameRoom, GameState
 from .serializers import RegisterSerializer, UserSerializer
 
 
@@ -56,6 +56,7 @@ def create_room(request):
     initial = BackgammonEngine.get_initial_state()
     room.state = initial
     room.save()
+    GameState.objects.create(room=room, state_data=initial)
 
     return Response({
         'id': str(room.id),
@@ -107,3 +108,18 @@ def room_detail(request, code):
         'blackPlayer': UserSerializer(room.black_player).data if room.black_player else None,
         'state': room.state,
     })
+
+
+@api_view(['POST'])
+def cancel_room(request):
+    """Cancel the current player's active room."""
+    user = request.user
+    room = GameRoom.objects.filter(
+        db_models.Q(white_player=user) | db_models.Q(black_player=user),
+        status__in=['waiting', 'playing']
+    ).first()
+    if not room:
+        return Response({'error': 'No active room'}, status=status.HTTP_404_NOT_FOUND)
+    room.status = 'cancelled'
+    room.save()
+    return Response({'status': 'cancelled', 'roomId': str(room.id)})

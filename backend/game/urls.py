@@ -8,5 +8,6 @@ urlpatterns = [
     path('login/', TokenObtainPairView.as_view(), name='login'),
     path('rooms/', views.create_room, name='create_room'),
     path('rooms/join/', views.join_room, name='join_room'),
+    path('rooms/cancel/', views.cancel_room, name='cancel_room'),
     path('rooms/<str:code>/', views.room_detail, name='room_detail'),
 ]
