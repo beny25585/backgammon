@@ -23,7 +23,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
@@ -35,14 +35,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   });
   const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem("access_token"),
+    localStorage.getItem("bg_access_token"),
   );
 
   const isAuthenticated = !!token && !!user;
 
   const storeSession = (access: string, refresh: string, user: User) => {
-    localStorage.setItem("access_token", access);
-    localStorage.setItem("refresh_token", refresh);
+    localStorage.setItem("bg_access_token", access);
+    localStorage.setItem("bg_refresh_token", refresh);
     localStorage.setItem("user", JSON.stringify(user));
     setToken(access);
     setUser(user);
@@ -85,8 +85,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
+    localStorage.removeItem("bg_access_token");
+    localStorage.removeItem("bg_refresh_token");
     localStorage.removeItem("user");
     setToken(null);
     setUser(null);

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useParams, useLocation, useNavigate } from "re
 import { useSearchParams } from "react-router-dom";
 import { getAccessToken } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
+import { cancelRoom } from "./services/api";
 import AuthScreen from "./components/AuthScreen";
 import HomeScreen from "./components/HomeScreen";
 import WaitingRoom from "./components/WaitingRoom";
@@ -27,6 +28,7 @@ function GameRoute() {
   const playerColor = (new URLSearchParams(location.search).get("color") as Color) || "white";
 
   function handleLeave() {
+    cancelRoom().catch(() => {});
     clearRoom();
     navigate("/home", { replace: true });
   }

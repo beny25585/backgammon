@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { Color } from "../../types/game";
-import { createRoom, joinRoom } from "../../services/api";
+import { createRoom, joinRoom, cancelRoom } from "../../services/api";
 import { clearTokens, getAccessToken } from "../../services/auth";
 import { saveRoom, clearRoom, getRoom } from "../../services/roomStorage";
 import styles from "./HomeScreen.module.css";
@@ -23,6 +23,7 @@ export default function HomeScreen() {
   const [error, setError] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const [mode, setMode] = useState<"create" | "join">("create");
+  const [roomKey, setRoomKey] = useState(0);
   const [username] = useState(() => {
     try {
       const token = getAccessToken();
@@ -39,7 +40,7 @@ export default function HomeScreen() {
   function handleCodeInput(value: string) {
     const filtered = value
       .toUpperCase()
-      .replace(/[^A-HJ-NP-Z2-9]/g, "")
+      .replace(/[^0-9A-Z]/g, "")
       .slice(0, 6);
     setCode(filtered);
   }
@@ -65,7 +66,7 @@ export default function HomeScreen() {
     try {
       const room: RoomResponse = await joinRoom(code);
       saveRoom({ roomId: room.id, roomCode: code, playerColor: "black", status: "playing" });
-      navigate(`/game/${room.id}`, { state: { playerColor: "black" } });
+      navigate(`/game/${room.id}?color=black`, { state: { playerColor: "black" } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join room");
     } finally {
@@ -80,7 +81,9 @@ export default function HomeScreen() {
   }
 
   function handleCancelRoom() {
+    cancelRoom().catch(() => {});
     clearRoom();
+    setRoomKey(k => k + 1);
     setError("");
   }
 
@@ -91,7 +94,7 @@ export default function HomeScreen() {
         state: { roomCode: activeRoom.roomCode, playerColor: activeRoom.playerColor },
       });
     } else {
-      navigate(`/game/${activeRoom.roomId}`, {
+      navigate(`/game/${activeRoom.roomId}?color=${activeRoom.playerColor}`, {
         state: { playerColor: activeRoom.playerColor },
       });
     }

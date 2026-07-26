@@ -16,6 +16,15 @@ export interface GameContextType {
   setOpeningRollResult: (result: OpeningRollResult | null) => void;
   reconnected: boolean;
   opponentConnected: boolean;
+  gameResult: {
+    winner: Color;
+    winType: "single" | "gammon" | "backgammon";
+    points: number;
+    cube: number;
+    matchScore: Record<Color, number>;
+  } | null;
+  handleNextGame: () => void;
+  handleHome: () => void;
   updateState: (newState: GameState) => void;
   makeMove: (from: Source, to: Target) => void;
   rollDice: () => void;

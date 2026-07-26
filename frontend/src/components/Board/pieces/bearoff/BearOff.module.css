@@ -4,27 +4,15 @@
   flex-direction: column;
   justify-content: space-between;
   padding: 0.375rem 0.5rem;
-  width: clamp(40px, 6vw, 58px);
-  height: calc(clamp(140px, 28vw, 240px) * 2);
+  width: var(--bearoff-w);
+  height: calc(var(--point-h) * 2);
   background: linear-gradient(180deg, #1a0e06, #0a0603);
 }
 
-@media (min-width: 640px) {
-  .bearOff {
-    padding: 0.5rem;
-  }
-}
-
 .checkerPip {
-  width: calc(clamp(22px, 4.2vw, 36px) - 4px);
+  width: calc(var(--checker) - 4px);
   height: 0.375rem;
   border-radius: 0.125rem;
-}
-
-@media (min-width: 640px) {
-  .checkerPip {
-    height: 0.5rem;
-  }
 }
 
 .pipWhite {

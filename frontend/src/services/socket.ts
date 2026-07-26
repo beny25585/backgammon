@@ -9,12 +9,27 @@ export class GameSocketService {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 2000;
+  private currentToken: string | null = null;
+  private currentRoomId: string | null = null;
 
-  constructor(url: string = "ws://localhost:8080") {
+  constructor(url: string = '') {
     this.url = url;
   }
 
   connect(roomId: string, token?: string): Promise<void> {
+    this.currentRoomId = roomId;
+    this.currentToken = token || null;
+
+    // Kill old connection to prevent orphaned sockets from triggering reconnect
+    if (this.ws) {
+      this.ws.onopen = null;
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.close();
+      this.ws = null;
+    }
+
     return new Promise((resolve, reject) => {
       try {
         const wsUrl = token
@@ -44,7 +59,6 @@ export class GameSocketService {
 
         this.ws.onclose = () => {
           console.log("Disconnected from server");
-          this.attemptReconnect(roomId);
         };
       } catch (error) {
         reject(error);
@@ -52,14 +66,15 @@ export class GameSocketService {
     });
   }
 
-  private attemptReconnect(roomId: string): void {
+  private attemptReconnect(): void {
+    if (!this.currentRoomId) return;
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       setTimeout(() => {
         console.log(
           `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
         );
-        this.connect(roomId).catch(console.error);
+        this.connect(this.currentRoomId!, this.currentToken || undefined).catch(console.error);
       }, this.reconnectDelay);
     }
   }
@@ -92,6 +107,10 @@ export class GameSocketService {
       this.ws.close();
       this.ws = null;
     }
+  }
+
+  removeAllListeners(): void {
+    this.handlers.clear();
   }
 
   isConnected(): boolean {

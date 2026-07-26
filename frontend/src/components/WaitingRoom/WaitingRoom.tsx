@@ -17,6 +17,7 @@ export default function WaitingRoom() {
   const [status, setStatus] = useState<"connecting" | "waiting" | "opponent_joined" | "error">("connecting");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [connectedCount, setConnectedCount] = useState(1);
   const socket = getSocketService();
 
   useEffect(() => {
@@ -29,7 +30,10 @@ export default function WaitingRoom() {
         await socket.connect(roomId, token);
         setStatus("waiting");
 
-        socket.on("player_joined", () => {
+        socket.on("player_joined", (payload: unknown) => {
+          const data = payload as { playerColor?: string };
+          // Ignore our own player_joined event — only react when opponent joins
+          if (data?.playerColor === playerColor) return;
           setStatus("opponent_joined");
           updateRoomStatus("playing");
           setTimeout(() => {
@@ -38,6 +42,11 @@ export default function WaitingRoom() {
               replace: true,
             });
           }, 1000);
+        });
+
+        socket.on("room_status", (payload: unknown) => {
+          const data = payload as { connected: number };
+          setConnectedCount(data?.connected ?? 1);
         });
 
         socket.on("error", (payload) => {
@@ -52,7 +61,7 @@ export default function WaitingRoom() {
     };
 
     connectAndWait();
-    return () => { socket.disconnect(); };
+    return () => { socket.removeAllListeners(); };
   }, [roomId, socket, navigate, playerColor]);
 
   async function handleCopy() {
@@ -111,6 +120,7 @@ export default function WaitingRoom() {
               </div>
               <p className={styles.waitingText}>Waiting for opponent...</p>
             </div>
+            <p className={styles.statusText}>{connectedCount}/2 connected</p>
             <div className={styles.playerInfo}>
               You: {playerColor === "white" ? "White" : "Black"}
             </div>

@@ -1,20 +1,19 @@
 .container {
   width: 100%;
-  height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: #030711;
-  padding: 16px;
+  padding: clamp(8px, 2vw, 16px);
 }
 
 .card {
   background: #1a1a2e;
-  border: 1px solid rgba(201, 169, 97, 0.3);
-  border-radius: 16px;
-  padding: 32px;
-  width: 100%;
-  max-width: 420px;
+  border: 1px solid rgba(var(--gold), 0.3);
+  border-radius: clamp(12px, 2vw, 16px);
+  padding: clamp(20px, 3vw, 32px);
+  width: min(92%, 420px);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
@@ -22,176 +21,162 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: clamp(16px, 2.5vw, 24px);
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .title {
   font-family: "Playfair Display", serif;
-  font-size: 24px;
+  font-size: clamp(20px, 4vw, 24px);
   font-weight: 700;
-  color: #c9a961;
+  color: var(--gold);
 }
 
 .userInfo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: clamp(8px, 1.5vw, 12px);
 }
 
 .username {
   color: rgba(201, 169, 97, 0.6);
-  font-size: 13px;
+  font-size: clamp(12px, 1.5vw, 13px);
 }
 
 .logout {
-  font-size: 12px;
+  font-size: clamp(11px, 1.4vw, 12px);
   color: #ff6b6b;
   background: none;
   border: none;
   cursor: pointer;
+  min-height: 44px;
 }
-
-.logout:hover {
-  color: #ff4444;
-}
+.logout:hover { color: #ff4444; }
 
 .tabs {
   display: flex;
   background: rgba(0, 0, 0, 0.3);
   border-radius: 8px;
   padding: 4px;
-  margin-bottom: 24px;
+  margin-bottom: clamp(16px, 2.5vw, 24px);
 }
 
 .tab {
   flex: 1;
-  padding: 10px;
+  padding: clamp(8px, 1.5vw, 10px);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: clamp(12px, 1.5vw, 14px);
   font-weight: 500;
   border: none;
   cursor: pointer;
   background: transparent;
   color: rgba(201, 169, 97, 0.6);
   transition: all 0.2s;
+  min-height: 44px;
 }
 
 .tabActive {
-  background: #c9a961;
+  background: var(--gold);
   color: #000;
 }
 
 .primaryButton {
   width: 100%;
-  padding: 14px;
+  padding: clamp(12px, 2vw, 14px);
   border-radius: 8px;
-  background: linear-gradient(135deg, #c9a961, #b8860b);
+  background: linear-gradient(135deg, var(--gold), #b8860b);
   color: #000;
   font-weight: 700;
-  font-size: 15px;
+  font-size: clamp(13px, 1.6vw, 15px);
   border: none;
   cursor: pointer;
   transition: opacity 0.2s;
+  min-height: 44px;
 }
-
-.primaryButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.primaryButton:hover:not(:disabled) {
-  opacity: 0.9;
-}
+.primaryButton:disabled { opacity: 0.5; cursor: not-allowed; }
+.primaryButton:hover:not(:disabled) { opacity: 0.9; }
 
 .joinForm {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: clamp(12px, 2vw, 16px);
 }
 
 .codeInput {
   width: 100%;
-  padding: 14px;
+  padding: clamp(10px, 2vw, 14px);
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.4);
   border: 1px solid rgba(201, 169, 97, 0.2);
   color: #fff;
-  font-size: 24px;
+  font-size: clamp(18px, 5vw, 24px);
   text-align: center;
-  letter-spacing: 8px;
+  letter-spacing: clamp(4px, 1vw, 8px);
   outline: none;
   transition: border-color 0.2s;
   text-transform: uppercase;
 }
-
-.codeInput:focus {
-  border-color: #c9a961;
-}
-
+.codeInput:focus { border-color: var(--gold); }
 .codeInput::placeholder {
-  font-size: 14px;
+  font-size: clamp(12px, 2vw, 14px);
   letter-spacing: 1px;
   color: rgba(201, 169, 97, 0.3);
 }
 
 .error {
   color: #ff6b6b;
-  font-size: 13px;
+  font-size: clamp(12px, 1.4vw, 13px);
   text-align: center;
-  margin-top: 16px;
+  margin-top: clamp(12px, 1.5vw, 16px);
 }
 
 .divider {
   height: 1px;
   background: rgba(201, 169, 97, 0.15);
-  margin: 24px 0 16px;
+  margin: clamp(16px, 3vw, 24px) 0 clamp(12px, 2vw, 16px);
 }
 
 .devButton {
   width: 100%;
-  padding: 10px;
+  padding: clamp(8px, 1.5vw, 10px);
   border-radius: 8px;
   background: rgba(201, 169, 97, 0.1);
   border: 1px dashed rgba(201, 169, 97, 0.35);
   color: rgba(201, 169, 97, 0.7);
-  font-size: 13px;
+  font-size: clamp(12px, 1.4vw, 13px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  min-height: 44px;
 }
+.devButton:hover { background: rgba(201, 169, 97, 0.2); color: var(--gold); }
 
-.devButton:hover {
-  background: rgba(201, 169, 97, 0.2);
-  color: #c9a961;
-}
-
-.activeRoom {
-  margin-top: 4px;
-}
+.activeRoom { margin-top: 4px; }
 
 .activeRoomHeader {
-  font-size: 11px;
+  font-size: clamp(10px, 1.2vw, 11px);
   text-transform: uppercase;
   letter-spacing: 1.5px;
   color: rgba(201, 169, 97, 0.4);
-  margin-bottom: 10px;
+  margin-bottom: clamp(8px, 1.2vw, 10px);
 }
 
 .activeRoomBody {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(201, 169, 97, 0.15);
   border-radius: 10px;
-  padding: 14px;
+  padding: clamp(10px, 1.5vw, 14px);
 }
 
 .activeRoomCode {
   font-family: "Playfair Display", serif;
-  font-size: 28px;
+  font-size: clamp(22px, 5vw, 28px);
   font-weight: 700;
-  color: #c9a961;
-  letter-spacing: 6px;
+  color: var(--gold);
+  letter-spacing: clamp(4px, 1vw, 6px);
   text-align: center;
-  margin-bottom: 8px;
+  margin-bottom: clamp(6px, 1vw, 8px);
 }
 
 .activeStatusRow {
@@ -199,33 +184,17 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: clamp(8px, 1.5vw, 12px);
 }
 
-.statusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
+.statusDot { width: 8px; height: 8px; border-radius: 50%; }
+.statusWaiting { background: #f0ad4e; box-shadow: 0 0 6px rgba(240,173,78,0.6); animation: pulse 1.5s infinite; }
+.statusPlaying { background: #5cb85c; box-shadow: 0 0 6px rgba(92,184,92,0.4); }
 
-.statusWaiting {
-  background: #f0ad4e;
-  box-shadow: 0 0 6px rgba(240, 173, 78, 0.6);
-  animation: pulse 1.5s infinite;
-}
-
-.statusPlaying {
-  background: #5cb85c;
-  box-shadow: 0 0 6px rgba(92, 184, 92, 0.4);
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 .statusText {
-  font-size: 13px;
+  font-size: clamp(12px, 1.4vw, 13px);
   color: rgba(255, 255, 255, 0.6);
 }
 
@@ -236,33 +205,29 @@
 
 .returnButton {
   flex: 1;
-  padding: 10px;
+  padding: clamp(8px, 1.5vw, 10px);
   border-radius: 8px;
-  background: linear-gradient(135deg, #c9a961, #b8860b);
+  background: linear-gradient(135deg, var(--gold), #b8860b);
   color: #000;
   font-weight: 700;
-  font-size: 13px;
+  font-size: clamp(12px, 1.4vw, 13px);
   border: none;
   cursor: pointer;
   transition: opacity 0.2s;
+  min-height: 44px;
 }
-
-.returnButton:hover {
-  opacity: 0.9;
-}
+.returnButton:hover { opacity: 0.9; }
 
 .cancelButton {
-  padding: 10px 14px;
+  padding: clamp(8px, 1.5vw, 10px) clamp(10px, 1.5vw, 14px);
   border-radius: 8px;
   background: rgba(255, 107, 107, 0.1);
   border: 1px solid rgba(255, 107, 107, 0.3);
   color: #ff6b6b;
-  font-size: 13px;
+  font-size: clamp(12px, 1.4vw, 13px);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
+  min-height: 44px;
 }
-
-.cancelButton:hover {
-  background: rgba(255, 107, 107, 0.2);
-}
+.cancelButton:hover { background: rgba(255, 107, 107, 0.2); }

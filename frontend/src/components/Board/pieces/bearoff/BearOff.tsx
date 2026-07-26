@@ -1,6 +1,5 @@
 import { motion } from "motion/react";
 import type { GameState, Color } from "@/lib/backgammon/engine";
-import { BEAROFF_W, POINT_H, CHECKER } from "../../layout";
 
 interface BearOffProps {
   state: GameState;
@@ -15,8 +14,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
       onClick={onClick}
       className="relative flex flex-col justify-between p-1.5 sm:p-2 focus:outline-none"
       style={{
-        width: BEAROFF_W,
-        height: `calc(${POINT_H} * 2)`,
+        width: "var(--bearoff-w)",
         background: "linear-gradient(180deg, #1a0e06, #0a0603)",
       }}
       data-point-idx="off"
@@ -33,7 +31,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
             animate={{ scale: 1, opacity: 1 }}
             className="h-1.5 sm:h-2 rounded-sm"
             style={{
-              width: `calc(${CHECKER} - 4px)`,
+              width: "calc(var(--checker) - 4px)",
               background: "linear-gradient(180deg, #4a3020, #2a1810)",
               border: "1px solid #000",
             }}
@@ -49,7 +47,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
             animate={{ scale: 1, opacity: 1 }}
             className="h-1.5 sm:h-2 rounded-sm"
             style={{
-              width: `calc(${CHECKER} - 4px)`,
+              width: "calc(var(--checker) - 4px)",
               background: "linear-gradient(180deg, #fff7e0, #d4b880)",
               border: "1px solid #c9a961",
             }}

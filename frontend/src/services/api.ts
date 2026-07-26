@@ -1,8 +1,7 @@
 import { getAccessToken } from "./auth";
 
 const API_URL =
-  import.meta.env.VITE_SERVER_URL?.replace("ws", "http") ||
-  "http://localhost:8080";
+  import.meta.env.VITE_SERVER_URL?.replace("ws", "http") ?? '';
 
 async function apiFetch(path: string, options: RequestInit = {}) {
   const token = getAccessToken();
@@ -34,4 +33,8 @@ export async function joinRoom(code: string) {
 
 export async function getRoomDetail(code: string) {
   return apiFetch(`/api/rooms/${code}/`);
+}
+
+export async function cancelRoom() {
+  return apiFetch("/api/rooms/cancel/", { method: "POST" });
 }

@@ -44,6 +44,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
     winType: "single" | "gammon" | "backgammon";
     points: number;
     cube: number;
+    matchScore: Record<Color, number>;
   } | null>(null);
 
   // Auto-advance to next game after 30s
@@ -64,6 +65,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       winType: state.winType || "single",
       points,
       cube: state.cube || 1,
+      matchScore: { ...matchScore },
     });
 
     setMatchScore((prev) => {
@@ -260,6 +262,9 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         setOpeningRollResult,
         reconnected,
         opponentConnected,
+        gameResult,
+        handleNextGame,
+        handleHome,
         updateState,
         makeMove,
         rollDice,

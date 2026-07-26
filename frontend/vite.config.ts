@@ -24,6 +24,17 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
+    allowedHosts: ["morphotonemic-compellably-roselee.ngrok-free.dev"],
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/ws": {
+        target: "ws://localhost:8000",
+        ws: true,
+      },
+    },
   },
   build: {
     outDir: "dist",

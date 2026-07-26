@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_SERVER_URL?.replace('ws', 'http') || 'http://localhost:8080';
+const API_URL = import.meta.env.VITE_SERVER_URL?.replace('ws', 'http') ?? '';
 
 export interface AuthTokens {
   access: string;

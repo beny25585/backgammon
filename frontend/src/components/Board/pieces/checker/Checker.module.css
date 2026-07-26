@@ -6,8 +6,8 @@
   font-size: 0.75rem;
   font-weight: 700;
   flex-shrink: 0;
-  width: clamp(22px, 4.2vw, 36px);
-  height: clamp(22px, 4.2vw, 36px);
+  width: var(--checker);
+  height: var(--checker);
 }
 
 .white {

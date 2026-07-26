@@ -1,6 +1,5 @@
 import type { GameState, Color, Source } from "@/lib/backgammon/engine";
 import Checker from "../checker/Checker";
-import { BAR_W, POINT_H } from "../../layout";
 
 interface BarProps {
   state: GameState;
@@ -16,8 +15,7 @@ export default function Bar({ state, selected, isLegalFrom, onClick }: BarProps)
       onClick={onClick}
       className="relative flex flex-col justify-between items-center py-3 focus:outline-none"
       style={{
-        width: BAR_W,
-        height: `calc(${POINT_H} * 2)`,
+        width: "var(--bar-w)",
         background: "linear-gradient(180deg, #4a2f1a, #1a0e06)",
         boxShadow:
           "inset 2px 0 4px rgba(0,0,0,0.5), inset -2px 0 4px rgba(0,0,0,0.5)",

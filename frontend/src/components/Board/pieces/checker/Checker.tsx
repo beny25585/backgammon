@@ -1,5 +1,4 @@
 import { motion } from "motion/react";
-import { CHECKER } from "../../layout";
 
 interface CheckerProps {
   color: "white" | "black";
@@ -18,10 +17,11 @@ export default function Checker({ color, label, flyIn }: CheckerProps) {
         ? { type: "spring", stiffness: 260, damping: 16, mass: 0.8 }
         : { type: "spring", stiffness: 320, damping: 22 }
       }
+      data-checker
       className="rounded-full flex items-center justify-center text-xs font-bold shrink-0"
       style={{
-        width: CHECKER,
-        height: CHECKER,
+        width: "var(--checker)",
+        height: "var(--checker)",
         background: isWhite
           ? "radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 55%, #b89660 100%)"
           : "radial-gradient(circle at 30% 25%, #6a4830, #2a1810 55%, #0a0402 100%)",

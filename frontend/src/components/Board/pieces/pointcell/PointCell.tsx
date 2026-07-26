@@ -1,7 +1,6 @@
 import { motion } from "motion/react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import Checker from "../checker/Checker";
-import { POINT_H } from "../../layout";
 
 interface PointCellProps {
   index: number;
@@ -44,7 +43,7 @@ export default function PointCell({
       whileHover={isLegalFrom || isLegalTarget ? { y: -2 } : undefined}
       onClick={onClick}
       className="relative flex flex-col items-center overflow-hidden focus:outline-none group"
-      style={{ direction: "ltr", height: POINT_H }}
+      style={{ direction: "ltr", height: "100%" }}
       data-point-idx={index}
     >
       <div
