@@ -6,6 +6,7 @@ import {
   useEffect,
   type ReactNode,
 } from "react";
+import { clientLogger } from "./logger";
 
 interface User {
   id: number;
@@ -23,7 +24,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+const API_BASE = (import.meta.env.VITE_SERVER_URL || "") + "/api";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
@@ -50,15 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (username: string, password: string) => {
+      clientLogger.info("Login attempt", { username });
       const res = await fetch(`${API_BASE}/login/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Login failed");
+      if (!res.ok) {
+        clientLogger.error("Login failed", { username, status: res.status, detail: data.detail });
+        throw new Error(data.detail || "Login failed");
+      }
       const payload = JSON.parse(atob(data.access.split(".")[1]));
       const user: User = { id: payload.user_id, username };
+      clientLogger.info("Login success", { username, userId: user.id });
       storeSession(data.access, data.refresh, user);
     },
     [],
@@ -66,19 +72,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (username: string, password: string) => {
+      clientLogger.info("Register attempt", { username });
       const res = await fetch(`${API_BASE}/register/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password, password2: password }),
       });
-      const data = await res.json();
+      const text = await res.text();
       if (!res.ok) {
-        const msg =
-          typeof data === "object"
+        let msg: string;
+        try {
+          const data = JSON.parse(text);
+          msg = typeof data === "object"
             ? Object.values(data).flat().join(", ")
             : "Registration failed";
+        } catch {
+          msg = `Registration failed (${res.status}): ${text.slice(0, 200)}`;
+        }
+        clientLogger.error("Register failed", { username, status: res.status, response: text.slice(0, 300) });
         throw new Error(msg);
       }
+      const data = JSON.parse(text);
+      clientLogger.info("Register success", { username, userId: data.user?.id });
       storeSession(data.access, data.refresh, data.user);
     },
     [],

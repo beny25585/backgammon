@@ -15,6 +15,7 @@ import {
 } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
+import { clientLogger } from "./logger";
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -108,7 +109,9 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           setError(msg);
         });
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to connect");
+        const msg = err instanceof Error ? err.message : "Failed to connect";
+        clientLogger.error("Game connect failed", { roomId, playerColor, error: msg });
+        setError(msg);
         setIsLoading(false);
       }
     };

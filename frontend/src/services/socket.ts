@@ -1,4 +1,5 @@
 import type { GameMessage } from "../types/game";
+import { clientLogger } from "./logger";
 
 export type MessageHandler = (data: unknown) => void;
 
@@ -38,7 +39,7 @@ export class GameSocketService {
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-          console.log("Connected to game server");
+          clientLogger.info("WebSocket connected", { roomId });
           this.reconnectAttempts = 0;
           resolve();
         };
@@ -53,12 +54,12 @@ export class GameSocketService {
         };
 
         this.ws.onerror = (error) => {
-          console.error("WebSocket error:", error);
+          clientLogger.error("WebSocket error", { roomId, error: String(error) });
           reject(error);
         };
 
         this.ws.onclose = () => {
-          console.log("Disconnected from server");
+          clientLogger.info("WebSocket disconnected", { roomId });
         };
       } catch (error) {
         reject(error);

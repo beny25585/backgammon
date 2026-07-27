@@ -5,13 +5,23 @@ export interface AuthTokens {
   refresh: string;
 }
 
+async function parseError(res: Response): Promise<string> {
+  const text = await res.text().catch(() => '');
+  try {
+    const json = JSON.parse(text);
+    return json.username?.[0] || json.error || json.detail || `Request failed (${res.status})`;
+  } catch {
+    return `Request failed (${res.status}): ${text.slice(0, 200)}`;
+  }
+}
+
 export async function register(username: string, password: string): Promise<AuthTokens> {
   const res = await fetch(`${API_URL}/api/register/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, password2: password }),
   });
-  if (!res.ok) throw new Error((await res.json()).username?.[0] || 'Registration failed');
+  if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
@@ -21,7 +31,7 @@ export async function login(username: string, password: string): Promise<AuthTok
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password }),
   });
-  if (!res.ok) throw new Error('Login failed');
+  if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
 
