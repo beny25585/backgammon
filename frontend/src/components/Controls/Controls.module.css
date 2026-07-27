@@ -1,24 +1,10 @@
 .controlsContainer {
   display: flex;
   align-items: center;
-  gap: clamp(12px, 2.5vw, 24px);
+  gap: clamp(8px, 1.5vw, 16px);
   flex: 1;
   justify-content: flex-end;
   flex-wrap: wrap;
-}
-
-.diceSection,
-.cubeSection {
-  display: flex;
-  align-items: center;
-  gap: clamp(4px, 1vw, 8px);
-}
-
-.actionsSection {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: clamp(4px, 1vw, 8px);
 }
 
 .btn {

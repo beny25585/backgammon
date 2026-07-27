@@ -8,24 +8,17 @@ interface DoublingCubeProps {
 
 export default function DoublingCube({ value, owner }: DoublingCubeProps) {
   const ownerColor = owner === "center" ? "neutral" : owner;
-  const cubeValues = [1, 2, 4, 8, 16, 32];
+  const ownerLabel = owner === "center" ? "Center" : owner === "white" ? "You" : "Bot";
 
   return (
     <div className={styles.cubeContainer}>
-      <span className={styles.label}>Cube:</span>
       <div
-        className={`${styles.cube} ${styles[ownerColor]}`}
+        className={`${styles.cubeFace} ${styles[ownerColor]}`}
         title={`Cube value: ${value}, Owner: ${owner}`}
       >
-        <span className={styles.value}>{value}</span>
+        {value}
       </div>
-      <div className={styles.availableValues}>
-        {cubeValues.map((v) => (
-          <span key={v} className={v === value ? styles.current : ""}>
-            {v}
-          </span>
-        ))}
-      </div>
+      <span className={styles.ownerLabel}>{ownerLabel}</span>
     </div>
   );
 }

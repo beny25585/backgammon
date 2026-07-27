@@ -1,6 +1,7 @@
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import type { Color } from "@/lib/backgammon/engine";
+import styles from "./Dice.module.css";
 
 const pipPositions: Record<number, [number, number][]> = {
   1: [[50, 50]],
@@ -48,28 +49,20 @@ export function Die({
   return (
     <motion.div
       initial={{ rotate: -360, scale: 0.4, opacity: 0 }}
-      animate={{ rotate: 0, scale: 1, opacity: used ? 0.3 : 1 }}
-      whileHover={!used ? { scale: 1.08, rotate: 8 } : undefined}
-      transition={{ type: "spring", stiffness: 220, damping: 14 }}
-      className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl relative ${
-        dark
-          ? "bg-checker-black text-checker-white"
-          : "bg-checker-white text-checker-black"
-      }`}
-      style={{
-        backgroundImage: dark
-          ? "radial-gradient(circle at 30% 20%, #4a2f1a, #2a1810 70%)"
-          : "radial-gradient(circle at 30% 20%, #fff9e8, #f4e4c1 70%)",
-      }}
+      animate={{ rotate: 1, scale: 1, opacity: used ? 0.3 : 1 }}
+      whileHover={
+        !used ? { scale: 1.08, rotate: 8 } : { scale: 1.9, rotate: 1 }
+      }
+      transition={{ type: "spring", stiffness: 100, damping: 5 }}
+      className={`${styles.die} ${dark ? styles.dieDark : styles.dieLight}`}
     >
       {pipPositions[value]?.map(([x, y], i) => (
         <span
           key={i}
-          className="absolute w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-current"
+          className={`${styles.pip} ${styles.pipCurrent}`}
           style={{
             left: `${x}%`,
             top: `${y}%`,
-            transform: "translate(-50%, -50%)",
           }}
         />
       ))}
@@ -96,17 +89,17 @@ export function DiceRow({
 }) {
   if (showLabels) {
     return (
-      <div className="flex gap-6 items-center justify-center">
+      <div className={styles.diceRowLabeled}>
         {myRoll !== undefined && (
-          <div className="flex flex-col items-center gap-1">
+          <div className={styles.dieColumn}>
             <Die value={myRoll!} dark={color === "black"} />
-            <span className="text-xs text-white/60">You</span>
+            <span className={styles.label}>You</span>
           </div>
         )}
         {opponentRoll !== undefined && (
-          <div className="flex flex-col items-center gap-1">
+          <div className={styles.dieColumn}>
             <Die value={opponentRoll!} dark={color !== "black"} />
-            <span className="text-xs text-white/60">Opponent</span>
+            <span className={styles.label}>Opponent</span>
           </div>
         )}
       </div>
@@ -118,7 +111,7 @@ export function DiceRow({
     dice[0] === dice[1] ? [dice[0], dice[0], dice[0], dice[0]] : dice;
   const remCopy = [...remaining];
   return (
-    <div className="flex gap-2 items-center">
+    <div className={styles.diceRow}>
       {displayed.map((d, i) => {
         const idx = remCopy.indexOf(d);
         const used = idx < 0;
@@ -141,25 +134,19 @@ function DieFace({
 }) {
   return (
     <div
-      className="absolute inset-0 rounded-2xl flex items-center justify-center"
+      className={`${styles.dieFace} ${dark ? styles.faceDark : styles.faceLight}`}
       style={{
         backfaceVisibility: "hidden",
-        backgroundImage: dark
-          ? "radial-gradient(circle at 30% 20%, #4a2f1a, #2a1810 70%)"
-          : "radial-gradient(circle at 30% 20%, #fff9e8, #f4e4c1 70%)",
-        boxShadow:
-          "inset 0 -3px 5px rgba(0,0,0,0.3), inset 0 2px 3px rgba(255,255,255,0.1), 0 6px 14px rgba(0,0,0,0.5)",
         transform: side || undefined,
       }}
     >
       {pipPositions[value]?.map(([x, y], i) => (
         <span
           key={i}
-          className="absolute w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full"
+          className={styles.pip}
           style={{
             left: `${x}%`,
             top: `${y}%`,
-            transform: "translate(-50%, -50%)",
             backgroundColor: dark ? "#f4e4c1" : "#2a1810",
           }}
         />
@@ -173,40 +160,47 @@ export function RollPrompt({
   onRoll,
   count = 2,
   isOpening,
+  dark,
 }: {
   onRoll: () => void;
   count?: number;
   isOpening?: boolean;
+  dark?: boolean;
 }) {
   const [rolling, setRolling] = useState(false);
+  const rollDone = useRef(false);
+
+  const handleRollComplete = useCallback(() => {
+    if (rollDone.current) return;
+    rollDone.current = true;
+    setRolling(false);
+    onRoll();
+  }, [onRoll]);
 
   function handleClick() {
+    rollDone.current = false;
     setRolling(true);
-    setTimeout(() => {
-      setRolling(false);
-      onRoll();
-    }, 600);
   }
 
   return (
     <motion.button
       onClick={handleClick}
-      className="flex flex-col items-center gap-3 cursor-pointer bg-transparent border-none focus:outline-none"
+      className={styles.rollBtn}
       whileTap={{ scale: 0.92 }}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
     >
-      <div className="flex gap-8" style={{ perspective: 600 }}>
+      <div className={styles.rollContainer} style={{ perspective: 600 }}>
         {Array.from({ length: isOpening ? 1 : count }).map((_, i) => (
           <motion.div
             key={i}
-            className="relative rounded-2xl"
+            className={styles.cube}
+            onAnimationComplete={handleRollComplete}
             style={{
               width: "clamp(48px, 10vw, 64px)",
               height: "clamp(48px, 10vw, 64px)",
               transformStyle: "preserve-3d",
-              backgroundColor: "#1a0e06",
             }}
             animate={
               rolling
@@ -218,31 +212,31 @@ export function RollPrompt({
                 : {
                     rotateX: [0, 360, 720],
                     rotateY: [0, 180, 540],
-                    rotateZ: [-5, 8, -4, 10, -6, 3, 0],
+                    rotateZ: [-3, 5, -2, 5, -3, 1, 0],
                   }
             }
             transition={
               rolling
                 ? {
-                    rotateX: { duration: 0.6, ease: "easeOut" },
-                    rotateY: { duration: 0.6, ease: "easeOut" },
-                    rotateZ: { duration: 0.6, ease: "easeOut" },
+                    rotateX: { duration: 2, ease: "easeOut" },
+                    rotateY: { duration: 2, ease: "easeOut" },
+                    rotateZ: { duration: 2, ease: "easeOut" },
                   }
                 : {
                     rotateX: {
-                      duration: 3.0,
+                      duration: 5.0,
                       repeat: Infinity,
                       ease: "linear",
                       delay: i * 0.08,
                     },
                     rotateY: {
-                      duration: 3.6,
+                      duration: 6,
                       repeat: Infinity,
                       ease: "linear",
                       delay: i * 0.12,
                     },
                     rotateZ: {
-                      duration: 1.8,
+                      duration: 6,
                       repeat: Infinity,
                       ease: "easeInOut",
                       delay: i * 0.15,
@@ -250,35 +244,44 @@ export function RollPrompt({
                   }
             }
           >
-            <DieFace value={1} side="translateZ(calc(clamp(24px,5vw,32px)))" />
+            <DieFace
+              value={1}
+              dark={dark}
+              side="translateZ(calc(clamp(24px,5vw,32px)))"
+            />
             <DieFace
               value={6}
+              dark={dark}
               side="rotateY(180deg) translateZ(calc(clamp(24px,5vw,32px)))"
             />
             <DieFace
               value={3}
+              dark={dark}
               side="rotateY(-90deg) translateZ(calc(clamp(24px,5vw,32px)))"
             />
             <DieFace
               value={4}
+              dark={dark}
               side="rotateY(90deg) translateZ(calc(clamp(24px,5vw,32px)))"
             />
             <DieFace
               value={2}
+              dark={dark}
               side="rotateX(-90deg) translateZ(calc(clamp(24px,5vw,32px)))"
             />
             <DieFace
               value={5}
+              dark={dark}
               side="rotateX(90deg) translateZ(calc(clamp(24px,5vw,32px)))"
             />
           </motion.div>
         ))}
       </div>
       <motion.span
-        className="text-white/40 text-xs tracking-widest uppercase"
-        animate={{ opacity: rolling ? 0 : [0.3, 0.7, 0.3] }}
+        className={styles.rollLabel}
+        animate={{ opacity: rolling ? 0 : [0.5, 0.7, 0.3] }}
         transition={
-          rolling ? { duration: 0.2 } : { duration: 2, repeat: Infinity }
+          rolling ? { duration: 1 } : { duration: 6, repeat: Infinity }
         }
       >
         Tap to roll

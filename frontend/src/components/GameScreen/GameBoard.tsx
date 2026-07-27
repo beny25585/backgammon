@@ -4,6 +4,7 @@ import { Board } from "../Board";
 import OpponentBar from "../OpponentBar";
 import Controls from "../Controls";
 import TurnIndicator from "../TurnIndicator";
+import { DiceRow } from "../Dice";
 import { allLegalMoves, legalMovesFrom, BAR, OFF, type Source, type Target } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 
@@ -71,6 +72,11 @@ export default function GameBoard({
           onUndo={undoMove}
           onConfirm={endTurn}
         />
+        {state.phase !== "opening_roll" && state.phase === "moving" && state.turn === playerColor && state.remaining.length > 0 && (
+          <div className={styles.boardOverlay}>
+            <DiceRow dice={state.dice} remaining={state.remaining} color={playerColor} />
+          </div>
+        )}
       </div>
       <div className={styles.sidePanel}>
         <OpponentBar color={opponentColor} state={state} />

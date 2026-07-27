@@ -24,7 +24,7 @@ interface LocalGameProviderProps {
   onQuitMatch?: () => void;
 }
 
-const BOT_DELAY = 400;
+const BOT_DELAY = 2200;
 
 export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitMatch }: LocalGameProviderProps) {
   const [state, setState] = useState<GameState>(() => newGame());
@@ -132,7 +132,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
             opponentDie: next.openingRoll.black,
             winner,
           });
-          setTimeout(() => setOpeningRollResult(null), 2000);
+          setTimeout(() => setOpeningRollResult(null), 4500);
           setPlayerColor(next.turn);
           return next;
         }
@@ -174,6 +174,11 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         const next = applyOpeningRoll(prev, prev.turn);
         if (next.phase === "opening_roll") {
           const other: Color = prev.turn === "white" ? "black" : "white";
+          setOpeningRollResult({
+            myDie: next.openingRoll[prev.turn],
+            opponentDie: null,
+            winner: null,
+          });
           setPlayerColor(other);
           return { ...next, turn: other };
         }
@@ -183,7 +188,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
           opponentDie: next.openingRoll.black,
           winner,
         });
-        setTimeout(() => setOpeningRollResult(null), 2000);
+        setTimeout(() => setOpeningRollResult(null), 4500);
         setPlayerColor(next.turn);
         return next;
       }

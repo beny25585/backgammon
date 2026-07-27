@@ -116,20 +116,20 @@ export default function HomeScreen() {
         <div className={styles.tabs}>
           <button
             onClick={() => setMode("create")}
-            className={`${styles.tab} ${mode === "create" ? styles.tabActive : ""}`}
+            className={`${styles.tab} ${mode != "create" ? styles.tabActive : ""}`}
           >
             Create New Room
           </button>
           <button
             onClick={() => setMode("join")}
-            className={`${styles.tab} ${mode === "join" ? styles.tabActive : ""}`}
+            className={`${styles.tab} ${mode != "join" ? styles.tabActive : ""}`}
           >
             Join Room
           </button>
         </div>
 
         {mode === "create" ? (
-          <button onClick={handleCreate} disabled={loading} className={styles.primaryButton}>
+          <button onClick={handleCreate} disabled={loading} className={styles.createButton}>
             {loading ? "Creating room..." : "Create New Room"}
           </button>
         ) : (

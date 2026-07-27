@@ -4,12 +4,12 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #030711;
+  background: #021953;
   padding: clamp(8px, 2vw, 16px);
 }
 
 .card {
-  background: #1a1a2e;
+  background: var(--font-mono);
   border: 1px solid rgba(var(--gold), 0.3);
   border-radius: clamp(12px, 2vw, 16px);
   padding: clamp(20px, 3vw, 32px);
@@ -30,7 +30,7 @@
   font-family: "Playfair Display", serif;
   font-size: clamp(20px, 4vw, 24px);
   font-weight: 700;
-  color: var(--gold);
+  color: var(--color-gold);
 }
 
 .userInfo {
@@ -40,19 +40,21 @@
 }
 
 .username {
-  color: rgba(201, 169, 97, 0.6);
+  color: var(--color-gold);
   font-size: clamp(12px, 1.5vw, 13px);
 }
 
 .logout {
   font-size: clamp(11px, 1.4vw, 12px);
-  color: #ff6b6b;
+  color: var(--color-error);
   background: none;
   border: none;
   cursor: pointer;
   min-height: 44px;
 }
-.logout:hover { color: #ff4444; }
+.logout:hover {
+  color: var(--color-error-hover);
+}
 
 .tabs {
   display: flex;
@@ -70,8 +72,8 @@
   font-weight: 500;
   border: none;
   cursor: pointer;
-  background: transparent;
-  color: rgba(201, 169, 97, 0.6);
+  background: var(--color-gold);
+  color: black;
   transition: all 0.2s;
   min-height: 44px;
 }
@@ -81,11 +83,12 @@
   color: #000;
 }
 
-.primaryButton {
+.createButton {
   width: 100%;
   padding: clamp(12px, 2vw, 14px);
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--gold), #b8860b);
+  border: 1px solid var(--gold);
+  background-color: #f0ad4e;
   color: #000;
   font-weight: 700;
   font-size: clamp(13px, 1.6vw, 15px);
@@ -94,8 +97,13 @@
   transition: opacity 0.2s;
   min-height: 44px;
 }
-.primaryButton:disabled { opacity: 0.5; cursor: not-allowed; }
-.primaryButton:hover:not(:disabled) { opacity: 0.9; }
+.createButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.createButton:hover:not(:disabled) {
+  opacity: 0.9;
+}
 
 .joinForm {
   display: flex;
@@ -117,7 +125,9 @@
   transition: border-color 0.2s;
   text-transform: uppercase;
 }
-.codeInput:focus { border-color: var(--gold); }
+.codeInput:focus {
+  border-color: var(--gold);
+}
 .codeInput::placeholder {
   font-size: clamp(12px, 2vw, 14px);
   letter-spacing: 1px;
@@ -125,7 +135,7 @@
 }
 
 .error {
-  color: #ff6b6b;
+  color: var(--color-error);
   font-size: clamp(12px, 1.4vw, 13px);
   text-align: center;
   margin-top: clamp(12px, 1.5vw, 16px);
@@ -150,9 +160,14 @@
   transition: all 0.2s;
   min-height: 44px;
 }
-.devButton:hover { background: rgba(201, 169, 97, 0.2); color: var(--gold); }
+.devButton:hover {
+  background: rgba(201, 169, 97, 0.2);
+  color: var(--gold);
+}
 
-.activeRoom { margin-top: 4px; }
+.activeRoom {
+  margin-top: 4px;
+}
 
 .activeRoomHeader {
   font-size: clamp(10px, 1.2vw, 11px);
@@ -187,11 +202,30 @@
   margin-bottom: clamp(8px, 1.5vw, 12px);
 }
 
-.statusDot { width: 8px; height: 8px; border-radius: 50%; }
-.statusWaiting { background: #f0ad4e; box-shadow: 0 0 6px rgba(240,173,78,0.6); animation: pulse 1.5s infinite; }
-.statusPlaying { background: #5cb85c; box-shadow: 0 0 6px rgba(92,184,92,0.4); }
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.statusWaiting {
+  background: #f0ad4e;
+  box-shadow: 0 0 6px rgba(240, 173, 78, 0.6);
+  animation: pulse 1.5s infinite;
+}
+.statusPlaying {
+  background: #5cb85c;
+  box-shadow: 0 0 6px rgba(92, 184, 92, 0.4);
+}
 
-@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
 
 .statusText {
   font-size: clamp(12px, 1.4vw, 13px);
@@ -207,7 +241,7 @@
   flex: 1;
   padding: clamp(8px, 1.5vw, 10px);
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--gold), #b8860b);
+  background: var(--gold);
   color: #000;
   font-weight: 700;
   font-size: clamp(12px, 1.4vw, 13px);
@@ -216,7 +250,9 @@
   transition: opacity 0.2s;
   min-height: 44px;
 }
-.returnButton:hover { opacity: 0.9; }
+.returnButton:hover {
+  opacity: 0.9;
+}
 
 .cancelButton {
   padding: clamp(8px, 1.5vw, 10px) clamp(10px, 1.5vw, 14px);
@@ -230,4 +266,6 @@
   transition: all 0.2s;
   min-height: 44px;
 }
-.cancelButton:hover { background: rgba(255, 107, 107, 0.2); }
+.cancelButton:hover {
+  background: rgba(255, 107, 107, 0.2);
+}

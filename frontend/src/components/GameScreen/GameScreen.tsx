@@ -40,15 +40,15 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   return (
     <div className={styles.container}>
       {reconnected && (
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-green-600 text-white px-4 py-1 rounded-full text-sm font-semibold shadow-lg">
+        <div className={styles.reconnected}>
           Reconnected
         </div>
       )}
       {!opponentConnected && !reconnected && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="bg-black/85 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-gold/30 text-center">
-            <div className="text-yellow-400 text-lg font-bold mb-2">Opponent Disconnected</div>
-            <div className="text-white/60 text-sm">Waiting for opponent to reconnect...</div>
+        <div className={styles.overlayDark}>
+          <div className={styles.overlayCard}>
+            <div className={styles.warningText}>Opponent Disconnected</div>
+            <div className={styles.waitingText}>Waiting for opponent to reconnect...</div>
           </div>
         </div>
       )}
@@ -65,13 +65,13 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
       {isOpeningRoll && (() => {
         const orr = openingRollResult;
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
-            <div className="bg-black/85 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-gold/30 min-w-64 text-center">
+          <div className={styles.overlayDim}>
+            <div className={styles.overlayCard}>
               {isMyTurnToRoll && !iRolled ? (
-                <RollPrompt onRoll={handleRoll} isOpening />
+                <RollPrompt onRoll={handleRoll} isOpening dark={playerColor === "black"} />
               ) : bothRolled && orr ? (
                 <>
-                  <div className="mb-3">
+                  <div style={{ marginBottom: "0.75rem" }}>
                     <DiceRow
                       dice={[]}
                       remaining={[]}
@@ -83,16 +83,16 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
                     />
                   </div>
                   {orr.winner === playerColor && (
-                    <div className="text-gold text-sm font-bold">You go first!</div>
+                    <div className={styles.winnerText}>You go first!</div>
                   )}
                   {orr.winner && orr.winner !== playerColor && (
-                    <div className="text-white/70 text-sm">Opponent goes first</div>
+                    <div className={styles.subText}>Opponent goes first</div>
                   )}
                 </>
               ) : (
                 <>
                   {iRolled && orr && (
-                    <div className="mb-3">
+                    <div style={{ marginBottom: "0.75rem" }}>
                       <DiceRow
                         dice={[]}
                         remaining={[]}
@@ -102,7 +102,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
                       />
                     </div>
                   )}
-                  <div className="text-white/40 text-sm">
+                  <div className={styles.mutedText}>
                     {iRolled ? "Waiting for opponent..." : "Roll to start"}
                   </div>
                 </>
@@ -113,9 +113,9 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
       })()}
 
       {needsToRoll && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs">
-          <div className="bg-black/85 backdrop-blur-md rounded-3xl p-8 shadow-2xl border border-gold/30">
-            <RollPrompt onRoll={handleRoll} />
+        <div className={styles.overlayDim}>
+          <div className={styles.overlayCard}>
+            <RollPrompt onRoll={handleRoll} dark={playerColor === "black"} />
           </div>
         </div>
       )}
