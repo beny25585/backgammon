@@ -189,10 +189,53 @@ daphne -b 0.0.0.0 -p 8000 backgammon_project.asgi:application  # ASGI server
 
 - PostgreSQL instead of SQLite
 - Redis for channel layers (`channels_redis`)
-- Daphne / uvicorn behind nginx/Caddy
-- HTTPS/WSS via reverse proxy
-- `VITE_SERVER_URL=wss://yourdomain.com`
+- Daphne behind nginx
+- HTTPS/WSS via Certbot + nginx
 - `DEBUG=False`, secure `SECRET_KEY`
+
+### Nginx Config (served under `/backgammon/`)
+
+```nginx
+location /backgammon/api/ {
+    proxy_pass http://127.0.0.1:8005/api/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /backgammon/ws/ {
+    proxy_pass http://127.0.0.1:8005/ws/;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location /backgammon/ {
+    alias /home/dev/backgammon/frontend/dist/;
+    index index.html;
+    try_files $uri $uri/ /backgammon/index.html;
+}
+
+location /backgammon/static/ {
+    alias /home/dev/backgammon/backend/staticfiles/;
+}
+```
+
+### Deployment Checklist
+
+| Step | Details |
+|------|---------|
+| 1. `.env` | `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `DATABASE_URL` |
+| 2. Database | PostgreSQL — `pip install psycopg2-binary dj-database-url` |
+| 3. Redis | `sudo apt install redis-server` |
+| 4. Frontend | `VITE_SERVER_URL=/backgammon`, `base: '/backgammon/'` in `vite.config.ts`, `BrowserRouter basename="/backgammon"` |
+| 5. ASGI | Daphne systemd service with `DJANGO_SETTINGS_MODULE` + `Environment=` |
+| 6. Logging | Django log config → `/var/log/backgammon/django.log` → Alloy → Loki → Grafana |
 
 ---
 
