@@ -1,5 +1,6 @@
 import json
 import uuid
+import logging
 import traceback
 from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
@@ -7,6 +8,8 @@ from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState
+
+logger = logging.getLogger(__name__)
 
 
 @database_sync_to_async
@@ -79,9 +82,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             game_state = await get_game_state(room)
             state_data = game_state.state_data or {}
             username = await get_username(self.user_id)
-            print(f"[WS] {self.player_color} ({username}) connected, state keys={list(state_data.keys())}, phase={state_data.get('phase')}, turn={state_data.get('turn')}")
+            logger.info(f"WebSocket connected: {self.player_color} ({username}) room={self.room_id} phase={state_data.get('phase')}")
             if not state_data:
-                print(f"[WS] WARNING: empty state_data for room {self.room_id}")
+                logger.warning(f"Empty state_data for room {self.room_id}")
         except Exception as e:
             traceback.print_exc()
             await self.close()

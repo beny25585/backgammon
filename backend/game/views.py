@@ -1,6 +1,9 @@
 import uuid
+import logging
 
 from django.contrib.auth.models import User
+
+logger = logging.getLogger(__name__)
 from django.db import models as db_models
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -21,11 +24,31 @@ def health(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+def client_log(request):
+    data = request.data
+    level = data.get('level', 'info')
+    msg = data.get('message', '')
+    meta = data.get('meta', {})
+    log_line = f"[CLIENT] {msg} | meta={meta}"
+    if level == 'error':
+        logger.error(log_line)
+    elif level == 'warn':
+        logger.warning(log_line)
+    else:
+        logger.info(log_line)
+    return Response({'status': 'ok'})
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def register(request):
+    logger.info(f"Register attempt: username={request.data.get('username')}")
     serializer = RegisterSerializer(data=request.data)
     if not serializer.is_valid():
+        logger.warning(f"Register validation failed: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     user = serializer.save()
+    logger.info(f"User registered: {user.username} (id={user.id})")
     refresh = RefreshToken.for_user(user)
     return Response({
         'user': UserSerializer(user).data,
@@ -37,11 +60,13 @@ def register(request):
 @api_view(['POST'])
 def create_room(request):
     user = request.user
+    logger.info(f"Create room attempt: user={user.username}")
     active_rooms = GameRoom.objects.filter(
         db_models.Q(white_player=user) | db_models.Q(black_player=user),
         status__in=['waiting', 'playing']
     )
     if active_rooms.exists():
+        logger.warning(f"User already in a room: user={user.username}")
         return Response({'error': 'Already in a room'}, status=status.HTTP_400_BAD_REQUEST)
 
     target = request.data.get('targetPoints', 7)
@@ -57,6 +82,7 @@ def create_room(request):
     room.state = initial
     room.save()
     GameState.objects.create(room=room, state_data=initial)
+    logger.info(f"Room created: code={room.code} by user={user.username}")
 
     return Response({
         'id': str(room.id),
@@ -72,17 +98,22 @@ def create_room(request):
 def join_room(request):
     code = request.data.get('code', '').upper().strip()
     user = request.user
+    logger.info(f"Join room attempt: code={code} user={user.username}")
     try:
         room = GameRoom.objects.get(code=code, status='waiting')
     except GameRoom.DoesNotExist:
+        logger.warning(f"Room not found: code={code}")
         return Response({'error': 'Room not found or already full'}, status=status.HTTP_404_NOT_FOUND)
     if room.black_player is not None:
+        logger.warning(f"Room full: code={code}")
         return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
     if room.white_player == user:
+        logger.warning(f"User already in room: user={user.username} code={code}")
         return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
     room.black_player = user
     room.status = 'playing'
     room.save()
+    logger.info(f"User joined room: user={user.username} code={code}")
     return Response({
         'id': str(room.id),
         'code': room.code,

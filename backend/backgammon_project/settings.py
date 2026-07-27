@@ -100,3 +100,38 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': '/var/log/backgammon/django.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'game': {
+            'handlers': ['file', 'console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}
