@@ -20,8 +20,11 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   return res.json();
 }
 
-export async function createRoom() {
-  return apiFetch("/api/rooms/", { method: "POST" });
+export async function createRoom(settings?: { targetPoints?: number; preferredColor?: string }) {
+  return apiFetch("/api/rooms/", {
+    method: "POST",
+    body: settings ? JSON.stringify(settings) : undefined,
+  });
 }
 
 export async function joinRoom(code: string) {
@@ -37,4 +40,23 @@ export async function getRoomDetail(code: string) {
 
 export async function cancelRoom() {
   return apiFetch("/api/rooms/cancel/", { method: "POST" });
+}
+
+export async function saveMatch(matchData: Record<string, unknown>) {
+  return apiFetch("/api/matches/", {
+    method: "POST",
+    body: JSON.stringify(matchData),
+  });
+}
+
+export async function listMatches(page = 1) {
+  return apiFetch(`/api/matches/list/?page=${page}`);
+}
+
+export async function getMatchDetail(id: string) {
+  return apiFetch(`/api/matches/${id}/`);
+}
+
+export async function getStats() {
+  return apiFetch("/api/stats/");
 }

@@ -1,0 +1,84 @@
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.backBtn {
+  background: none;
+  border: 1px solid rgba(201, 169, 97, 0.3);
+  color: #c9a961;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+.backBtn:hover {
+  background: rgba(201, 169, 97, 0.1);
+}
+
+.title {
+  color: #c9a961;
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.subtitle {
+  color: #c9a961;
+  font-size: 1.125rem;
+  margin: 1.5rem 0 1rem;
+}
+
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60dvh;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.header {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(201, 169, 97, 0.2);
+  border-radius: 12px;
+  padding: 1rem 1.5rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.date {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.8rem;
+}
+
+.gameCard {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(201, 169, 97, 0.15);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.gameInfo {
+  display: flex;
+  gap: 1rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.replayBtn {
+  background: rgba(201, 169, 97, 0.1);
+  border: 1px solid rgba(201, 169, 97, 0.3);
+  color: #c9a961;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.replayBtn:hover {
+  background: rgba(201, 169, 97, 0.2);
+}

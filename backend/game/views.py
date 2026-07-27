@@ -11,9 +11,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from django.db.models import Q
+
 from .engine import BackgammonEngine
-from .models import GameRoom, GameState
-from .serializers import RegisterSerializer, UserSerializer
+from .models import GameRoom, GameState, Match
+from .serializers import RegisterSerializer, UserSerializer, MatchSerializer
 
 
 @api_view(['GET'])
@@ -50,6 +52,7 @@ def register(request):
     user = serializer.save()
     logger.info(f"User registered: {user.username} (id={user.id})")
     refresh = RefreshToken.for_user(user)
+    refresh['username'] = user.username
     return Response({
         'user': UserSerializer(user).data,
         'access': str(refresh.access_token),
@@ -70,14 +73,21 @@ def create_room(request):
         return Response({'error': 'Already in a room'}, status=status.HTTP_400_BAD_REQUEST)
 
     target = request.data.get('targetPoints', 7)
-    room = GameRoom.objects.create(
-        white_player=user,
-        code=uuid.uuid4().hex[:6].upper(),
-        status='waiting',
-        target_points=target,
-        white_score=0,
-        black_score=0,
-    )
+    preferred_color = request.data.get('preferredColor', 'white')
+
+    room_kwargs = {
+        'code': uuid.uuid4().hex[:6].upper(),
+        'status': 'waiting',
+        'target_points': target,
+        'white_score': 0,
+        'black_score': 0,
+    }
+    if preferred_color == 'black':
+        room_kwargs['black_player'] = user
+    else:
+        room_kwargs['white_player'] = user
+
+    room = GameRoom.objects.create(**room_kwargs)
     initial = BackgammonEngine.get_initial_state()
     room.state = initial
     room.save()
@@ -89,8 +99,8 @@ def create_room(request):
         'code': room.code,
         'status': room.status,
         'targetPoints': target,
-        'whitePlayer': UserSerializer(user).data,
-        'blackPlayer': None,
+        'whitePlayer': UserSerializer(room.white_player).data if room.white_player else None,
+        'blackPlayer': UserSerializer(room.black_player).data if room.black_player else None,
     }, status=status.HTTP_201_CREATED)
 
 
@@ -154,3 +164,115 @@ def cancel_room(request):
     room.status = 'cancelled'
     room.save()
     return Response({'status': 'cancelled', 'roomId': str(room.id)})
+
+
+@api_view(['POST'])
+def save_match(request):
+    user = request.user
+    data = request.data
+    match = Match.objects.create(
+        white_player_id=data.get('white_player_id'),
+        black_player_id=data.get('black_player_id'),
+        match_type=data.get('match_type', 'online'),
+        target_points=data.get('target_points', 7),
+        white_score=data.get('white_score', 0),
+        black_score=data.get('black_score', 0),
+        winner=data.get('winner'),
+        games=data.get('games', []),
+        duration_seconds=data.get('duration_seconds'),
+    )
+    return Response(MatchSerializer(match).data, status=201)
+
+
+@api_view(['GET'])
+def list_matches(request):
+    user = request.user
+    matches = Match.objects.filter(
+        Q(white_player=user) | Q(black_player=user)
+    ).order_by('-created_at')
+    page = int(request.GET.get('page', 1))
+    page_size = 20
+    start = (page - 1) * page_size
+    end = start + page_size
+    total = matches.count()
+    return Response({
+        'matches': MatchSerializer(matches[start:end], many=True).data,
+        'total': total,
+        'page': page,
+        'page_size': page_size,
+    })
+
+
+@api_view(['GET'])
+def match_detail(request, pk):
+    try:
+        match = Match.objects.get(id=pk)
+    except Match.DoesNotExist:
+        return Response({'error': 'Match not found'}, status=404)
+    return Response(MatchSerializer(match).data)
+
+
+@api_view(['GET'])
+def player_stats(request):
+    user = request.user
+    matches = Match.objects.filter(Q(white_player=user) | Q(black_player=user))
+    total_matches = matches.count()
+    if total_matches == 0:
+        return Response({
+            'total_matches': 0, 'matches_won': 0, 'match_win_rate': 0,
+            'total_games': 0, 'games_won': 0, 'game_win_rate': 0,
+            'single_wins': 0, 'gammon_wins': 0, 'backgammon_wins': 0,
+            'current_streak': 0, 'longest_streak': 0,
+        })
+
+    matches_won = 0
+    total_games = 0
+    games_won = 0
+    single_wins = 0
+    gammon_wins = 0
+    backgammon_wins = 0
+    recent_results = []
+
+    for m in matches.order_by('-created_at'):
+        user_color = 'white' if m.white_player == user else 'black'
+        if m.winner == user_color:
+            matches_won += 1
+            recent_results.append('W')
+        elif m.winner:
+            recent_results.append('L')
+
+        for game in m.games:
+            total_games += 1
+            if game.get('winner') == user_color:
+                games_won += 1
+                wt = game.get('win_type', 'single')
+                if wt == 'single': single_wins += 1
+                elif wt == 'gammon': gammon_wins += 1
+                elif wt == 'backgammon': backgammon_wins += 1
+
+    current_streak = 0
+    longest_streak = 0
+    streak = 0
+    for r in recent_results:
+        if r == 'W':
+            streak += 1
+            longest_streak = max(longest_streak, streak)
+        else:
+            streak = 0
+    current_streak = streak if recent_results and recent_results[0] == 'W' else 0
+    if recent_results and recent_results[0] == 'W':
+        current_streak = streak
+
+    return Response({
+        'total_matches': total_matches,
+        'matches_won': matches_won,
+        'match_win_rate': round(matches_won / total_matches, 3) if total_matches > 0 else 0,
+        'total_games': total_games,
+        'games_won': games_won,
+        'game_win_rate': round(games_won / total_games, 3) if total_games > 0 else 0,
+        'single_wins': single_wins,
+        'gammon_wins': gammon_wins,
+        'backgammon_wins': backgammon_wins,
+        'current_streak': current_streak,
+        'longest_streak': longest_streak,
+    })

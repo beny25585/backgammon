@@ -10,9 +10,10 @@ export default function WaitingRoom() {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const state = location.state as { roomCode?: string; playerColor?: Color } | null;
+  const state = location.state as { roomCode?: string; playerColor?: Color; targetPoints?: number } | null;
   const roomCode = state?.roomCode || "";
   const playerColor = state?.playerColor || "white";
+  const targetPoints = state?.targetPoints || 7;
 
   const [status, setStatus] = useState<"connecting" | "waiting" | "opponent_joined" | "error">("connecting");
   const [error, setError] = useState("");
@@ -124,6 +125,9 @@ export default function WaitingRoom() {
             <div className={styles.playerInfo}>
               You: {playerColor === "white" ? "White" : "Black"}
             </div>
+            <p className={styles.matchInfo}>
+              {targetPoints === 1 ? "Single Game" : `First to ${targetPoints} points`}
+            </p>
           </div>
         )}
 

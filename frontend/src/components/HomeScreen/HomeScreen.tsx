@@ -6,6 +6,8 @@ import { clearTokens, getAccessToken } from "../../services/auth";
 import { saveRoom, clearRoom, getRoom } from "../../services/roomStorage";
 import styles from "./HomeScreen.module.css";
 import MatchSettings from "../MatchSettings/MatchSettings";
+import { motion } from "motion/react";
+import AnimatedTabs from "@/components/animations/AnimatedTabs/AnimatedTabs";
 
 interface RoomResponse {
   id: string;
@@ -16,12 +18,25 @@ interface RoomResponse {
   blackPlayer: { id: number; username: string } | null;
 }
 
+const tabs = [
+  {
+    id: "create",
+    label: "Create New Room",
+  },
+  {
+    id: "join",
+    label: "Join Room",
+  },
+];
+
 export default function HomeScreen() {
   const navigate = useNavigate();
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState<"create" | "bot" | null>(
+    null,
+  );
   const [mode, setMode] = useState<"create" | "join">("create");
   const [roomKey, setRoomKey] = useState(0);
   const [username] = useState(() => {
@@ -45,13 +60,32 @@ export default function HomeScreen() {
     setCode(filtered);
   }
 
-  async function handleCreate() {
+  async function handleCreate(settings: {
+    target: number;
+    preferredColor?: string;
+  }) {
     setError("");
     setLoading(true);
+    setShowSettings(null);
     try {
-      const room: RoomResponse = await createRoom();
-      saveRoom({ roomId: room.id, roomCode: room.code, playerColor: "white", status: "waiting" });
-      navigate(`/waiting/${room.id}`, { state: { roomCode: room.code, playerColor: "white" } });
+      const preferredColor = settings.preferredColor || "white";
+      const room: RoomResponse = await createRoom({
+        targetPoints: settings.target,
+        preferredColor,
+      });
+      saveRoom({
+        roomId: room.id,
+        roomCode: room.code,
+        playerColor: preferredColor as Color,
+        status: "waiting",
+      });
+      navigate(`/waiting/${room.id}`, {
+        state: {
+          roomCode: room.code,
+          playerColor: preferredColor,
+          targetPoints: settings.target,
+        },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create room");
     } finally {
@@ -65,8 +99,15 @@ export default function HomeScreen() {
     setLoading(true);
     try {
       const room: RoomResponse = await joinRoom(code);
-      saveRoom({ roomId: room.id, roomCode: code, playerColor: "black", status: "playing" });
-      navigate(`/game/${room.id}?color=black`, { state: { playerColor: "black" } });
+      saveRoom({
+        roomId: room.id,
+        roomCode: code,
+        playerColor: "black",
+        status: "playing",
+      });
+      navigate(`/game/${room.id}?color=black`, {
+        state: { playerColor: "black" },
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join room");
     } finally {
@@ -83,7 +124,7 @@ export default function HomeScreen() {
   function handleCancelRoom() {
     cancelRoom().catch(() => {});
     clearRoom();
-    setRoomKey(k => k + 1);
+    setRoomKey((k) => k + 1);
     setError("");
   }
 
@@ -91,7 +132,10 @@ export default function HomeScreen() {
     if (!activeRoom) return;
     if (activeRoom.status === "waiting") {
       navigate(`/waiting/${activeRoom.roomId}`, {
-        state: { roomCode: activeRoom.roomCode, playerColor: activeRoom.playerColor },
+        state: {
+          roomCode: activeRoom.roomCode,
+          playerColor: activeRoom.playerColor,
+        },
       });
     } else {
       navigate(`/game/${activeRoom.roomId}?color=${activeRoom.playerColor}`, {
@@ -113,27 +157,28 @@ export default function HomeScreen() {
           </div>
         </div>
 
-        <div className={styles.tabs}>
-          <button
-            onClick={() => setMode("create")}
-            className={`${styles.tab} ${mode != "create" ? styles.tabActive : ""}`}
-          >
-            Create New Room
-          </button>
-          <button
-            onClick={() => setMode("join")}
-            className={`${styles.tab} ${mode != "join" ? styles.tabActive : ""}`}
-          >
-            Join Room
-          </button>
-        </div>
+        <AnimatedTabs
+          tabs={tabs}
+          activeTab={mode}
+          onChange={(id) => setMode(id as "create" | "join")}
+        />
 
         {mode === "create" ? (
-          <button onClick={handleCreate} disabled={loading} className={styles.createButton}>
+          <button
+            onClick={() => setShowSettings("create")}
+            disabled={loading}
+            className={styles.createButton}
+          >
             {loading ? "Creating room..." : "Create New Room"}
           </button>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); handleJoin(); }} className={styles.joinForm}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleJoin();
+            }}
+            className={styles.joinForm}
+          >
             <input
               type="text"
               placeholder="Enter room code"
@@ -143,7 +188,11 @@ export default function HomeScreen() {
               maxLength={6}
               required
             />
-            <button type="submit" disabled={loading || code.length !== 6} className={styles.primaryButton}>
+            <button
+              type="submit"
+              disabled={loading || code.length !== 6}
+              className={styles.primaryButton}
+            >
               {loading ? "Joining..." : "Join Room"}
             </button>
           </form>
@@ -152,11 +201,20 @@ export default function HomeScreen() {
         {error && <p className={styles.error}>{error}</p>}
 
         <div className={styles.divider} />
-        <button onClick={() => setShowSettings(true)} className={styles.devButton}>
-          🤖 Play vs AI
+        <button
+          onClick={() => setShowSettings("bot")}
+          className={styles.devButton}
+        >
+          Play vs AI
         </button>
         <button onClick={() => navigate("/local")} className={styles.devButton}>
-          🎲 Local Game (dev)
+          Local Game (dev)
+        </button>
+        <button
+          onClick={() => navigate("/history")}
+          className={styles.devButton}
+        >
+          Match History
         </button>
 
         {activeRoom && (
@@ -165,18 +223,32 @@ export default function HomeScreen() {
             <div className={styles.activeRoom}>
               <div className={styles.activeRoomHeader}>Active Game</div>
               <div className={styles.activeRoomBody}>
-                <div className={styles.activeRoomCode}>{activeRoom.roomCode || "—"}</div>
+                <div className={styles.activeRoomCode}>
+                  {activeRoom.roomCode || "—"}
+                </div>
                 <div className={styles.activeStatusRow}>
-                  <span className={`${styles.statusDot} ${activeRoom.status === "waiting" ? styles.statusWaiting : styles.statusPlaying}`} />
+                  <span
+                    className={`${styles.statusDot} ${activeRoom.status === "waiting" ? styles.statusWaiting : styles.statusPlaying}`}
+                  />
                   <span className={styles.statusText}>
-                    {activeRoom.status === "waiting" ? "Waiting for opponent..." : "Game in progress"}
+                    {activeRoom.status === "waiting"
+                      ? "Waiting for opponent..."
+                      : "Game in progress"}
                   </span>
                 </div>
                 <div className={styles.activeRoomActions}>
-                  <button onClick={handleRejoin} className={styles.returnButton}>
-                    {activeRoom.status === "waiting" ? "Waiting Room" : "Return to Game"}
+                  <button
+                    onClick={handleRejoin}
+                    className={styles.returnButton}
+                  >
+                    {activeRoom.status === "waiting"
+                      ? "Waiting Room"
+                      : "Return to Game"}
                   </button>
-                  <button onClick={handleCancelRoom} className={styles.cancelButton}>
+                  <button
+                    onClick={handleCancelRoom}
+                    className={styles.cancelButton}
+                  >
                     Cancel
                   </button>
                 </div>
@@ -186,13 +258,22 @@ export default function HomeScreen() {
         )}
       </div>
 
-      {showSettings && (
+      {showSettings === "bot" && (
         <MatchSettings
+          mode="bot"
           onStart={({ botColor, target }) => {
-            setShowSettings(false);
+            setShowSettings(null);
             navigate(`/local?bot=${botColor}&target=${target}`);
           }}
-          onCancel={() => setShowSettings(false)}
+          onCancel={() => setShowSettings(null)}
+        />
+      )}
+
+      {showSettings === "create" && (
+        <MatchSettings
+          mode="online"
+          onStart={(settings) => handleCreate(settings)}
+          onCancel={() => setShowSettings(null)}
         />
       )}
     </div>

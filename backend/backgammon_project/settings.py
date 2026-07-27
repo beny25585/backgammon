@@ -101,6 +101,7 @@ from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'TOKEN_OBTAIN_SERIALIZER': 'game.token_serializer.CustomTokenObtainPairSerializer',
 }
 
 LOGGING = {
@@ -116,7 +117,7 @@ LOGGING = {
         'file': {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
-            'filename': '/var/log/backgammon/django.log',
+            'filename': BASE_DIR / 'django.log',
             'formatter': 'verbose',
         },
         'console': {

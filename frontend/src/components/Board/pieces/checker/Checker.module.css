@@ -1,29 +1,51 @@
 .checker {
   border-radius: 9999px;
+
   display: flex;
   align-items: center;
   justify-content: center;
+
   font-size: 0.75rem;
   font-weight: 700;
+
   flex-shrink: 0;
+
   width: var(--checker);
   height: var(--checker);
 }
 
 .white {
-  background: radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 55%, #b89660 100%);
+  background: radial-gradient(
+    circle at 30% 25%,
+    #ffffff,
+    #f4e4c1 55%,
+    #b89660 100%
+  );
+
   box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.55), inset 0 -3px 4px rgba(0, 0, 0, 0.35),
+    0 3px 6px rgba(0, 0, 0, 0.55),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.35),
     inset 0 2px 2px rgba(255, 255, 255, 0.15);
+
   color: #3d2817;
+
   border: 1px solid #c9a961;
 }
 
 .black {
-  background: radial-gradient(circle at 30% 25%, #6a4830, #2a1810 55%, #0a0402 100%);
+  background: radial-gradient(
+    circle at 30% 25%,
+    #6a4830,
+    #2a1810 55%,
+    #0a0402 100%
+  );
+
   box-shadow:
-    0 3px 6px rgba(0, 0, 0, 0.55), inset 0 -3px 4px rgba(0, 0, 0, 0.35),
+    0 3px 6px rgba(0, 0, 0, 0.55),
+    inset 0 -3px 4px rgba(0, 0, 0, 0.35),
     inset 0 2px 2px rgba(255, 255, 255, 0.15);
+
   color: #f4e4c1;
+
   border: 1px solid #000;
 }

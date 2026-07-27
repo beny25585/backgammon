@@ -8,7 +8,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const srcRoot = path.resolve(__dirname, "./src");
 
 export default defineConfig({
-  base: '/backgammon/',
+  base: "/backgammon/",
   plugins: [tailwindcss(), react()],
   resolve: {
     alias: {
@@ -37,6 +37,9 @@ export default defineConfig({
         ws: true,
         rewrite: (path) => path.replace(/^\/backgammon/, ""),
       },
+    },
+    watch: {
+      usePolling: true,
     },
   },
   build: {

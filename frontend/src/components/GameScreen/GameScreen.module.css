@@ -27,6 +27,16 @@
   container-type: inline-size;
 }
 
+/* === Landscape mobile: scale down board + sidepanel === */
+@media (max-width: 900px) and (orientation: landscape) {
+  .gameFrame {
+    width: 100vw;
+    height: 100vh;
+    transform: scale(0.75);
+    transform-origin: center center;
+  }
+}
+
 /* === Mobile portrait: stack side panel below board === */
 @media (width < 800px) {
   .container {

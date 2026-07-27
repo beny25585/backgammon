@@ -31,3 +31,20 @@ class GameState(models.Model):
 
     def __str__(self):
         return f"GameState for {self.room.code}"
+
+
+class Match(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    duration_seconds = models.IntegerField(null=True, blank=True)
+    white_player = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='match_wins_white')
+    black_player = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='match_wins_black')
+    match_type = models.CharField(max_length=10, default='online')
+    target_points = models.IntegerField(default=7)
+    white_score = models.IntegerField(default=0)
+    black_score = models.IntegerField(default=0)
+    winner = models.CharField(max_length=5, null=True, blank=True)
+    games = models.JSONField(default=list)
+
+    def __str__(self):
+        return f"Match {self.id} ({self.white_score}-{self.black_score})"

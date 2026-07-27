@@ -4,12 +4,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #021953;
+  background-color: var(--color-background);
   padding: clamp(8px, 2vw, 16px);
 }
 
 .card {
   background: var(--font-mono);
+  background-color: var(--color-background-blue);
   border: 1px solid rgba(var(--gold), 0.3);
   border-radius: clamp(12px, 2vw, 16px);
   padding: clamp(20px, 3vw, 32px);
@@ -46,50 +47,28 @@
 
 .logout {
   font-size: clamp(11px, 1.4vw, 12px);
-  color: var(--color-error);
-  background: none;
-  border: none;
-  cursor: pointer;
-  min-height: 44px;
-}
-.logout:hover {
-  color: var(--color-error-hover);
-}
-
-.tabs {
-  display: flex;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 8px;
-  padding: 4px;
-  margin-bottom: clamp(16px, 2.5vw, 24px);
-}
-
-.tab {
-  flex: 1;
   padding: clamp(8px, 1.5vw, 10px);
   border-radius: 6px;
   font-size: clamp(12px, 1.5vw, 14px);
   font-weight: 500;
   border: none;
   cursor: pointer;
-  background: var(--color-gold);
-  color: black;
+  background: var(--color-error);
+  color: var(--color-text);
   transition: all 0.2s;
   min-height: 44px;
 }
-
-.tabActive {
-  background: var(--gold);
-  color: #000;
+.logout:hover {
+  color: var(--color-error-hover);
 }
 
 .createButton {
   width: 100%;
   padding: clamp(12px, 2vw, 14px);
   border-radius: 8px;
-  border: 1px solid var(--gold);
-  background-color: #f0ad4e;
-  color: #000;
+  border: 1px solid var(--color-gold);
+  background-color: var(--color-success);
+  color: var(--color-text-black);
   font-weight: 700;
   font-size: clamp(13px, 1.6vw, 15px);
   border: none;
@@ -115,9 +94,9 @@
   width: 100%;
   padding: clamp(10px, 2vw, 14px);
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.4);
+  background-color: var(--color-background);
   border: 1px solid rgba(201, 169, 97, 0.2);
-  color: #fff;
+  color: var(--color-text);
   font-size: clamp(18px, 5vw, 24px);
   text-align: center;
   letter-spacing: clamp(4px, 1vw, 8px);
@@ -126,12 +105,22 @@
   text-transform: uppercase;
 }
 .codeInput:focus {
-  border-color: var(--gold);
+  border-color: var(--color-gold);
 }
 .codeInput::placeholder {
   font-size: clamp(12px, 2vw, 14px);
   letter-spacing: 1px;
   color: rgba(201, 169, 97, 0.3);
+}
+.primaryButton {
+  background-color: var(--color-success);
+  color: var(--color-text);
+  border: 1px solid var(--color-gold);
+  border-radius: 8px;
+  font-size: clamp(12px, 1.5vw, 14px);
+  font-weight: 500;
+  cursor: pointer;
+  padding: clamp(12px, 2vw, 14px);
 }
 
 .error {

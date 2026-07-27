@@ -1,0 +1,48 @@
+.tabs {
+  position: relative;
+
+  display: flex;
+  gap: 4px;
+
+  width: 100%;
+
+  background-color: var(--color-background);
+  border-radius: 8px;
+  padding: 4px;
+
+  overflow: hidden;
+}
+
+.tab {
+  position: relative;
+  z-index: 1;
+
+  flex: 1;
+
+  min-height: 44px;
+
+  border: none;
+  background: transparent;
+
+  border-radius: 6px;
+
+  cursor: pointer;
+
+  color: var(--color-text);
+}
+
+.activeTab {
+  position: absolute;
+
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+
+  width: calc((100% - 12px) / var(--tabs-count));
+
+  background-color: var(--color-gold);
+
+  border-radius: 6px;
+
+  z-index: 0;
+}

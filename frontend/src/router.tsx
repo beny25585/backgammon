@@ -7,6 +7,8 @@ import AuthScreen from "./components/AuthScreen";
 import HomeScreen from "./components/HomeScreen";
 import WaitingRoom from "./components/WaitingRoom";
 import GameScreen from "./components/GameScreen";
+import MatchDetail from "./components/MatchDetail";
+import MatchHistory from "./components/MatchHistory";
 import { GameProvider } from "./services/gameContext";
 import { LocalGameProvider } from "./services/localGameContext";
 import type { Color } from "./types/game";
@@ -64,6 +66,8 @@ export default function Router() {
       <Route path="/waiting/:roomId" element={<RequireAuth><WaitingRoom /></RequireAuth>} />
       <Route path="/game/:roomId" element={<RequireAuth><GameRoute /></RequireAuth>} />
       <Route path="/local" element={<LocalRoute />} />
+      <Route path="/history" element={<RequireAuth><MatchHistory /></RequireAuth>} />
+      <Route path="/history/:id" element={<RequireAuth><MatchDetail /></RequireAuth>} />
       <Route path="*" element={<Navigate to={getAccessToken() ? "/home" : "/"} replace />} />
     </Routes>
   );

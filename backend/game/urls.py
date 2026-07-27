@@ -11,4 +11,8 @@ urlpatterns = [
     path('rooms/join/', views.join_room, name='join_room'),
     path('rooms/cancel/', views.cancel_room, name='cancel_room'),
     path('rooms/<str:code>/', views.room_detail, name='room_detail'),
+    path('matches/', views.save_match, name='save_match'),
+    path('matches/list/', views.list_matches, name='list_matches'),
+    path('matches/<uuid:pk>/', views.match_detail, name='match_detail'),
+    path('stats/', views.player_stats, name='player_stats'),
 ]

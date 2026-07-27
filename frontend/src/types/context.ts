@@ -32,4 +32,6 @@ export interface GameContextType {
   respondToDouble: (accept: boolean) => void;
   endTurn: () => void;
   undoMove: () => void;
+  giveUp: () => void;
+  noMovesMessage: { dice: number[] } | null;
 }

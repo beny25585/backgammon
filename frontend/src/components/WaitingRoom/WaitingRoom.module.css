@@ -130,6 +130,13 @@
   font-size: clamp(12px, 1.4vw, 13px);
   color: rgba(255, 255, 255, 0.5);
 }
+
+.matchInfo {
+  font-size: clamp(11px, 1.3vw, 12px);
+  color: rgba(201, 169, 97, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
 .playerName {
   color: #c9a961;
   font-weight: 600;

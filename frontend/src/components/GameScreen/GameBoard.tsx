@@ -1,9 +1,7 @@
 import { useState, useMemo } from "react";
 import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
-import OpponentBar from "../OpponentBar";
-import Controls from "../Controls";
-import TurnIndicator from "../TurnIndicator";
+import SidePanel from "../SidePanel";
 import { DiceRow } from "../Dice";
 import { allLegalMoves, legalMovesFrom, BAR, OFF, type Source, type Target } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
@@ -43,11 +41,6 @@ export default function GameBoard({
     return Array.from(unique);
   }, [state, selected, playerColor]);
 
-  const opponentColor = useMemo(
-    () => (playerColor === "white" ? "black" : "white"),
-    [playerColor],
-  );
-
   function handleSelect(from: Source | null) {
     setSelected(from);
   }
@@ -78,16 +71,11 @@ export default function GameBoard({
           </div>
         )}
       </div>
-      <div className={styles.sidePanel}>
-        <OpponentBar color={opponentColor} state={state} />
-        <TurnIndicator currentTurn={state.turn} playerColor={playerColor} />
-        <Controls playerColor={playerColor} state={state} />
-        {onLeave && (
-          <button onClick={onLeave} className={styles.leaveButton}>
-            Leave
-          </button>
-        )}
-      </div>
+      <SidePanel
+        state={state}
+        playerColor={playerColor}
+        onLeave={onLeave}
+      />
     </div>
   );
 }

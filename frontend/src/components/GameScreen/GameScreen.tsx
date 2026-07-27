@@ -9,7 +9,7 @@ interface GameScreenProps {
 }
 
 export default function GameScreen({ onLeave }: GameScreenProps) {
-  const { state, playerColor, isLoading, error, makeMove, rollDice, openingRollResult, setOpeningRollResult, reconnected, opponentConnected, undoMove, endTurn } = useGame();
+  const { state, playerColor, isLoading, error, makeMove, rollDice, openingRollResult, setOpeningRollResult, reconnected, opponentConnected, undoMove, endTurn, noMovesMessage } = useGame();
 
   const handleRoll = useCallback(() => {
     rollDice();
@@ -116,6 +116,17 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
         <div className={styles.overlayDim}>
           <div className={styles.overlayCard}>
             <RollPrompt onRoll={handleRoll} dark={playerColor === "black"} />
+          </div>
+        </div>
+      )}
+
+      {noMovesMessage && (
+        <div className={styles.overlayDim}>
+          <div className={styles.overlayCard}>
+            <div style={{ marginBottom: "0.75rem" }}>
+              <DiceRow dice={noMovesMessage.dice} remaining={[]} color={playerColor} />
+            </div>
+            <div className={styles.mutedText}>No moves available</div>
           </div>
         </div>
       )}

@@ -1,59 +1,147 @@
 .cell {
   position: relative;
+
   display: flex;
   flex-direction: column;
   align-items: center;
+
   overflow: hidden;
+
   height: var(--point-h);
 }
 
+.point {
+  position: relative;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  overflow: hidden;
+
+  width: 100%;
+  height: 100%;
+
+  border: none;
+  background: transparent;
+
+  cursor: pointer;
+
+  outline: none;
+}
+
+.point:focus {
+  outline: none;
+}
+
+.background {
+  position: absolute;
+  inset: 0;
+}
+
+.highlight {
+  position: absolute;
+  inset: 0;
+
+  pointer-events: none;
+}
+
+/* Triangle colors */
+
 .triangleLightTop {
   background: linear-gradient(180deg, #e8bf87 0%, #b98548 100%);
+
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 .triangleDarkTop {
   background: linear-gradient(180deg, #4a2f1a 0%, #1a0e06 100%);
+
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 .triangleLightBottom {
   background: linear-gradient(0deg, #e8bf87 0%, #b98548 100%);
+
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 
 .triangleDarkBottom {
   background: linear-gradient(0deg, #4a2f1a 0%, #1a0e06 100%);
+
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 
+/* Glow */
+
 .glowLegal {
-  background: radial-gradient(circle at 50% 50%, rgba(232, 191, 135, 0.55), transparent 70%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(232, 191, 135, 0.55),
+    transparent 70%
+  );
 }
 
 .glowSelected {
-  background: radial-gradient(circle at 50% 50%, rgba(232, 191, 135, 0.75), transparent 70%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(232, 191, 135, 0.75),
+    transparent 70%
+  );
 }
 
 .glowFrom {
-  background: radial-gradient(circle at 50% 50%, rgba(232, 191, 135, 0.2), transparent 70%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(232, 191, 135, 0.2),
+    transparent 70%
+  );
 }
+
+/* Checkers */
 
 .checkersTop {
   position: relative;
+
   display: flex;
   flex-direction: column;
   align-items: center;
+
   gap: 2px;
+
   padding: 0.5rem 0;
 }
 
 .checkersBottom {
   position: absolute;
+
   bottom: 0;
+
   display: flex;
   flex-direction: column-reverse;
   align-items: center;
+
   gap: 2px;
+
   padding: 0.5rem 0;
+}
+
+/* Animation */
+
+@keyframes pulseGlow {
+  0% {
+    opacity: 0.6;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 0.6;
+  }
+}
+
+.pulse {
+  animation: pulseGlow 1.5s infinite;
 }

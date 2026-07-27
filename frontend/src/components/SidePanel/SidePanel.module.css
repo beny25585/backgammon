@@ -1,0 +1,99 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.6);
+  border-left: 1px solid rgba(201, 169, 97, 0.2);
+  gap: clamp(6px, 1vw, 12px);
+  padding: clamp(8px, 1.5vw, 16px);
+  overflow-y: auto;
+}
+
+.matchInfo {
+  width: 100%;
+}
+
+.section {
+  width: 100%;
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 0.6vw, 8px);
+  margin-top: auto;
+  padding-top: clamp(8px, 1.2vw, 12px);
+  border-top: 1px solid rgba(201, 169, 97, 0.15);
+}
+
+.resignBtn {
+  padding: clamp(6px, 1vw, 10px);
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.15);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: #ff6b6b;
+  font-size: clamp(11px, 1.4vw, 14px);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 44px;
+  text-align: center;
+}
+.resignBtn:hover {
+  background: rgba(255, 107, 107, 0.3);
+}
+
+.resignConfirm {
+  display: flex;
+  align-items: center;
+  gap: clamp(4px, 0.6vw, 8px);
+  padding: clamp(6px, 1vw, 10px);
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.3);
+}
+
+.resignText {
+  flex: 1;
+  font-size: clamp(11px, 1.4vw, 14px);
+  color: #ff6b6b;
+  font-weight: 600;
+  text-align: center;
+}
+
+.confirmYes {
+  padding: clamp(4px, 0.6vw, 6px) clamp(10px, 1.5vw, 16px);
+  border-radius: 4px;
+  background: #ff6b6b;
+  border: none;
+  color: #fff;
+  font-size: clamp(11px, 1.3vw, 13px);
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.confirmNo {
+  padding: clamp(4px, 0.6vw, 6px) clamp(10px, 1.5vw, 16px);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: clamp(11px, 1.3vw, 13px);
+  cursor: pointer;
+  min-height: 32px;
+}
+
+.leaveBtn {
+  padding: clamp(6px, 1vw, 10px);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: clamp(11px, 1.4vw, 14px);
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 44px;
+  text-align: center;
+}
+.leaveBtn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}

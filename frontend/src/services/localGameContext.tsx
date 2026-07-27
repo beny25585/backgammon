@@ -1,6 +1,7 @@
 import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
 import type { GameContextType, OpeningRollResult } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
+import { saveMatch } from "../services/api";
 import {
   newGame,
   applyMove,
@@ -17,6 +18,28 @@ import { chooseMove } from "@/lib/bot/chooseMove";
 import { GameContext } from "./gameContext";
 import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
 
+function extractTranscript(state: GameState) {
+  const history = state.moveHistory;
+  if (!history || history.length === 0) return [];
+  const turns: Array<{ turn: string; roll: number[]; moves: Array<{ from: unknown; to: unknown }> }> = [];
+  let current: (typeof turns)[0] | null = null;
+  for (let i = 0; i < history.length; i++) {
+    const entry = history[i];
+    const turnColor = entry.turn;
+    if (!current || current.turn !== turnColor) {
+      if (current) turns.push(current);
+      current = { turn: String(turnColor), roll: [...entry.dice], moves: [] };
+    }
+    const nextEntry = i + 1 < history.length ? history[i + 1] : state;
+    if (nextEntry.lastMove && nextEntry.lastMove.length > 0) {
+      const m = nextEntry.lastMove[nextEntry.lastMove.length - 1];
+      current.moves.push({ from: m.from, to: m.to });
+    }
+  }
+  if (current) turns.push(current);
+  return turns;
+}
+
 interface LocalGameProviderProps {
   children: ReactNode;
   botColor?: Color;
@@ -32,6 +55,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
   const [isLoading] = useState(false);
   const [error] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
+  const [noMovesMessage, setNoMovesMessage] = useState<{ dice: number[] } | null>(null);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
@@ -92,6 +116,27 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
     };
   }, [gameResult, matchWinner]);
+
+  // Auto-save match on completion (local/AI mode only — online mode saves server-side)
+  useEffect(() => {
+    if (!matchWinner) return;
+    saveMatch({
+      white_player_id: null,
+      black_player_id: null,
+      match_type: "ai",
+      target_points: MATCH_TARGET,
+      white_score: matchScore.white,
+      black_score: matchScore.black,
+      winner: matchWinner,
+      games: [{
+        game_number: 1,
+        winner: state.winner,
+        win_type: state.winType || "single",
+        points_awarded: (state.cube || 1) * (state.winType === "gammon" ? 2 : state.winType === "backgammon" ? 3 : 1),
+        transcript: extractTranscript(state),
+      }],
+    }).catch(() => {});
+  }, [matchWinner]);
 
   function handleNextGame() {
     setGameResult(null);
@@ -193,9 +238,26 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         return next;
       }
       if (prev.phase === "rolling") {
-        const next = applyRoll(prev);
-        setPlayerColor(next.turn);
-        return next;
+        const rolled = applyRoll(prev);
+        const moves = allLegalMoves(rolled, rolled.turn);
+        setPlayerColor(rolled.turn);
+        if (moves.length === 0) {
+          setNoMovesMessage({ dice: rolled.dice });
+          setTimeout(() => {
+            setState((current) => {
+              if (current.phase !== "moving") return current;
+              const next = { ...current, remaining: [] as number[] };
+              next.turn = current.turn === "white" ? "black" : "white";
+              next.phase = "rolling";
+              next.dice = [];
+              next.lastMove = null;
+              setPlayerColor(next.turn);
+              return next;
+            });
+            setNoMovesMessage(null);
+          }, 1500);
+        }
+        return rolled;
       }
       return prev;
     });
@@ -265,6 +327,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         error,
         openingRollResult,
         setOpeningRollResult,
+        noMovesMessage,
         reconnected,
         opponentConnected,
         gameResult,
@@ -277,6 +340,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         respondToDouble,
         endTurn,
         undoMove,
+        giveUp: () => {},
       }}
     >
       {children}

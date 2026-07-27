@@ -1,6 +1,8 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
+from .models import Match
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=4)
@@ -29,3 +31,13 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'username')
+
+
+class MatchSerializer(serializers.ModelSerializer):
+    whitePlayer = UserSerializer(source='white_player', read_only=True)
+    blackPlayer = UserSerializer(source='black_player', read_only=True)
+
+    class Meta:
+        model = Match
+        fields = ('id', 'created_at', 'duration_seconds', 'whitePlayer', 'blackPlayer',
+                  'match_type', 'target_points', 'white_score', 'black_score', 'winner', 'games')

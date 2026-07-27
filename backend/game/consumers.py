@@ -7,7 +7,8 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import AccessToken
-from .models import GameRoom, GameState
+from .models import GameRoom, GameState, Match
+from .helpers import extract_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
             if message_type == 'state_update':
                 await self._handle_state_update(payload)
+            elif message_type == 'give_up':
+                await self._handle_give_up()
             else:
                 await self._send_error(f'Unknown message type: {message_type}')
         except Exception as e:
@@ -176,6 +179,35 @@ class GameConsumer(AsyncWebsocketConsumer):
         gs.state_data = payload
         await save_game_state(gs)
 
+        # Auto-save match if game is over and target reached
+        if payload.get('phase') == 'game_over' and payload.get('winner'):
+            winner = payload.get('winner')
+            if winner:
+                white_score = room.white_score
+                black_score = room.black_score
+                target = room.target_points
+                white_score_after = white_score + (1 if winner == 'white' else 0)
+                black_score_after = black_score + (1 if winner == 'black' else 0)
+                if white_score_after >= target or black_score_after >= target:
+                    transcript = extract_transcript(payload)
+                    games_data = [{
+                        'game_number': 1,
+                        'winner': winner,
+                        'win_type': payload.get('winType', 'single'),
+                        'points_awarded': payload.get('cube', 1),
+                        'transcript': transcript,
+                    }] if transcript else []
+                    await database_sync_to_async(Match.objects.create)(
+                        white_player=room.white_player,
+                        black_player=room.black_player,
+                        match_type='online',
+                        target_points=target,
+                        white_score=white_score_after,
+                        black_score=black_score_after,
+                        winner=winner,
+                        games=games_data,
+                    )
+
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -185,6 +217,57 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'playerColor': self.player_color,
             }
         )
+
+    async def _handle_give_up(self):
+        """Handle player giving up voluntarily."""
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing':
+            return await self._send_error('No active game')
+
+        winner = 'black' if self.player_color == 'white' else 'white'
+
+        # Save match record
+        game_state = await get_game_state(room)
+        transcript = extract_transcript(game_state.state_data)
+        games_data = [{
+            'game_number': 1,
+            'winner': winner,
+            'win_type': 'single',
+            'points_awarded': 1,
+            'transcript': transcript,
+        }] if transcript else []
+
+        await database_sync_to_async(Match.objects.create)(
+            white_player=room.white_player,
+            black_player=room.black_player,
+            match_type='online',
+            target_points=room.target_points,
+            white_score=room.white_score,
+            black_score=room.black_score,
+            winner=winner,
+            games=games_data,
+        )
+
+        room.status = 'completed'
+        await database_sync_to_async(room.save)()
+
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'game_forfeited',
+                'winner': winner,
+                'loser': self.player_color,
+            }
+        )
+
+    async def game_forfeited(self, event):
+        await self.send(json.dumps({
+            'type': 'game_forfeited',
+            'payload': {
+                'winner': event.get('winner'),
+                'loser': event.get('loser'),
+            }
+        }))
 
     async def _send_error(self, message):
         await self.send(json.dumps({

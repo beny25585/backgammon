@@ -32,6 +32,7 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
+  const [noMovesMessage, setNoMovesMessage] = useState<{ dice: number[] } | null>(null);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [gameResult, setGameResult] = useState<GameContextType["gameResult"]>(null);
@@ -152,6 +153,21 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
 
       if (prev.phase === "rolling") {
         const next = applyRoll(prev);
+        const moves = allLegalMoves(next, next.turn);
+        if (moves.length === 0) {
+          setNoMovesMessage({ dice: next.dice });
+          setTimeout(() => {
+            const autoNext = { ...next, remaining: [] as number[] };
+            autoNext.turn = next.turn === "white" ? "black" : "white";
+            autoNext.phase = "rolling";
+            autoNext.dice = [];
+            autoNext.lastMove = null;
+            autoNext.moveHistory = null;
+            setState(autoNext);
+            setNoMovesMessage(null);
+          }, 1500);
+          return next;
+        }
         sendStateUpdate(next);
         return next;
       }
@@ -240,6 +256,10 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
     });
   }, [sendStateUpdate]);
 
+  const giveUp = useCallback(() => {
+    socket.send("give_up", {});
+  }, [socket]);
+
   const updateState = useCallback((s: GameState) => setState(s), []);
 
   const handleNextGame = useCallback(() => {
@@ -259,6 +279,7 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         error,
         openingRollResult,
         setOpeningRollResult,
+        noMovesMessage,
         reconnected,
         opponentConnected,
         gameResult,
@@ -271,6 +292,7 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         respondToDouble,
         endTurn,
         undoMove,
+        giveUp,
       }}
     >
       {children}
