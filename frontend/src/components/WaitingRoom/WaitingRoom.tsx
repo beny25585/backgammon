@@ -18,7 +18,7 @@ export default function WaitingRoom() {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [connectedCount, setConnectedCount] = useState(1);
-  const socket = getSocketService();
+  const socket = getSocketService(import.meta.env.VITE_SERVER_URL);
 
   useEffect(() => {
     if (!roomId) return;

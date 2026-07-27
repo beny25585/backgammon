@@ -3,6 +3,19 @@ import { clientLogger } from "./logger";
 
 export type MessageHandler = (data: unknown) => void;
 
+function getCloseReason(code: number): string {
+  switch (code) {
+    case 4001: return "Authentication failed (bad or expired token)";
+    case 4003: return "You are not a player in this room";
+    case 4004: return "Room not found";
+    case 1000: return "Normal closure";
+    case 1001: return "Server going away";
+    case 1006: return "Connection lost (abnormal closure)";
+    case 1011: return "Server error";
+    default: return `Connection closed with code ${code}`;
+  }
+}
+
 export class GameSocketService {
   private ws: WebSocket | null = null;
   private url: string;
@@ -14,7 +27,7 @@ export class GameSocketService {
   private currentRoomId: string | null = null;
 
   constructor(url: string = '') {
-    this.url = url;
+    this.url = url || '/backgammon';
   }
 
   connect(roomId: string, token?: string): Promise<void> {
@@ -39,6 +52,7 @@ export class GameSocketService {
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
+          if (this.ws?.readyState !== WebSocket.OPEN) return;
           clientLogger.info("WebSocket connected", { roomId });
           this.reconnectAttempts = 0;
           resolve();
@@ -53,13 +67,18 @@ export class GameSocketService {
           }
         };
 
-        this.ws.onerror = (error) => {
-          clientLogger.error("WebSocket error", { roomId, error: String(error) });
-          reject(error);
+        this.ws.onerror = () => {
+          clientLogger.error("WebSocket connection failed", { roomId });
         };
 
-        this.ws.onclose = () => {
-          clientLogger.info("WebSocket disconnected", { roomId });
+        this.ws.onclose = (event: CloseEvent) => {
+          if (event.code !== 1000) {
+            const reason = event.reason || getCloseReason(event.code);
+            clientLogger.error("WebSocket closed", { roomId, code: event.code, reason, wasClean: event.wasClean });
+            reject(new Error(reason));
+          } else {
+            clientLogger.info("WebSocket disconnected", { roomId });
+          }
         };
       } catch (error) {
         reject(error);
