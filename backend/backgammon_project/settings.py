@@ -78,6 +78,8 @@ CHANNEL_LAYERS = {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
             'hosts': [config('REDIS_URL', default='redis://127.0.0.1:6379/0')],
+            'capacity': 150,
+            'expiry': 60,
         },
     },
 }
