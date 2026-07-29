@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 
 .cubeFace {
@@ -11,42 +11,43 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: clamp(6px, 0.8vw, 10px);
+  border-radius: clamp(8px, 0.8vw, 12px);
   font-weight: 800;
   font-size: clamp(14px, 2.5vw, 20px);
   box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  border: clamp(1px, 0.2vw, 2px) solid;
-  transition: transform 0.2s;
+    0 8px 18px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(231, 189, 114, 0.24);
+  transition: transform 0.18s;
   line-height: 1;
   user-select: none;
 }
 
+.cubeFace:hover {
+  transform: translateY(-1px);
+}
+
 .neutral {
-  background: linear-gradient(135deg, var(--gold) 0%, #b8860b 100%);
-  color: #1a0e06;
-  border-color: #8b7000;
+  background: linear-gradient(135deg, #e7bd72 0%, #c8932f 100%);
+  color: #10292d;
 }
 
 .white {
-  background: linear-gradient(135deg, var(--checker-white) 0%, #d4b880 100%);
+  background: linear-gradient(135deg, #f7f1e7 0%, #d4b880 100%);
   color: #2a1810;
-  border-color: #b89660;
 }
 
 .black {
-  background: linear-gradient(135deg, #4a2f1a 0%, var(--checker-black) 100%);
-  color: var(--checker-white);
-  border-color: #0a0402;
+  background: linear-gradient(135deg, #4a2f1a 0%, #0a0402 100%);
+  color: #f7f1e7;
 }
 
 .ownerLabel {
-  font-size: clamp(8px, 1vw, 10px);
-  font-weight: 600;
+  color: rgba(247, 241, 231, 0.58);
+  font-size: 9px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--gold);
-  opacity: 0.7;
+  letter-spacing: 0.12em;
   line-height: 1;
 }
+

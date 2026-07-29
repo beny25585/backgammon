@@ -32,10 +32,28 @@ export default function MatchHistory() {
   }
 
   return (
-    <div className={styles.container}>
-      <h1 className={styles.title}>Match History</h1>
+    <main className={styles.container}>
+      <div className={styles.shell}>
+        <div className={styles.brandRow}>
+          <span className={styles.brandMark}>B</span>
+          <div>
+            <p>Backgammon</p>
+            <span>Match archive</span>
+          </div>
+        </div>
+
+        <div className={styles.hero}>
+          <div>
+            <p className={styles.kicker}>History</p>
+            <h1 className={styles.title}>Match History</h1>
+          </div>
+          <span className={styles.countPill}>{matches.length} matches</span>
+        </div>
+
       {matches.length === 0 ? (
-        <p className={styles.empty}>No matches played yet.</p>
+        <div className={styles.emptyCard}>
+          <p className={styles.empty}>No matches played yet.</p>
+        </div>
       ) : (
         <div className={styles.table}>
           <div className={styles.header}>
@@ -60,6 +78,7 @@ export default function MatchHistory() {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </main>
   );
 }

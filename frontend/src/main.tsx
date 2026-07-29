@@ -1,6 +1,8 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
+import "@fontsource/assistant";
+import "@fontsource/playfair-display";
 import App from "./App";
 import { clientLogger } from "./services/logger";
 import "./styles/global.css";

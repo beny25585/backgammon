@@ -73,31 +73,48 @@ export default function MatchSettings({
           damping: 16,
         }}
       >
-        <h2 className={styles.title}>Match Settings</h2>
-
-        {/* Color Selection */}
-        <div className={styles.sectionLabel}>
-          <p>Play as</p>
+        <div className={styles.brandRow}>
+          <span className={styles.brandMark}>B</span>
+          <div>
+            <p>Backgammon</p>
+            <span>{isOnline ? "Online match" : "Bot match"}</span>
+          </div>
         </div>
 
-        <AnimatedTabs
-          tabs={colorTabs}
-          activeTab={selectedColor}
-          onChange={handleColorChange}
-        />
-
-        {/* Target Score */}
-        <div className={styles.sectionLabel}>
-          <p>{target === 1 ? "Single Game" : `First to ${target} points`}</p>
+        <div className={styles.header}>
+          <div>
+            <p className={styles.kicker}>Match settings</p>
+            <h2 className={styles.title}>
+              {isOnline ? "Create a private room" : "Set up a solo match"}
+            </h2>
+          </div>
+          <p className={styles.subtitle}>
+            Choose your color and target score before starting.
+          </p>
         </div>
 
-        <AnimatedTabs
-          tabs={targetTabs}
-          activeTab={String(target)}
-          onChange={(id) => setTarget(Number(id))}
-        />
+        <div className={styles.section}>
+          <div className={styles.sectionLabel}>
+            <p>Play as</p>
+          </div>
+          <AnimatedTabs
+            tabs={colorTabs}
+            activeTab={selectedColor}
+            onChange={handleColorChange}
+          />
+        </div>
 
-        {/* Actions */}
+        <div className={styles.section}>
+          <div className={styles.sectionLabel}>
+            <p>{target === 1 ? "Single Game" : `First to ${target} points`}</p>
+          </div>
+          <AnimatedTabs
+            tabs={targetTabs}
+            activeTab={String(target)}
+            onChange={(id) => setTarget(Number(id))}
+          />
+        </div>
+
         <div className={styles.actions}>
           <button onClick={onCancel} className={styles.cancelBtn}>
             Cancel

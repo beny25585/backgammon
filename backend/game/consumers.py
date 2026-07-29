@@ -122,6 +122,11 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self._broadcast_room_status()
 
+        # Covers the case where the second player joined through the REST API
+        # before the creator's WebSocket finished connecting.
+        if room.status == 'playing' and room.white_player and room.black_player:
+            await self.send(json.dumps({'type': 'room_started', 'payload': {}}))
+
     async def disconnect(self, close_code):
         print(f"[WS] disconnect {getattr(self, 'player_color', '?')} code={close_code}")
         if not hasattr(self, 'room_group_name'):
@@ -317,3 +322,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'connected': event.get('connected'),
             }
         }))
+
+    async def room_started(self, event):
+        await self.send(json.dumps({'type': 'room_started', 'payload': {}}))

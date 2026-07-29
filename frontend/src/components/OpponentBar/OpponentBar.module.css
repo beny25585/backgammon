@@ -1,211 +1,119 @@
 .opponentBar {
-  padding: 12px 16px;
-  background: rgba(0, 0, 0, 0.3);
-  border-bottom: 2px solid rgba(201, 169, 97, 0.2);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+  gap: 14px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(231, 189, 114, 0.14);
 }
 
 .playerInfo {
   flex: 1;
-  min-width: 150px;
+  min-width: 0;
 }
 
 .playerName {
-  font-size: 14px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1px;
   margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f7f1e7;
 }
 
 .white .playerName {
-  color: var(--checker-white);
+  color: #f7f1e7;
 }
 
 .black .playerName {
-  color: var(--checker-black);
-  text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+  color: #e7bd72;
 }
 
 .status {
-  font-size: 12px;
   display: flex;
-  gap: 12px;
-  align-items: center;
+  gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
+  font-size: 12px;
 }
 
 .stat {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 4px 10px;
-  border-radius: 4px;
-  color: rgba(255, 255, 255, 0.8);
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(247, 241, 231, 0.74);
 }
 
-/* Tablet */
-@media (max-width: 1024px) {
-  .opponentBar {
-    padding: 10px 12px;
-    gap: 12px;
-  }
-
-  .playerName {
-    font-size: 13px;
-    letter-spacing: 0.5px;
-  }
-
-  .status {
-    font-size: 11px;
-    gap: 10px;
-  }
-
-  .stat {
-    padding: 3px 8px;
-  }
+.winner {
+  font-size: 12px;
+  font-weight: 800;
+  color: #7cd69a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
-
-/* Mobile */
-@media (max-width: 767px) {
-  .opponentBar {
-    padding: 8px 12px;
-    gap: 8px;
-  }
-
-  .playerInfo {
-    min-width: 120px;
-  }
-
-  .playerName {
-    font-size: 12px;
-    letter-spacing: 0;
-  }
-
-  .status {
-    font-size: 10px;
-    gap: 6px;
-  }
-
-  .stat {
-    padding: 2px 6px;
-    font-size: 10px;
-  }
 
 .scoreSection {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  justify-items: end;
   gap: 2px;
+  min-width: 70px;
 }
 
 .score {
   font-size: 18px;
-  font-weight: 700;
-  color: #c9a961;
-  letter-spacing: 2px;
+  font-weight: 800;
+  color: #e7bd72;
+  letter-spacing: 0.08em;
 }
 
 .target {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(247, 241, 231, 0.42);
   text-transform: uppercase;
-  letter-spacing: 1px;
-}
-
-.checkerPreview {
-    gap: 6px;
-  }
-
-  .checkerIcon {
-    width: 20px;
-    height: 20px;
-  }
-
-  .more {
-    font-size: 10px;
-  }
-}
-
-/* Small mobile */
-@media (max-width: 479px) {
-  .opponentBar {
-    flex-direction: column;
-    align-items: flex-start;
-    padding: 6px 8px;
-    gap: 6px;
-  }
-
-  .playerInfo {
-    width: 100%;
-    min-width: auto;
-  }
-
-  .playerName {
-    font-size: 11px;
-  }
-
-  .status {
-    width: 100%;
-    font-size: 9px;
-    gap: 4px;
-  }
-
-  .stat {
-    padding: 2px 4px;
-    font-size: 9px;
-  }
-
-  .checkerIcon {
-    width: 18px;
-    height: 18px;
-  }
-}
-
-.winner {
-  font-size: 16px;
-  font-weight: bold;
-  color: var(--gold);
-  animation: glow 1s infinite;
-}
-
-@keyframes glow {
-  0%,
-  100% {
-    text-shadow: 0 0 5px var(--gold);
-  }
-  50% {
-    text-shadow: 0 0 20px var(--gold);
-  }
+  letter-spacing: 0.14em;
 }
 
 .checkerPreview {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .checkerIcon {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(201, 169, 97, 0.3);
+  border: 1px solid rgba(231, 189, 114, 0.22);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
 }
 
 .checkerIcon.white {
-  background: linear-gradient(135deg, var(--checker-white) 0%, #e8d4b0 100%);
+  background: radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 58%, #b89660 100%);
 }
 
 .checkerIcon.black {
-  background: linear-gradient(135deg, var(--checker-black) 0%, #3d2817 100%);
+  background: radial-gradient(circle at 30% 25%, #6a4830, #2a1810 58%, #0a0402 100%);
 }
 
 .more {
   font-size: 12px;
-  color: var(--gold);
-  font-weight: bold;
+  color: #e7bd72;
+  font-weight: 800;
   padding: 0 4px;
 }
+
+@media (max-width: 767px) {
+  .opponentBar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .scoreSection {
+    justify-items: start;
+  }
+}
+

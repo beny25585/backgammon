@@ -42,42 +42,74 @@ export default function MatchDetail() {
   if (loading) return <div className={styles.loading}>Loading...</div>;
   if (!match) return <div className={styles.loading}>Match not found</div>;
 
-  return (
-    <div className={styles.container}>
-      <button className={styles.backBtn} onClick={() => navigate("/history")}>
-        &larr; Back
-      </button>
-      <h1 className={styles.title}>Match Detail</h1>
-      <div className={styles.header}>
-        <p>
-          {match.whitePlayer?.username ?? "White"} vs {match.blackPlayer?.username ?? "Black"}
-        </p>
-        <p>Score: {match.white_score} - {match.black_score}</p>
-        <p>Best of {match.target_points}</p>
-        <p>Winner: {match.winner}</p>
-        <p className={styles.date}>{new Date(match.created_at).toLocaleDateString()}</p>
-      </div>
+  const winnerLabel = match.winner ?? "Pending";
 
-      <h2 className={styles.subtitle}>Games</h2>
-      {match.games.map((game, idx) => (
-        <div key={idx} className={styles.gameCard}>
-          <div className={styles.gameInfo}>
-            <span>Game {game.game_number}</span>
-            <span>Winner: {game.winner}</span>
-            <span>Points: {game.points_awarded}</span>
-            <span>Type: {game.win_type}</span>
-          </div>
-          <button
-            className={styles.replayBtn}
-            onClick={() => setReplaying(replaying === idx ? null : idx)}
-          >
-            {replaying === idx ? "Hide Replay" : "Replay"}
+  return (
+    <main className={styles.container}>
+      <div className={styles.shell}>
+        <div className={styles.topRow}>
+          <button className={styles.backBtn} onClick={() => navigate("/history")}>
+            &larr; Back
           </button>
-          {replaying === idx && game.transcript && (
-            <ReplayPlayer transcript={game.transcript} />
-          )}
+          <span className={styles.pill}>Match detail</span>
         </div>
-      ))}
-    </div>
+
+        <div className={styles.brandRow}>
+          <span className={styles.brandMark}>B</span>
+          <div>
+            <p>Backgammon</p>
+            <span>Match replay</span>
+          </div>
+        </div>
+
+        <div className={styles.header}>
+          <div>
+            <p className={styles.kicker}>Completed match</p>
+            <h1 className={styles.title}>
+              {match.whitePlayer?.username ?? "White"} vs {match.blackPlayer?.username ?? "Black"}
+            </h1>
+          </div>
+          <div className={styles.summaryGrid}>
+            <div className={styles.summaryCard}>
+              <span>Score</span>
+              <strong>{match.white_score} - {match.black_score}</strong>
+            </div>
+            <div className={styles.summaryCard}>
+              <span>Best of</span>
+              <strong>{match.target_points}</strong>
+            </div>
+            <div className={styles.summaryCard}>
+              <span>Winner</span>
+              <strong>{winnerLabel}</strong>
+            </div>
+            <div className={styles.summaryCard}>
+              <span>Date</span>
+              <strong className={styles.date}>{new Date(match.created_at).toLocaleDateString()}</strong>
+            </div>
+          </div>
+        </div>
+
+        <h2 className={styles.subtitle}>Games</h2>
+        {match.games.map((game, idx) => (
+          <div key={idx} className={styles.gameCard}>
+            <div className={styles.gameInfo}>
+              <span>Game {game.game_number}</span>
+              <span>Winner: {game.winner}</span>
+              <span>Points: {game.points_awarded}</span>
+              <span>Type: {game.win_type}</span>
+            </div>
+            <button
+              className={styles.replayBtn}
+              onClick={() => setReplaying(replaying === idx ? null : idx)}
+            >
+              {replaying === idx ? "Hide Replay" : "Replay"}
+            </button>
+            {replaying === idx && game.transcript && (
+              <ReplayPlayer transcript={game.transcript} />
+            )}
+          </div>
+        ))}
+      </div>
+    </main>
   );
 }

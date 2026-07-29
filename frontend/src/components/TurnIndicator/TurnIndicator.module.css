@@ -1,30 +1,30 @@
 .turnIndicator {
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: 2px solid;
-  transition: all var(--duration-normal) var(--ease-game);
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(231, 189, 114, 0.22);
+  transition: transform 0.18s, background 0.18s, border-color 0.18s;
   white-space: nowrap;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .active {
-  background: rgba(76, 175, 80, 0.1);
-  border-color: #4caf50;
-  box-shadow: 0 0 12px rgba(76, 175, 80, 0.3);
+  background: rgba(124, 214, 154, 0.1);
+  border-color: rgba(124, 214, 154, 0.45);
 }
 
 .inactive {
-  background: rgba(255, 152, 0, 0.1);
-  border-color: #ff9800;
+  background: rgba(231, 189, 114, 0.08);
+  border-color: rgba(231, 189, 114, 0.28);
 }
 
 .indicator {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.06em;
 }
 
 .dot {
@@ -35,73 +35,18 @@
   flex-shrink: 0;
 }
 
-/* Tablet */
-@media (max-width: 1024px) {
-  .turnIndicator {
-    padding: 8px 12px;
-  }
-
-  .indicator {
-    font-size: 12px;
-    gap: 6px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-  }
-}
-
-/* Mobile */
-@media (max-width: 767px) {
-  .turnIndicator {
-    padding: 6px 10px;
-  }
-
-  .indicator {
-    font-size: 11px;
-    gap: 4px;
-  }
-
-  .text {
-    display: none;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-  }
-}
-
-/* Small mobile */
-@media (max-width: 479px) {
-  .turnIndicator {
-    padding: 4px 8px;
-    border-width: 1px;
-  }
-
-  .indicator {
-    font-size: 10px;
-  }
-
-  .dot {
-    width: 6px;
-    height: 6px;
-  }
-}
-
 .dot.white {
   background: var(--checker-white);
-  box-shadow: 0 0 6px rgba(244, 228, 193, 0.6);
+  box-shadow: 0 0 10px rgba(244, 228, 193, 0.45);
 }
 
 .dot.black {
   background: var(--checker-black);
-  box-shadow: 0 0 6px rgba(42, 24, 16, 0.6);
+  box-shadow: 0 0 10px rgba(42, 24, 16, 0.45);
 }
 
 .text {
-  color: #e0e0e0;
+  color: #f7f1e7;
 }
 
 @keyframes pulse {
@@ -109,7 +54,19 @@
   100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.6;
   }
 }
+
+@media (max-width: 767px) {
+  .turnIndicator {
+    padding: 8px 10px;
+  }
+
+  .indicator {
+    font-size: 11px;
+  }
+}
+

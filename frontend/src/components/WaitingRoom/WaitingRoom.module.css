@@ -1,37 +1,126 @@
 .container {
-  width: 100dvw;
-  height: 100dvh;
+  min-height: 100dvh;
+  position: relative;
+  overflow: hidden;
+  padding: clamp(18px, 4vw, 42px);
+  background:
+    radial-gradient(circle at top left, rgba(201, 169, 97, 0.12), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(21, 61, 66, 0.85), transparent 32%),
+    linear-gradient(135deg, #071218 0%, #091b1f 50%, #03060d 100%);
+  color: #f7f1e7;
+}
+
+.container::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.24;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.24) 0.6px, transparent 0.6px);
+  background-size: 5px 5px;
+}
+
+.shell {
+  position: relative;
+  z-index: 1;
+  max-width: 980px;
+  margin: 0 auto 18px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  background: #030711;
-  padding: clamp(8px, 2vw, 16px);
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brandMark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 1px solid #e7bd72;
+  color: #e7bd72;
+  font-family: "Playfair Display", serif;
+  font-size: 21px;
+  flex: none;
+}
+
+.brandRow p {
+  margin: 0;
+  color: #f7f1e7;
+  font-family: "Playfair Display", serif;
+  font-size: 21px;
+  font-weight: 700;
+}
+
+.brandRow span {
+  display: block;
+  color: rgba(247, 241, 231, 0.52);
+  font-size: 12px;
 }
 
 .card {
-  background: #1a1a2e;
-  border: 1px solid rgba(201, 169, 97, 0.3);
-  border-radius: clamp(12px, 2vw, 16px);
-  padding: clamp(20px, 3vw, 32px);
-  width: min(92%, 420px);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 1;
+  width: min(100%, 980px);
+  margin: 0 auto;
+  padding: clamp(22px, 3vw, 34px);
+  border-radius: 28px;
+  background: rgba(8, 23, 27, 0.88);
+  border: 1px solid rgba(231, 189, 114, 0.22);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(18px);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .title {
+  margin: 0;
   font-family: "Playfair Display", serif;
-  font-size: clamp(20px, 4vw, 24px);
+  font-size: clamp(28px, 4vw, 38px);
+  line-height: 1;
+  letter-spacing: -1px;
+}
+
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(231, 189, 114, 0.25);
+  background: rgba(231, 189, 114, 0.1);
+  color: #e7bd72;
+  font-size: 11px;
   font-weight: 700;
-  text-align: center;
-  color: #c9a961;
-  margin-bottom: clamp(16px, 3vw, 24px);
+  text-transform: uppercase;
+  letter-spacing: 1.4px;
+}
+
+.statusPill::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e7bd72;
 }
 
 .center {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(16px, 3vw, 24px);
-  margin-bottom: clamp(16px, 3vw, 24px);
+  gap: 18px;
+  margin-bottom: 22px;
 }
 
 .codeSection {
@@ -39,48 +128,52 @@
 }
 
 .codeLabel {
-  font-size: clamp(11px, 1.3vw, 12px);
+  margin-bottom: 8px;
+  color: #e7bd72;
+  font-size: 11px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  color: rgba(201, 169, 97, 0.5);
-  margin-bottom: clamp(6px, 1vw, 8px);
+  letter-spacing: 1.8px;
 }
 
 .codeWrapper {
   display: flex;
   align-items: center;
-  gap: clamp(8px, 1.5vw, 12px);
+  gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
 }
 
 .code {
   font-family: "Courier New", monospace;
-  font-size: clamp(24px, 8vw, 36px);
+  font-size: clamp(26px, 8vw, 40px);
   font-weight: 700;
   color: #fff;
   letter-spacing: clamp(4px, 1vw, 6px);
 }
 
 .copyButton {
-  padding: clamp(8px, 1.2vw, 10px) clamp(12px, 2vw, 14px);
-  border-radius: 6px;
-  background: rgba(201, 169, 97, 0.15);
-  border: 1px solid rgba(201, 169, 97, 0.3);
-  color: #c9a961;
-  font-size: clamp(11px, 1.3vw, 12px);
-  cursor: pointer;
-  transition: all 0.2s;
   min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  background: rgba(231, 189, 114, 0.14);
+  border: 1px solid rgba(231, 189, 114, 0.28);
+  color: #e7bd72;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.18s, background 0.18s;
 }
+
 .copyButton:hover {
-  background: rgba(201, 169, 97, 0.25);
+  background: rgba(231, 189, 114, 0.24);
+  transform: translateY(-1px);
 }
 
 .shareHint {
-  font-size: clamp(12px, 1.4vw, 13px);
-  color: rgba(255, 255, 255, 0.4);
-  margin-top: clamp(6px, 1vw, 8px);
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 13px;
 }
 
 .waitingSection {
@@ -91,19 +184,21 @@
   display: flex;
   gap: 8px;
   justify-content: center;
-  margin-bottom: clamp(8px, 1.5vw, 12px);
+  margin-bottom: 12px;
 }
 
 .dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #c9a961;
+  background: #e7bd72;
   animation: pulse 1.4s infinite ease-in-out;
 }
+
 .dot:nth-child(2) {
   animation-delay: 0.2s;
 }
+
 .dot:nth-child(3) {
   animation-delay: 0.4s;
 }
@@ -115,6 +210,7 @@
     opacity: 0.2;
     transform: scale(0.8);
   }
+
   40% {
     opacity: 1;
     transform: scale(1);
@@ -122,31 +218,27 @@
 }
 
 .waitingText {
-  font-size: clamp(13px, 1.5vw, 14px);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 14px;
 }
 
 .playerInfo {
-  font-size: clamp(12px, 1.4vw, 13px);
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 13px;
 }
 
 .matchInfo {
-  font-size: clamp(11px, 1.3vw, 12px);
-  color: rgba(201, 169, 97, 0.6);
+  color: rgba(231, 189, 114, 0.72);
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 1px;
 }
-.playerName {
-  color: #c9a961;
-  font-weight: 600;
-}
 
 .spinner {
-  width: clamp(24px, 4vw, 32px);
-  height: clamp(24px, 4vw, 32px);
-  border: 3px solid rgba(201, 169, 97, 0.2);
-  border-top-color: #c9a961;
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(231, 189, 114, 0.2);
+  border-top-color: #e7bd72;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -158,40 +250,65 @@
 }
 
 .statusText {
-  font-size: clamp(13px, 1.5vw, 14px);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 14px;
 }
 
 .opponentJoined {
-  font-size: clamp(16px, 2.5vw, 18px);
-  font-weight: 600;
   color: #4ade80;
+  font-size: 18px;
+  font-weight: 700;
 }
 
 .startingText {
-  font-size: clamp(13px, 1.5vw, 14px);
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 14px;
 }
 
 .leaveButton {
   width: 100%;
-  padding: clamp(8px, 1.5vw, 10px);
-  border-radius: 8px;
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
   background: rgba(255, 107, 107, 0.1);
-  border: 1px solid rgba(255, 107, 107, 0.3);
-  color: #ff6b6b;
-  font-size: clamp(12px, 1.4vw, 13px);
+  border: 1px solid rgba(255, 107, 107, 0.28);
+  color: #ff8f8f;
+  font-size: 14px;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
-  min-height: 44px;
+  transition: transform 0.18s, background 0.18s;
 }
+
 .leaveButton:hover {
-  background: rgba(255, 107, 107, 0.2);
+  background: rgba(255, 107, 107, 0.18);
+  transform: translateY(-1px);
 }
 
 .errorText {
-  color: #ff6b6b;
-  font-size: clamp(13px, 1.5vw, 14px);
+  color: #ff8f8f;
+  font-size: 14px;
   text-align: center;
-  margin-bottom: clamp(12px, 2vw, 16px);
+  margin-bottom: 16px;
 }
+
+@media (max-width: 720px) {
+  .shell {
+    margin-bottom: 14px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cardHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .card {
+    padding: 20px;
+  }
+
+  .codeWrapper {
+    flex-direction: column;
+  }
+}
+

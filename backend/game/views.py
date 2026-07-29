@@ -12,6 +12,8 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from django.db.models import Q
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 
 from .engine import BackgammonEngine
 from .models import GameRoom, GameState, Match
@@ -114,23 +116,35 @@ def join_room(request):
     except GameRoom.DoesNotExist:
         logger.warning(f"Room not found: code={code}")
         return Response({'error': 'Room not found or already full'}, status=status.HTTP_404_NOT_FOUND)
-    if room.black_player is not None:
+    if room.white_player is not None and room.black_player is not None:
         logger.warning(f"Room full: code={code}")
         return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
-    if room.white_player == user:
+    if room.white_player == user or room.black_player == user:
         logger.warning(f"User already in room: user={user.username} code={code}")
         return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
-    room.black_player = user
+    if room.white_player is None:
+        room.white_player = user
+    else:
+        room.black_player = user
     room.status = 'playing'
     room.save()
     logger.info(f"User joined room: user={user.username} code={code}")
+
+    # The room starts when the second player is assigned, not only when that
+    # player later opens a WebSocket. This wakes the creator from WaitingRoom.
+    channel_layer = get_channel_layer()
+    if channel_layer:
+        async_to_sync(channel_layer.group_send)(
+            f'game_{room.id}',
+            {'type': 'room_started'}
+        )
     return Response({
         'id': str(room.id),
         'code': room.code,
         'status': room.status,
         'targetPoints': room.target_points,
         'whitePlayer': UserSerializer(room.white_player).data,
-        'blackPlayer': UserSerializer(user).data,
+        'blackPlayer': UserSerializer(room.black_player).data,
     })
 
 
