@@ -6,5 +6,3 @@ export { Board } from "./Board";
 export { Die, DiceRow } from "./Dice";
 export { default as DoublingCube } from "./DoublingCube";
 export { default as Controls } from "./Controls";
-export { default as OpponentBar } from "./OpponentBar";
-export { default as TurnIndicator } from "./TurnIndicator";
