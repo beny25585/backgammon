@@ -16,6 +16,9 @@ import {
 import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
+import { clearRoom } from "./roomStorage";
+import { useNavigate } from "react-router-dom";
+import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -161,6 +164,29 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           const payload = (message as Record<string, unknown>).payload;
           const msg = typeof payload === "string" ? payload : (payload as Record<string, unknown>)?.message as string;
           setError(msg);
+        });
+
+        socket.on("game_forfeited", (message) => {
+          const payload = (message as Record<string, unknown>).payload as {
+            winner?: string;
+            loser?: string;
+          };
+          const winner = (payload?.winner as Color) || (playerColor === "white" ? "black" : "white");
+          const loser = (payload?.loser as Color) || (playerColor === "white" ? "black" : "white");
+          clientLogger.info("Game forfeited", { winner, loser, roomId });
+          setGameResult({
+            winner,
+            winType: "single",
+            points: 1,
+            cube: 1,
+            matchScore: {
+              white: winner === "white" ? 1 : 0,
+              black: winner === "black" ? 1 : 0,
+            },
+          });
+          setState((prev) =>
+            prev ? { ...prev, phase: "game_over", winner, message: `${winner} wins by forfeit` } : prev,
+          );
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";

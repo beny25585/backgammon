@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, useParams, useLocation, useNavigate } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
-import { getAccessToken } from "./services/auth";
+import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
 import { cancelRoom } from "./services/api";
 import AuthScreen from "./components/AuthScreen";
@@ -14,7 +14,12 @@ import { LocalGameProvider } from "./services/localGameContext";
 import type { Color } from "./types/game";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  if (!getAccessToken()) return <Navigate to="/" replace />;
+  const token = getAccessToken();
+  if (token && isTokenExpired(token)) {
+    clearTokens();
+    return <Navigate to="/?expired=1" replace />;
+  }
+  if (!token) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 

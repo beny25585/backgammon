@@ -1,5 +1,6 @@
 import type { GameMessage } from "../types/game";
 import { clientLogger } from "./logger";
+import { handleSessionExpired } from "./auth";
 
 export type MessageHandler = (data: unknown) => void;
 
@@ -84,6 +85,11 @@ export class GameSocketService {
           const reason = event.reason || getCloseReason(event.code);
           clientLogger.error("WebSocket closed", { roomId, code: event.code, reason, wasClean: event.wasClean });
           reject(new Error(reason));
+          if (event.code === 4001) {
+            // Expired/invalid token — no point reconnecting; force a fresh login.
+            handleSessionExpired();
+            return;
+          }
           this.attemptReconnect();
         };
       } catch (error) {

@@ -2,7 +2,7 @@
 
 1. when its white turn block black from the bord that he cant play white turn //appen only in the ai
 
-2. fix bear off to 100% height // fix
+2. fix bear off to 100% height 
 
 3. add settings in match //need to be done
 
@@ -19,7 +19,7 @@
 9. if the player is black we need to rotet the view to the uposirt side
 
 10. remove the overlay of the roll and better ui for the rolling dice
-highlight the leagel move more in more yello collor
+    highlight the leagel move more in more yello collor
 
 11. add the resulte of the dice in the no laegelmove
 
@@ -37,3 +37,8 @@ highlight the leagel move more in more yello collor
 14. if the token is in valid logout the user
 
 15. need to change the design patern to applicationlike and not landing page
+
+16. after player A give up player B is win the match automatic close the room and set the winner player B
+
+
+17. indicate the opponent diconected in the top of the page and the secend player can contine player in the mean time

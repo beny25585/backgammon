@@ -48,3 +48,18 @@ export function clearTokens(): void {
   localStorage.removeItem('bg_access_token');
   localStorage.removeItem('bg_refresh_token');
 }
+
+export function isTokenExpired(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1]));
+    const exp = typeof payload.exp === "number" ? payload.exp : 0;
+    return exp > 0 && exp * 1000 <= Date.now();
+  } catch {
+    return false;
+  }
+}
+
+export function handleSessionExpired(): void {
+  clearTokens();
+  window.location.assign("/backgammon/?expired=1");
+}

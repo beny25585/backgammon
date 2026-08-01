@@ -1,4 +1,4 @@
-import { getAccessToken } from "./auth";
+import { getAccessToken, handleSessionExpired } from "./auth";
 
 const API_URL =
   import.meta.env.VITE_SERVER_URL?.replace("ws", "http") ?? '';
@@ -14,6 +14,9 @@ async function apiFetch(path: string, options: RequestInit = {}) {
     },
   });
   if (!res.ok) {
+    if (res.status === 401) {
+      handleSessionExpired();
+    }
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || err.detail || "Request failed");
   }
