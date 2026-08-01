@@ -1,7 +1,8 @@
 Django==4.2.7
 django-cors-headers==4.3.1
 channels==4.0.0
-channels-redis==4.1.0
+channels-redis==4.5.5
+redis==4.5.5
 python-decouple==3.8
 daphne==4.0.0
 djangorestframework==3.14.0

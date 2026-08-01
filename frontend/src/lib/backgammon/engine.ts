@@ -62,6 +62,7 @@ export interface GameState {
   /** Stack of pre-move snapshots for undo during the current turn. Cleared at turn end. */
   moveHistory: GameState[] | null;
   message: string;
+  version?: number;
 }
 
 export interface Move {
@@ -212,7 +213,7 @@ export function newGame(): GameState {
     openingRoll: { white: null, black: null },
     lastMove: null,
     moveHistory: null,
-    message: "הטילו קובייה לפתיחה", // "Roll to start"
+    message: "Roll to start",
   };
 }
 
@@ -392,7 +393,7 @@ export function applyMove(state: GameState, move: Move, color: Color): GameState
   // --- End turn if no dice remain (needs player confirm) ---
   if (next.remaining.length === 0) {
     next.phase = "moving";
-    next.message = `תור ${next.turn === "white" ? "לבן" : "שחור"} – אשר סיום תור`;
+    next.message = `${next.turn === "white" ? "White" : "Black"} — confirm end of turn`;
     return next;
   }
 
@@ -429,12 +430,15 @@ export function applyRoll(state: GameState, customDice?: number[]): GameState {
   next.lastMove = [];
   next.moveHistory = [];
 
-  // If there are no legal moves with this roll, skip the turn.
+  // If there are no legal moves with this roll, stay in "moving" phase
+  // and keep `dice` so the UI can show the result before auto-passing.
   if (allLegalMoves(next, next.turn).length === 0) {
-    return skipTurnNoMoves(next);
+    next.phase = "moving";
+    next.message = "No legal moves";
+    return next;
   }
 
-  next.message = `תור ${next.turn === "white" ? "לבן" : "שחור"} – בצע מהלך`;
+  next.message = `${next.turn === "white" ? "White" : "Black"} — make a move`;
   return next;
 }
 
@@ -456,9 +460,10 @@ export function applyOpeningRoll(state: GameState, color: Color): GameState {
 
   next.openingRoll[color] = rollDie();
 
-  // If only one player has rolled, wait for the other.
+  // If only one player has rolled, hand the dice to the other player.
   if (next.openingRoll.white === null || next.openingRoll.black === null) {
-    next.message = "ממתין להטלת יריב"; // "Waiting for opponent's roll"
+    next.turn = color === "white" ? "black" : "white";
+    next.message = "Waiting for opponent's roll";
     return next;
   }
 
@@ -467,9 +472,10 @@ export function applyOpeningRoll(state: GameState, color: Color): GameState {
   const blackRoll = next.openingRoll.black!;
 
   if (whiteRoll === blackRoll) {
-    // Tie — reset and try again.
+    // Tie — reset and try again, starting with white.
     next.openingRoll = { white: null, black: null };
-    next.message = "תיקו – הטילו שוב"; // "Tie — roll again"
+    next.turn = "white";
+    next.message = "Tie — roll again";
     return next;
   }
 
@@ -481,7 +487,7 @@ export function applyOpeningRoll(state: GameState, color: Color): GameState {
   next.phase = "moving";
   next.lastMove = [];
   next.moveHistory = [];
-  next.message = `${firstPlayer === "white" ? "לבן" : "שחור"} מתחיל`; // "White/Black starts"
+  next.message = `${firstPlayer === "white" ? "White" : "Black"} starts`;
   return next;
 }
 
@@ -493,7 +499,7 @@ export function offerDouble(state: GameState, color: Color): GameState {
   const next = cloneState(state);
   next.phase = "doubling_offered";
   next.doubleOfferedBy = color;
-  next.message = `${color === "white" ? "לבן" : "שחור"} מציע הכפלה`;
+  next.message = `${color === "white" ? "White" : "Black"} offers a double`;
   return next;
 }
 
@@ -507,14 +513,14 @@ export function respondDouble(state: GameState, accept: boolean): GameState {
     next.cubeOwner = responder;
     next.phase = next.dice.length === 0 ? "rolling" : "moving";
     next.doubleOfferedBy = null;
-    next.message = `הכפלה התקבלה – ${next.cube}`;
+    next.message = `Double accepted — cube is ${next.cube}`;
   } else {
     // Declining the double forfeits the game.
     next.winner = offerer;
     next.winType = "single";
     next.phase = "game_over";
     next.doubleOfferedBy = null;
-    next.message = `${responder === "white" ? "לבן" : "שחור"} סירב – ${offerer === "white" ? "לבן" : "שחור"} מנצח`;
+    next.message = `${responder === "white" ? "White" : "Black"} declined — ${offerer === "white" ? "White" : "Black"} wins`;
   }
 
   return next;
@@ -577,7 +583,7 @@ function applyWin(state: GameState, winner: Color): GameState {
   }
 
   state.phase = "game_over";
-  state.message = "משחק הסתיים"; // "Game over"
+  state.message = "Game over";
   return state;
 }
 
@@ -598,18 +604,6 @@ function passTurn(state: GameState, currentPlayer: Color): GameState {
   state.lastMove = null;
   state.moveHistory = null;
   state.turn = nextPlayer;
-  state.message = `תור ${nextPlayer === "white" ? "לבן" : "שחור"}`;
-  return state;
-}
-
-/** Auto-skip when the current player has no legal moves after rolling. */
-function skipTurnNoMoves(state: GameState): GameState {
-  const skipped = opponent(state.turn);
-  state.remaining = [];
-  state.dice = [];
-  state.turn = skipped;
-  state.phase = "rolling";
-  state.moveHistory = null;
-  state.message = `אין מהלכים חוקיים – תור ${skipped === "white" ? "לבן" : "שחור"}`;
+  state.message = `${nextPlayer === "white" ? "White" : "Black"}'s turn`;
   return state;
 }

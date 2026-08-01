@@ -239,22 +239,26 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       }
       if (prev.phase === "rolling") {
         const rolled = applyRoll(prev);
-        const moves = allLegalMoves(rolled, rolled.turn);
+        const hasMoves = allLegalMoves(rolled, rolled.turn).length > 0;
         setPlayerColor(rolled.turn);
-        if (moves.length === 0) {
+        if (!hasMoves) {
+          const passed: GameState = {
+            ...rolled,
+            remaining: [] as number[],
+            turn: (rolled.turn === "white" ? "black" : "white") as Color,
+            phase: "rolling",
+            dice: [],
+            lastMove: null,
+            moveHistory: null,
+          };
           setNoMovesMessage({ dice: rolled.dice });
           setTimeout(() => {
-            setState((current) => {
-              if (current.phase !== "moving") return current;
-              const next = { ...current, remaining: [] as number[] };
-              next.turn = current.turn === "white" ? "black" : "white";
-              next.phase = "rolling";
-              next.dice = [];
-              next.lastMove = null;
-              setPlayerColor(next.turn);
-              return next;
-            });
             setNoMovesMessage(null);
+            setState((current) => {
+              if (!current || current.phase !== "moving" || current.turn !== rolled.turn) return current;
+              return passed;
+            });
+            setPlayerColor(passed.turn);
           }, 1500);
         }
         return rolled;

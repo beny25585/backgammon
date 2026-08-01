@@ -30,3 +30,6 @@ env/
 .idea/
 *.log
 .DS_Store
+.hermes
+CODE_REVIEW.md
+TODO.md

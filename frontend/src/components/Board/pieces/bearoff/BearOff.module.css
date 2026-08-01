@@ -4,7 +4,7 @@
   flex-direction: column;
   justify-content: space-between;
   width: var(--bearoff-w);
-  height: calc(var(--point-h) * 2);
+  height: 100%;
   padding: 0.4rem 0.35rem;
   background: linear-gradient(180deg, #1a0e06, #0a0603);
   border: 1px solid rgba(231, 189, 114, 0.12);

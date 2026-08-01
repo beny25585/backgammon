@@ -21,3 +21,6 @@ db.sqlite3
 *.swo
 *~
 *.local
+.hermes
+CODE_REVIEW.md
+TODO.md

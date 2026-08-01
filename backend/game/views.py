@@ -16,8 +16,22 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from .engine import BackgammonEngine
-from .models import GameRoom, GameState, Match
-from .serializers import RegisterSerializer, UserSerializer, MatchSerializer
+from .models import GameRoom, GameState, Match, Player, RoomPlayer
+from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
+
+
+def get_or_create_player(user):
+    player, _ = Player.objects.get_or_create(user=user)
+    return player
+
+
+def room_players_data(room):
+    white_rp = room.players.filter(color='white').first()
+    black_rp = room.players.filter(color='black').first()
+    return {
+        'whitePlayer': PlayerSerializer(white_rp.player).data if white_rp else None,
+        'blackPlayer': PlayerSerializer(black_rp.player).data if black_rp else None,
+    }
 
 
 @api_view(['GET'])
@@ -66,8 +80,9 @@ def register(request):
 def create_room(request):
     user = request.user
     logger.info(f"Create room attempt: user={user.username}")
+    player = get_or_create_player(user)
     active_rooms = GameRoom.objects.filter(
-        db_models.Q(white_player=user) | db_models.Q(black_player=user),
+        players__player=player,
         status__in=['waiting', 'playing']
     )
     if active_rooms.exists():
@@ -76,20 +91,17 @@ def create_room(request):
 
     target = request.data.get('targetPoints', 7)
     preferred_color = request.data.get('preferredColor', 'white')
+    if preferred_color not in ('white', 'black'):
+        preferred_color = 'white'
 
-    room_kwargs = {
-        'code': uuid.uuid4().hex[:6].upper(),
-        'status': 'waiting',
-        'target_points': target,
-        'white_score': 0,
-        'black_score': 0,
-    }
-    if preferred_color == 'black':
-        room_kwargs['black_player'] = user
-    else:
-        room_kwargs['white_player'] = user
-
-    room = GameRoom.objects.create(**room_kwargs)
+    room = GameRoom.objects.create(
+        code=uuid.uuid4().hex[:6].upper(),
+        status='waiting',
+        target_points=target,
+        white_score=0,
+        black_score=0,
+    )
+    RoomPlayer.objects.create(room=room, player=player, color=preferred_color)
     initial = BackgammonEngine.get_initial_state()
     room.state = initial
     room.save()
@@ -101,8 +113,7 @@ def create_room(request):
         'code': room.code,
         'status': room.status,
         'targetPoints': target,
-        'whitePlayer': UserSerializer(room.white_player).data if room.white_player else None,
-        'blackPlayer': UserSerializer(room.black_player).data if room.black_player else None,
+        **room_players_data(room),
     }, status=status.HTTP_201_CREATED)
 
 
@@ -111,24 +122,24 @@ def join_room(request):
     code = request.data.get('code', '').upper().strip()
     user = request.user
     logger.info(f"Join room attempt: code={code} user={user.username}")
+    player = get_or_create_player(user)
     try:
         room = GameRoom.objects.get(code=code, status='waiting')
     except GameRoom.DoesNotExist:
         logger.warning(f"Room not found: code={code}")
         return Response({'error': 'Room not found or already full'}, status=status.HTTP_404_NOT_FOUND)
-    if room.white_player is not None and room.black_player is not None:
+    if room.players.count() >= 2:
         logger.warning(f"Room full: code={code}")
         return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
-    if room.white_player == user or room.black_player == user:
+    if room.players.filter(player=player).exists():
         logger.warning(f"User already in room: user={user.username} code={code}")
         return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
-    if room.white_player is None:
-        room.white_player = user
-    else:
-        room.black_player = user
+    taken_colors = set(room.players.values_list('color', flat=True))
+    color = 'black' if 'white' in taken_colors else 'white'
+    RoomPlayer.objects.create(room=room, player=player, color=color)
     room.status = 'playing'
     room.save()
-    logger.info(f"User joined room: user={user.username} code={code}")
+    logger.info(f"User joined room: user={user.username} code={code} color={color}")
 
     # The room starts when the second player is assigned, not only when that
     # player later opens a WebSocket. This wakes the creator from WaitingRoom.
@@ -143,8 +154,7 @@ def join_room(request):
         'code': room.code,
         'status': room.status,
         'targetPoints': room.target_points,
-        'whitePlayer': UserSerializer(room.white_player).data,
-        'blackPlayer': UserSerializer(room.black_player).data,
+        **room_players_data(room),
     })
 
 
@@ -159,8 +169,7 @@ def room_detail(request, code):
         'code': room.code,
         'status': room.status,
         'targetPoints': room.target_points,
-        'whitePlayer': UserSerializer(room.white_player).data if room.white_player else None,
-        'blackPlayer': UserSerializer(room.black_player).data if room.black_player else None,
+        **room_players_data(room),
         'state': room.state,
     })
 
@@ -169,8 +178,9 @@ def room_detail(request, code):
 def cancel_room(request):
     """Cancel the current player's active room."""
     user = request.user
+    player = get_or_create_player(user)
     room = GameRoom.objects.filter(
-        db_models.Q(white_player=user) | db_models.Q(black_player=user),
+        players__player=player,
         status__in=['waiting', 'playing']
     ).first()
     if not room:
@@ -184,9 +194,19 @@ def cancel_room(request):
 def save_match(request):
     user = request.user
     data = request.data
+
+    def resolve_player_id(raw_id):
+        if raw_id is None:
+            return None
+        # Frontend sends a User id (from JWT). Resolve to the Player.
+        try:
+            return Player.objects.get(user_id=int(raw_id)).id
+        except (Player.DoesNotExist, ValueError, TypeError):
+            return None
+
     match = Match.objects.create(
-        white_player_id=data.get('white_player_id'),
-        black_player_id=data.get('black_player_id'),
+        white_player_id=resolve_player_id(data.get('white_player_id')),
+        black_player_id=resolve_player_id(data.get('black_player_id')),
         match_type=data.get('match_type', 'online'),
         target_points=data.get('target_points', 7),
         white_score=data.get('white_score', 0),
@@ -201,8 +221,9 @@ def save_match(request):
 @api_view(['GET'])
 def list_matches(request):
     user = request.user
+    player = get_or_create_player(user)
     matches = Match.objects.filter(
-        Q(white_player=user) | Q(black_player=user)
+        Q(white_player=player) | Q(black_player=player)
     ).order_by('-created_at')
     page = int(request.GET.get('page', 1))
     page_size = 20
@@ -229,7 +250,8 @@ def match_detail(request, pk):
 @api_view(['GET'])
 def player_stats(request):
     user = request.user
-    matches = Match.objects.filter(Q(white_player=user) | Q(black_player=user))
+    player = get_or_create_player(user)
+    matches = Match.objects.filter(Q(white_player=player) | Q(black_player=player))
     total_matches = matches.count()
     if total_matches == 0:
         return Response({
@@ -248,7 +270,7 @@ def player_stats(request):
     recent_results = []
 
     for m in matches.order_by('-created_at'):
-        user_color = 'white' if m.white_player == user else 'black'
+        user_color = 'white' if m.white_player == player else 'black'
         if m.winner == user_color:
             matches_won += 1
             recent_results.append('W')

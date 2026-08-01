@@ -16,7 +16,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   }, [rollDice]);
 
   const isOpeningRoll = state?.phase === "opening_roll";
-  const isMyTurnToRoll = isOpeningRoll && state?.openingRoll?.[playerColor] == null;
+  const isMyTurnToRoll = isOpeningRoll && state?.turn === playerColor;
   const iRolled = isOpeningRoll && openingRollResult?.myDie != null;
   const bothRolled = openingRollResult?.myDie != null && openingRollResult?.opponentDie != null;
   const needsToRoll = state?.phase === "rolling" && state?.dice.length === 0 && state?.turn === playerColor;

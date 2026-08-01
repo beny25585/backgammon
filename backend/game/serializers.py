@@ -1,7 +1,7 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
 
-from .models import Match
+from .models import Match, Player
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -33,9 +33,18 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ('id', 'username')
 
 
+class PlayerSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+
+    class Meta:
+        model = Player
+        fields = ('id', 'user_id', 'username', 'nickname', 'rating', 'wins', 'losses', 'win_streak')
+
+
 class MatchSerializer(serializers.ModelSerializer):
-    whitePlayer = UserSerializer(source='white_player', read_only=True)
-    blackPlayer = UserSerializer(source='black_player', read_only=True)
+    whitePlayer = PlayerSerializer(source='white_player', read_only=True)
+    blackPlayer = PlayerSerializer(source='black_player', read_only=True)
 
     class Meta:
         model = Match

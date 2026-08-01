@@ -37,14 +37,14 @@ export default function WaitingRoom() {
       }, 1000);
     };
 
-    const handlePlayerJoined = (payload: unknown) => {
-      const data = payload as { playerColor?: string };
+    const handlePlayerJoined = (message: unknown) => {
+      const data = (message as { payload?: { playerColor?: string } }).payload;
       // Ignore our own player_joined event — only react when opponent joins.
       if (data?.playerColor !== playerColor) startGame();
     };
 
-    const handleRoomStatus = (payload: unknown) => {
-      const data = payload as { connected?: number };
+    const handleRoomStatus = (message: unknown) => {
+      const data = (message as { payload?: { connected?: number } }).payload;
       const connected = data?.connected ?? 1;
       setConnectedCount(connected);
       if (connected >= 2) startGame();
@@ -52,7 +52,8 @@ export default function WaitingRoom() {
 
     const handleRoomStarted = () => startGame();
 
-    const handleError = (payload: unknown) => {
+    const handleError = (message: unknown) => {
+      const payload = (message as { payload?: unknown }).payload;
       const msg = typeof payload === "string" ? payload : (payload as Record<string, unknown>)?.message as string;
       setStatus("error");
       setError(msg);

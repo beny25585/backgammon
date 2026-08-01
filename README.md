@@ -116,7 +116,7 @@ Backgammon Game/
     ├── game/
     │   ├── engine.py             # Pure Python game engine
     │   ├── consumers.py          # WebSocket handlers
-    │   ├── models.py             # GameRoom + GameState (DB)
+    │   ├── models.py             # Player, RoomPlayer, GameRoom, Match, GameEvent, GameState
     │   ├── views.py              # REST endpoints
     │   └── serializers.py        # DRF serializers
     └── ...
@@ -139,6 +139,26 @@ Backgammon Game/
 | Local storage rejoin | ✅ | N/A |
 | Opening roll | ✅ | ✅ |
 | Bear-off, bar, blot capture | ✅ | ✅ |
+
+---
+
+## Multiplayer Protocol (WebSocket)
+
+The frontend `gameContext` is the authoritative client engine. Each player's `state_update` sends `{ state, action }`; the server records the action as a `GameEvent` with an atomic `sequence` (bumped on `GameRoom.last_sequence`), stamps `state.version`, persists `GameState`, and broadcasts to the room.
+
+- **Client → Server** `state_update`: `{ "type": "state_update", "payload": { "state": {...}, "action": "roll|move|end_turn|undo|double|double_response" } }`
+- **Server → Client** `state_update` (on connect): `{ type, payload, playerColor, initial: true }` — the connecting player's own color and current saved state.
+- **Server → Client** `state_update` (broadcast): `{ type, payload: { ...state, version }, playerColor: <sender> }`
+- **Versioning / stale-drop:** clients drop broadcasts with `version <=` their last applied version; the server drops incoming payloads whose `version` is behind `last_sequence`. A player's own echo only stamps the new version (no re-apply).
+- **Reconnect:** on abnormal WS close (1006/1011) the client retries up to 5× with a 2s delay; the server re-sends the initial snapshot so state resyncs.
+
+### Redis requirement (critical)
+
+`channels-redis` relies on blocking `BZPOPMIN`, which redis-py 8.0.0+ breaks by defaulting `socket_timeout=5` (→ WS `1011` + `TimeoutError`). **Pin `redis==4.5.5`** (4.5.4 has a separate `asyncio.shield()` cancellation bug). `requirements.txt` pins both `channels-redis==4.5.5` and `redis==4.5.5`.
+
+### Data model
+
+`User → Player → RoomPlayer (sit + color) → Match (game) → GameEvent (actions) + GameState (snapshot)`. `Match.room` is nullable (`SET_NULL`) so local/AI matches have no room. The `0003` migration backfills Players/RoomPlayers from the old User-based `white_player`/`black_player` fields.
 
 ---
 

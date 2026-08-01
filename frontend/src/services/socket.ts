@@ -25,6 +25,7 @@ export class GameSocketService {
   private reconnectDelay = 2000;
   private currentToken: string | null = null;
   private currentRoomId: string | null = null;
+  private intentionalClose = false;
 
   constructor(url: string = '') {
     this.url = url || '/backgammon';
@@ -33,6 +34,7 @@ export class GameSocketService {
   connect(roomId: string, token?: string): Promise<void> {
     this.currentRoomId = roomId;
     this.currentToken = token || null;
+    this.intentionalClose = false;
 
     // Kill old connection to prevent orphaned sockets from triggering reconnect
     if (this.ws) {
@@ -61,9 +63,10 @@ export class GameSocketService {
         this.ws.onmessage = (event) => {
           try {
             const message: GameMessage = JSON.parse(event.data);
-            this.emit(message.type, message.payload);
+            this.emit(message.type, message);
           } catch (error) {
             console.error("Failed to parse message:", error);
+            clientLogger.error("Failed to parse WS message", { raw: event.data, error: String(error) });
           }
         };
 
@@ -72,13 +75,16 @@ export class GameSocketService {
         };
 
         this.ws.onclose = (event: CloseEvent) => {
-          if (event.code !== 1000) {
-            const reason = event.reason || getCloseReason(event.code);
-            clientLogger.error("WebSocket closed", { roomId, code: event.code, reason, wasClean: event.wasClean });
-            reject(new Error(reason));
-          } else {
-            clientLogger.info("WebSocket disconnected", { roomId });
+          if (this.intentionalClose || event.code === 1000) {
+            if (!this.intentionalClose) {
+              clientLogger.info("WebSocket disconnected", { roomId });
+            }
+            return;
           }
+          const reason = event.reason || getCloseReason(event.code);
+          clientLogger.error("WebSocket closed", { roomId, code: event.code, reason, wasClean: event.wasClean });
+          reject(new Error(reason));
+          this.attemptReconnect();
         };
       } catch (error) {
         reject(error);
@@ -124,6 +130,7 @@ export class GameSocketService {
 
   disconnect(): void {
     if (this.ws) {
+      this.intentionalClose = true;
       this.ws.close();
       this.ws = null;
     }

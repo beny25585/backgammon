@@ -14,8 +14,8 @@ interface RoomResponse {
   code: string;
   status: string;
   targetPoints: number;
-  whitePlayer: { id: number; username: string } | null;
-  blackPlayer: { id: number; username: string } | null;
+  whitePlayer: { id: number; user_id?: number; username: string } | null;
+  blackPlayer: { id: number; user_id?: number; username: string } | null;
 }
 
 const tabs = [
@@ -104,7 +104,7 @@ export default function HomeScreen() {
     try {
       const room: RoomResponse = await joinRoom(code);
       const playerColor: Color =
-        String(room.whitePlayer?.id) === String(userId) ? "white" : "black";
+        String(room.whitePlayer?.user_id) === String(userId) ? "white" : "black";
       saveRoom({
         roomId: room.id,
         roomCode: code,

@@ -10,3 +10,6 @@ dist/
 *.swp
 *.swo
 *~
+.hermes
+CODE_REVIEW.md
+TODO.md
