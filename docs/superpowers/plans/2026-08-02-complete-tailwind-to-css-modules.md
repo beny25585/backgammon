@@ -19,6 +19,8 @@
 
 **Create:**
 - `frontend/src/components/GameResultOverlay/GameResultOverlay.module.css`
+- `frontend/src/components/GameResultOverlay/GameResultOverlay.test.tsx` (visual test harness)
+- `frontend/test-overlay.html` (entry that mounts the harness)
 
 **Modify:**
 - `frontend/src/components/GameResultOverlay/GameResultOverlay.tsx`
@@ -376,7 +378,79 @@ git commit -m "refactor: migrate GameResultOverlay to CSS module"
 
 ---
 
-### Task 4: Remove Tailwind from the build config
+### Task 4: Create a visual test harness for GameResultOverlay
+
+**Files:**
+- Create: `frontend/src/components/GameResultOverlay/GameResultOverlay.test.tsx`
+- Create: `frontend/test-overlay.html`
+
+Mirrors the existing `frontend/test-board.tsx` + `frontend/test-board.html` pattern
+(same lines 1-8 of `test-board.tsx` setup, minus the GameContext wrapper — this
+component needs no provider). The test file lives inside the component folder, and
+a root-level HTML entry points at it so Vite serves it at `/test-overlay.html`.
+
+- [ ] **Step 1: Write `GameResultOverlay.test.tsx`**
+
+```tsx
+import { createRoot } from "react-dom/client";
+import GameResultOverlay from "./GameResultOverlay";
+import "../../../styles/global.css";
+import type { Color } from "@/lib/backgammon/engine";
+
+const winner: Color = "white";
+
+function Test() {
+  return (
+    <GameResultOverlay
+      winner={winner}
+      winType="gammon"
+      points={4}
+      cube={2}
+      matchScore={{ white: 3, black: 1 }}
+      matchTarget={5}
+      matchWinner={null}
+      onNext={() => {}}
+      onHome={() => {}}
+    />
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<Test />);
+```
+
+- [ ] **Step 2: Write `frontend/test-overlay.html`**
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>test overlay</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/components/GameResultOverlay/GameResultOverlay.test.tsx"></script>
+  </body>
+</html>
+```
+
+- [ ] **Step 3: Verify it renders**
+
+Run: `cd frontend && pnpm dev` then open `http://localhost:5173/test-overlay.html`
+Expected: the result overlay card renders — dark backdrop, gradient card with gold
+border, "You Win!" title in cream, "Gammon! ×2 → +4" label, match score row
+(You 3 / vs / Bot 1), gold "Next Game →" button and translucent "Quit Match" button.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add frontend/src/components/GameResultOverlay/GameResultOverlay.test.tsx frontend/test-overlay.html
+git commit -m "test: add visual test harness for GameResultOverlay"
+```
+
+---
+
+### Task 5: Remove Tailwind from the build config
 
 **Files:**
 - Modify: `frontend/vite.config.ts:3,12`
@@ -463,7 +537,7 @@ git commit -m "chore: remove unused Tailwind setup"
 
 ---
 
-### Task 5: Update the README
+### Task 6: Update the README
 
 **Files:**
 - Modify: `frontend/README.md`
@@ -523,7 +597,7 @@ git commit -m "docs: remove Tailwind references from README"
 
 ---
 
-### Task 6: Final verification
+### Task 7: Final verification
 
 **Files:**
 - None (verification only)
@@ -547,8 +621,9 @@ Expected: `No such file or directory`.
 Run: `cd frontend && pnpm build && pnpm lint`
 Expected: build succeeds, lint passes with no errors.
 
-- [ ] **Step 4: Manual visual check (if possible)**
+- [ ] **Step 4: Visual check via the test harness**
 
-Run `pnpm dev`, open a local match, finish a game, and confirm the result overlay
-renders identically (backdrop, gradient card, gold border, won/lost title colors,
-score row, gold "Next Game" button, translucent "Quit Match" button).
+Run: `cd frontend && pnpm dev`, open `http://localhost:5173/test-overlay.html`
+Expected: the result overlay renders with all elements present (dark backdrop,
+gradient card, gold border, won/lost title colors, score row, gold "Next Game"
+button, translucent "Quit Match" button).
