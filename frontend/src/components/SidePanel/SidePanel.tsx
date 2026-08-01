@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import styles from "./SidePanel.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
-import OpponentBar from "../OpponentBar";
-import TurnIndicator from "../TurnIndicator";
+import PlayerRow from "../PlayerRow";
 import Controls from "../Controls";
 import { useGame } from "../../services/gameContext";
 
@@ -19,15 +18,29 @@ export default function SidePanel({ state, playerColor, onLeave }: SidePanelProp
   const [showGiveUp, setShowGiveUp] = useState(false);
 
   const opponentColor = playerColor === "white" ? "black" : "white";
+  const opponentLabel = playerColor === "white" ? "Black Player" : "White Player";
+  const selfLabel = playerColor === "white" ? "You (White)" : "You (Black)";
 
   return (
     <div className={styles.panel}>
-      <div className={styles.matchInfo}>
-        <OpponentBar color={opponentColor} state={state} />
+      <div className={styles.section}>
+        <PlayerRow
+          color={opponentColor}
+          state={state}
+          label={opponentLabel}
+          active={state.turn === opponentColor}
+          self={false}
+        />
       </div>
 
       <div className={styles.section}>
-        <TurnIndicator currentTurn={state.turn} playerColor={playerColor} />
+        <PlayerRow
+          color={playerColor}
+          state={state}
+          label={selfLabel}
+          active={state.turn === playerColor}
+          self={true}
+        />
       </div>
 
       <div className={styles.section}>
