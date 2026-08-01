@@ -51,13 +51,18 @@ const BOT_DELAY = 2200;
 
 export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitMatch }: LocalGameProviderProps) {
   const [state, setState] = useState<GameState>(() => newGame());
-  const [playerColor, setPlayerColor] = useState<Color>("white");
+  const humanColor: Color = botColor ? (botColor === "white" ? "black" : "white") : "white";
+  const [playerColor, setPlayerColor] = useState<Color>(humanColor);
   const [isLoading] = useState(false);
   const [error] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
   const [noMovesMessage, setNoMovesMessage] = useState<{ dice: number[] } | null>(null);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
+
+  const setTurnColor = (color: Color) => {
+    if (!botColor) setPlayerColor(color);
+  };
 
   // ── Match tracking ─────────────────────────────────────────────
 
@@ -141,7 +146,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
   function handleNextGame() {
     setGameResult(null);
     setState(newGame());
-    setPlayerColor("white");
+    setTurnColor("white");
     setOpeningRollResult(null);
   }
 
@@ -150,7 +155,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
     setMatchWinner(null);
     setMatchScore({ white: 0, black: 0 });
     setState(newGame());
-    setPlayerColor("white");
+    setTurnColor("white");
     if (onQuitMatch) onQuitMatch();
   }
 
@@ -168,7 +173,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
           const next = applyOpeningRoll(prev, botColor);
           if (next.phase === "opening_roll") {
             const other: Color = botColor === "white" ? "black" : "white";
-            setPlayerColor(other);
+            setTurnColor(other);
             return { ...next, turn: other };
           }
           const winner: Color = next.turn;
@@ -177,14 +182,14 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
             opponentDie: next.openingRoll.black,
             winner,
           });
-          setTimeout(() => setOpeningRollResult(null), 4500);
-          setPlayerColor(next.turn);
+          setTimeout(() => setOpeningRollResult(null), 3500);
+          setTurnColor(next.turn);
           return next;
         }
 
         if (prev.phase === "rolling") {
           const next = applyRoll(prev);
-          setPlayerColor(next.turn);
+          setTurnColor(next.turn);
           return next;
         }
 
@@ -196,11 +201,11 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
             next.phase = "rolling" as const;
             next.dice = [];
             next.lastMove = null;
-            setPlayerColor(next.turn);
+            setTurnColor(next.turn);
             return next;
           }
           const next = applyMove(prev, move, botColor);
-          setPlayerColor(next.turn);
+          setTurnColor(next.turn);
           return next;
         }
 
@@ -224,7 +229,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
             opponentDie: null,
             winner: null,
           });
-          setPlayerColor(other);
+          setTurnColor(other);
           return { ...next, turn: other };
         }
         const winner: Color = next.turn;
@@ -233,14 +238,14 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
           opponentDie: next.openingRoll.black,
           winner,
         });
-        setTimeout(() => setOpeningRollResult(null), 4500);
-        setPlayerColor(next.turn);
+        setTimeout(() => setOpeningRollResult(null), 3500);
+        setTurnColor(next.turn);
         return next;
       }
       if (prev.phase === "rolling") {
         const rolled = applyRoll(prev);
         const hasMoves = allLegalMoves(rolled, rolled.turn).length > 0;
-        setPlayerColor(rolled.turn);
+        setTurnColor(rolled.turn);
         if (!hasMoves) {
           const passed: GameState = {
             ...rolled,
@@ -258,7 +263,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
               if (!current || current.phase !== "moving" || current.turn !== rolled.turn) return current;
               return passed;
             });
-            setPlayerColor(passed.turn);
+            setTurnColor(passed.turn);
           }, 1500);
         }
         return rolled;
@@ -277,7 +282,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       );
       if (!match) return prev;
       const next = applyMove(prev, match, prev.turn);
-      setPlayerColor(next.turn);
+      setTurnColor(next.turn);
       return next;
     });
   }, []);
@@ -292,7 +297,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
   const respondToDouble = useCallback((accept: boolean) => {
     setState((prev) => {
       const next = respondDouble(prev, accept);
-      if (next.phase !== "game_over") setPlayerColor(next.turn);
+      if (next.phase !== "game_over") setTurnColor(next.turn);
       return next;
     });
   }, []);
@@ -306,7 +311,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       next.dice = [];
       next.lastMove = null;
       next.moveHistory = null;
-      setPlayerColor(next.turn);
+      setTurnColor(next.turn);
       return next;
     });
   }, []);
@@ -315,7 +320,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
     setState((prev) => {
       const restored = undoLastMove(prev);
       if (!restored) return prev;
-      setPlayerColor(restored.turn);
+      setTurnColor(restored.turn);
       return restored;
     });
   }, []);

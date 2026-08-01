@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
-import { DiceRow } from "../Dice";
+import { DiceRow, RollPrompt } from "../Dice";
 import { allLegalMoves, legalMovesFrom, BAR, OFF, type Source, type Target } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 
@@ -13,6 +13,8 @@ interface GameBoardProps {
   undoMove?: () => void;
   endTurn?: () => void;
   onLeave?: () => void;
+  needsToRoll?: boolean;
+  onRoll?: () => void;
 }
 
 export default function GameBoard({
@@ -22,6 +24,8 @@ export default function GameBoard({
   undoMove,
   endTurn,
   onLeave,
+  needsToRoll,
+  onRoll,
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
 
@@ -65,9 +69,14 @@ export default function GameBoard({
           onUndo={undoMove}
           onConfirm={endTurn}
         />
-        {state.phase !== "opening_roll" && state.phase === "moving" && state.turn === playerColor && state.remaining.length > 0 && (
-          <div className={styles.boardOverlay}>
-            <DiceRow dice={state.dice} remaining={state.remaining} color={playerColor} />
+        {state.phase !== "opening_roll" && state.phase === "moving" && state.remaining.length > 0 && (
+          <div className={styles.boardOverlay} data-testid="dice-overlay">
+            <DiceRow dice={state.dice} remaining={state.remaining} color={state.turn} />
+          </div>
+        )}
+        {needsToRoll && onRoll && (
+          <div className={styles.boardRollPrompt} data-testid="roll-prompt">
+            <RollPrompt onRoll={onRoll} dark={playerColor === "black"} />
           </div>
         )}
       </div>

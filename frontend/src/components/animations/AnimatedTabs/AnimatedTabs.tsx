@@ -18,7 +18,6 @@ export default function AnimatedTabs({
   onChange,
 }: AnimatedTabsProps) {
   const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
-  const reversedIndex = tabs.length - 1 - activeIndex;
 
   return (
     <div
@@ -32,7 +31,7 @@ export default function AnimatedTabs({
       <motion.div
         className={styles.activeTab}
         animate={{
-          x: `${reversedIndex * 100}%`,
+          x: `${activeIndex * 100}%`,
         }}
         transition={{
           type: "spring",

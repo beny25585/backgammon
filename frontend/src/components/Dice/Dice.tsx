@@ -55,6 +55,7 @@ export function Die({
       }
       transition={{ type: "spring", stiffness: 100, damping: 5 }}
       className={`${styles.die} ${dark ? styles.dieDark : styles.dieLight}`}
+      data-testid="die"
     >
       {pipPositions[value]?.map(([x, y], i) => (
         <span

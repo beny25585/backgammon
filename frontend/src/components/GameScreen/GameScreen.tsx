@@ -21,9 +21,11 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   const bothRolled = openingRollResult?.myDie != null && openingRollResult?.opponentDie != null;
   const needsToRoll = state?.phase === "rolling" && state?.dice.length === 0 && state?.turn === playerColor;
 
-  if (state && state.phase !== "opening_roll" && openingRollResult !== null) {
-    setOpeningRollResult(null);
-  }
+  useEffect(() => {
+    if (state && state.phase !== "opening_roll" && openingRollResult !== null) {
+      setOpeningRollResult(null);
+    }
+  }, [state, openingRollResult, setOpeningRollResult]);
 
   if (isLoading) {
     return <div className={styles.loading}>Connecting to game...</div>;
@@ -45,11 +47,8 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
         </div>
       )}
       {!opponentConnected && !reconnected && (
-        <div className={styles.overlayDark}>
-          <div className={styles.overlayCard}>
-            <div className={styles.warningText}>Opponent Disconnected</div>
-            <div className={styles.waitingText}>Waiting for opponent to reconnect...</div>
-          </div>
+        <div className={styles.disconnected}>
+          Opponent disconnected — you can keep playing
         </div>
       )}
 
@@ -60,6 +59,8 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
         undoMove={undoMove}
         endTurn={endTurn}
         onLeave={onLeave}
+        needsToRoll={needsToRoll}
+        onRoll={handleRoll}
       />
 
       {isOpeningRoll && (() => {
@@ -111,14 +112,6 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
           </div>
         );
       })()}
-
-      {needsToRoll && (
-        <div className={styles.overlayDim}>
-          <div className={styles.overlayCard}>
-            <RollPrompt onRoll={handleRoll} dark={playerColor === "black"} />
-          </div>
-        </div>
-      )}
 
       {noMovesMessage && (
         <div className={styles.overlayDim}>

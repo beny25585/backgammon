@@ -32,8 +32,7 @@ export default function MatchSettings({
   onStart,
   onCancel,
 }: MatchSettingsProps) {
-  const [botColor, setBotColor] = useState<Color>("black");
-  const [preferredColor, setPreferredColor] = useState<"white" | "black">(
+  const [playerColor, setPlayerColor] = useState<"white" | "black">(
     "white",
   );
 
@@ -41,14 +40,10 @@ export default function MatchSettings({
 
   const isOnline = mode === "online";
 
-  const selectedColor = isOnline ? preferredColor : botColor;
+  const selectedColor = playerColor;
 
   const handleColorChange = (id: string) => {
-    if (isOnline) {
-      setPreferredColor(id as "white" | "black");
-    } else {
-      setBotColor(id as Color);
-    }
+    setPlayerColor(id as "white" | "black");
   };
 
   const targetTabs = TARGETS.map((t) => ({
@@ -125,12 +120,12 @@ export default function MatchSettings({
               if (isOnline) {
                 onStart({
                   target,
-                  preferredColor,
+                  preferredColor: playerColor,
                 });
               } else {
                 onStart({
                   target,
-                  botColor,
+                  botColor: playerColor === "white" ? "black" : "white",
                 });
               }
             }}
