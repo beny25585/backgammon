@@ -1,0 +1,126 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+
+.idle {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.activeSelf {
+  background: rgba(124, 214, 154, 0.08);
+  border-color: rgba(124, 214, 154, 0.5);
+  box-shadow: 0 0 14px rgba(124, 214, 154, 0.12);
+}
+
+.activeOpponent {
+  background: rgba(231, 189, 114, 0.12);
+  border-color: rgba(231, 189, 114, 0.55);
+  box-shadow: 0 0 14px rgba(231, 189, 114, 0.14);
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(231, 189, 114, 0.25);
+}
+
+.avatar.white {
+  background: radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 58%, #b89660 100%);
+}
+
+.avatar.black {
+  background: radial-gradient(circle at 30% 25%, #6a4830, #2a1810 58%, #0a0402 100%);
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #f7f1e7;
+}
+
+.idle .name {
+  color: rgba(247, 241, 231, 0.55);
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(247, 241, 231, 0.8);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.scoreWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.score {
+  font-size: 20px;
+  font-weight: 900;
+  color: #e7bd72;
+  letter-spacing: 0.08em;
+}
+
+.activeSelf .score {
+  color: #7cd69a;
+}
+
+.idle .score {
+  color: rgba(231, 189, 114, 0.55);
+}
+
+.turnBadge {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #7cd69a;
+  white-space: nowrap;
+}
+
+.activeOpponent .turnBadge {
+  color: #e7bd72;
+}
+
+@media (max-width: 767px) {
+  .row {
+    padding: 8px 10px;
+  }
+
+  .name {
+    font-size: 11px;
+  }
+
+  .score {
+    font-size: 17px;
+  }
+}
