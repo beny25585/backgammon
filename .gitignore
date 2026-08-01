@@ -25,3 +25,5 @@ db.sqlite3
 .hermes
 CODE_REVIEW.md
 TODO.md
+
+.superpowers/
