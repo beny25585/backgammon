@@ -549,3 +549,42 @@ class CreateRoomGuardTests(TestCase):
         response = client.post("/api/rooms/", {"targetPoints": 7}, format="json")
 
         self.assertEqual(response.status_code, 400)
+
+
+class ClockHelperTests(TestCase):
+    def test_parse_time_control(self):
+        from game.clock import parse_time_control
+        self.assertEqual(parse_time_control('3+10'), (180_000, 10_000))
+        self.assertIsNone(parse_time_control('none'))
+        self.assertIsNone(parse_time_control(None))
+        self.assertIsNone(parse_time_control('bogus'))
+
+    def test_active_player_is_turn_normally(self):
+        from game.clock import active_player
+        self.assertEqual(active_player({'phase': 'moving', 'turn': 'white'}), 'white')
+
+    def test_active_player_responder_pays_during_doubling(self):
+        from game.clock import active_player
+        state = {'phase': 'doubling_offered', 'turn': 'black', 'doubleOfferedBy': 'white'}
+        self.assertEqual(active_player(state), 'black')
+
+    def test_active_player_none_when_game_over(self):
+        from game.clock import active_player
+        self.assertIsNone(active_player({'phase': 'game_over', 'winner': 'white'}))
+
+    def test_apply_transition_charges_and_bonuses(self):
+        from game.clock import apply_transition
+        clock = {'white': 180_000, 'black': 180_000}
+        out = apply_transition(clock, 'white', 'black', 5_000, 10_000)
+        self.assertEqual(out['white'], 185_000)   # 180_000 - 5_000 + 10_000
+        self.assertEqual(out['black'], 180_000)   # frozen while white acted
+
+    def test_apply_transition_floors_at_zero(self):
+        from game.clock import apply_transition
+        clock = {'white': 2_000, 'black': 180_000}
+        self.assertEqual(apply_transition(clock, 'white', 'black', 5_000, 0)['white'], 0)
+
+    def test_apply_transition_noop_when_active_unchanged(self):
+        from game.clock import apply_transition
+        clock = {'white': 180_000, 'black': 180_000}
+        self.assertEqual(apply_transition(clock, 'white', 'white', 5_000, 10_000), clock)
