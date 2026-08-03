@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
+import type { GameState, Source, Target } from "@/lib/backgammon/engine";
 import Checker from "../checker/Checker";
 import styles from "./PointCell.module.css";
 

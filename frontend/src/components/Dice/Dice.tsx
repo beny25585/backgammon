@@ -78,7 +78,6 @@ export function DiceRow({
   showLabels,
   myRoll,
   opponentRoll,
-  winner,
 }: {
   dice: number[];
   remaining: number[];

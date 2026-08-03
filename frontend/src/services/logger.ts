@@ -8,6 +8,7 @@ function sendLog(level: string, message: string, meta: Record<string, unknown> =
       body: JSON.stringify({ level, message, meta }),
     }).catch(() => {});
   } catch {
+    // best-effort logging; never throw
   }
 }
 

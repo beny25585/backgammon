@@ -25,6 +25,10 @@ db.sqlite3
 .hermes
 CODE_REVIEW.md
 TODO.md
+*.deb
+test-results/
+playwright-report/
+src/test-utils/.cache/
 
 .superpowers/
 docs/

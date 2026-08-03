@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/experimental-ct-react";
+import { test, expect, type ComponentFixtures } from "@playwright/experimental-ct-react";
 import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { newGame } from "@/lib/backgammon/engine";
@@ -36,7 +36,7 @@ interface MountProps {
   onRoll?: () => void;
 }
 
-async function mountBoard(mount: any, props: MountProps) {
+async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
   const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll } = props;
   const component = await mount(
     <MockGameWrapper playerColor={playerColor} state={state}>
@@ -56,7 +56,7 @@ async function mountBoard(mount: any, props: MountProps) {
 }
 
 test("clicking a checker then a legal target calls makeMove", async ({ mount }) => {
-  let moveCalls: [Source, Target][] = [];
+  const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
     state: simpleWhiteState(),
     playerColor: "white",
@@ -71,7 +71,7 @@ test("clicking a checker then a legal target calls makeMove", async ({ mount }) 
 });
 
 test("clicking an illegal point does not call makeMove", async ({ mount }) => {
-  let moveCalls: [Source, Target][] = [];
+  const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
     state: simpleWhiteState(),
     playerColor: "white",
@@ -81,7 +81,7 @@ test("clicking an illegal point does not call makeMove", async ({ mount }) => {
   await component.locator('[data-point-idx="0"]').click();
   await component.locator('[data-point-idx="1"]').click();
 
-  await component.waitForTimeout(400);
+  await component.page().waitForTimeout(400);
   expect(moveCalls.length).toBe(0);
 });
 

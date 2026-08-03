@@ -3,7 +3,7 @@ import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
 import { DiceRow, RollPrompt } from "../Dice";
-import { allLegalMoves, legalMovesFrom, BAR, OFF, type Source, type Target } from "@/lib/backgammon/engine";
+import { allLegalMoves, legalMovesFrom, type Source, type Target } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 
 interface GameBoardProps {
