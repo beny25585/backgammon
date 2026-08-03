@@ -1,15 +1,16 @@
-import { useState, useCallback, useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import { DiceRow, RollPrompt } from "../Dice";
+import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
 
 interface GameScreenProps {
   onLeave?: () => void;
 }
 
 export default function GameScreen({ onLeave }: GameScreenProps) {
-  const { state, playerColor, isLoading, error, makeMove, rollDice, openingRollResult, setOpeningRollResult, reconnected, opponentConnected, undoMove, endTurn, noMovesMessage } = useGame();
+  const { state, playerColor, isLoading, error, makeMove, rollDice, openingRollResult, setOpeningRollResult, reconnected, opponentConnected, undoMove, endTurn, noMovesMessage, gameResult, handleNextGame, handleHome } = useGame();
 
   const handleRoll = useCallback(() => {
     rollDice();
@@ -122,6 +123,24 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
             <div className={styles.mutedText}>No moves available</div>
           </div>
         </div>
+      )}
+
+      {gameResult && (
+        <GameResultOverlay
+          playerColor={playerColor}
+          winner={gameResult.winner}
+          winType={gameResult.winType}
+          points={gameResult.points}
+          cube={gameResult.cube}
+          matchScore={gameResult.matchScore}
+          matchTarget={gameResult.targetPoints ?? 7}
+          matchWinner={gameResult.winner}
+          onNext={handleNextGame}
+          onHome={() => {
+            handleHome();
+            onLeave?.();
+          }}
+        />
       )}
     </div>
   );

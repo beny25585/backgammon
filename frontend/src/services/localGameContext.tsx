@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
-import type { GameContextType, OpeningRollResult } from "../types/context";
+import type { OpeningRollResult } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import { saveMatch } from "../services/api";
 import {
@@ -11,7 +11,7 @@ import {
   respondDouble,
   undoLastMove,
   allLegalMoves,
-  BAR, OFF,
+  OFF,
   type Source, type Target,
 } from "@/lib/backgammon/engine";
 import { chooseMove } from "@/lib/bot/chooseMove";
@@ -358,6 +358,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
 
       {gameResult && (
         <GameResultOverlay
+          playerColor="white"
           winner={gameResult.winner}
           winType={gameResult.winType}
           points={gameResult.points}

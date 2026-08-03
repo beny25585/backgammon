@@ -8,8 +8,8 @@ from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
 from django.db import models
 from rest_framework_simplejwt.tokens import AccessToken
-from .models import GameRoom, GameState, Match, RoomPlayer, Player, GameEvent
-from .helpers import extract_transcript
+from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
+from .game_service import finalize_room, game_ended_payload
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +49,6 @@ def get_room_player_usernames(room_id):
 @database_sync_to_async
 def room_has_both_players(room):
     return room.players.count() >= 2
-
-
-@database_sync_to_async
-def create_match_for_room(room, **kwargs):
-    white_rp = room.players.filter(color='white').first()
-    black_rp = room.players.filter(color='black').first()
-    return Match.objects.create(
-        room=room,
-        white_player=white_rp.player if white_rp else None,
-        black_player=black_rp.player if black_rp else None,
-        **kwargs,
-    )
 
 
 ACTION_TO_EVENT_TYPE = {
@@ -178,6 +166,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             'players': players,
         }))
 
+        # Returning player lands in a finished game: auto-finalize the room so
+        # it closes instead of staying a dead 'playing' room.
+        if (
+            room.status == 'playing'
+            and state_data.get('phase') == 'game_over'
+            and state_data.get('winner')
+        ):
+            await self._finalize_and_broadcast(
+                state_data, state_data['winner'], state_data.get('winType', 'single'), 'state_update'
+            )
+
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -232,6 +231,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self._handle_state_update(payload)
             elif message_type == 'give_up':
                 await self._handle_give_up()
+            elif message_type == 'game_ended':
+                await self._handle_game_ended(payload)
             else:
                 logger.warning(f"WS unknown message type: {message_type} player={self.player_color}")
                 await self._send_error(f'Unknown message type: {message_type}')
@@ -272,34 +273,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         gs.state_data = state
         await save_game_state(gs)
 
-        # Auto-save match if game is over and target reached
+        # Centralized game-end: any game_over state the client reports finalizes
+        # the room (idempotent) and broadcasts game_ended to everyone.
         if state.get('phase') == 'game_over' and state.get('winner'):
-            winner = state.get('winner')
-            if winner:
-                white_score = room.white_score
-                black_score = room.black_score
-                target = room.target_points
-                white_score_after = white_score + (1 if winner == 'white' else 0)
-                black_score_after = black_score + (1 if winner == 'black' else 0)
-                if white_score_after >= target or black_score_after >= target:
-                    transcript = extract_transcript(state)
-                    games_data = [{
-                        'game_number': 1,
-                        'winner': winner,
-                        'win_type': state.get('winType', 'single'),
-                        'points_awarded': state.get('cube', 1),
-                        'transcript': transcript,
-                    }] if transcript else []
-                    match = await create_match_for_room(
-                        room,
-                        match_type='online',
-                        target_points=target,
-                        white_score=white_score_after,
-                        black_score=black_score_after,
-                        winner=winner,
-                        games=games_data,
-                    )
-                    logger.info(f"WS match saved: id={match.id} room={self.room_id} winner={winner} score={white_score_after}-{black_score_after}")
+            await self._finalize_and_broadcast(
+                state, state['winner'], state.get('winType', 'single'), 'state_update'
+            )
 
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -312,7 +291,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def _handle_give_up(self):
-        """Handle player giving up voluntarily."""
+        """Handle player giving up voluntarily, routed through finalize_room."""
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
             logger.warning(f"WS give_up on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
@@ -321,46 +300,59 @@ class GameConsumer(AsyncWebsocketConsumer):
         winner = 'black' if self.player_color == 'white' else 'white'
         logger.info(f"WS give_up: {self.player_color} forfeits, winner={winner} room={self.room_id}")
 
-        # Save match record
         game_state = await get_game_state(room)
-        transcript = extract_transcript(game_state.state_data)
-        games_data = [{
-            'game_number': 1,
-            'winner': winner,
-            'win_type': 'single',
-            'points_awarded': 1,
-            'transcript': transcript,
-        }] if transcript else []
+        state = dict(game_state.state_data or {})
+        state['phase'] = 'game_over'
+        state['winner'] = winner
+        state['winType'] = 'single'
+        game_state.state_data = state
+        await save_game_state(game_state)
 
-        await create_match_for_room(
-            room,
-            match_type='online',
-            target_points=room.target_points,
-            white_score=room.white_score,
-            black_score=room.black_score,
-            winner=winner,
-            games=games_data,
-        )
+        await self._finalize_and_broadcast(state, winner, 'single', 'give_up')
 
-        room.status = 'completed'
-        await database_sync_to_async(room.save)()
+    async def _handle_game_ended(self, payload):
+        """Receive a client game_ended signal and finalize the room."""
+        room = await get_room(self.room_id)
+        if not room:
+            logger.warning(f"WS game_ended for missing room: {self.room_id}")
+            return await self._send_error('Room not found')
 
+        game_state = await get_game_state(room)
+        state = dict(game_state.state_data or {})
+        winner = payload.get('winner') or state.get('winner')
+        win_type = payload.get('winType', 'single') or state.get('winType', 'single')
+        reason = payload.get('reason', 'game_ended')
+        if payload.get('cube') is not None:
+            state['cube'] = payload['cube']
+
+        if winner:
+            state['phase'] = 'game_over'
+            state['winner'] = winner
+            state['winType'] = win_type
+            game_state.state_data = state
+            await save_game_state(game_state)
+            await self._finalize_and_broadcast(state, winner, win_type, reason)
+        else:
+            logger.warning(f"WS game_ended without winner: room={self.room_id} payload={payload}")
+
+    async def _finalize_and_broadcast(self, state, winner, win_type, reason):
+        """Idempotently close the room and broadcast game_ended to the group."""
+        room = await get_room(self.room_id)
+        if not room:
+            return
+        await database_sync_to_async(finalize_room)(room, state, winner, win_type, reason)
+        await database_sync_to_async(room.refresh_from_db)()
+        payload = game_ended_payload(state, winner, win_type, reason, room)
+        logger.info(f"WS game_ended: room={self.room_id} winner={winner} win_type={win_type} reason={reason}")
         await self.channel_layer.group_send(
             self.room_group_name,
-            {
-                'type': 'game_forfeited',
-                'winner': winner,
-                'loser': self.player_color,
-            }
+            {'type': 'game_ended', 'payload': payload},
         )
 
-    async def game_forfeited(self, event):
+    async def game_ended(self, event):
         await self.send(json.dumps({
-            'type': 'game_forfeited',
-            'payload': {
-                'winner': event.get('winner'),
-                'loser': event.get('loser'),
-            }
+            'type': 'game_ended',
+            'payload': event.get('payload'),
         }))
 
     async def _send_error(self, message):

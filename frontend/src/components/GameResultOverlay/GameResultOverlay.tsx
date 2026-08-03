@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import type { Color } from "@/lib/backgammon/engine";
 
 interface GameResultOverlayProps {
+  playerColor: Color;
   winner: Color;
   winType: "single" | "gammon" | "backgammon";
   points: number;
@@ -20,6 +21,7 @@ const winLabels = {
 };
 
 export default function GameResultOverlay({
+  playerColor,
   winner,
   winType,
   points,
@@ -31,7 +33,7 @@ export default function GameResultOverlay({
   onHome,
 }: GameResultOverlayProps) {
   const isMatchOver = matchWinner !== null;
-  const youWon = winner === "white";
+  const youWon = winner === playerColor;
 
   function label() {
     const wl = winLabels[winType];

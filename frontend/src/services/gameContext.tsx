@@ -2,7 +2,6 @@ import { createContext, useContext, useCallback, useState, useEffect, useRef, ty
 import type { GameContextType, OpeningRollResult } from "../types/context";
 import type { GameState, Color } from "../types/game";
 import {
-  newGame,
   applyMove,
   applyOpeningRoll,
   applyRoll,
@@ -10,15 +9,13 @@ import {
   respondDouble,
   undoLastMove,
   allLegalMoves,
-  BAR, OFF,
+  OFF,
   type Source, type Target, type Move,
 } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
-import { useNavigate } from "react-router-dom";
-import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
 
 export const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -44,6 +41,11 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
 
   const socket = getSocketService(serverUrl);
   const lastVersionRef = useRef(0);
+  const stateRef = useRef(state);
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const sendStateUpdate = useCallback((newState: GameState, action: string) => {
     socket.send("state_update", { state: newState, action });
@@ -154,17 +156,17 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           }
         });
 
-        socket.on("player_joined", (message) => {
+        socket.on("player_joined", (_message) => {
           setIsLoading(false);
           setOpponentConnected(true);
         });
 
-        socket.on("player_disconnected", (message) => {
+        socket.on("player_disconnected", (_message) => {
           setOpponentConnected(false);
         });
 
-        socket.on("room_status", (message) => {
-          const data = (message as Record<string, unknown>).payload as { connected: number };
+        socket.on("room_status", (_message) => {
+          const data = (_message as Record<string, unknown>).payload as { connected: number };
           setOpponentConnected(data.connected >= 2);
         });
 
@@ -174,26 +176,35 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           setError(msg);
         });
 
-        socket.on("game_forfeited", (message) => {
+        socket.on("game_ended", (message) => {
           const payload = (message as Record<string, unknown>).payload as {
-            winner?: string;
-            loser?: string;
+            winner?: Color;
+            loser?: Color;
+            winType?: string;
+            reason?: string;
+            points?: number;
+            cube?: number;
+            whiteScore?: number;
+            blackScore?: number;
+            targetPoints?: number;
           };
-          const winner = (payload?.winner as Color) || (playerColor === "white" ? "black" : "white");
-          const loser = (payload?.loser as Color) || (playerColor === "white" ? "black" : "white");
-          clientLogger.info("Game forfeited", { winner, loser, roomId });
+          const winner = payload?.winner;
+          if (!winner) return;
+          clientLogger.info("Game ended", { winner, reason: payload.reason });
           setGameResult({
             winner,
-            winType: "single",
-            points: 1,
-            cube: 1,
+            winType: (payload.winType as "single" | "gammon" | "backgammon") || "single",
+            points: payload.points ?? 1,
+            cube: payload.cube ?? 1,
             matchScore: {
-              white: winner === "white" ? 1 : 0,
-              black: winner === "black" ? 1 : 0,
+              white: payload.whiteScore ?? 0,
+              black: payload.blackScore ?? 0,
             },
+            targetPoints: payload.targetPoints,
           });
+          clearRoom();
           setState((prev) =>
-            prev ? { ...prev, phase: "game_over", winner, message: `${winner} wins by forfeit` } : prev,
+            prev ? { ...prev, phase: "game_over", winner } : prev,
           );
         });
       } catch (err) {
@@ -221,7 +232,7 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         sendStateUpdate(next, "roll");
 
         // Build opening roll result for the overlay
-        setOpeningRollResult((existing) => {
+        setOpeningRollResult(() => {
           const myDie = next.openingRoll[playerColor];
           const oppColor = playerColor === "white" ? "black" : "white";
           const opponentDie = next.openingRoll[oppColor];
@@ -271,6 +282,17 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
     });
   }, [playerColor, sendStateUpdate]);
 
+  const endGame = useCallback((winner: Color, winType: string, reason: string, cube: number) => {
+    setGameResult({
+      winner,
+      winType: (winType as "single" | "gammon" | "backgammon") || "single",
+      points: 1,
+      cube,
+      matchScore: { white: 0, black: 0 },
+    });
+    socket.send("game_ended", { winner, winType, reason, cube });
+  }, [socket]);
+
   const makeMove = useCallback((from: Source, to: Target) => {
     setState((prev) => {
       if (!prev || prev.phase !== "moving") return prev;
@@ -284,19 +306,13 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
 
       // Check for game over
       if (next.phase === "game_over" && next.winner) {
-        setGameResult({
-          winner: next.winner,
-          winType: next.winType || "single",
-          points: 1,
-          cube: next.cube || 1,
-          matchScore: { white: 0, black: 0 },
-        });
+        endGame(next.winner, next.winType || "single", "bear_off", next.cube || 1);
       }
 
       sendStateUpdate(next, "move");
       return next;
     });
-  }, [sendStateUpdate]);
+  }, [sendStateUpdate, endGame]);
 
   const offerDoubleAction = useCallback(() => {
     setState((prev) => {
@@ -313,19 +329,13 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
       const next = respondDouble(prev, accept);
 
       if (next.phase === "game_over" && next.winner) {
-        setGameResult({
-          winner: next.winner,
-          winType: next.winType || "single",
-          points: 1,
-          cube: next.cube || 1,
-          matchScore: { white: 0, black: 0 },
-        });
+        endGame(next.winner, next.winType || "single", "double_decline", next.cube || 1);
       }
 
       sendStateUpdate(next, "double_response");
       return next;
     });
-  }, [sendStateUpdate]);
+  }, [sendStateUpdate, endGame]);
 
   const endTurn = useCallback(() => {
     setState((prev) => {
@@ -352,8 +362,11 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
   }, [sendStateUpdate]);
 
   const giveUp = useCallback(() => {
-    socket.send("give_up", {});
-  }, [socket]);
+    const current = stateRef.current;
+    if (!current) return;
+    const opponent: Color = playerColor === "white" ? "black" : "white";
+    endGame(opponent, "single", "give_up", current.cube || 1);
+  }, [endGame, playerColor]);
 
   const updateState = useCallback((s: GameState) => setState(s), []);
 

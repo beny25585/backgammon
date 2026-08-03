@@ -16,6 +16,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from .engine import BackgammonEngine
+from .game_service import finalize_room
 from .models import GameRoom, GameState, Match, Player, RoomPlayer
 from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
 
@@ -86,8 +87,17 @@ def create_room(request):
         status__in=['waiting', 'playing']
     )
     if active_rooms.exists():
-        logger.warning(f"User already in a room: user={user.username}")
-        return Response({'error': 'Already in a room'}, status=status.HTTP_400_BAD_REQUEST)
+        # If the active room's game is already over, close it so the player is
+        # never stuck and can open a new room.
+        active = active_rooms.first()
+        gs = GameState.objects.filter(room=active).first()
+        state = (gs.state_data if gs else {}) or {}
+        if active.status == 'playing' and state.get('phase') == 'game_over' and state.get('winner'):
+            finalize_room(active, state, state['winner'], state.get('winType', 'single'), 'state_update')
+            logger.info(f"Stale game-over room finalized on create: room={active.code} user={user.username}")
+        else:
+            logger.warning(f"User already in a room: user={user.username}")
+            return Response({'error': 'Already in a room'}, status=status.HTTP_400_BAD_REQUEST)
 
     target = request.data.get('targetPoints', 7)
     preferred_color = request.data.get('preferredColor', 'white')
