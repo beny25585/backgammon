@@ -105,9 +105,12 @@ No server exists, so the same logic runs in the browser via a shared pure module
 - `GameContextType` gains `timeControl: TimeControl | null` and `clock: Record<Color, number> | null`.
   - `gameContext` (online): `timeControl` parsed from the initial message; `clock = state?.clock`.
   - `localGameContext`: `timeControl` from URL param; `clock` from `useLocalClock`.
-- `SidePanel` passes `clock` to `PlayerRow`.
-- `PlayerRow` renders a `m:ss` chip (formatted ms) next to the existing chips. The active player's clock is highlighted; ≤10s turns it red. `timeControl === null` (No limit) renders `--:--`.
-- Between server updates the number keeps moving via a small **display-only** countdown that extrapolates from the last received value + timestamp. Purely cosmetic; the server remains authoritative and tampering only affects one's own screen.
+- A dedicated reusable `Clock` component (`frontend/src/components/Clock/Clock.tsx`) renders one player's clock:
+  - props: `timeMs: number | null`, `active: boolean`, `low?: boolean`
+  - renders `m:ss` (formatted ms); `timeMs === null` (No limit) renders `--:--`.
+  - the active player's clock is highlighted (green for you, gold for opponent — matching `PlayerRow` active styles); `low` (≤10s) turns it red.
+- Between server updates the number keeps moving via a **display-only** countdown that extrapolates from the last received value + timestamp. Purely cosmetic; the server remains authoritative and tampering only affects one's own screen.
+- `PlayerRow` uses `<Clock timeMs={clock?.[color] ?? null} active={active} low={low} />` next to its existing chips.
 
 ## UI
 
@@ -156,7 +159,8 @@ MatchSettings ── time:"3+10" ──► createRoom ──► GameRoom.time_co
 **Frontend**
 - `lib/clock.ts` unit tests (transition, parse, active-player rule incl. doubling responder).
 - `MatchSettings` renders the time control selector with the correct default.
-- `PlayerRow` renders `m:ss`, `--:--` when No limit, and the low-time class at ≤10s.
+- `Clock` component renders `m:ss`, `--:--` when `timeMs` is null, and the low-time class when ≤10s.
+- `PlayerRow` renders a `Clock` for each player.
 - `localGameContext` timeout ends the game with opponent as winner.
 
 ## Files Touched
@@ -176,9 +180,10 @@ MatchSettings ── time:"3+10" ──► createRoom ──► GameRoom.time_co
 - Modify: `frontend/src/services/gameContext.tsx` — parse `timeControl`, expose `clock`
 - Modify: `frontend/src/services/localGameContext.tsx` — `timeControl` prop, local clock + timeout
 - Create: `frontend/src/hooks/useLocalClock.ts`
+- Create: `frontend/src/components/Clock/Clock.tsx` + `Clock.module.css` + `index.ts`
 - Modify: `frontend/src/components/GameScreen/GameScreen.tsx` — pass `clock` to `SidePanel`
 - Modify: `frontend/src/components/SidePanel/SidePanel.tsx` — forward `clock`
-- Modify: `frontend/src/components/PlayerRow/PlayerRow.tsx` + `.module.css` — clock chip, low-time style
+- Modify: `frontend/src/components/PlayerRow/PlayerRow.tsx` (+ `.module.css`) — use `Clock`
 - Modify: `frontend/src/components/MatchSettings/MatchSettings.tsx` (+ css) — time control selector
 - Modify: `frontend/src/components/HomeScreen/HomeScreen.tsx` — forward `time`
 - Modify: `frontend/src/services/api.ts` — `createRoom({ time })`
