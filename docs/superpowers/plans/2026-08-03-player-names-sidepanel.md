@@ -1,6 +1,6 @@
 # Player Names in Side Panel Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Show both players' usernames in the game side panel (online mode only), falling back to the current generic labels when a name is missing.
 
@@ -16,7 +16,7 @@
 - Modify: `backend/game/consumers.py`
 - Test: `backend/game/tests.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add to `backend/game/tests.py`, inside `GameConsumerTests`:
 
@@ -33,12 +33,12 @@ async def test_initial_state_update_includes_player_usernames(self):
     await communicator.disconnect()
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `python manage.py test game.tests.GameConsumerTests.test_initial_state_update_includes_player_usernames`
 Expected: FAIL — `KeyError: 'players'` (message has no `players` field).
 
-- [ ] **Step 3: Add helper `get_room_player_usernames`**
+- [x] **Step 3: Add helper `get_room_player_usernames`**
 
 In `backend/game/consumers.py`, after `get_room_player_color` (around line 36), add:
 
@@ -53,7 +53,7 @@ def get_room_player_usernames(room_id):
     return names
 ```
 
-- [ ] **Step 4: Include `players` in the initial state_update**
+- [x] **Step 4: Include `players` in the initial state_update**
 
 In `GameConsumer.connect()`, replace the initial send (lines 161-166):
 
@@ -69,17 +69,17 @@ In `GameConsumer.connect()`, replace the initial send (lines 161-166):
         }))
 ```
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `python manage.py test game.tests.GameConsumerTests.test_initial_state_update_includes_player_usernames`
 Expected: PASS.
 
-- [ ] **Step 6: Run full backend test suite**
+- [x] **Step 6: Run full backend test suite**
 
 Run: `python manage.py test game`
 Expected: all tests pass.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/game/consumers.py backend/game/tests.py
@@ -96,7 +96,7 @@ git commit -m "feat(backend): include player usernames in initial ws message"
 - Modify: `frontend/src/services/localGameContext.tsx`
 - Modify: `frontend/src/test-utils/wrappers.tsx`
 
-- [ ] **Step 1: Add fields to `GameContextType`**
+- [x] **Step 1: Add fields to `GameContextType`**
 
 In `frontend/src/types/context.ts`, inside `GameContextType`, after `playerColor: Color;` add:
 
@@ -105,7 +105,7 @@ In `frontend/src/types/context.ts`, inside `GameContextType`, after `playerColor
   blackName: string | null;
 ```
 
-- [ ] **Step 2: Store names in `GameProvider`**
+- [x] **Step 2: Store names in `GameProvider`**
 
 In `frontend/src/services/gameContext.tsx`:
 
@@ -133,11 +133,11 @@ Add `whiteName, blackName` to the provider value (near line 363):
         blackName,
 ```
 
-- [ ] **Step 3: Provide `null` names in `LocalGameProvider`**
+- [x] **Step 3: Provide `null` names in `LocalGameProvider`**
 
 In `frontend/src/services/localGameContext.tsx`, add `whiteName: null, blackName: null` to the provider value (near line 333).
 
-- [ ] **Step 4: Add names to the test mock context**
+- [x] **Step 4: Add names to the test mock context**
 
 In `frontend/src/test-utils/wrappers.tsx`, in `makeMockContext`, add:
 
@@ -146,12 +146,12 @@ In `frontend/src/test-utils/wrappers.tsx`, in `makeMockContext`, add:
     blackName: null,
 ```
 
-- [ ] **Step 5: Verify build + lint**
+- [x] **Step 5: Verify build + lint**
 
 Run: `pnpm build && pnpm lint`
 Expected: no TypeScript errors, no lint errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/types/context.ts frontend/src/services/gameContext.tsx frontend/src/services/localGameContext.tsx frontend/src/test-utils/wrappers.tsx
@@ -166,7 +166,7 @@ git commit -m "feat(frontend): expose player names in game context"
 - Modify: `frontend/src/components/SidePanel/SidePanel.tsx`
 - Test: `frontend/src/components/SidePanel/SidePanel.test.tsx` (new)
 
-- [ ] **Step 1: Write the failing component tests**
+- [x] **Step 1: Write the failing component tests**
 
 Create `frontend/src/components/SidePanel/SidePanel.test.tsx`:
 
@@ -199,12 +199,12 @@ test("falls back to generic labels when names are null", async ({ mount }) => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `pnpm test src/components/SidePanel/SidePanel.test.tsx`
 Expected: FAIL — "alice" / "bob" not found (labels still generic).
 
-- [ ] **Step 3: Update `SidePanel.tsx` to use names**
+- [x] **Step 3: Update `SidePanel.tsx` to use names**
 
 Replace the label computation in `frontend/src/components/SidePanel/SidePanel.tsx`:
 
@@ -222,17 +222,17 @@ Replace lines 20-22:
   const selfLabel = selfName ? `${selfName} (you)` : (playerColor === "white" ? "You (White)" : "You (Black)");
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `pnpm test src/components/SidePanel/SidePanel.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Verify build + lint**
+- [x] **Step 5: Verify build + lint**
 
 Run: `pnpm build && pnpm lint`
 Expected: no TypeScript errors, no lint errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/components/SidePanel/SidePanel.tsx frontend/src/components/SidePanel/SidePanel.test.tsx
