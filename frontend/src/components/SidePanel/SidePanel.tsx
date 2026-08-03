@@ -14,12 +14,14 @@ interface SidePanelProps {
 
 export default function SidePanel({ state, playerColor, onLeave }: SidePanelProps) {
   const navigate = useNavigate();
-  const { giveUp } = useGame();
+  const { giveUp, whiteName, blackName } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
 
   const opponentColor = playerColor === "white" ? "black" : "white";
-  const opponentLabel = playerColor === "white" ? "Black Player" : "White Player";
-  const selfLabel = playerColor === "white" ? "You (White)" : "You (Black)";
+  const opponentName = playerColor === "white" ? blackName : whiteName;
+  const selfName = playerColor === "white" ? whiteName : blackName;
+  const opponentLabel = opponentName || (playerColor === "white" ? "Black Player" : "White Player");
+  const selfLabel = selfName ? `${selfName} (you)` : (playerColor === "white" ? "You (White)" : "You (Black)");;
 
   return (
     <div className={styles.panel}>
