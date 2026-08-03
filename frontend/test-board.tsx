@@ -18,6 +18,8 @@ state.bar = { white: 1, black: 0 };
 const mock: GameContextType = {
   state,
   playerColor: "white",
+  whiteName: null,
+  blackName: null,
   isLoading: false,
   error: null,
   openingRollResult: null,

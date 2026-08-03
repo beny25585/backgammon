@@ -21,6 +21,8 @@ function makeMock(): GameContextType {
   return {
     state: makeState(),
     playerColor: "black",
+    whiteName: null,
+    blackName: null,
     isLoading: false,
     error: null,
     openingRollResult: null,

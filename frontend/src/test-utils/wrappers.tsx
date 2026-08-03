@@ -13,6 +13,8 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
   return {
     state: makeGameState(),
     playerColor: "white",
+    whiteName: null,
+    blackName: null,
     isLoading: false,
     error: null,
     openingRollResult: null,

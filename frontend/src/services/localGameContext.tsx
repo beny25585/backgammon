@@ -332,6 +332,8 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
       value={{
         state,
         playerColor,
+        whiteName: null,
+        blackName: null,
         isLoading,
         error,
         openingRollResult,

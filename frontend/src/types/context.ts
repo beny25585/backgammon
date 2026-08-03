@@ -10,6 +10,8 @@ export interface OpeningRollResult {
 export interface GameContextType {
   state: GameState | null;
   playerColor: Color;
+  whiteName: string | null;
+  blackName: string | null;
   isLoading: boolean;
   error: string | null;
   openingRollResult: OpeningRollResult | null;

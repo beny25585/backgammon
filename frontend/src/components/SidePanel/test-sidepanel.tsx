@@ -23,6 +23,8 @@ function makeState() {
 const mock: GameContextType = {
   state: makeState(),
   playerColor: "white",
+  whiteName: null,
+  blackName: null,
   isLoading: false,
   error: null,
   openingRollResult: null,

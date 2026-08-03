@@ -32,6 +32,8 @@ interface GameProviderProps {
 export function GameProvider({ children, roomId, playerColor: initialColor, serverUrl }: GameProviderProps) {
   const [state, setState] = useState<GameState | null>(null);
   const [playerColor, setPlayerColor] = useState<Color>(initialColor);
+  const [whiteName, setWhiteName] = useState<string | null>(null);
+  const [blackName, setBlackName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
@@ -86,6 +88,12 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
             }
             hasReceivedState = true;
             setState(raw as unknown as GameState);
+
+            const players = (msg as Record<string, unknown>).players as { white?: string | null; black?: string | null } | undefined;
+            if (players) {
+              setWhiteName(players.white ?? null);
+              setBlackName(players.black ?? null);
+            }
 
             const s = raw as any;
             if (s.phase === "opening_roll" && (s.openingRoll?.white != null || s.openingRoll?.black != null)) {
@@ -362,6 +370,8 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
       value={{
         state,
         playerColor,
+        whiteName,
+        blackName,
         isLoading,
         error,
         openingRollResult,
