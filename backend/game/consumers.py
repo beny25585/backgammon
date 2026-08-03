@@ -37,6 +37,16 @@ def get_room_player_color(room_id, user_id):
 
 
 @database_sync_to_async
+def get_room_player_usernames(room_id):
+    """Return usernames for the room's players keyed by color."""
+    names = {"white": None, "black": None}
+    rps = RoomPlayer.objects.filter(room_id=room_id).select_related('player__user')
+    for rp in rps:
+        names[rp.color] = rp.player.user.username if rp.player and rp.player.user else None
+    return names
+
+
+@database_sync_to_async
 def room_has_both_players(room):
     return room.players.count() >= 2
 
@@ -158,11 +168,14 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         username = await get_username(self.user_id)
 
+        players = await get_room_player_usernames(self.room_id)
+
         await self.send(json.dumps({
             'type': 'state_update',
             'payload': state_data,
             'playerColor': self.player_color,
-            'initial': True
+            'initial': True,
+            'players': players,
         }))
 
         await self.channel_layer.group_send(

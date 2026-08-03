@@ -92,6 +92,17 @@ class GameConsumerTests(TransactionTestCase):
 
         await comm2.disconnect()
 
+    async def test_initial_state_update_includes_player_usernames(self):
+        communicator = self._make_communicator(self.white_user)
+        connected, _ = await communicator.connect()
+        self.assertTrue(connected)
+
+        response = await communicator.receive_json_from()
+        self.assertEqual(response["type"], "state_update")
+        self.assertEqual(response["players"], {"white": "white", "black": "black"})
+
+        await communicator.disconnect()
+
     async def test_player_joined_broadcast_includes_username(self):
         comm_white = self._make_communicator(self.white_user)
         await comm_white.connect()
