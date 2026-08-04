@@ -5,98 +5,138 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.72);
+  padding: 1rem;
 }
 
 .card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-  padding: 2rem;
-  border-radius: 1.5rem;
+  width: 360px;
+  max-width: 92vw;
+  padding: 26px 22px;
+  border-radius: 20px;
   text-align: center;
-  max-width: 90vw;
-  background: linear-gradient(135deg, #1a0e06 0%, #2a1810 50%, #1a0e06 100%);
-  border: 2px solid rgba(255, 200, 100, 0.3);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+  position: relative;
+  background: radial-gradient(130% 130% at 50% 0%, #1f4d38 0%, #123527 75%);
+  border: 4px solid #d8b25c;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+}
+
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 1px dashed rgba(216, 178, 92, 0.5);
+  border-radius: 14px;
+  pointer-events: none;
 }
 
 .emoji {
-  font-size: 3rem;
+  font-size: 2.5rem;
   line-height: 1;
-  margin-bottom: 0.5rem;
 }
 
 .title {
-  font-size: 1.5rem;
-  line-height: 1.25;
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 1.6rem;
   font-weight: 700;
+  margin-top: 8px;
 }
 
 .titleWin {
-  color: #f4e4c1;
+  color: #f6e7c6;
 }
 
 .titleLose {
-  color: #ff6b6b;
+  color: #ffd9a8;
 }
 
 .subtitle {
-  font-size: 1.125rem;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.scorePanel {
-  width: 100%;
-  padding: 0.75rem;
-  margin-top: 0.5rem;
-  border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.scoreLabel {
-  font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.6);
-  margin-bottom: 0.25rem;
-}
-
-.scoreRow {
-  display: flex;
-  justify-content: center;
-  gap: 1.5rem;
-  font-size: 1.125rem;
+  font-family: "Assistant", sans-serif;
+  font-size: 0.85rem;
+  color: #d8b25c;
   font-weight: 700;
+  margin-top: 4px;
 }
 
-.scoreYou {
-  color: #f4e4c1;
+.scoreboard {
+  margin-top: 16px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 2px solid #d8b25c;
+  background: rgba(0, 0, 0, 0.25);
+  font-family: "Assistant", sans-serif;
 }
 
-.scoreVs {
-  color: rgba(255, 255, 255, 0.4);
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
 }
 
-.scoreBot {
-  color: white;
+.row + .row {
+  border-top: 1px solid rgba(216, 178, 92, 0.25);
 }
 
-.scoreBotWin {
-  color: #f4e4c1;
+.rowWin {
+  background: rgba(216, 178, 92, 0.18);
+}
+
+.nameWrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.name {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #f6e7c6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.youTag {
+  font-size: 0.6rem;
+  color: #d8b25c;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 800;
+  border: 1px solid rgba(216, 178, 92, 0.6);
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.score {
+  font-family: "Playfair Display", Georgia, serif;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1;
+}
+
+.scoreWin {
+  color: #ffe9a8;
+  text-shadow: 0 0 16px rgba(255, 220, 140, 0.45);
 }
 
 .buttonRow {
   display: flex;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 18px;
+  font-family: "Assistant", sans-serif;
+  position: relative;
 }
 
 .button {
-  padding: 0.625rem 1.5rem;
-  border-radius: 0.75rem;
-  font-size: 0.875rem;
-  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
   border: none;
   cursor: pointer;
   transition: transform 0.15s ease;
@@ -111,24 +151,21 @@
 }
 
 .buttonPrimary {
-  background: linear-gradient(135deg, #f4e4c1, #d4b880);
-  color: #1a0e06;
+  background: linear-gradient(135deg, #e8c97a, #c99f45);
+  color: #123527;
 }
 
 .buttonSecondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: #fff;
+  font-weight: 600;
 }
 
 .autoNote {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.3);
-  margin-top: 0.25rem;
-}
-
-@media (min-width: 640px) {
-  .title {
-    font-size: 1.875rem;
-  }
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-style: italic;
+  margin-top: 10px;
+  font-family: "Assistant", sans-serif;
 }

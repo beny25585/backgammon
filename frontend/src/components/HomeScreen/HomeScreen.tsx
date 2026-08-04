@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "motion/react";
 import type { Color } from "../../types/game";
-import { createRoom, joinRoom, cancelRoom } from "../../services/api";
+import { createRoom, joinRoom, cancelRoom, getActiveRoom } from "../../services/api";
 import { clearTokens, getAccessToken } from "../../services/auth";
 import { saveRoom, clearRoom, getRoom } from "../../services/roomStorage";
 import MatchSettings from "../MatchSettings/MatchSettings";
@@ -33,6 +33,7 @@ export default function HomeScreen() {
   );
   const [mode, setMode] = useState<"create" | "join">("create");
   const [roomKey, setRoomKey] = useState(0);
+  const [activeRoom, setActiveRoom] = useState(() => getRoom());
   const [username] = useState(() => {
     try {
       const token = getAccessToken();
@@ -53,7 +54,38 @@ export default function HomeScreen() {
     }
   });
 
-  const activeRoom = getRoom();
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = (await getActiveRoom()) as {
+          active: {
+            id: string;
+            code: string;
+            status: "waiting" | "playing";
+            playerColor: Color | null;
+          } | null;
+        };
+        if (cancelled) return;
+        if (data.active) {
+          saveRoom({
+            roomId: data.active.id,
+            roomCode: data.active.code,
+            playerColor: data.active.playerColor ?? "white",
+            status: data.active.status,
+          });
+        } else {
+          clearRoom();
+        }
+        setActiveRoom(getRoom());
+      } catch {
+        // Server unreachable — keep whatever is in localStorage.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handleCodeInput(value: string) {
     setCode(
@@ -132,6 +164,7 @@ export default function HomeScreen() {
   function handleCancelRoom() {
     cancelRoom().catch(() => {});
     clearRoom();
+    setActiveRoom(null);
     setRoomKey((key) => key + 1);
     setError("");
   }

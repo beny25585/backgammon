@@ -498,6 +498,71 @@ class FinalizeRoomTests(TestCase):
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
 
 
+class TaskWorkerTests(TestCase):
+    def test_expire_command_enqueues_task(self):
+        from django.core.management import call_command
+        from game.models import Task
+
+        # Ensure no tasks exist
+        Task.objects.all().delete()
+
+        call_command('expire_waiting_rooms', '60', '--enqueue')
+
+        task = Task.objects.filter(name='game.tasks.expire_waiting_rooms').first()
+        self.assertIsNotNone(task)
+        self.assertEqual(task.status, 'pending')
+
+    def test_run_tasks_executes_expire(self):
+        from django.core.management import call_command
+        from django.utils import timezone
+        from datetime import timedelta
+        from game.models import Task, GameRoom
+
+        # Create a waiting room older than 5 minutes
+        import uuid as _uuid
+        old_room = GameRoom.objects.create(code=_uuid.uuid4().hex[:6].upper(), status='waiting')
+        past = timezone.now() - timedelta(minutes=120)
+        GameRoom.objects.filter(pk=old_room.pk).update(updated_at=past)
+
+        # Enqueue task to expire rooms (run now)
+        task = Task.objects.create(
+            name='game.tasks.expire_waiting_rooms',
+            args=[60],
+            run_at=timezone.now(),
+        )
+
+        call_command('run_tasks')
+
+        old_room.refresh_from_db()
+        task.refresh_from_db()
+
+        self.assertEqual(old_room.status, 'cancelled')
+        self.assertEqual(task.status, 'done')
+
+class ExpireWaitingRoomsCommandTests(TestCase):
+    def test_expire_waiting_rooms_command(self):
+        from django.core.management import call_command
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # Create a waiting room and set updated_at in the past
+        old_room = GameRoom.objects.create(code=uuid.uuid4().hex[:6].upper(), status='waiting')
+        past = timezone.now() - timedelta(minutes=120)
+        GameRoom.objects.filter(pk=old_room.pk).update(updated_at=past)
+
+        # Create a recent waiting room that should not be expired
+        recent_room = GameRoom.objects.create(code=uuid.uuid4().hex[:6].upper(), status='waiting')
+
+        # Run the command to expire rooms older than 60 minutes
+        call_command('expire_waiting_rooms', '60')
+
+        old_room.refresh_from_db()
+        recent_room.refresh_from_db()
+
+        self.assertEqual(old_room.status, 'cancelled')
+        self.assertEqual(recent_room.status, 'waiting')
+
+
 class GameEndConsumerTests(TransactionTestCase):
     def setUp(self):
         self.white_user = User.objects.create_user(username="white", password="pass")

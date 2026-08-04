@@ -514,7 +514,8 @@ export function GameProvider({
           cube={gameResult.cube}
           matchScore={gameResult.matchScore}
           matchTarget={gameResult.targetPoints ?? 7}
-          matchWinner={gameResult.winner}
+          whiteName={whiteName}
+          blackName={blackName}
           onNext={handleNextGame}
           onHome={() => {
             handleHome();

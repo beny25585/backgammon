@@ -104,3 +104,31 @@ class GameEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} #{self.sequence} in {self.room.code}"
+
+
+class Task(models.Model):
+    STATUS_CHOICES = [
+        ("pending", "Pending"),
+        ("running", "Running"),
+        ("done", "Done"),
+        ("failed", "Failed"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, help_text="Callable path, e.g. module.func")
+    args = models.JSONField(default=list, blank=True)
+    kwargs = models.JSONField(default=dict, blank=True)
+    run_at = models.DateTimeField(null=True, blank=True, help_text="When to run (UTC)")
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="pending")
+    attempts = models.IntegerField(default=0)
+    max_attempts = models.IntegerField(default=3)
+    last_error = models.TextField(null=True, blank=True)
+    result = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-run_at", "-created_at"]
+
+    def __str__(self):
+        return f"Task {self.name} ({self.status})"

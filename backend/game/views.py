@@ -175,6 +175,29 @@ def join_room(request):
 
 
 @api_view(['GET'])
+def active_room(request):
+    """Return the requesting user's active (waiting/playing) room, or null."""
+    user = request.user
+    player = get_or_create_player(user)
+    room = GameRoom.objects.filter(
+        players__player=player,
+        status__in=['waiting', 'playing']
+    ).first()
+    if not room:
+        return Response({'active': None})
+    rp = room.players.filter(player=player).first()
+    return Response({'active': {
+        'id': str(room.id),
+        'code': room.code,
+        'status': room.status,
+        'playerColor': rp.color if rp else None,
+        'targetPoints': room.target_points,
+        'timeControl': room.time_control,
+        **room_players_data(room),
+    }})
+
+
+@api_view(['GET'])
 def room_detail(request, code):
     try:
         room = GameRoom.objects.get(code=code.upper())

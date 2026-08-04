@@ -3,7 +3,8 @@ import { useNavigate, useParams, useLocation } from "react-router-dom";
 import type { Color } from "../../types/game";
 import { getSocketService } from "../../services/socket";
 import { getAccessToken } from "../../services/auth";
-import { updateRoomStatus } from "../../services/roomStorage";
+import { updateRoomStatus, clearRoom } from "../../services/roomStorage";
+import { cancelRoom } from "../../services/api";
 import styles from "./WaitingRoom.module.css";
 
 export default function WaitingRoom() {
@@ -108,6 +109,10 @@ export default function WaitingRoom() {
   }
 
   function handleLeave() {
+    // Ensure the server-side room is cancelled so the user isn't left stuck
+    // with an active `waiting` room preventing new room creation.
+    cancelRoom().catch(() => {});
+    clearRoom();
     socket.disconnect();
     navigate("/home", { replace: true });
   }

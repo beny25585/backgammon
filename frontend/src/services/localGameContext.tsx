@@ -359,8 +359,8 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       value={{
         state,
         playerColor,
-        whiteName: null,
-        blackName: null,
+        whiteName: botColor === "white" ? "Bot" : null,
+        blackName: botColor === "black" ? "Bot" : null,
         isLoading,
         error,
         openingRollResult,
@@ -396,7 +396,8 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
           cube={gameResult.cube}
           matchScore={matchScore}
           matchTarget={MATCH_TARGET}
-          matchWinner={matchWinner}
+          whiteName={botColor === "white" ? "Bot" : null}
+          blackName={botColor === "black" ? "Bot" : null}
           countdown={nextGameCountdown}
           onNext={handleNextGame}
           onHome={handleHome}

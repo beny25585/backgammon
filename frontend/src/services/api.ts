@@ -45,6 +45,10 @@ export async function cancelRoom() {
   return apiFetch("/api/rooms/cancel/", { method: "POST" });
 }
 
+export async function getActiveRoom() {
+  return apiFetch("/api/rooms/active/");
+}
+
 export async function saveMatch(matchData: Record<string, unknown>) {
   return apiFetch("/api/matches/", {
     method: "POST",

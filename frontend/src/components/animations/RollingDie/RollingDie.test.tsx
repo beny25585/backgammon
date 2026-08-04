@@ -41,7 +41,7 @@ for (const vp of VIEWPORTS) {
   }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     let done = 0;
-    const rd = await mount(<RollingDie rolling={true} count={1} onRollComplete={() => done++} />);
+    await mount(<RollingDie rolling={true} count={1} onRollComplete={() => done++} />);
     await expect.poll(() => done).toBeGreaterThanOrEqual(1);
   });
 
@@ -51,7 +51,7 @@ for (const vp of VIEWPORTS) {
   }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     let done = 0;
-    const rd = await mount(<RollingDie rolling={false} count={1} onRollComplete={() => done++} />);
+    await mount(<RollingDie rolling={false} count={1} onRollComplete={() => done++} />);
     await page.waitForTimeout(500);
     expect(done).toBe(0);
   });
