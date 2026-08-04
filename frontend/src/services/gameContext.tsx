@@ -511,6 +511,7 @@ export function GameProvider({
         clock: state?.clock ?? null,
         turnStartedAt: state?.turnStartedAt ?? null,
         gameResult,
+        matchScore: gameResult?.matchScore ?? null,
         handleNextGame,
         handleHome,
         updateState,

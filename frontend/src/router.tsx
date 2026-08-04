@@ -60,7 +60,6 @@ function GameRoute() {
           }
         ).env?.VITE_SERVER_URL
       }
-      onLeave={handleLeave}
     >
       <GameScreen onLeave={handleLeave} />
     </GameProvider>

@@ -1,6 +1,7 @@
 import asyncio
 import time as time_module
 import uuid
+from typing import Any, cast
 from urllib.parse import urlencode
 
 from channels.testing import WebsocketCommunicator
@@ -50,7 +51,7 @@ class GameConsumerTests(TransactionTestCase):
         )
         # Set url_route manually since we're connecting directly to the consumer
         # without going through URLRouter
-        communicator.scope["url_route"] = {
+        cast(Any, communicator.scope)["url_route"] = {
             "kwargs": {"room_id": self.room_id},
             "args": (),
         }
@@ -302,6 +303,26 @@ class GameConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from()
         self.assertEqual(response['type'], 'state_update')
         self.assertEqual(response['timeControl'], self.room.time_control)
+        await communicator.disconnect()
+
+    async def test_initial_state_update_computes_clock_and_turn_started_at(self):
+        state = {
+            'phase': 'moving',
+            'turn': 'white',
+            'version': 1,
+        }
+        gs = await get_game_state(self.room)
+        gs.state_data = state
+        await save_game_state(gs)
+
+        communicator = self._make_communicator(self.white_user)
+        connected, _ = await communicator.connect(timeout=10)
+        self.assertTrue(connected)
+
+        response = await communicator.receive_json_from()
+        self.assertEqual(response['type'], 'state_update')
+        self.assertEqual(response['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        self.assertIsInstance(response['payload']['turnStartedAt'], int)
         await communicator.disconnect()
 
     async def test_first_state_update_seeds_clock_during_opening_roll(self):
@@ -589,7 +610,7 @@ class GameEndConsumerTests(TransactionTestCase):
             GameConsumer.as_asgi(),
             f"/ws/game/{self.room_id}/?{query}",
         )
-        communicator.scope["url_route"] = {
+        cast(Any, communicator.scope)["url_route"] = {
             "kwargs": {"room_id": self.room_id},
             "args": (),
         }

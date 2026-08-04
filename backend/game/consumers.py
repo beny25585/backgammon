@@ -147,6 +147,30 @@ class GameConsumer(AsyncWebsocketConsumer):
             self._timeout_task = None
             game_state = await get_game_state(room)
             state_data = game_state.state_data or {}
+
+            # Ensure an active game always sends authoritative clock state on connect.
+            if room.status == 'playing':
+                now_ms = int(time_module.time() * 1000)
+                clock, turn_started_at, _, _, _ = compute_clock(
+                    state_data,
+                    state_data,
+                    now_ms,
+                    room.time_control,
+                )
+                if clock is not None:
+                    normalized_state = dict(state_data)
+                    normalized_state.setdefault('clock', clock)
+                    normalized_state.setdefault('turnStartedAt', turn_started_at)
+                    if (
+                        normalized_state.get('clock') != state_data.get('clock')
+                        or normalized_state.get('turnStartedAt') != state_data.get('turnStartedAt')
+                    ):
+                        normalized_state['clock'] = clock
+                        normalized_state['turnStartedAt'] = turn_started_at
+                        state_data = normalized_state
+                        game_state.state_data = state_data
+                        await save_game_state(game_state)
+
             username = await get_username(self.user_id)
             logger.info(f"WebSocket connected: {self.player_color} ({username}) room={self.room_id} phase={state_data.get('phase')}")
             if not state_data:
