@@ -27,7 +27,6 @@ import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
 import { parseTimeControl, type TimeControl } from "../lib/clock";
-import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
 
 export const GameContext = createContext<GameContextType | undefined>(
   undefined,
@@ -38,7 +37,6 @@ interface GameProviderProps {
   roomId: string;
   playerColor: Color;
   serverUrl?: string;
-  onLeave?: () => void;
 }
 
 export function GameProvider({
@@ -46,7 +44,6 @@ export function GameProvider({
   roomId,
   playerColor: initialColor,
   serverUrl,
-  onLeave,
 }: GameProviderProps) {
   const [state, setState] = useState<GameState | null>(null);
   const [playerColor, setPlayerColor] = useState<Color>(initialColor);
@@ -75,9 +72,33 @@ export function GameProvider({
 
   const sendStateUpdate = useCallback(
     (newState: GameState, action: string) => {
+      const sentVersion =
+        typeof newState.version === "number" ? newState.version : 0;
+      const lastKnownVersion = lastVersionRef.current;
+      clientLogger.debug("Sending state_update", {
+        action,
+        sent_version: sentVersion,
+        last_known_version: lastKnownVersion,
+        playerColor,
+      });
+
+      if (
+        sentVersion > 0 &&
+        lastKnownVersion > 0 &&
+        sentVersion < lastKnownVersion
+      ) {
+        clientLogger.warn("Blocked stale state_update", {
+          action,
+          sent_version: sentVersion,
+          last_known_version: lastKnownVersion,
+          playerColor,
+        });
+        return;
+      }
+
       socket.send("state_update", { state: newState, action });
     },
-    [socket],
+    [socket, playerColor],
   );
 
   useEffect(() => {
@@ -490,7 +511,6 @@ export function GameProvider({
         clock: state?.clock ?? null,
         turnStartedAt: state?.turnStartedAt ?? null,
         gameResult,
-        matchScore: gameResult?.matchScore ?? null,
         handleNextGame,
         handleHome,
         updateState,
@@ -504,25 +524,6 @@ export function GameProvider({
       }}
     >
       {children}
-
-      {gameResult && (
-        <GameResultOverlay
-          playerColor={playerColor}
-          winner={gameResult.winner}
-          winType={gameResult.winType}
-          points={gameResult.points}
-          cube={gameResult.cube}
-          matchScore={gameResult.matchScore}
-          matchTarget={gameResult.targetPoints ?? 7}
-          whiteName={whiteName}
-          blackName={blackName}
-          onNext={handleNextGame}
-          onHome={() => {
-            handleHome();
-            onLeave?.();
-          }}
-        />
-      )}
     </GameContext.Provider>
   );
 }

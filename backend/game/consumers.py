@@ -283,7 +283,22 @@ class GameConsumer(AsyncWebsocketConsumer):
         # sequence, it's a stale/duplicate update — drop it.
         sent_version = state.get('version')
         if isinstance(sent_version, int) and sent_version > 0 and sent_version < room.last_sequence:
-            logger.info(f"WS stale state_update dropped: room={self.room_id} sent_version={sent_version} last_sequence={room.last_sequence}")
+            logger.info(
+                f"WS stale state_update dropped: room={self.room_id} sent_version={sent_version} last_sequence={room.last_sequence}"
+            )
+            # Tell the stale client the latest state so it can resync instead of
+            # silently dropping the move and leaving the UI inconsistent.
+            current_state = await get_game_state(room)
+            latest_state = current_state.state_data or {}
+            players = await get_room_player_usernames(self.room_id)
+            await self.send(json.dumps({
+                'type': 'state_update',
+                'payload': latest_state,
+                'playerColor': self.player_color,
+                'initial': True,
+                'players': players,
+                'timeControl': room.time_control,
+            }))
             return
 
         logger.info(f"WS state_update: {self.player_color} room={self.room_id} action={action} phase={state.get('phase')} turn={state.get('turn')}")
