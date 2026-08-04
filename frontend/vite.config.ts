@@ -16,9 +16,11 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    esbuildOptions: {
-      alias: {
-        "@": srcRoot,
+    rolldownOptions: {
+      resolve: {
+        alias: {
+          "@": srcRoot,
+        },
       },
     },
   },

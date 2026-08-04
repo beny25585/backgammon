@@ -15,6 +15,9 @@ interface GameBoardProps {
   onLeave?: () => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
+  clock?: Record<Color, number> | null;
+  turnStartedAt?: number | null;
+  timeControl?: import("../../lib/clock").TimeControl | null;
 }
 
 export default function GameBoard({
@@ -26,6 +29,9 @@ export default function GameBoard({
   onLeave,
   needsToRoll,
   onRoll,
+  clock,
+  turnStartedAt,
+  timeControl,
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
 
@@ -84,6 +90,9 @@ export default function GameBoard({
         state={state}
         playerColor={playerColor}
         onLeave={onLeave}
+        clock={clock}
+        turnStartedAt={turnStartedAt}
+        timeControl={timeControl}
       />
     </div>
   );

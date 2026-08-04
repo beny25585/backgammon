@@ -63,6 +63,10 @@ export interface GameState {
   moveHistory: GameState[] | null;
   message: string;
   version?: number;
+  /** Server-owned per-player remaining reserve in ms (online). Absent in local mode. */
+  clock?: { white: number; black: number };
+  /** Server wall-clock ms when the current turn began (for the delay countdown). */
+  turnStartedAt?: number;
 }
 
 export interface Move {

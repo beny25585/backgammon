@@ -67,6 +67,7 @@ export default function HomeScreen() {
   async function handleCreate(settings: {
     target: number;
     preferredColor?: string;
+    time?: string;
   }) {
     setError("");
     setLoading(true);
@@ -76,6 +77,7 @@ export default function HomeScreen() {
       const room: RoomResponse = await createRoom({
         targetPoints: settings.target,
         preferredColor,
+        time: settings.time,
       });
       saveRoom({
         roomId: room.id,
@@ -394,9 +396,9 @@ export default function HomeScreen() {
       {showSettings === "bot" && (
         <MatchSettings
           mode="bot"
-          onStart={({ botColor, target }) => {
+          onStart={({ botColor, target, time }) => {
             setShowSettings(null);
-            navigate(`/local?bot=${botColor}&target=${target}`);
+            navigate(`/local?bot=${botColor}&target=${target}&time=${encodeURIComponent(time ?? "")}`);
           }}
           onCancel={() => setShowSettings(null)}
         />

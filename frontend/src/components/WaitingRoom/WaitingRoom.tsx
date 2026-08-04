@@ -10,17 +10,26 @@ export default function WaitingRoom() {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const state = location.state as { roomCode?: string; playerColor?: Color; targetPoints?: number } | null;
+  const state = location.state as {
+    roomCode?: string;
+    playerColor?: Color;
+    targetPoints?: number;
+  } | null;
   const roomCode = state?.roomCode || "";
   const playerColor = state?.playerColor || "white";
   const targetPoints = state?.targetPoints || 7;
 
-  const [status, setStatus] = useState<"connecting" | "waiting" | "opponent_joined" | "error">("connecting");
+  const [status, setStatus] = useState<
+    "connecting" | "waiting" | "opponent_joined" | "error"
+  >("connecting");
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [connectedCount, setConnectedCount] = useState(1);
   const hasStartedGame = useRef(false);
-  const socket = getSocketService(import.meta.env.VITE_SERVER_URL);
+  const socket = getSocketService(
+    (import.meta as ImportMeta & { env?: Record<string, string | undefined> })
+      .env?.VITE_SERVER_URL,
+  );
 
   useEffect(() => {
     if (!roomId) return;
@@ -54,7 +63,10 @@ export default function WaitingRoom() {
 
     const handleError = (message: unknown) => {
       const payload = (message as { payload?: unknown }).payload;
-      const msg = typeof payload === "string" ? payload : (payload as Record<string, unknown>)?.message as string;
+      const msg =
+        typeof payload === "string"
+          ? payload
+          : ((payload as Record<string, unknown>)?.message as string);
       setStatus("error");
       setError(msg);
     };
@@ -90,7 +102,9 @@ export default function WaitingRoom() {
       await navigator.clipboard.writeText(roomCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch { /* fallback */ }
+    } catch {
+      /* fallback */
+    }
   }
 
   function handleLeave() {
@@ -112,7 +126,9 @@ export default function WaitingRoom() {
         </div>
         <div className={styles.card}>
           <p className={styles.errorText}>{error}</p>
-          <button onClick={handleLeave} className={styles.leaveButton}>Back to home</button>
+          <button onClick={handleLeave} className={styles.leaveButton}>
+            Back to home
+          </button>
         </div>
       </div>
     );
@@ -133,7 +149,11 @@ export default function WaitingRoom() {
           <div className={styles.cardHeader}>
             <h1 className={styles.title}>Room ready</h1>
             <span className={styles.statusPill}>
-              {status === "connecting" ? "Connecting" : status === "waiting" ? "Waiting" : "Starting"}
+              {status === "connecting"
+                ? "Connecting"
+                : status === "waiting"
+                  ? "Waiting"
+                  : "Starting"}
             </span>
           </div>
 
@@ -154,7 +174,9 @@ export default function WaitingRoom() {
                     {copied ? "Copied!" : "Copy"}
                   </button>
                 </div>
-                <p className={styles.shareHint}>Share this code with your opponent</p>
+                <p className={styles.shareHint}>
+                  Share this code with your opponent
+                </p>
               </div>
               <div className={styles.waitingSection}>
                 <div className={styles.dots}>
@@ -169,7 +191,9 @@ export default function WaitingRoom() {
                 You: {playerColor === "white" ? "White" : "Black"}
               </div>
               <p className={styles.matchInfo}>
-                {targetPoints === 1 ? "Single Game" : `First to ${targetPoints} points`}
+                {targetPoints === 1
+                  ? "Single Game"
+                  : `First to ${targetPoints} points`}
               </p>
             </div>
           )}
@@ -181,7 +205,9 @@ export default function WaitingRoom() {
             </div>
           )}
 
-          <button onClick={handleLeave} className={styles.leaveButton}>Leave</button>
+          <button onClick={handleLeave} className={styles.leaveButton}>
+            Leave
+          </button>
         </div>
       </div>
     </div>

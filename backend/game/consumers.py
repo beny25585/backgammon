@@ -17,6 +17,15 @@ from .game_service import finalize_room, game_ended_payload
 logger = logging.getLogger(__name__)
 
 
+def get_user_id_from_token(token):
+    if not token:
+        return None
+    try:
+        return AccessToken(token)["user_id"]
+    except Exception:
+        return None
+
+
 @database_sync_to_async
 def get_room(room_id):
     try:
@@ -105,15 +114,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         token = params.get('token', [None])[0]
 
         if not token:
-            logger.warning(f"WS connect rejected (4001): missing token, room={self.scope.get('url_route', {}).get('kwargs', {}).get('room_id')}")
+            logger.warning(
+                "WS connect rejected (4001): missing token",
+                extra={"room_id": self.scope.get("url_route", {}).get("kwargs", {}).get("room_id")},
+            )
             await self.close(code=4001)
             return
 
-        try:
-            valid_token = AccessToken(token)
-            self.user_id = valid_token['user_id']
-        except Exception as e:
-            logger.warning(f"WS connect rejected (4001): invalid token: {e}")
+        self.user_id = get_user_id_from_token(token)
+        if not self.user_id:
+            logger.warning("WS connect rejected (4001): invalid token")
             await self.close(code=4001)
             return
 
@@ -141,8 +151,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.info(f"WebSocket connected: {self.player_color} ({username}) room={self.room_id} phase={state_data.get('phase')}")
             if not state_data:
                 logger.warning(f"Empty state_data for room {self.room_id}")
-        except Exception as e:
-            traceback.print_exc()
+        except Exception as exc:
+            logger.exception("WS connect failed", extra={"room_id": self.room_id})
             await self.close()
             return
 
@@ -250,12 +260,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             else:
                 logger.warning(f"WS unknown message type: {message_type} player={self.player_color}")
                 await self._send_error(f'Unknown message type: {message_type}')
-        except Exception as e:
-            logger.error(f"WS receive error: {e}", exc_info=True)
-            traceback.print_exc()
+        except Exception as exc:
+            logger.exception("WS receive error")
             await self.send(json.dumps({
                 'type': 'error',
-                'message': str(e)
+                'message': str(exc)
             }))
 
     async def _handle_state_update(self, payload):

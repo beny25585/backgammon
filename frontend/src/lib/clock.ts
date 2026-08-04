@@ -14,13 +14,16 @@ export interface TimeControlPreset {
 
 export const TIME_CONTROL_PRESETS: TimeControlPreset[] = [
   { id: "none", label: "No limit", base: 0, delay: 0 },
-  { id: "1+5", label: "1:00 + 5s", base: 60_000, delay: 5_000 },
-  { id: "2+12", label: "2:00 + 12s", base: 120_000, delay: 12_000 },
-  { id: "5+12", label: "5:00 + 12s", base: 300_000, delay: 12_000 },
+  { id: "fast", label: "Fast", base: 60_000, delay: 5_000 },
+  { id: "normal", label: "Normal", base: 120_000, delay: 12_000 },
+  { id: "slow", label: "Slow", base: 300_000, delay: 12_000 },
 ];
 
 export function parseTimeControl(id: string | null | undefined): TimeControl | null {
   if (!id || id === "none") return null;
+  const preset = TIME_CONTROL_PRESETS.find((p) => p.id === id);
+  if (preset) return { base: preset.base, delay: preset.delay };
+  // Legacy "M+S" ids from previously stored rooms still parse.
   const [minutes, delaySec] = id.split("+").map((n) => parseInt(n, 10));
   if (!Number.isFinite(minutes) || !Number.isFinite(delaySec)) return null;
   return { base: minutes * 60_000, delay: delaySec * 1_000 };
@@ -28,7 +31,13 @@ export function parseTimeControl(id: string | null | undefined): TimeControl | n
 
 export function activePlayerOf(state: GameState | null): Color | null {
   if (!state) return null;
-  if (state.phase === "waiting" || state.phase === "game_over") return null;
+  if (
+    state.phase === "waiting" ||
+    state.phase === "game_over" ||
+    state.phase === "opening_roll"
+  ) {
+    return null;
+  }
   if (state.phase === "doubling_offered" && state.doubleOfferedBy) {
     return state.doubleOfferedBy === "white" ? "black" : "white";
   }
@@ -58,7 +67,8 @@ export function reserveLeft(
   nowMs: number,
   delayMs: number,
 ): number {
-  if (!active || turnStartedAt == null) return clock[active] ?? 0;
+  if (!active) return 0;
+  if (turnStartedAt == null) return clock[active] ?? 0;
   const charged = Math.max(0, nowMs - turnStartedAt - delayMs);
   return Math.max(0, (clock[active] ?? 0) - charged);
 }

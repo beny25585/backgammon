@@ -4,17 +4,22 @@ import styles from "./SidePanel.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
 import Controls from "../Controls";
+import Clock from "../Clock";
 import { useGame } from "../../services/gameContext";
+import { activePlayerOf, type TimeControl } from "../../lib/clock";
 
 interface SidePanelProps {
   state: GameState;
   playerColor: Color;
   onLeave?: () => void;
+  clock?: Record<Color, number> | null;
+  turnStartedAt?: number | null;
+  timeControl?: TimeControl | null;
 }
 
-export default function SidePanel({ state, playerColor, onLeave }: SidePanelProps) {
+export default function SidePanel({ state, playerColor, onLeave, clock, turnStartedAt, timeControl }: SidePanelProps) {
   const navigate = useNavigate();
-  const { giveUp, whiteName, blackName } = useGame();
+  const { giveUp, whiteName, blackName, matchScore } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
 
   const opponentColor = playerColor === "white" ? "black" : "white";
@@ -22,6 +27,10 @@ export default function SidePanel({ state, playerColor, onLeave }: SidePanelProp
   const selfName = playerColor === "white" ? whiteName : blackName;
   const opponentLabel = opponentName || (playerColor === "white" ? "Black Player" : "White Player");
   const selfLabel = selfName ? `${selfName} (you)` : (playerColor === "white" ? "You (White)" : "You (Black)");;
+  const stripMyLabel = selfName || "You";
+  const stripOppLabel = opponentName || "Opponent";
+  const activeColor = activePlayerOf(state);
+  const delayMs = timeControl?.delay ?? 0;
 
   return (
     <div className={styles.panel}>
@@ -30,8 +39,9 @@ export default function SidePanel({ state, playerColor, onLeave }: SidePanelProp
           color={opponentColor}
           state={state}
           label={opponentLabel}
-          active={state.turn === opponentColor}
+          active={activeColor === opponentColor}
           self={false}
+          score={matchScore?.[opponentColor] ?? 0}
         />
       </div>
 
@@ -40,8 +50,21 @@ export default function SidePanel({ state, playerColor, onLeave }: SidePanelProp
           color={playerColor}
           state={state}
           label={selfLabel}
-          active={state.turn === playerColor}
+          active={activeColor === playerColor}
           self={true}
+          score={matchScore?.[playerColor] ?? 0}
+        />
+      </div>
+
+      <div className={styles.section}>
+        <Clock
+          clock={clock}
+          activeColor={activeColor}
+          myColor={playerColor}
+          myLabel={stripMyLabel}
+          oppLabel={stripOppLabel}
+          delayMs={delayMs}
+          turnStartedAt={turnStartedAt}
         />
       </div>
 

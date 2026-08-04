@@ -11,19 +11,27 @@ import {
 import { newGame } from "./backgammon/engine";
 
 test("parseTimeControl parses presets and rejects no-limit", () => {
-  expect(parseTimeControl("2+12")).toEqual({ base: 120_000, delay: 12_000 });
+  expect(parseTimeControl("fast")).toEqual({ base: 60_000, delay: 5_000 });
+  expect(parseTimeControl("normal")).toEqual({ base: 120_000, delay: 12_000 });
+  expect(parseTimeControl("slow")).toEqual({ base: 300_000, delay: 12_000 });
   expect(parseTimeControl("none")).toBeNull();
   expect(parseTimeControl(null)).toBeNull();
   expect(parseTimeControl("bogus")).toBeNull();
 });
 
-test("activePlayerOf is the current turn, and null when no one must act", () => {
-  expect(activePlayerOf(newGame())).toBe("white"); // opening_roll, turn white
+test("parseTimeControl still parses legacy M+S ids", () => {
+  expect(parseTimeControl("2+12")).toEqual({ base: 120_000, delay: 12_000 });
+  expect(parseTimeControl("1+5")).toEqual({ base: 60_000, delay: 5_000 });
+});
+
+test("activePlayerOf is null during the opening roll, and the turn once play starts", () => {
+  expect(activePlayerOf(newGame())).toBeNull(); // opening_roll: clock doesn't run
+  expect(activePlayerOf({ ...newGame(), phase: "moving", turn: "white" })).toBe("white");
   expect(activePlayerOf({ ...newGame(), phase: "game_over", winner: "white" })).toBeNull();
 });
 
 test("activePlayerOf charges the responder during doubling", () => {
-  const state = { ...newGame(), phase: "doubling_offered", doubleOfferedBy: "white" };
+  const state = { ...newGame(), phase: "doubling_offered" as const, doubleOfferedBy: "white" as const };
   expect(activePlayerOf(state)).toBe("black");
 });
 

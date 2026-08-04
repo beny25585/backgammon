@@ -1,4 +1,12 @@
-import { createContext, useContext, useCallback, useState, useEffect, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useCallback,
+  useState,
+  useEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { GameContextType, OpeningRollResult } from "../types/context";
 import type { GameState, Color } from "../types/game";
 import {
@@ -10,34 +18,52 @@ import {
   undoLastMove,
   allLegalMoves,
   OFF,
-  type Source, type Target, type Move,
+  type Source,
+  type Target,
+  type Move,
 } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
+import { parseTimeControl, type TimeControl } from "../lib/clock";
+import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
 
-export const GameContext = createContext<GameContextType | undefined>(undefined);
+export const GameContext = createContext<GameContextType | undefined>(
+  undefined,
+);
 
 interface GameProviderProps {
   children: ReactNode;
   roomId: string;
   playerColor: Color;
   serverUrl?: string;
+  onLeave?: () => void;
 }
 
-export function GameProvider({ children, roomId, playerColor: initialColor, serverUrl }: GameProviderProps) {
+export function GameProvider({
+  children,
+  roomId,
+  playerColor: initialColor,
+  serverUrl,
+  onLeave,
+}: GameProviderProps) {
   const [state, setState] = useState<GameState | null>(null);
   const [playerColor, setPlayerColor] = useState<Color>(initialColor);
   const [whiteName, setWhiteName] = useState<string | null>(null);
   const [blackName, setBlackName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] = useState<{ dice: number[] } | null>(null);
+  const [openingRollResult, setOpeningRollResult] =
+    useState<OpeningRollResult | null>(null);
+  const [noMovesMessage, setNoMovesMessage] = useState<{
+    dice: number[];
+  } | null>(null);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
-  const [gameResult, setGameResult] = useState<GameContextType["gameResult"]>(null);
+  const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
+  const [gameResult, setGameResult] =
+    useState<GameContextType["gameResult"]>(null);
 
   const socket = getSocketService(serverUrl);
   const lastVersionRef = useRef(0);
@@ -47,9 +73,12 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
     stateRef.current = state;
   }, [state]);
 
-  const sendStateUpdate = useCallback((newState: GameState, action: string) => {
-    socket.send("state_update", { state: newState, action });
-  }, [socket]);
+  const sendStateUpdate = useCallback(
+    (newState: GameState, action: string) => {
+      socket.send("state_update", { state: newState, action });
+    },
+    [socket],
+  );
 
   useEffect(() => {
     const token = getAccessToken();
@@ -73,7 +102,7 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
-            console.log("[FE] initial state_update received", {
+            clientLogger.debug("Initial state update received", {
               phase: (raw as any).phase,
               turn: (raw as any).turn,
               version: raw.version,
@@ -91,17 +120,30 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
             hasReceivedState = true;
             setState(raw as unknown as GameState);
 
-            const players = (msg as Record<string, unknown>).players as { white?: string | null; black?: string | null } | undefined;
+            const players = (msg as Record<string, unknown>).players as
+              | { white?: string | null; black?: string | null }
+              | undefined;
             if (players) {
               setWhiteName(players.white ?? null);
               setBlackName(players.black ?? null);
             }
 
+            const tc = (msg as Record<string, unknown>).timeControl;
+            if (typeof tc === "string") setTimeControl(parseTimeControl(tc));
+
             const s = raw as any;
-            if (s.phase === "opening_roll" && (s.openingRoll?.white != null || s.openingRoll?.black != null)) {
+            if (
+              s.phase === "opening_roll" &&
+              (s.openingRoll?.white != null || s.openingRoll?.black != null)
+            ) {
               setOpeningRollResult((prev) => ({
                 myDie: s.openingRoll?.[playerColor] ?? prev?.myDie ?? null,
-                opponentDie: s.openingRoll?.[playerColor === "white" ? "black" : "white"] ?? prev?.opponentDie ?? null,
+                opponentDie:
+                  s.openingRoll?.[
+                    playerColor === "white" ? "black" : "white"
+                  ] ??
+                  prev?.opponentDie ??
+                  null,
                 winner: null,
               }));
             }
@@ -111,7 +153,10 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           // Broadcast from another player.
           const version = typeof raw.version === "number" ? raw.version : 0;
           if (version > 0 && version <= lastVersionRef.current) {
-            clientLogger.warn("Stale state_update ignored", { version, last: lastVersionRef.current });
+            clientLogger.warn("Stale state_update ignored", {
+              version,
+              last: lastVersionRef.current,
+            });
             return;
           }
           if (version > 0) lastVersionRef.current = version;
@@ -120,12 +165,14 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           // the server-assigned version so our next send is not treated as stale.
           if (msg.playerColor === playerColor) {
             setState((prev) =>
-              prev && version > (prev.version ?? 0) ? { ...prev, version } : prev,
+              prev && version > (prev.version ?? 0)
+                ? { ...prev, version }
+                : prev,
             );
             return;
           }
 
-          console.log("[FE] state_update received", {
+          clientLogger.debug("State update received", {
             phase: (raw as any).phase,
             turn: (raw as any).turn,
             version,
@@ -147,10 +194,16 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
 
           // Update opening roll result from received state
           const s = raw as any;
-          if (s.phase === "opening_roll" && (s.openingRoll?.white != null || s.openingRoll?.black != null)) {
+          if (
+            s.phase === "opening_roll" &&
+            (s.openingRoll?.white != null || s.openingRoll?.black != null)
+          ) {
             setOpeningRollResult((prev) => ({
               myDie: s.openingRoll?.[playerColor] ?? prev?.myDie ?? null,
-              opponentDie: s.openingRoll?.[playerColor === "white" ? "black" : "white"] ?? prev?.opponentDie ?? null,
+              opponentDie:
+                s.openingRoll?.[playerColor === "white" ? "black" : "white"] ??
+                prev?.opponentDie ??
+                null,
               winner: null,
             }));
           }
@@ -166,13 +219,18 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         });
 
         socket.on("room_status", (_message) => {
-          const data = (_message as Record<string, unknown>).payload as { connected: number };
+          const data = (_message as Record<string, unknown>).payload as {
+            connected: number;
+          };
           setOpponentConnected(data.connected >= 2);
         });
 
         socket.on("error", (message) => {
           const payload = (message as Record<string, unknown>).payload;
-          const msg = typeof payload === "string" ? payload : (payload as Record<string, unknown>)?.message as string;
+          const msg =
+            typeof payload === "string"
+              ? payload
+              : ((payload as Record<string, unknown>)?.message as string);
           setError(msg);
         });
 
@@ -193,7 +251,9 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           clientLogger.info("Game ended", { winner, reason: payload.reason });
           setGameResult({
             winner,
-            winType: (payload.winType as "single" | "gammon" | "backgammon") || "single",
+            winType:
+              (payload.winType as "single" | "gammon" | "backgammon") ||
+              "single",
             points: payload.points ?? 1,
             cube: payload.cube ?? 1,
             matchScore: {
@@ -209,7 +269,11 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         });
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";
-        clientLogger.error("Game connect failed", { roomId, playerColor, error: msg });
+        clientLogger.error("Game connect failed", {
+          roomId,
+          playerColor,
+          error: msg,
+        });
         setError(msg);
         setIsLoading(false);
       }
@@ -224,7 +288,11 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
 
   const rollDice = useCallback(() => {
     setState((prev) => {
-      console.log("[FE] rollDice called, phase:", prev?.phase, "turn:", prev?.turn, "playerColor:", playerColor);
+      clientLogger.debug("rollDice called", {
+        phase: prev?.phase,
+        turn: prev?.turn,
+        playerColor,
+      });
       if (!prev) return prev;
 
       if (prev.phase === "opening_roll") {
@@ -236,7 +304,8 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           const myDie = next.openingRoll[playerColor];
           const oppColor = playerColor === "white" ? "black" : "white";
           const opponentDie = next.openingRoll[oppColor];
-          const winner = next.phase !== "opening_roll" ? (next.turn as Color) : null;
+          const winner =
+            next.phase !== "opening_roll" ? (next.turn as Color) : null;
 
           // Clear overlay after 2s if opening resolved
           if (winner) {
@@ -266,7 +335,12 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
           setTimeout(() => {
             setNoMovesMessage(null);
             setState((current) => {
-              if (!current || current.phase !== "moving" || current.turn !== next.turn) return current;
+              if (
+                !current ||
+                current.phase !== "moving" ||
+                current.turn !== next.turn
+              )
+                return current;
               return passed;
             });
             sendStateUpdate(passed, "end_turn");
@@ -282,37 +356,49 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
     });
   }, [playerColor, sendStateUpdate]);
 
-  const endGame = useCallback((winner: Color, winType: string, reason: string, cube: number) => {
-    setGameResult({
-      winner,
-      winType: (winType as "single" | "gammon" | "backgammon") || "single",
-      points: 1,
-      cube,
-      matchScore: { white: 0, black: 0 },
-    });
-    socket.send("game_ended", { winner, winType, reason, cube });
-  }, [socket]);
+  const endGame = useCallback(
+    (winner: Color, winType: string, reason: string, cube: number) => {
+      setGameResult({
+        winner,
+        winType: (winType as "single" | "gammon" | "backgammon") || "single",
+        points: 1,
+        cube,
+        matchScore: { white: 0, black: 0 },
+      });
+      socket.send("game_ended", { winner, winType, reason, cube });
+    },
+    [socket],
+  );
 
-  const makeMove = useCallback((from: Source, to: Target) => {
-    setState((prev) => {
-      if (!prev || prev.phase !== "moving") return prev;
-      const dest = to === OFF ? OFF : to;
-      const moves = allLegalMoves(prev, prev.turn);
-      const match = moves.find(
-        (m: Move) => m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
-      );
-      if (!match) return prev;
-      const next = applyMove(prev, match, prev.turn);
+  const makeMove = useCallback(
+    (from: Source, to: Target) => {
+      setState((prev) => {
+        if (!prev || prev.phase !== "moving") return prev;
+        const dest = to === OFF ? OFF : to;
+        const moves = allLegalMoves(prev, prev.turn);
+        const match = moves.find(
+          (m: Move) =>
+            m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
+        );
+        if (!match) return prev;
+        const next = applyMove(prev, match, prev.turn);
 
-      // Check for game over
-      if (next.phase === "game_over" && next.winner) {
-        endGame(next.winner, next.winType || "single", "bear_off", next.cube || 1);
-      }
+        // Check for game over
+        if (next.phase === "game_over" && next.winner) {
+          endGame(
+            next.winner,
+            next.winType || "single",
+            "bear_off",
+            next.cube || 1,
+          );
+        }
 
-      sendStateUpdate(next, "move");
-      return next;
-    });
-  }, [sendStateUpdate, endGame]);
+        sendStateUpdate(next, "move");
+        return next;
+      });
+    },
+    [sendStateUpdate, endGame],
+  );
 
   const offerDoubleAction = useCallback(() => {
     setState((prev) => {
@@ -323,19 +409,27 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
     });
   }, [sendStateUpdate]);
 
-  const respondToDouble = useCallback((accept: boolean) => {
-    setState((prev) => {
-      if (!prev) return prev;
-      const next = respondDouble(prev, accept);
+  const respondToDouble = useCallback(
+    (accept: boolean) => {
+      setState((prev) => {
+        if (!prev) return prev;
+        const next = respondDouble(prev, accept);
 
-      if (next.phase === "game_over" && next.winner) {
-        endGame(next.winner, next.winType || "single", "double_decline", next.cube || 1);
-      }
+        if (next.phase === "game_over" && next.winner) {
+          endGame(
+            next.winner,
+            next.winType || "single",
+            "double_decline",
+            next.cube || 1,
+          );
+        }
 
-      sendStateUpdate(next, "double_response");
-      return next;
-    });
-  }, [sendStateUpdate, endGame]);
+        sendStateUpdate(next, "double_response");
+        return next;
+      });
+    },
+    [sendStateUpdate, endGame],
+  );
 
   const endTurn = useCallback(() => {
     setState((prev) => {
@@ -392,7 +486,11 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
         noMovesMessage,
         reconnected,
         opponentConnected,
+        timeControl,
+        clock: state?.clock ?? null,
+        turnStartedAt: state?.turnStartedAt ?? null,
         gameResult,
+        matchScore: gameResult?.matchScore ?? null,
         handleNextGame,
         handleHome,
         updateState,
@@ -406,6 +504,24 @@ export function GameProvider({ children, roomId, playerColor: initialColor, serv
       }}
     >
       {children}
+
+      {gameResult && (
+        <GameResultOverlay
+          playerColor={playerColor}
+          winner={gameResult.winner}
+          winType={gameResult.winType}
+          points={gameResult.points}
+          cube={gameResult.cube}
+          matchScore={gameResult.matchScore}
+          matchTarget={gameResult.targetPoints ?? 7}
+          matchWinner={gameResult.winner}
+          onNext={handleNextGame}
+          onHome={() => {
+            handleHome();
+            onLeave?.();
+          }}
+        />
+      )}
     </GameContext.Provider>
   );
 }

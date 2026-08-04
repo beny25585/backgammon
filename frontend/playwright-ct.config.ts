@@ -1,8 +1,11 @@
 import { defineConfig } from "@playwright/experimental-ct-react";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import path from "path";
-import { fileURLToPath } from "url";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+// Provide a fallback declaration for `process` to avoid requiring @types/node in this config file.
+declare const process: any;
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const srcRoot = path.resolve(__dirname, "./src");
@@ -30,7 +33,7 @@ export default defineConfig({
       },
     },
     ctTemplateDir: "src/test-utils",
-    ctTestIdAttribute: "data-testid",
+    testIdAttribute: "data-testid",
     launchOptions: {
       executablePath: process.env.CHROMIUM_PATH ?? defaultChromiumPath,
     },

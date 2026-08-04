@@ -6,14 +6,22 @@ export type MessageHandler = (data: unknown) => void;
 
 function getCloseReason(code: number): string {
   switch (code) {
-    case 4001: return "Authentication failed (bad or expired token)";
-    case 4003: return "You are not a player in this room";
-    case 4004: return "Room not found";
-    case 1000: return "Normal closure";
-    case 1001: return "Server going away";
-    case 1006: return "Connection lost (abnormal closure)";
-    case 1011: return "Server error";
-    default: return `Connection closed with code ${code}`;
+    case 4001:
+      return "Authentication failed (bad or expired token)";
+    case 4003:
+      return "You are not a player in this room";
+    case 4004:
+      return "Room not found";
+    case 1000:
+      return "Normal closure";
+    case 1001:
+      return "Server going away";
+    case 1006:
+      return "Connection lost (abnormal closure)";
+    case 1011:
+      return "Server error";
+    default:
+      return `Connection closed with code ${code}`;
   }
 }
 
@@ -28,8 +36,8 @@ export class GameSocketService {
   private currentRoomId: string | null = null;
   private intentionalClose = false;
 
-  constructor(url: string = '') {
-    this.url = url || '/backgammon';
+  constructor(url: string = "") {
+    this.url = url || "/backgammon";
   }
 
   connect(roomId: string, token?: string): Promise<void> {
@@ -67,7 +75,10 @@ export class GameSocketService {
             this.emit(message.type, message);
           } catch (error) {
             console.error("Failed to parse message:", error);
-            clientLogger.error("Failed to parse WS message", { raw: event.data, error: String(error) });
+            clientLogger.error("Failed to parse WS message", {
+              raw: event.data,
+              error: String(error),
+            });
           }
         };
 
@@ -83,7 +94,12 @@ export class GameSocketService {
             return;
           }
           const reason = event.reason || getCloseReason(event.code);
-          clientLogger.error("WebSocket closed", { roomId, code: event.code, reason, wasClean: event.wasClean });
+          clientLogger.error("WebSocket closed", {
+            roomId,
+            code: event.code,
+            reason,
+            wasClean: event.wasClean,
+          });
           reject(new Error(reason));
           if (event.code === 4001) {
             // Expired/invalid token — no point reconnecting; force a fresh login.
@@ -103,10 +119,17 @@ export class GameSocketService {
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
       setTimeout(() => {
-        console.log(
-          `Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
+        clientLogger.info("Attempting to reconnect", {
+          attempt: this.reconnectAttempts,
+          maxAttempts: this.maxReconnectAttempts,
+        });
+        this.connect(this.currentRoomId!, this.currentToken || undefined).catch(
+          (error) => {
+            clientLogger.error("Reconnect attempt failed", {
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
         );
-        this.connect(this.currentRoomId!, this.currentToken || undefined).catch(console.error);
       }, this.reconnectDelay);
     }
   }
@@ -115,7 +138,9 @@ export class GameSocketService {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
     } else {
-      console.error("WebSocket is not connected");
+      clientLogger.warn(
+        "WebSocket send skipped because socket is not connected",
+      );
     }
   }
 

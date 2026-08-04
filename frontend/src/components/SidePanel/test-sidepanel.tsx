@@ -14,9 +14,6 @@ function makeState() {
   state.remaining = [4, 3];
   state.home = { white: 5, black: 8 };
   state.bar = { white: 1, black: 0 };
-  (state as unknown as Record<string, unknown>).whiteScore = 2;
-  (state as unknown as Record<string, unknown>).blackScore = 3;
-  (state as unknown as Record<string, unknown>).targetPoints = 7;
   return state;
 }
 
@@ -31,7 +28,11 @@ const mock: GameContextType = {
   setOpeningRollResult: () => {},
   reconnected: false,
   opponentConnected: true,
+  timeControl: null,
+  clock: null,
+  turnStartedAt: null,
   gameResult: null,
+  matchScore: { white: 2, black: 3 },
   handleNextGame: () => {},
   handleHome: () => {},
   updateState: () => {},

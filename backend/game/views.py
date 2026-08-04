@@ -104,9 +104,9 @@ def create_room(request):
     if preferred_color not in ('white', 'black'):
         preferred_color = 'white'
 
-    time_control = request.data.get('time', '2+12')
-    if time_control not in ('none', '1+5', '2+12', '5+12'):
-        time_control = '2+12'
+    time_control = request.data.get('time', 'normal')
+    if time_control not in ('none', 'fast', 'normal', 'slow'):
+        time_control = 'normal'
 
     room = GameRoom.objects.create(
         code=uuid.uuid4().hex[:6].upper(),

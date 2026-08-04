@@ -10,10 +10,15 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework.test import APIClient
 
-from game.consumers import GameConsumer, get_game_state, save_game_state
+from game.consumers import GameConsumer, get_game_state, save_game_state, get_user_id_from_token
 from game.engine import BackgammonEngine
 from game.game_service import finalize_room
 from game.models import GameRoom, GameState, GameEvent, Match, Player, RoomPlayer
+
+
+class TokenParsingTests(TestCase):
+    def test_get_user_id_from_token_returns_none_for_invalid_token(self):
+        self.assertIsNone(get_user_id_from_token("not-a-valid-token"))
 
 
 class GameConsumerTests(TransactionTestCase):
@@ -299,13 +304,38 @@ class GameConsumerTests(TransactionTestCase):
         self.assertEqual(response['timeControl'], self.room.time_control)
         await communicator.disconnect()
 
-    async def test_first_state_update_initializes_clock_to_base(self):
+    async def test_first_state_update_seeds_clock_during_opening_roll(self):
+        # During the opening roll nobody is on the clock: reserves are seeded
+        # but the clock is not started (turnStartedAt stays null).
         comm_white, comm_black = await self._connect_both()
         await comm_white.send_json_to({
             'type': 'state_update',
             'payload': {'state': {'phase': 'opening_roll', 'turn': 'black', 'version': 0}, 'action': 'roll'},
         })
         event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
+        self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        self.assertIsNone(event['payload'].get('turnStartedAt'))
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_clock_starts_only_after_opening_roll_resolves(self):
+        comm_white, comm_black = await self._connect_both()
+        # Opening roll: no active player, clock not started.
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {'phase': 'opening_roll', 'turn': 'black', 'version': 0}, 'action': 'roll'},
+        })
+        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
+        self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        self.assertIsNone(event['payload'].get('turnStartedAt'))
+
+        # Opening roll resolves: white to move. The clock starts now, and the
+        # time spent rolling is not charged to either player.
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {'phase': 'moving', 'turn': 'white', 'version': 1}, 'action': 'roll'},
+        })
+        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and e.get('payload', {}).get('phase') == 'moving')
         self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
         self.assertIsInstance(event['payload'].get('turnStartedAt'), int)
         await comm_white.disconnect()
@@ -687,11 +717,17 @@ class CreateRoomGuardTests(TestCase):
 class ClockHelperTests(TestCase):
     def test_parse_time_control(self):
         from game.clock import parse_time_control
-        self.assertEqual(parse_time_control('2+12'), (120_000, 12_000))
-        self.assertEqual(parse_time_control('1+5'), (60_000, 5_000))
+        self.assertEqual(parse_time_control('fast'), (60_000, 5_000))
+        self.assertEqual(parse_time_control('normal'), (120_000, 12_000))
+        self.assertEqual(parse_time_control('slow'), (300_000, 12_000))
         self.assertIsNone(parse_time_control('none'))
         self.assertIsNone(parse_time_control(None))
         self.assertIsNone(parse_time_control('bogus'))
+
+    def test_parse_time_control_accepts_legacy_ids(self):
+        from game.clock import parse_time_control
+        self.assertEqual(parse_time_control('2+12'), (120_000, 12_000))
+        self.assertEqual(parse_time_control('1+5'), (60_000, 5_000))
 
     def test_active_player_is_turn_normally(self):
         from game.clock import active_player
@@ -705,6 +741,10 @@ class ClockHelperTests(TestCase):
     def test_active_player_none_when_game_over(self):
         from game.clock import active_player
         self.assertIsNone(active_player({'phase': 'game_over', 'winner': 'white'}))
+
+    def test_active_player_none_during_opening_roll(self):
+        from game.clock import active_player
+        self.assertIsNone(active_player({'phase': 'opening_roll', 'turn': 'white'}))
 
     def test_apply_transition_charges_only_beyond_delay(self):
         from game.clock import apply_transition
@@ -739,7 +779,7 @@ class ClockHelperTests(TestCase):
             'clock': {'white': 60_000, 'black': 60_000},
             'turnStartedAt': 1_000,
         }
-        self.assertEqual(deadline_for(state, '1+5'), 1_000 + 5_000 + 60_000)
+        self.assertEqual(deadline_for(state, 'fast'), 1_000 + 5_000 + 60_000)
 
     def test_deadline_none_for_no_limit(self):
         from game.clock import deadline_for
@@ -761,15 +801,15 @@ class CreateRoomTests(TestCase):
     def test_create_room_stores_time_control(self):
         resp = self.client.post(
             '/api/rooms/',
-            {'targetPoints': 5, 'preferredColor': 'white', 'time': '5+12'},
+            {'targetPoints': 5, 'preferredColor': 'white', 'time': 'slow'},
             format='json',
         )
         self.assertEqual(resp.status_code, 201)
         room = GameRoom.objects.get(id=resp.data['id'])
-        self.assertEqual(room.time_control, '5+12')
-        self.assertEqual(resp.data['timeControl'], '5+12')
+        self.assertEqual(room.time_control, 'slow')
+        self.assertEqual(resp.data['timeControl'], 'slow')
 
-    def test_create_room_defaults_to_2_plus_12(self):
+    def test_create_room_defaults_to_normal(self):
         resp = self.client.post(
             '/api/rooms/',
             {'targetPoints': 5, 'preferredColor': 'white'},
@@ -777,4 +817,4 @@ class CreateRoomTests(TestCase):
         )
         self.assertEqual(resp.status_code, 201)
         room = GameRoom.objects.get(id=resp.data['id'])
-        self.assertEqual(room.time_control, '2+12')
+        self.assertEqual(room.time_control, 'normal')

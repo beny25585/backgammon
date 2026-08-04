@@ -1,5 +1,6 @@
 import type { GameState, Color } from "./game";
 import type { Source, Target } from "../lib/backgammon/engine";
+import type { TimeControl } from "../lib/clock";
 
 export interface OpeningRollResult {
   myDie: number | null;
@@ -18,6 +19,9 @@ export interface GameContextType {
   setOpeningRollResult: (result: OpeningRollResult | null) => void;
   reconnected: boolean;
   opponentConnected: boolean;
+  timeControl: TimeControl | null;
+  clock: Record<Color, number> | null;
+  turnStartedAt: number | null;
   gameResult: {
     winner: Color;
     winType: "single" | "gammon" | "backgammon";
@@ -26,6 +30,7 @@ export interface GameContextType {
     matchScore: Record<Color, number>;
     targetPoints?: number;
   } | null;
+  matchScore: Record<Color, number> | null;
   handleNextGame: () => void;
   handleHome: () => void;
   updateState: (newState: GameState) => void;

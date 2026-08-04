@@ -1,4 +1,3 @@
-import { motion } from "motion/react";
 import { useMemo, useRef, useState, useCallback } from "react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import { BAR, OFF } from "@/lib/backgammon/engine";
@@ -7,6 +6,7 @@ import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
 import PointCell from "./pieces/pointcell/PointCell";
 import Bar from "./pieces/bar/Bar";
 import BearOff from "./pieces/bearoff/BearOff";
+import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
 import styles from "../GameScreen/GameScreen.module.css";
 import {
   TOP_POINTS,
@@ -49,6 +49,7 @@ export function Board({
     toX: number; toY: number;
     color: Color;
     size: number;
+    to: Target;
   } | null>(null);
 
   const lastMoveLast = useMemo(() => {
@@ -76,9 +77,8 @@ export function Board({
         toY: tRect.top + tRect.height / 2 - bRect.top - checkerPx / 2,
         color: myColor ?? "white",
         size: checkerPx,
+        to,
       });
-
-      setTimeout(() => { setFlyChecker(null); onMove(to); }, 320);
     },
     [myColor, onMove],
   );
@@ -168,20 +168,14 @@ export function Board({
       </div>
 
       {flyChecker && (
-        <motion.div
-          initial={{ x: flyChecker.fromX, y: flyChecker.fromY, scale: 1, opacity: 1 }}
-          animate={{ x: flyChecker.toX, y: flyChecker.toY, scale: 0.85, opacity: 0.9 }}
-          transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
-          className={styles.flyer}
-          style={{
-            top: 0, left: 0,
-            width: flyChecker.size + "px",
-            height: flyChecker.size + "px",
-            background: flyChecker.color === "white"
-              ? "radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 55%, #b89660 100%)"
-              : "radial-gradient(circle at 30% 25%, #6a4830, #2a1810 55%, #0a0402 100%)",
-            boxShadow: "0 6px 20px rgba(0,0,0,0.7), inset 0 -3px 4px rgba(0,0,0,0.35), inset 0 2px 2px rgba(255,255,255,0.15), 0 0 24px rgba(201,169,97,0.5)",
-            border: flyChecker.color === "white" ? "1px solid #c9a961" : "1px solid #000",
+        <FlyingChecker
+          from={{ x: flyChecker.fromX, y: flyChecker.fromY }}
+          to={{ x: flyChecker.toX, y: flyChecker.toY }}
+          color={flyChecker.color}
+          size={flyChecker.size}
+          onComplete={() => {
+            setFlyChecker(null);
+            onMove(flyChecker.to);
           }}
         />
       )}

@@ -23,7 +23,7 @@ async function apiFetch(path: string, options: RequestInit = {}) {
   return res.json();
 }
 
-export async function createRoom(settings?: { targetPoints?: number; preferredColor?: string }) {
+export async function createRoom(settings?: { targetPoints?: number; preferredColor?: string; time?: string }) {
   return apiFetch("/api/rooms/", {
     method: "POST",
     body: settings ? JSON.stringify(settings) : undefined,

@@ -17,6 +17,8 @@ import {
 import { chooseMove } from "@/lib/bot/chooseMove";
 import { GameContext } from "./gameContext";
 import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
+import { useLocalClock } from "../hooks/useLocalClock";
+import type { TimeControl } from "../lib/clock";
 
 function extractTranscript(state: GameState) {
   const history = state.moveHistory;
@@ -44,12 +46,13 @@ interface LocalGameProviderProps {
   children: ReactNode;
   botColor?: Color;
   matchTarget?: number;
+  timeControl?: TimeControl | null;
   onQuitMatch?: () => void;
 }
 
-const BOT_DELAY = 2200;
+const BOT_DELAY = 1000;
 
-export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitMatch }: LocalGameProviderProps) {
+export function LocalGameProvider({ children, botColor, matchTarget = 7, timeControl, onQuitMatch }: LocalGameProviderProps) {
   const [state, setState] = useState<GameState>(() => newGame());
   const humanColor: Color = botColor ? (botColor === "white" ? "black" : "white") : "white";
   const [playerColor, setPlayerColor] = useState<Color>(humanColor);
@@ -78,6 +81,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
 
   // Auto-advance to next game after 30s
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(null);
 
   const MATCH_TARGET = matchTarget;
 
@@ -109,16 +113,23 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
 
   // Auto-advance when game result is shown and match isn't over
   useEffect(() => {
-    if (!gameResult) return;
-    if (matchWinner) return;
-    if (MATCH_TARGET <= 1) return; // single game, no auto-advance
+    if (!gameResult || matchWinner || MATCH_TARGET <= 1) {
+      setNextGameCountdown(null);
+      return;
+    }
 
+    setNextGameCountdown(30);
     autoAdvanceTimer.current = setTimeout(() => {
       handleNextGame();
     }, 30000);
 
+    const tick = setInterval(() => {
+      setNextGameCountdown((prev) => (prev == null ? null : prev - 1));
+    }, 1000);
+
     return () => {
       if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+      clearInterval(tick);
     };
   }, [gameResult, matchWinner]);
 
@@ -327,6 +338,22 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
 
   const updateState = useCallback((s: GameState) => setState(s), []);
 
+  const handleTimeout = useCallback((color: Color) => {
+    setState((prev) => {
+      if (!prev || prev.phase === "game_over") return prev;
+      const winner: Color = color === "white" ? "black" : "white";
+      return {
+        ...prev,
+        phase: "game_over",
+        winner,
+        winType: "single",
+        message: `${color} ran out of time`,
+      };
+    });
+  }, []);
+
+  const localClock = useLocalClock(state, timeControl ?? null, handleTimeout);
+
   return (
     <GameContext.Provider
       value={{
@@ -341,7 +368,11 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
         noMovesMessage,
         reconnected,
         opponentConnected,
+        timeControl: timeControl ?? null,
+        clock: localClock.clock,
+        turnStartedAt: localClock.turnStartedAt,
         gameResult,
+        matchScore,
         handleNextGame,
         handleHome,
         updateState,
@@ -358,7 +389,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
 
       {gameResult && (
         <GameResultOverlay
-          playerColor="white"
+          playerColor={playerColor}
           winner={gameResult.winner}
           winType={gameResult.winType}
           points={gameResult.points}
@@ -366,6 +397,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, onQuitM
           matchScore={matchScore}
           matchTarget={MATCH_TARGET}
           matchWinner={matchWinner}
+          countdown={nextGameCountdown}
           onNext={handleNextGame}
           onHome={handleHome}
         />

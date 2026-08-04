@@ -5,14 +5,23 @@ free seconds (the delay) before their reserve time starts draining. A player's
 reserve is only charged for the time they spend beyond the delay on a turn.
 """
 
+NAMED_PRESETS = {
+    'fast': (60_000, 5_000),
+    'normal': (120_000, 12_000),
+    'slow': (300_000, 12_000),
+}
+
 
 def parse_time_control(preset_id):
-    """Return (base_ms, delay_ms) for a preset id like '2+12', else None.
+    """Return (base_ms, delay_ms) for a preset id like 'normal', else None.
 
-    'none', missing, or malformed ids mean no time limit.
+    'none', missing, or malformed ids mean no time limit. Legacy 'M+S' ids
+    from previously stored rooms still parse.
     """
     if not preset_id or preset_id == 'none':
         return None
+    if preset_id in NAMED_PRESETS:
+        return NAMED_PRESETS[preset_id]
     try:
         minutes, delay_sec = preset_id.split('+')
         return (int(minutes) * 60_000, int(delay_sec) * 1_000)
@@ -23,14 +32,15 @@ def parse_time_control(preset_id):
 def active_player(state):
     """The color whose clock should tick, or None when the clock is stopped.
 
-    - waiting / game_over        -> stopped
-    - doubling_offered           -> the responder decides, so they pay time
-    - otherwise                  -> whoever's turn it is
+    - waiting / game_over / opening_roll -> stopped (the opening roll decides
+      who moves first; no one is on the clock until it resolves)
+    - doubling_offered                    -> the responder decides, so they pay time
+    - otherwise                           -> whoever's turn it is
     """
     if not state:
         return None
     phase = state.get('phase')
-    if phase in ('waiting', 'game_over'):
+    if phase in ('waiting', 'game_over', 'opening_roll'):
         return None
     if phase == 'doubling_offered' and state.get('doubleOfferedBy'):
         return 'black' if state['doubleOfferedBy'] == 'white' else 'white'
@@ -69,13 +79,14 @@ def compute_clock(stored, incoming, now_ms, preset_id):
     timed_out = False
 
     if turn_started_at is None:
-        # First action of the game: seed both clocks, clock starts now.
+        # First action of the game: seed both clocks. The clock only starts
+        # once there is an active player, i.e. after the opening roll.
         clock = {'white': base_ms, 'black': base_ms}
-        turn_started_at = now_ms
+        turn_started_at = now_ms if new_active else None
     elif stored.get('phase') == 'game_over' and incoming.get('phase') != 'game_over':
         # New game after a finished one: restart both clocks.
         clock = {'white': base_ms, 'black': base_ms}
-        turn_started_at = now_ms
+        turn_started_at = now_ms if new_active else None
     else:
         stored_active = active_player(stored)
         if stored_active and new_active and stored_active != new_active:

@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import type { Color } from "@/lib/backgammon/engine";
 import styles from "./MatchSettings.module.css";
 import AnimatedTabs from "../animations/AnimatedTabs/AnimatedTabs";
+import { TIME_CONTROL_PRESETS } from "../../lib/clock";
 
 interface MatchSettingsProps {
   mode: "online" | "bot";
@@ -10,6 +11,7 @@ interface MatchSettingsProps {
     botColor?: Color;
     target: number;
     preferredColor?: string;
+    time?: string;
   }) => void;
   onCancel: () => void;
 }
@@ -37,6 +39,8 @@ export default function MatchSettings({
   );
 
   const [target, setTarget] = useState(7);
+
+  const [timeControl, setTimeControl] = useState("normal");
 
   const isOnline = mode === "online";
 
@@ -110,6 +114,17 @@ export default function MatchSettings({
           />
         </div>
 
+        <div className={styles.section}>
+          <div className={styles.sectionLabel}>
+            <p>Time control</p>
+          </div>
+          <AnimatedTabs
+            tabs={TIME_CONTROL_PRESETS.map((p) => ({ id: p.id, label: p.label }))}
+            activeTab={timeControl}
+            onChange={(id) => setTimeControl(id)}
+          />
+        </div>
+
         <div className={styles.actions}>
           <button onClick={onCancel} className={styles.cancelBtn}>
             Cancel
@@ -121,11 +136,13 @@ export default function MatchSettings({
                 onStart({
                   target,
                   preferredColor: playerColor,
+                  time: timeControl,
                 });
               } else {
                 onStart({
                   target,
                   botColor: playerColor === "white" ? "black" : "white",
+                  time: timeControl,
                 });
               }
             }}

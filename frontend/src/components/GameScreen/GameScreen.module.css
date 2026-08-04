@@ -88,13 +88,6 @@
   position: relative;
 }
 
-.flyer {
-  position: absolute;
-  border-radius: 9999px;
-  z-index: 50;
-  pointer-events: none;
-}
-
 .boardOverlay {
   position: absolute;
   bottom: 43%;
