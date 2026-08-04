@@ -104,10 +104,15 @@ def create_room(request):
     if preferred_color not in ('white', 'black'):
         preferred_color = 'white'
 
+    time_control = request.data.get('time', '2+12')
+    if time_control not in ('none', '1+5', '2+12', '5+12'):
+        time_control = '2+12'
+
     room = GameRoom.objects.create(
         code=uuid.uuid4().hex[:6].upper(),
         status='waiting',
         target_points=target,
+        time_control=time_control,
         white_score=0,
         black_score=0,
     )
@@ -123,6 +128,7 @@ def create_room(request):
         'code': room.code,
         'status': room.status,
         'targetPoints': target,
+        'timeControl': time_control,
         **room_players_data(room),
     }, status=status.HTTP_201_CREATED)
 
@@ -179,6 +185,7 @@ def room_detail(request, code):
         'code': room.code,
         'status': room.status,
         'targetPoints': room.target_points,
+        'timeControl': room.time_control,
         **room_players_data(room),
         'state': room.state,
     })

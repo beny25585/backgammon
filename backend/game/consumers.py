@@ -1,7 +1,9 @@
+import asyncio
 import json
 import uuid
 import logging
 import traceback
+import time as time_module
 from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
@@ -9,6 +11,7 @@ from django.contrib.auth.models import User
 from django.db import models
 from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
+from .clock import active_player, compute_clock, deadline_for
 from .game_service import finalize_room, game_ended_payload
 
 logger = logging.getLogger(__name__)
@@ -131,6 +134,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 return
 
             self.room_group_name = f'game_{self.room_id}'
+            self._timeout_task = None
             game_state = await get_game_state(room)
             state_data = game_state.state_data or {}
             username = await get_username(self.user_id)
@@ -164,7 +168,15 @@ class GameConsumer(AsyncWebsocketConsumer):
             'playerColor': self.player_color,
             'initial': True,
             'players': players,
+            'timeControl': room.time_control,
         }))
+
+        # Mid-game reconnect: resume the active player's deadline.
+        if room.status == 'playing':
+            active = active_player(state_data)
+            deadline = deadline_for(state_data, room.time_control)
+            if deadline is not None and active and state_data.get('phase') != 'game_over':
+                await self._schedule_timeout(deadline, active)
 
         # Returning player lands in a finished game: auto-finalize the room so
         # it closes instead of staying a dead 'playing' room.
@@ -195,6 +207,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         logger.info(f"WS disconnect: {getattr(self, 'player_color', '?')} room={getattr(self, 'room_id', '?')} code={close_code}")
+        if getattr(self, '_timeout_task', None):
+            self._timeout_task.cancel()
         if not hasattr(self, 'room_group_name'):
             return
 
@@ -270,8 +284,30 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['version'] = sequence
 
         gs = await get_game_state(room)
+        stored = gs.state_data or {}
+
+        # Server-owned backgammon clock: recompute from our wall clock, never
+        # trust the client. Simple delay: reserve drains only past the delay.
+        now_ms = int(time_module.time() * 1000)
+        clock, turn_started_at, new_active, timed_out, _deadline = compute_clock(
+            stored, state, now_ms, room.time_control
+        )
+        if clock is not None:
+            state['clock'] = clock
+            state['turnStartedAt'] = turn_started_at
+
+        if timed_out and new_active:
+            winner = 'black' if new_active == 'white' else 'white'
+            gs.state_data = state
+            await save_game_state(gs)
+            await self._forfeit_on_time(winner, new_active)
+            return
+
         gs.state_data = state
         await save_game_state(gs)
+
+        if clock is not None and new_active:
+            await self._reschedule_timeout_from_state()
 
         # Centralized game-end: any game_over state the client reports finalizes
         # the room (idempotent) and broadcasts game_ended to everyone.
@@ -355,6 +391,61 @@ class GameConsumer(AsyncWebsocketConsumer):
             'payload': event.get('payload'),
         }))
 
+    async def _schedule_timeout(self, deadline_ms, active_color):
+        """(Re)schedule a deadline watch for the active player."""
+        if getattr(self, '_timeout_task', None):
+            self._timeout_task.cancel()
+        if deadline_ms is None or deadline_ms <= 0:
+            return
+        self._timeout_task = asyncio.create_task(self._timeout_watch(deadline_ms / 1000.0, active_color))
+
+    async def _timeout_watch(self, deadline, active_color):
+        delay = deadline - time_module.time()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        room = await get_room(self.room_id)
+        if not room:
+            return
+        gs = await get_game_state(room)
+        stored = gs.state_data or {}
+        if active_player(stored) != active_color:
+            return
+        if stored.get('phase') == 'game_over':
+            return
+        winner = 'black' if active_color == 'white' else 'white'
+        await self._forfeit_on_time(winner, active_color)
+
+    async def _reschedule_timeout_from_state(self):
+        """Re-arm the deadline from the saved state (e.g. after a disconnect)."""
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing':
+            return
+        gs = await get_game_state(room)
+        stored = gs.state_data or {}
+        active = active_player(stored)
+        if not active or stored.get('phase') == 'game_over':
+            return
+        deadline = deadline_for(stored, room.time_control)
+        await self._schedule_timeout(deadline, active)
+
+    async def _forfeit_on_time(self, winner, loser):
+        """Mark the game over because `loser` ran out of time and broadcast it."""
+        room = await get_room(self.room_id)
+        if not room:
+            return
+        gs = await get_game_state(room)
+        stored = dict(gs.state_data or {})
+        if stored.get('phase') == 'game_over':
+            return
+        stored['phase'] = 'game_over'
+        stored['winner'] = winner
+        stored['winType'] = 'single'
+        stored['message'] = f'{loser} ran out of time'
+        gs.state_data = stored
+        await save_game_state(gs)
+        logger.info(f"WS timeout forfeit: loser={loser} winner={winner} room={self.room_id}")
+        await self._finalize_and_broadcast(stored, winner, 'single', 'time')
+
     async def _send_error(self, message):
         await self.send(json.dumps({
             'type': 'error',
@@ -395,6 +486,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'playerColor': event.get('playerColor'),
             }
         }))
+        await self._reschedule_timeout_from_state()
 
     async def room_status(self, event):
         await self.send(json.dumps({

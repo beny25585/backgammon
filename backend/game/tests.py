@@ -1,4 +1,5 @@
 import asyncio
+import time as time_module
 import uuid
 from urllib.parse import urlencode
 
@@ -9,7 +10,7 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework_simplejwt.tokens import AccessToken
 from rest_framework.test import APIClient
 
-from game.consumers import GameConsumer
+from game.consumers import GameConsumer, get_game_state, save_game_state
 from game.engine import BackgammonEngine
 from game.game_service import finalize_room
 from game.models import GameRoom, GameState, GameEvent, Match, Player, RoomPlayer
@@ -59,7 +60,7 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_white_player_connects_with_persistent_color(self):
         communicator = self._make_communicator(self.white_user)
-        connected, _ = await communicator.connect()
+        connected, _ = await communicator.connect(timeout=10)
         self.assertTrue(connected)
 
         response = await communicator.receive_json_from()
@@ -70,7 +71,7 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_black_player_connects_with_persistent_color(self):
         communicator = self._make_communicator(self.black_user)
-        connected, _ = await communicator.connect()
+        connected, _ = await communicator.connect(timeout=10)
         self.assertTrue(connected)
 
         response = await communicator.receive_json_from()
@@ -81,12 +82,12 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_reconnect_uses_same_color(self):
         comm1 = self._make_communicator(self.white_user)
-        await comm1.connect()
+        await comm1.connect(timeout=10)
         await comm1.receive_json_from()
         await comm1.disconnect()
 
         comm2 = self._make_communicator(self.white_user)
-        connected, _ = await comm2.connect()
+        connected, _ = await comm2.connect(timeout=10)
         self.assertTrue(connected)
 
         response = await comm2.receive_json_from()
@@ -97,7 +98,7 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_initial_state_update_includes_player_usernames(self):
         communicator = self._make_communicator(self.white_user)
-        connected, _ = await communicator.connect()
+        connected, _ = await communicator.connect(timeout=10)
         self.assertTrue(connected)
 
         response = await communicator.receive_json_from()
@@ -108,12 +109,12 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_player_joined_broadcast_includes_username(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()  # state_update
         await comm_white.receive_json_from()  # player_joined (own broadcast)
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
 
         # Black will receive state_update first, then own player_joined
         await comm_black.receive_json_from()  # state_update
@@ -130,12 +131,12 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_disconnect_broadcasts_player_disconnected(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()  # state_update
         await comm_white.receive_json_from()  # player_joined (own broadcast)
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()  # state_update
         await comm_black.receive_json_from()  # player_joined (own broadcast)
         # white gets black's player_joined
@@ -151,12 +152,12 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_both_players_connected_broadcasts_player_joined(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()  # state_update
         await comm_white.receive_json_from()  # player_joined (own broadcast)
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()  # state_update
         await comm_black.receive_json_from()  # player_joined (own broadcast)
 
@@ -170,17 +171,17 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_unassigned_user_is_rejected(self):
         communicator = self._make_communicator(self.stranger)
-        connected, _ = await communicator.connect()
+        connected, _ = await communicator.connect(timeout=10)
         self.assertFalse(connected)
 
     async def test_reconnect_after_disconnect_restores_color(self):
         comm1 = self._make_communicator(self.white_user)
-        await comm1.connect()
+        await comm1.connect(timeout=10)
         await comm1.receive_json_from()
         await comm1.disconnect()
 
         comm2 = self._make_communicator(self.white_user)
-        connected, _ = await comm2.connect()
+        connected, _ = await comm2.connect(timeout=10)
         self.assertTrue(connected)
 
         response = await comm2.receive_json_from()
@@ -192,12 +193,12 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_state_update_records_event_and_broadcasts_version(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()  # state_update (initial)
         await comm_white.receive_json_from()  # player_joined
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()  # state_update (initial)
         await comm_black.receive_json_from()  # player_joined
         await comm_white.receive_json_from()  # player_joined (black)
@@ -233,12 +234,12 @@ class GameConsumerTests(TransactionTestCase):
 
     async def test_stale_state_update_is_dropped(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()  # state_update (initial)
         await comm_white.receive_json_from()  # player_joined
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()  # state_update (initial)
         await comm_black.receive_json_from()  # player_joined
         await comm_white.receive_json_from()  # player_joined (black)
@@ -269,6 +270,138 @@ class GameConsumerTests(TransactionTestCase):
 
         await comm_white.disconnect()
         await comm_black.disconnect()
+
+
+    async def _connect_both(self):
+        """Connect both players and drain up to white seeing black join."""
+        comm_white = self._make_communicator(self.white_user)
+        await comm_white.connect(timeout=10)
+        await comm_white.receive_json_from()  # state_update (initial)
+        await comm_white.receive_json_from()  # player_joined (own)
+
+        comm_black = self._make_communicator(self.black_user)
+        await comm_black.connect(timeout=10)
+        await comm_black.receive_json_from()  # state_update (initial)
+        await comm_black.receive_json_from()  # player_joined (own)
+
+        while True:
+            event = await comm_white.receive_json_from()
+            if event.get('type') == 'player_joined' and event.get('payload', {}).get('username') == 'black':
+                break
+        return comm_white, comm_black
+
+    async def test_initial_state_update_includes_time_control(self):
+        communicator = self._make_communicator(self.white_user)
+        connected, _ = await communicator.connect(timeout=10)
+        self.assertTrue(connected)
+        response = await communicator.receive_json_from()
+        self.assertEqual(response['type'], 'state_update')
+        self.assertEqual(response['timeControl'], self.room.time_control)
+        await communicator.disconnect()
+
+    async def test_first_state_update_initializes_clock_to_base(self):
+        comm_white, comm_black = await self._connect_both()
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {'phase': 'opening_roll', 'turn': 'black', 'version': 0}, 'action': 'roll'},
+        })
+        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
+        self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        self.assertIsInstance(event['payload'].get('turnStartedAt'), int)
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_client_sent_clock_is_overwritten(self):
+        comm_white, comm_black = await self._connect_both()
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {
+                'phase': 'moving',
+                'turn': 'black',
+                'clock': {'white': 999_999_999, 'black': 999_999_999},
+                'turnStartedAt': 0,
+                'version': 0,
+            }, 'action': 'move'},
+        })
+        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
+        self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_turn_change_charges_only_beyond_delay(self):
+        stored = {
+            'phase': 'moving',
+            'turn': 'white',
+            'clock': {'white': 120_000, 'black': 120_000},
+            # White has been thinking 15s; delay is 12s, so 3s should be charged.
+            'turnStartedAt': int(time_module.time() * 1000) - 15_000,
+        }
+        gs = await get_game_state(self.room)
+        gs.state_data = stored
+        await save_game_state(gs)
+
+        comm_white, comm_black = await self._connect_both()
+        # white completes a move -> turn goes to black
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {'phase': 'moving', 'turn': 'black', 'version': 0}, 'action': 'move'},
+        })
+        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
+        clock = event['payload']['clock']
+        self.assertEqual(clock['black'], 120_000)  # frozen while white acted
+        self.assertTrue(116_000 <= clock['white'] <= 117_000)  # 120s - (15s - 12s)
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_timeout_when_remaining_time_already_expired(self):
+        stored = {
+            'phase': 'moving',
+            'turn': 'white',
+            'clock': {'white': 0, 'black': 180_000},
+            'turnStartedAt': int(time_module.time() * 1000) - 5_000,
+        }
+        gs = await get_game_state(self.room)
+        gs.state_data = stored
+        await save_game_state(gs)
+
+        comm_white, comm_black = await self._connect_both()
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {'phase': 'moving', 'turn': 'white', 'version': 0}, 'action': 'move'},
+        })
+        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'game_ended')
+        self.assertEqual(event['payload']['winner'], 'black')
+        self.assertEqual(event['payload']['reason'], 'time')
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_deadline_task_forfeits_when_player_never_acts(self):
+        comm_white = self._make_communicator(self.white_user)
+        await comm_white.connect(timeout=10)
+        await comm_white.receive_json_from()  # state_update (initial)
+        await comm_white.receive_json_from()  # player_joined (own)
+
+        stored = {
+            'phase': 'moving',
+            'turn': 'white',
+            'clock': {'white': 100, 'black': 120_000},
+            # White's deadline is 12s delay + 100ms reserve after turnStartedAt;
+            # put turnStartedAt in the past so the deadline is effectively now.
+            'turnStartedAt': int(time_module.time() * 1000) - 12_100,
+        }
+        gs = await get_game_state(self.room)
+        gs.state_data = stored
+        await save_game_state(gs)
+
+        # White never completes a move; the update just re-arms the deadline.
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'state': {'phase': 'moving', 'turn': 'white', 'version': 0}, 'action': 'move'},
+        })
+        event = await self._receive_until(comm_white, lambda e: e.get('type') == 'game_ended')
+        self.assertEqual(event['payload']['winner'], 'black')
+        self.assertEqual(event['payload']['reason'], 'time')
+        await comm_white.disconnect()
 
 
 class FinalizeRoomTests(TestCase):
@@ -375,12 +508,12 @@ class GameEndConsumerTests(TransactionTestCase):
 
     async def test_game_ended_message_finalizes_and_broadcasts(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()
         await comm_white.receive_json_from()
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()
         await comm_black.receive_json_from()
         await comm_white.receive_json_from()
@@ -409,7 +542,7 @@ class GameEndConsumerTests(TransactionTestCase):
 
     async def test_game_ended_message_is_idempotent(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()
         await comm_white.receive_json_from()
 
@@ -427,12 +560,12 @@ class GameEndConsumerTests(TransactionTestCase):
 
     async def test_give_up_finalizes_room_and_broadcasts(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()
         await comm_white.receive_json_from()
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()
         await comm_black.receive_json_from()
         await comm_white.receive_json_from()
@@ -452,12 +585,12 @@ class GameEndConsumerTests(TransactionTestCase):
 
     async def test_state_update_with_game_over_finalizes_room(self):
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()
         await comm_white.receive_json_from()
 
         comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect()
+        await comm_black.connect(timeout=10)
         await comm_black.receive_json_from()
         await comm_black.receive_json_from()
         await comm_white.receive_json_from()
@@ -491,7 +624,7 @@ class GameEndConsumerTests(TransactionTestCase):
         await database_sync_to_async(game_state.save)()
 
         comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect()
+        await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()  # state_update
         await comm_white.receive_json_from()  # player_joined
 
@@ -554,7 +687,8 @@ class CreateRoomGuardTests(TestCase):
 class ClockHelperTests(TestCase):
     def test_parse_time_control(self):
         from game.clock import parse_time_control
-        self.assertEqual(parse_time_control('3+10'), (180_000, 10_000))
+        self.assertEqual(parse_time_control('2+12'), (120_000, 12_000))
+        self.assertEqual(parse_time_control('1+5'), (60_000, 5_000))
         self.assertIsNone(parse_time_control('none'))
         self.assertIsNone(parse_time_control(None))
         self.assertIsNone(parse_time_control('bogus'))
@@ -572,12 +706,20 @@ class ClockHelperTests(TestCase):
         from game.clock import active_player
         self.assertIsNone(active_player({'phase': 'game_over', 'winner': 'white'}))
 
-    def test_apply_transition_charges_and_bonuses(self):
+    def test_apply_transition_charges_only_beyond_delay(self):
         from game.clock import apply_transition
         clock = {'white': 180_000, 'black': 180_000}
+        # White moves in 5s, delay is 10s: nothing charged, no bonus banked.
         out = apply_transition(clock, 'white', 'black', 5_000, 10_000)
-        self.assertEqual(out['white'], 185_000)   # 180_000 - 5_000 + 10_000
-        self.assertEqual(out['black'], 180_000)   # frozen while white acted
+        self.assertEqual(out['white'], 180_000)
+        self.assertEqual(out['black'], 180_000)  # frozen while white acted
+
+    def test_apply_transition_charges_past_delay(self):
+        from game.clock import apply_transition
+        clock = {'white': 180_000, 'black': 180_000}
+        # White takes 15s, delay is 10s: 5s charged from reserve.
+        out = apply_transition(clock, 'white', 'black', 15_000, 10_000)
+        self.assertEqual(out['white'], 175_000)
 
     def test_apply_transition_floors_at_zero(self):
         from game.clock import apply_transition
@@ -588,3 +730,51 @@ class ClockHelperTests(TestCase):
         from game.clock import apply_transition
         clock = {'white': 180_000, 'black': 180_000}
         self.assertEqual(apply_transition(clock, 'white', 'white', 5_000, 10_000), clock)
+
+    def test_deadline_includes_delay(self):
+        from game.clock import deadline_for
+        state = {
+            'phase': 'moving',
+            'turn': 'white',
+            'clock': {'white': 60_000, 'black': 60_000},
+            'turnStartedAt': 1_000,
+        }
+        self.assertEqual(deadline_for(state, '1+5'), 1_000 + 5_000 + 60_000)
+
+    def test_deadline_none_for_no_limit(self):
+        from game.clock import deadline_for
+        state = {
+            'phase': 'moving',
+            'turn': 'white',
+            'clock': {'white': 60_000, 'black': 60_000},
+            'turnStartedAt': 1_000,
+        }
+        self.assertIsNone(deadline_for(state, 'none'))
+
+
+class CreateRoomTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='creator', password='pass')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_create_room_stores_time_control(self):
+        resp = self.client.post(
+            '/api/rooms/',
+            {'targetPoints': 5, 'preferredColor': 'white', 'time': '5+12'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        room = GameRoom.objects.get(id=resp.data['id'])
+        self.assertEqual(room.time_control, '5+12')
+        self.assertEqual(resp.data['timeControl'], '5+12')
+
+    def test_create_room_defaults_to_2_plus_12(self):
+        resp = self.client.post(
+            '/api/rooms/',
+            {'targetPoints': 5, 'preferredColor': 'white'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, 201)
+        room = GameRoom.objects.get(id=resp.data['id'])
+        self.assertEqual(room.time_control, '2+12')

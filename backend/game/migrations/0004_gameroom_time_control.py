@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='gameroom',
             name='time_control',
-            field=models.CharField(default='3+10', max_length=20),
+            field=models.CharField(default='2+12', max_length=20),
         ),
     ]

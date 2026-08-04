@@ -26,7 +26,7 @@ class GameRoom(models.Model):
     white_score = models.IntegerField(default=0)
     black_score = models.IntegerField(default=0)
     target_points = models.IntegerField(default=7)
-    time_control = models.CharField(max_length=20, default='3+10')
+    time_control = models.CharField(max_length=20, default='2+12')
     status = models.CharField(max_length=20, default='waiting')
     state = models.JSONField(default=dict)
     last_sequence = models.IntegerField(default=0)
