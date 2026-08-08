@@ -30,5 +30,10 @@ test-results/
 playwright-report/
 src/test-utils/.cache/
 
+# Elixir / Mix
+dice_service/_build/
+dice_service/deps/
+dice_service/.elixir_ls/
+
 .superpowers/
 docs/

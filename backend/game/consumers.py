@@ -12,7 +12,9 @@ from django.db import models
 from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
-from .game_service import finalize_room, game_ended_payload
+from .game_service import finalize_room, game_ended_payload, record_game_end
+from .engine import BackgammonEngine
+from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
 
 logger = logging.getLogger(__name__)
 
@@ -58,20 +60,9 @@ def get_room_player_usernames(room_id):
     return names
 
 
-@database_sync_to_async
-def room_has_both_players(room):
-    return room.players.count() >= 2
-
-
-ACTION_TO_EVENT_TYPE = {
-    'roll': 'roll',
-    'move': 'move',
-    'undo': 'undo',
-    'end_turn': 'end_turn',
-    'double': 'double',
-    'double_response': 'double_response',
-    'resign': 'resign',
-}
+def room_has_both_players(room_group_name):
+    """True once both players' WebSockets are connected to the room."""
+    return len(_connected_users.get(room_group_name, {})) >= 2
 
 
 @database_sync_to_async
@@ -107,6 +98,9 @@ _connected_users: dict = {}
 
 
 class GameConsumer(AsyncWebsocketConsumer):
+    # How long the opening result stays on screen before the winner must roll.
+    OPENING_RESULT_DELAY = 3.0
+
     async def connect(self):
         # Validate JWT from query string
         query_string = self.scope.get('query_string', b'').decode()
@@ -212,16 +206,23 @@ class GameConsumer(AsyncWebsocketConsumer):
             if deadline is not None and active and state_data.get('phase') != 'game_over':
                 await self._schedule_timeout(deadline, active)
 
-        # Returning player lands in a finished game: auto-finalize the room so
-        # it closes instead of staying a dead 'playing' room.
+        # Returning player lands in a finished game.
         if (
             room.status == 'playing'
             and state_data.get('phase') == 'game_over'
             and state_data.get('winner')
         ):
-            await self._finalize_and_broadcast(
-                state_data, state_data['winner'], state_data.get('winType', 'single'), 'state_update'
-            )
+            match_active = (room.state or {}).get('match', {}).get('active')
+            if match_active or state_data.get('matchScored'):
+                # Mid-match: the room stays open for the next game; re-broadcast
+                # the result so the UI can offer "Next Game".
+                await self._replay_game_end(state_data, room)
+            else:
+                # Legacy stale room: close it so it doesn't stay a dead room.
+                await self._finalize_and_broadcast(
+                    state_data, state_data['winner'], state_data.get('winType', 'single'), 'state_update',
+                    force_close=True,
+                )
 
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -236,13 +237,23 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Covers the case where the second player joined through the REST API
         # before the creator's WebSocket finished connecting.
-        if room.status == 'playing' and await room_has_both_players(room):
+        if room.status == 'playing' and room_has_both_players(self.room_group_name):
             await self.send(json.dumps({'type': 'room_started', 'payload': {}}))
+
+        # The opening roll waits for a player to tap (RollPrompt sends
+        # {action:'roll'}, which resolves it via _handle_roll_intent). We never
+        # auto-resolve just because both sockets are connected — the dice must
+        # not roll before the player taps. A returning player in opening_result
+        # only re-arms the short countdown (no re-roll).
+        if state_data.get('phase') == 'opening_result':
+            await self._arm_opening_result_watch()
 
     async def disconnect(self, close_code):
         logger.info(f"WS disconnect: {getattr(self, 'player_color', '?')} room={getattr(self, 'room_id', '?')} code={close_code}")
         if getattr(self, '_timeout_task', None):
             self._timeout_task.cancel()
+        if getattr(self, '_opening_watch_task', None):
+            self._opening_watch_task.cancel()
         if not hasattr(self, 'room_group_name'):
             return
 
@@ -276,7 +287,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.info(f"WS receive: type={message_type} player={self.player_color} room={self.room_id}")
 
             if message_type == 'state_update':
-                await self._handle_state_update(payload)
+                await self._handle_intent(data)
             elif message_type == 'give_up':
                 await self._handle_give_up()
             elif message_type == 'game_ended':
@@ -291,52 +302,75 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'message': str(exc)
             }))
 
-    async def _handle_state_update(self, payload):
-        """Save incoming state and broadcast to the other player.
-        Payload format: {'state': GameState, 'action': str}"""
+    async def _handle_intent(self, data):
+        """Server-authoritative dispatcher. Accepts action intents only.
+
+        Payload format (frontend Step 5): {'action': 'roll'|'move'|'end_turn'|
+        'undo'|'double'|'double_response', 'from': int, 'to': int|'off',
+        'accept': bool}. The client never sends game state.
+        """
         room = await get_room(self.room_id)
         if not room:
-            logger.warning(f"WS state_update for missing room: {self.room_id}")
+            logger.warning(f"WS intent for missing room: {self.room_id}")
             return await self._send_error('Room not found')
 
-        action = payload.get('action')
-        state = payload.get('state') if isinstance(payload.get('state'), dict) else payload
-        event_type = ACTION_TO_EVENT_TYPE.get(action)
+        payload = data.get('payload') if isinstance(data.get('payload'), dict) else {}
+        intent = dict(payload)
+        intent.update({k: v for k, v in data.items() if k not in ('type', 'payload')})
 
-        # Client sends the version it last applied. If it lags the room's current
-        # sequence, it's a stale/duplicate update — drop it.
-        sent_version = state.get('version')
-        if isinstance(sent_version, int) and sent_version > 0 and sent_version < room.last_sequence:
-            logger.info(
-                f"WS stale state_update dropped: room={self.room_id} sent_version={sent_version} last_sequence={room.last_sequence}"
+        # Legacy clients that still ship the full state are rejected outright.
+        if isinstance(intent.get('state'), dict):
+            return await self._send_error(
+                'Full state updates are no longer accepted; send intents only'
             )
-            # Tell the stale client the latest state so it can resync instead of
-            # silently dropping the move and leaving the UI inconsistent.
-            current_state = await get_game_state(room)
-            latest_state = current_state.state_data or {}
-            players = await get_room_player_usernames(self.room_id)
-            await self.send(json.dumps({
-                'type': 'state_update',
-                'payload': latest_state,
-                'playerColor': self.player_color,
-                'initial': True,
-                'players': players,
-                'timeControl': room.time_control,
-            }))
-            return
 
-        logger.info(f"WS state_update: {self.player_color} room={self.room_id} action={action} phase={state.get('phase')} turn={state.get('turn')}")
-
-        if event_type:
-            sequence = await record_event_and_advance(room, self.player_color, event_type, state)
-            state['version'] = sequence
-
+        action = intent.get('action')
         gs = await get_game_state(room)
-        stored = gs.state_data or {}
+        state = dict(gs.state_data or {})
+        engine = BackgammonEngine(state)
 
-        # Server-owned backgammon clock: recompute from our wall clock, never
-        # trust the client. Simple delay: reserve drains only past the delay.
+        logger.info(f"WS intent: {self.player_color} room={self.room_id} action={action} phase={state.get('phase')} turn={state.get('turn')}")
+
+        if action == 'roll':
+            result = await self._handle_roll_intent(engine)
+        elif action == 'move':
+            result = engine.make_move(
+                intent.get('from'), intent.get('to'), self.player_color
+            )
+        elif action == 'end_turn':
+            if engine.state.get('turn') != self.player_color:
+                result = {'success': False, 'message': 'Not your turn'}
+            else:
+                result = engine.end_turn()
+        elif action == 'undo':
+            if (
+                engine.state.get('phase') != 'moving'
+                or engine.state.get('turn') != self.player_color
+            ):
+                result = {'success': False, 'message': 'Cannot undo now'}
+            else:
+                result = engine.undo_move()
+        elif action == 'double':
+            result = engine.offer_double(self.player_color)
+        elif action == 'double_response':
+            result = engine.respond_to_double(
+                bool(intent.get('accept')), self.player_color
+            )
+        elif action == 'next_game':
+            result = await self._handle_next_game(engine)
+        else:
+            return await self._send_error(f'Unknown action: {action}')
+
+        if not result.get('success'):
+            return await self._send_error(result.get('message', 'Action rejected'))
+
+        state = engine.state
+        sequence = await record_event_and_advance(room, self.player_color, action, state)
+        state['version'] = sequence
+
+        # Server-owned clock: recompute from our wall clock, never trust the client.
         now_ms = int(time_module.time() * 1000)
+        stored = gs.state_data or {}
         clock, turn_started_at, new_active, timed_out, _deadline = compute_clock(
             stored, state, now_ms, room.time_control
         )
@@ -345,11 +379,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['turnStartedAt'] = turn_started_at
 
         if timed_out and new_active:
-            winner = 'black' if new_active == 'white' else 'white'
             gs.state_data = state
             await save_game_state(gs)
-            await self._forfeit_on_time(winner, new_active)
-            return
+            winner = 'black' if new_active == 'white' else 'white'
+            return await self._forfeit_on_time(winner, new_active)
 
         gs.state_data = state
         await save_game_state(gs)
@@ -357,11 +390,15 @@ class GameConsumer(AsyncWebsocketConsumer):
         if clock is not None and new_active:
             await self._reschedule_timeout_from_state()
 
-        # Centralized game-end: any game_over state the client reports finalizes
+        # Opening result is only shown briefly; then the winner must roll.
+        if state.get('phase') == 'opening_result':
+            await self._arm_opening_result_watch()
+
+        # Centralized game-end: any game_over state the engine reports finalizes
         # the room (idempotent) and broadcasts game_ended to everyone.
         if state.get('phase') == 'game_over' and state.get('winner'):
-            await self._finalize_and_broadcast(
-                state, state['winner'], state.get('winType', 'single'), 'state_update'
+            return await self._finalize_and_broadcast(
+                state, state['winner'], state.get('winType', 'single'), action
             )
 
         await self.channel_layer.group_send(
@@ -371,6 +408,86 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'event_type': 'state_update',
                 'payload': state,
                 'playerColor': self.player_color,
+            }
+        )
+
+    async def _handle_roll_intent(self, engine):
+        """Roll during the opening or a normal turn.
+
+        Every die comes from the trusted Elixir dice service. The opening pair
+        is fetched once (opening URL, never doubles) and stored hidden in
+        `state['openingDice']`; each player taps to reveal their own die. Normal
+        turn rolls use the normal URL.
+        """
+        state = engine.state
+        if state.get('phase') == 'opening_roll':
+            if state.get('turn') != self.player_color:
+                return {'success': False, 'message': 'Not your turn to roll'}
+            seed = state.get('openingDice')
+            if not seed:
+                try:
+                    white, black = await fetch_opening_dice()
+                except DiceServiceError as exc:
+                    logger.error("Dice service failed for opening roll: %s", exc)
+                    return {'success': False, 'message': f'Dice service error: {exc}'}
+                seed = [white, black]
+                engine.state['openingDice'] = seed
+            die = seed[0] if self.player_color == 'white' else seed[1]
+            return engine.roll_opening_die(self.player_color, die=die)
+        if state.get('phase') == 'rolling' and state.get('turn') == self.player_color:
+            try:
+                a, b = await fetch_turn_dice()
+            except DiceServiceError as exc:
+                logger.error("Dice service failed for turn roll: %s", exc)
+                return {'success': False, 'message': f'Dice service error: {exc}'}
+            return engine.roll_dice(dice=(a, b))
+        return {'success': False, 'message': 'Cannot roll now'}
+
+    async def _arm_opening_result_watch(self):
+        """(Re)arm the countdown from opening_result to rolling."""
+        if getattr(self, '_opening_watch_task', None):
+            self._opening_watch_task.cancel()
+        self._opening_watch_task = asyncio.create_task(self._opening_result_watch())
+
+    async def _opening_result_watch(self):
+        await asyncio.sleep(GameConsumer.OPENING_RESULT_DELAY)
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing':
+            return
+        gs = await get_game_state(room)
+        state = gs.state_data or {}
+        if state.get('phase') != 'opening_result':
+            return
+
+        state['phase'] = 'rolling'
+        state['dice'] = []
+        state['remaining'] = []
+        state['lastMove'] = None
+        state['moveHistory'] = None
+        state.pop('openingDice', None)
+        sequence = await record_event_and_advance(room, None, 'opening_result_done', state)
+        state['version'] = sequence
+
+        # The winner is now on the clock.
+        now_ms = int(time_module.time() * 1000)
+        stored = state
+        clock, turn_started_at, new_active, _timed_out, _deadline = compute_clock(
+            stored, state, now_ms, room.time_control
+        )
+        if clock is not None:
+            state['clock'] = clock
+            state['turnStartedAt'] = turn_started_at
+
+        gs.state_data = state
+        await save_game_state(gs)
+        await self._reschedule_timeout_from_state()
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'game_message',
+                'event_type': 'state_update',
+                'payload': state,
+                'playerColor': None,
             }
         )
 
@@ -419,15 +536,78 @@ class GameConsumer(AsyncWebsocketConsumer):
         else:
             logger.warning(f"WS game_ended without winner: room={self.room_id} payload={payload}")
 
-    async def _finalize_and_broadcast(self, state, winner, win_type, reason):
-        """Idempotently close the room and broadcast game_ended to the group."""
+    async def _handle_next_game(self, engine):
+        """Start the next game of a match after a finished game.
+
+        The room stays 'playing' until `target_points` is reached, so after a
+        non-final game either player can request the next one. The board resets
+        to a fresh opening roll (the opening dice are re-fetched on the first
+        tap; no cached pair is carried over).
+        """
+        state = engine.state
+        if state.get('phase') != 'game_over' or not state.get('winner'):
+            return {'success': False, 'message': 'Cannot start next game now'}
+        if not state.get('matchScored'):
+            return {'success': False, 'message': 'Game result not settled'}
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing':
+            return {'success': False, 'message': 'No active game'}
+        engine.state = BackgammonEngine.get_initial_state()
+        engine.state['message'] = 'New game started'
+        return {'success': True}
+
+    async def _finalize_and_broadcast(self, state, winner, win_type, reason, force_close=False):
+        """Score the finished game and broadcast game_ended to the room.
+
+        Normal endings route through `record_game_end`, which keeps the room
+        open across games until a player reaches `target_points`. `force_close`
+        is used for legacy stale rooms that must be closed immediately.
+        """
         room = await get_room(self.room_id)
         if not room:
             return
-        await database_sync_to_async(finalize_room)(room, state, winner, win_type, reason)
+        gs = await get_game_state(room)
+        stored = gs.state_data or {}
+        if stored.get('matchScored'):
+            return
+        if force_close:
+            match_obj = await database_sync_to_async(finalize_room)(
+                room, state, winner, win_type, reason
+            )
+            if match_obj is None:
+                return
+            match_over = True
+        else:
+            result = await database_sync_to_async(record_game_end)(
+                room, state, winner, win_type, reason
+            )
+            if result is None:
+                return
+            match_over = result['match_over']
+        stored = dict(stored)
+        stored['matchScored'] = True
+        gs.state_data = stored
+        await save_game_state(gs)
         await database_sync_to_async(room.refresh_from_db)()
         payload = game_ended_payload(state, winner, win_type, reason, room)
-        logger.info(f"WS game_ended: room={self.room_id} winner={winner} win_type={win_type} reason={reason}")
+        payload['matchOver'] = match_over
+        payload['nextGame'] = not match_over
+        logger.info(f"WS game_ended: room={self.room_id} winner={winner} win_type={win_type} reason={reason} match_over={match_over}")
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {'type': 'game_ended', 'payload': payload},
+        )
+
+    async def _replay_game_end(self, state, room):
+        """Re-broadcast a mid-match result for a returning player."""
+        winner = state.get('winner')
+        if not winner:
+            return
+        payload = game_ended_payload(
+            state, winner, state.get('winType', 'single'), 'state_update', room
+        )
+        payload['matchOver'] = False
+        payload['nextGame'] = True
         await self.channel_layer.group_send(
             self.room_group_name,
             {'type': 'game_ended', 'payload': payload},

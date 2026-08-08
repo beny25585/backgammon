@@ -16,6 +16,37 @@ export function StartMidGame() {
   return <div />;
 }
 
+export function GameProbe({ from, to }: { from: number; to: number }) {
+  const {
+    state,
+    makeMove,
+    undoMove,
+    rollDice,
+    openingRollResult,
+    noMovesMessage,
+    isLoading,
+  } = useGame();
+  return (
+    <div>
+      <div data-testid="loading">{String(isLoading)}</div>
+      <div data-testid="version">{String(state?.version ?? "")}</div>
+      <div data-testid="phase">{String(state?.phase ?? "")}</div>
+      <div data-testid="dice">{JSON.stringify(state?.dice ?? [])}</div>
+      <div data-testid="opening-result">{JSON.stringify(openingRollResult)}</div>
+      <div data-testid="no-moves">{String(Boolean(noMovesMessage))}</div>
+      <button data-testid="move" onClick={() => makeMove(from, to)}>
+        move
+      </button>
+      <button data-testid="undo" onClick={() => undoMove()}>
+        undo
+      </button>
+      <button data-testid="roll" onClick={() => rollDice()}>
+        roll
+      </button>
+    </div>
+  );
+}
+
 export function GameOverProbe() {
   const { updateState } = useGame();
   useEffect(() => {

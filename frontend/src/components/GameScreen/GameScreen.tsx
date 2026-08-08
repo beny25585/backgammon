@@ -4,6 +4,7 @@ import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
 import { DiceRow, RollPrompt } from "../Dice";
+import { clientLogger } from "@/services/logger";
 
 interface GameScreenProps {
   onLeave?: () => void;
@@ -38,17 +39,19 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   }, [rollDice]);
 
   const isOpeningRoll = state?.phase === "opening_roll";
-  const isMyTurnToRoll = isOpeningRoll && state?.turn === playerColor;
-  const iRolled = isOpeningRoll && openingRollResult?.myDie != null;
-  const bothRolled =
-    openingRollResult?.myDie != null && openingRollResult?.opponentDie != null;
+  const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
     state?.phase === "rolling" &&
     state?.dice.length === 0 &&
     state?.turn === playerColor;
 
   useEffect(() => {
-    if (state && state.phase !== "opening_roll" && openingRollResult !== null) {
+    if (
+      state &&
+      state.phase !== "opening_roll" &&
+      state.phase !== "opening_result" &&
+      openingRollResult !== null
+    ) {
       setOpeningRollResult(null);
     }
   }, [state, openingRollResult, setOpeningRollResult]);
@@ -64,6 +67,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   if (!state) {
     return <div className={styles.loading}>Initializing game...</div>;
   }
+  clientLogger.debug("" + gameResult?.targetPoints);
 
   return (
     <div className={styles.container}>
@@ -75,7 +79,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
           points={gameResult.points}
           cube={gameResult.cube}
           matchScore={gameResult.matchScore}
-          matchTarget={1}
+          matchTarget={gameResult.targetPoints}
           whiteName={whiteName}
           blackName={blackName}
           onNext={handleHome}
@@ -108,59 +112,84 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
         </>
       )}
 
-      {isOpeningRoll &&
+      {(isOpeningRoll || isOpeningResult) &&
         (() => {
           const orr = openingRollResult;
-          return (
-            <div className={styles.overlayDim}>
-              <div className={styles.overlayCard}>
-                {isMyTurnToRoll && !iRolled ? (
+
+          if (isOpeningResult && orr) {
+            return (
+              <div className={styles.overlayDim}>
+                <div className={styles.overlayCard}>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <DiceRow
+                      dice={[]}
+                      remaining={[]}
+                      color={playerColor}
+                      showLabels
+                      myRoll={orr.myDie}
+                      opponentRoll={orr.opponentDie}
+                      winner={orr.winner}
+                    />
+                  </div>
+                  {orr.winner === playerColor && (
+                    <div className={styles.winnerText}>You go first!</div>
+                  )}
+                  {orr.winner && orr.winner !== playerColor && (
+                    <div className={styles.subText}>Opponent goes first</div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          if (isOpeningRoll && orr?.myDie != null) {
+            return (
+              <div className={styles.overlayDim}>
+                <div className={styles.overlayCard}>
+                  <div style={{ marginBottom: "0.75rem" }}>
+                    <DiceRow
+                      dice={[]}
+                      remaining={[]}
+                      color={playerColor}
+                      showLabels
+                      myRoll={orr.myDie}
+                    />
+                  </div>
+                  <div className={styles.mutedText}>
+                    Waiting for opponent...
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          if (isOpeningRoll && state.turn === playerColor) {
+            return (
+              <div className={styles.overlayDim}>
+                <div className={styles.overlayCard}>
                   <RollPrompt
                     onRoll={handleRoll}
                     isOpening
                     dark={playerColor === "black"}
                   />
-                ) : bothRolled && orr ? (
-                  <>
-                    <div style={{ marginBottom: "0.75rem" }}>
-                      <DiceRow
-                        dice={[]}
-                        remaining={[]}
-                        color={playerColor}
-                        showLabels
-                        myRoll={orr.myDie}
-                        opponentRoll={orr.opponentDie}
-                        winner={orr.winner}
-                      />
-                    </div>
-                    {orr.winner === playerColor && (
-                      <div className={styles.winnerText}>You go first!</div>
-                    )}
-                    {orr.winner && orr.winner !== playerColor && (
-                      <div className={styles.subText}>Opponent goes first</div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    {iRolled && orr && (
-                      <div style={{ marginBottom: "0.75rem" }}>
-                        <DiceRow
-                          dice={[]}
-                          remaining={[]}
-                          color={playerColor}
-                          showLabels
-                          myRoll={orr.myDie}
-                        />
-                      </div>
-                    )}
-                    <div className={styles.mutedText}>
-                      {iRolled ? "Waiting for opponent..." : "Roll to start"}
-                    </div>
-                  </>
-                )}
+                </div>
               </div>
-            </div>
-          );
+            );
+          }
+
+          if (isOpeningRoll) {
+            return (
+              <div className={styles.overlayDim}>
+                <div className={styles.overlayCard}>
+                  <div className={styles.mutedText}>
+                    Waiting for opponent to roll...
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          return null;
         })()}
 
       {noMovesMessage && (

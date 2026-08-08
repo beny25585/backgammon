@@ -1,9 +1,9 @@
-when player color is white display the the game normal  if its black we need to revers the pins so if the whas bord[24] = 2 need to be -2 bc now its black ask more clarify quiestions
+fix auto roll for the opening roll 
 
-after the oppening roll show the resolt of the die first and after start the game 
+block the secend player to move in the board if its not turn
+
+match until 7 point end after only one match need to check the points and start new game 
 
 
-fix tablet view for the game 
-
-
-if one of the players leave close the room and show a message to the player 
+if the game is over send the game result to the player. the player reconect to game over game also we need to check the score if the score is only 1-0 and the game is first to 7 the game is not over !!
+[CLIENT] Initial state update received | meta={'phase': 'game_over', 'turn': 'black', 'version': 41, 'playerColorInMsg': 'black'}

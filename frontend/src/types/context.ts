@@ -28,7 +28,7 @@ export interface GameContextType {
     points: number;
     cube: number;
     matchScore: Record<Color, number>;
-    targetPoints?: number;
+    targetPoints: number;
   } | null;
   matchScore: Record<Color, number> | null;
   handleNextGame: () => void;

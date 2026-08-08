@@ -19,6 +19,8 @@ from .engine import BackgammonEngine
 from .game_service import finalize_room
 from .models import GameRoom, GameState, Match, Player, RoomPlayer
 from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
+from asgiref.sync import async_to_sync
+from .dice import fetch_dice, fetch_opening_dice, fetch_turn_dice, DiceServiceError
 
 
 def get_or_create_player(user):
@@ -88,11 +90,18 @@ def create_room(request):
     )
     if active_rooms.exists():
         # If the active room's game is already over, close it so the player is
-        # never stuck and can open a new room.
+        # never stuck and can open a new room. A mid-match game over (match
+        # still active) is not stale: the player should return to that room.
         active = active_rooms.first()
         gs = GameState.objects.filter(room=active).first()
         state = (gs.state_data if gs else {}) or {}
-        if active.status == 'playing' and state.get('phase') == 'game_over' and state.get('winner'):
+        match_active = (active.state or {}).get('match', {}).get('active')
+        if (
+            active.status == 'playing'
+            and state.get('phase') == 'game_over'
+            and state.get('winner')
+            and not match_active
+        ):
             finalize_room(active, state, state['winner'], state.get('winType', 'single'), 'state_update')
             logger.info(f"Stale game-over room finalized on create: room={active.code} user={user.username}")
         else:
@@ -352,3 +361,28 @@ def player_stats(request):
         'current_streak': current_streak,
         'longest_streak': longest_streak,
     })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def dice_roll(request):
+    """Proxy to the Elixir dice service for testing/debugging."""
+    dice_type = request.GET.get('type', 'normal')
+    try:
+        a, b = async_to_sync(fetch_dice)(dice_type)
+    except DiceServiceError as exc:
+        logger.error(f"dice_roll failed: {exc}")
+        return Response({'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({'dice': [a, b]})
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def dice_health(request):
+    """Health of the Elixir dice service."""
+    try:
+        async_to_sync(fetch_opening_dice)()
+        return Response({'diceService': 'ok'})
+    except DiceServiceError as exc:
+        logger.error(f"dice_health failed: {exc}")
+        return Response({'diceService': 'down', 'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)

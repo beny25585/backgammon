@@ -162,11 +162,17 @@ class BackgammonEngine:
                 out.extend(self.legal_moves_from(i, color))
         return out
 
-    def roll_dice(self):
+    def roll_dice(self, dice=None):
         if self.state['phase'] != 'rolling':
             return {'success': False, 'message': 'Cannot roll now'}
-        roll = self._roll_dice()
-        self.state['dice'] = [roll[0], roll[1]] if len(roll) == 4 else [roll[0], roll[1]]
+
+        if dice is not None:
+            a, b = dice
+            roll = [a, a, a, a] if a == b else [a, b]
+        else:
+            roll = self._roll_dice()
+
+        self.state['dice'] = [roll[0], roll[0]] if len(roll) == 4 else [roll[0], roll[1]]
         self.state['remaining'] = roll
         self.state['phase'] = 'moving'
         self.state['lastMove'] = []
@@ -178,39 +184,61 @@ class BackgammonEngine:
             self.state['phase'] = 'rolling'
             self.state['message'] = 'No legal moves'
         else:
-            turn_he = 'לבן' if self.state['turn'] == 'white' else 'שחור'
-            self.state['message'] = f'תור {turn_he}'
+            turn_name = 'White' if self.state['turn'] == 'white' else 'Black'
+            self.state['message'] = f"{turn_name}'s turn"
 
         self.state['version'] = self.state.get('version', 0) + 1
-        return {'dice': self.state['dice'], 'remaining': self.state['remaining']}
+        return {
+            'success': True,
+            'dice': self.state['dice'],
+            'remaining': self.state['remaining'],
+        }
 
-    def apply_opening_roll(self, player_color):
+    def roll_opening_die(self, color=None, die=None):
+        """Record one opening die for `color`.
+
+        `die` comes from the trusted dice service; None rolls locally (only
+        used when the caller has no service value). Mirrors the frontend
+        applyOpeningRoll: only one player's die is recorded per call. While one
+        player still hasn't rolled we stay in 'opening_roll' and hand the dice
+        to the other player. Once both have rolled, the higher roll goes first
+        (a tie resets both and starts again with white).
+        """
         s = self.state
-        if s['openingRoll'].get(player_color) is not None:
+        if s.get('phase') != 'opening_roll':
+            return {'success': False, 'message': 'Cannot roll now'}
+        if color is None:
+            color = s['turn']
+        if s['openingRoll'].get(color) is not None:
             return {'success': False, 'message': 'Already rolled'}
-        roll = self._roll_die()
-        s['openingRoll'][player_color] = roll
+
+        s['openingRoll'][color] = die if die is not None else self._roll_die()
+
+        if s['openingRoll']['white'] is None or s['openingRoll']['black'] is None:
+            s['turn'] = 'black' if color == 'white' else 'white'
+            s['message'] = "Waiting for opponent's roll"
+            s['version'] = s.get('version', 0) + 1
+            return {'success': True, 'phase': 'opening_roll'}
+
+        w = s['openingRoll']['white']
+        b = s['openingRoll']['black']
+        if w == b:
+            s['openingRoll'] = {'white': None, 'black': None}
+            s['turn'] = 'white'
+            s['message'] = 'Tie - roll again'
+            s['version'] = s.get('version', 0) + 1
+            return {'success': True, 'phase': 'opening_roll'}
+
+        winner = 'white' if w > b else 'black'
+        s['turn'] = winner
+        s['dice'] = []
+        s['remaining'] = []
+        s['phase'] = 'opening_result'
+        s['lastMove'] = []
+        s['moveHistory'] = []
+        s['message'] = f'{winner} goes first'
         s['version'] = s.get('version', 0) + 1
-        white = s['openingRoll'].get('white')
-        black = s['openingRoll'].get('black')
-        if white is not None and black is not None:
-            if white == black:
-                s['openingRoll'] = {'white': None, 'black': None}
-                s['message'] = 'Tie — roll again'
-                return {'success': True, 'dice': [roll], 'tie': True}
-            else:
-                first = 'white' if white > black else 'black'
-                s['turn'] = first
-                s['dice'] = [white, black]
-                s['remaining'] = [white, black]
-                s['phase'] = 'moving'
-                s['lastMove'] = []
-                s['moveHistory'] = []
-                s['openingRoll'] = {'white': white, 'black': black}
-                s['message'] = f'{first} goes first'
-                s['version'] = s.get('version', 0) + 1
-                return {'success': True, 'dice': [roll], 'winner': first, 'both': [white, black]}
-        return {'success': True, 'dice': [roll], 'waiting': True}
+        return {'success': True, 'winner': winner, 'both': [w, b]}
 
     def make_move(self, from_point, to_point, player_color):
         if self.state['turn'] != player_color:
@@ -280,7 +308,7 @@ class BackgammonEngine:
 
         if len(s['remaining']) == 0:
             # All dice used — stay in moving, wait for confirm
-            s['message'] = 'אשר סיום תור'
+            s['message'] = 'Confirm end of turn'
             return
 
         if len(self.all_legal_moves(color)) == 0:
@@ -290,8 +318,8 @@ class BackgammonEngine:
             s['dice'] = []
             s['lastMove'] = None
             s['moveHistory'] = None
-            turn_he = 'לבן' if s['turn'] == 'white' else 'שחור'
-            s['message'] = f'תור {turn_he}'
+            turn_name = 'White' if s['turn'] == 'white' else 'Black'
+            s['message'] = f"{turn_name}'s turn"
 
     def offer_double(self, player_color):
         if self.state['cubeOwner'] != 'center' and self.state['cubeOwner'] != player_color:

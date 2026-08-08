@@ -187,3 +187,65 @@ test("no confirm button when it is not your turn", async ({ mount }) => {
 
   await expect(component.getByTitle("Confirm and end your turn")).toHaveCount(0);
 });
+
+test("board point order is mirrored for the black player", async ({ mount }) => {
+  const state = simpleWhiteState();
+  const component = await mount(
+    <div>
+      <div data-testid="white-board">
+        <MockGameWrapper playerColor="white" state={state}>
+          <GameBoard
+            state={state}
+            playerColor="white"
+            makeMove={() => {}}
+            onLeave={() => {}}
+          />
+        </MockGameWrapper>
+      </div>
+      <div data-testid="black-board">
+        <MockGameWrapper playerColor="black" state={state}>
+          <GameBoard
+            state={state}
+            playerColor="black"
+            makeMove={() => {}}
+            onLeave={() => {}}
+          />
+        </MockGameWrapper>
+      </div>
+    </div>,
+  );
+
+  const whiteOrder = await component
+    .getByTestId("white-board")
+    .locator("[data-point-idx]")
+    .evaluateAll((els) =>
+      els
+        .map((el) => Number((el as HTMLElement).getAttribute("data-point-idx")))
+        .filter((n) => Number.isInteger(n)),
+    );
+  const blackOrder = await component
+    .getByTestId("black-board")
+    .locator("[data-point-idx]")
+    .evaluateAll((els) =>
+      els
+        .map((el) => Number((el as HTMLElement).getAttribute("data-point-idx")))
+        .filter((n) => Number.isInteger(n)),
+    );
+
+  // White sees points 23..12 across the top and 0..11 across the bottom,
+  // grouped in two columns of six around the bar.
+  expect(whiteOrder).toEqual([
+    23, 22, 21, 20, 19, 18,
+    0, 1, 2, 3, 4, 5,
+    17, 16, 15, 14, 13, 12,
+    6, 7, 8, 9, 10, 11,
+  ]);
+
+  // Black sits opposite, so each row is mirrored left-to-right.
+  expect(blackOrder).toEqual([
+    12, 13, 14, 15, 16, 17,
+    11, 10, 9, 8, 7, 6,
+    18, 19, 20, 21, 22, 23,
+    5, 4, 3, 2, 1, 0,
+  ]);
+});

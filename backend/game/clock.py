@@ -5,6 +5,9 @@ free seconds (the delay) before their reserve time starts draining. A player's
 reserve is only charged for the time they spend beyond the delay on a turn.
 """
 
+from game import clock
+
+
 NAMED_PRESETS = {
     'fast': (60_000, 5_000),
     'normal': (120_000, 12_000),
@@ -40,7 +43,7 @@ def active_player(state):
     if not state:
         return None
     phase = state.get('phase')
-    if phase in ('waiting', 'game_over', 'opening_roll'):
+    if phase in ('waiting', 'game_over', 'opening_roll', 'opening_result'):
         return None
     if phase == 'doubling_offered' and state.get('doubleOfferedBy'):
         return 'black' if state['doubleOfferedBy'] == 'white' else 'white'
@@ -95,8 +98,16 @@ def compute_clock(stored, incoming, now_ms, preset_id):
             turn_started_at = now_ms
 
     deadline_ms = None
-    if new_active and clock.get(new_active, 0) > 0:
-        deadline_ms = turn_started_at + delay_ms + clock.get(new_active, 0)
+    if (
+        new_active
+        and turn_started_at is not None
+        and clock.get(new_active, 0) > 0
+    ):
+        deadline_ms = (
+            turn_started_at
+            + delay_ms
+            + clock.get(new_active, 0)
+        )
     if new_active and clock.get(new_active, 0) <= 0:
         timed_out = True
 

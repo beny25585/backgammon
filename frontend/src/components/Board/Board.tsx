@@ -8,10 +8,8 @@ import Bar from "./pieces/bar/Bar";
 import BearOff from "./pieces/bearoff/BearOff";
 import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
 import styles from "../GameScreen/GameScreen.module.css";
-import {
-  TOP_POINTS,
-  BOTTOM_POINTS,
-} from "./layout";
+import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
+import { clientLogger } from "@/services/logger";
 
 interface BoardProps {
   state: GameState;
@@ -31,6 +29,8 @@ function getCheckerSize(board: HTMLElement): number {
   return checkerEl.getBoundingClientRect().width;
 }
 
+
+
 export function Board({
   state,
   myColor,
@@ -45,8 +45,10 @@ export function Board({
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [flyChecker, setFlyChecker] = useState<{
-    fromX: number; fromY: number;
-    toX: number; toY: number;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
     color: Color;
     size: number;
     to: Target;
@@ -57,13 +59,25 @@ export function Board({
     return lm && lm.length > 0 ? lm[lm.length - 1] : null;
   }, [state.lastMove]);
 
+  const displayTopPoints = myColor === "black" ? BOTTOM_POINTS : TOP_POINTS;
+
+  const displayBottomPoints = myColor === "black" ? TOP_POINTS : BOTTOM_POINTS;
+
   const triggerFly = useCallback(
     (from: Source, to: Target) => {
       const board = boardRef.current;
-      if (!board) { onMove(to); return; }
-      const fromEl = board.querySelector<HTMLElement>(`[data-point-idx="${from}"]`);
+      if (!board) {
+        onMove(to);
+        return;
+      }
+      const fromEl = board.querySelector<HTMLElement>(
+        `[data-point-idx="${from}"]`,
+      );
       const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
-      if (!fromEl || !toEl) { onMove(to); return; }
+      if (!fromEl || !toEl) {
+        onMove(to);
+        return;
+      }
 
       const bRect = board.getBoundingClientRect();
       const fRect = fromEl.getBoundingClientRect();
@@ -86,13 +100,19 @@ export function Board({
   function handleClick(idx: Source) {
     if (flyChecker) return;
     if (typeof idx === "number" && legalTargets.includes(idx)) {
-      if (selected !== null) { triggerFly(selected, idx); return; }
+      if (selected !== null) {
+        triggerFly(selected, idx);
+        return;
+      }
       onMove(idx);
       return;
     }
     if (selected === idx) {
-      if (legalTargets.length === 1) { triggerFly(selected, legalTargets[0]); }
-      else { onSelect(null); }
+      if (legalTargets.length === 1) {
+        triggerFly(selected, legalTargets[0]);
+      } else {
+        onSelect(null);
+      }
     } else if (legalFromPoints.includes(idx)) {
       onSelect(idx);
     }
@@ -108,63 +128,98 @@ export function Board({
         <div className={styles.inner}>
           <div className={styles.column12}>
             <div className={styles.row6}>
-              {TOP_POINTS.slice(0, 6).map((idx) => (
-                <PointCell key={idx} index={idx} top state={state}
-                  selected={selected === idx} isLegalTarget={legalTargets.includes(idx)}
+              {displayTopPoints.slice(0, 6).map((idx) => (
+                <PointCell
+                  key={idx}
+                  index={idx}
+                  top
+                  state={state}
+                  selected={selected === idx}
+                  isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null} />
+                  lastMoveTo={lastMoveLast?.to ?? null}
+                />
               ))}
             </div>
             <div className={styles.row6}>
-              {BOTTOM_POINTS.slice(0, 6).map((idx) => (
-                <PointCell key={idx} index={idx} state={state}
-                  selected={selected === idx} isLegalTarget={legalTargets.includes(idx)}
+              {displayBottomPoints.slice(0, 6).map((idx) => (
+                <PointCell
+                  key={idx}
+                  index={idx}
+                  state={state}
+                  selected={selected === idx}
+                  isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null} />
+                  lastMoveTo={lastMoveLast?.to ?? null}
+                />
               ))}
             </div>
           </div>
 
-          <Bar state={state} myColor={myColor} selected={selected === BAR}
-            isLegalFrom={legalFromPoints.includes(BAR)} onClick={() => handleClick(BAR)} />
+          <Bar
+            state={state}
+            myColor={myColor}
+            selected={selected === BAR}
+            isLegalFrom={legalFromPoints.includes(BAR)}
+            onClick={() => handleClick(BAR)}
+          />
 
           <div className={styles.column12}>
             <div className={styles.row6}>
-              {TOP_POINTS.slice(6).map((idx) => (
-                <PointCell key={idx} index={idx} top state={state}
-                  selected={selected === idx} isLegalTarget={legalTargets.includes(idx)}
+              {displayTopPoints.slice(6).map((idx) => (
+                <PointCell
+                  key={idx}
+                  index={idx}
+                  top
+                  state={state}
+                  selected={selected === idx}
+                  isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null} />
+                  lastMoveTo={lastMoveLast?.to ?? null}
+                />
               ))}
             </div>
             <div className={styles.row6}>
-              {BOTTOM_POINTS.slice(6).map((idx) => (
-                <PointCell key={idx} index={idx} state={state}
-                  selected={selected === idx} isLegalTarget={legalTargets.includes(idx)}
+              {displayBottomPoints.slice(6).map((idx) => (
+                <PointCell
+                  key={idx}
+                  index={idx}
+                  state={state}
+                  selected={selected === idx}
+                  isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null} />
+                  lastMoveTo={lastMoveLast?.to ?? null}
+                />
               ))}
             </div>
           </div>
 
-          <BearOff state={state} myColor={myColor} isLegalTarget={legalTargets.includes(OFF)}
-            onClick={() => legalTargets.includes(OFF) && triggerFly(selected ?? 0, OFF)} />
+          <BearOff
+            state={state}
+            myColor={myColor}
+            isLegalTarget={legalTargets.includes(OFF)}
+            onClick={() =>
+              legalTargets.includes(OFF) && triggerFly(selected ?? 0, OFF)
+            }
+          />
         </div>
 
-        {onUndo && state.moveHistory && state.moveHistory.length > 0 && state.phase === "moving" && (
-          <UndoButton onClick={onUndo} />
-        )}
-        {onConfirm && state.phase === "moving" && state.turn === myColor && state.remaining.length === 0 && (
-          <ConfirmButton onClick={onConfirm} />
-        )}
+        {onUndo &&
+          state.moveHistory &&
+          state.moveHistory.length > 0 &&
+          state.phase === "moving" && <UndoButton onClick={onUndo} />}
+        {onConfirm &&
+          state.phase === "moving" &&
+          state.turn === myColor &&
+          state.remaining.length === 0 && <ConfirmButton onClick={onConfirm} />}
       </div>
 
       {flyChecker && (

@@ -89,6 +89,7 @@ class GameEvent(models.Model):
         ('double', 'Double'),
         ('double_response', 'Double response'),
         ('resign', 'Resign'),
+        ('next_game', 'Next game'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

@@ -1,4 +1,5 @@
 import os
+import sys
 from pathlib import Path
 from decouple import config
 import dj_database_url
@@ -83,6 +84,14 @@ CHANNEL_LAYERS = {
         },
     },
 }
+
+# Tests run each async test in a fresh event loop; the Redis layer is a
+# process-wide singleton whose per-channel asyncio locks leak across loops and
+# crash with "bound to a different event loop". Use the in-memory layer instead.
+if 'test' in sys.argv:
+    CHANNEL_LAYERS['default'] = {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    }
 
 # CORS settings
 CORS_ALLOW_ALL_ORIGINS = False

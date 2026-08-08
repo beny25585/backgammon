@@ -39,20 +39,21 @@ export type Color = "white" | "black";
 export type Phase =
   | "waiting"
   | "opening_roll"
+  | "opening_result"
   | "rolling"
   | "moving"
   | "doubling_offered"
   | "game_over";
 
 export interface GameState {
-  points: number[];       // length 24: positive = white, negative = black
+  points: number[]; // length 24: positive = white, negative = black
   bar: { white: number; black: number };
   home: { white: number; black: number };
   turn: Color;
   dice: number[];
-  remaining: number[];    // dice values still available this turn
+  remaining: number[]; // dice values still available this turn
   phase: Phase;
-  cube: number;           // doubling cube value (1, 2, 4, 8...)
+  cube: number; // doubling cube value (1, 2, 4, 8...)
   cubeOwner: Color | "center";
   doubleOfferedBy: Color | null;
   winner: Color | null;
@@ -101,13 +102,25 @@ function isOwnedBy(state: GameState, point: number, color: Color): boolean {
 }
 
 /** True if `point` has exactly one opponent checker (vulnerable to capture). */
-function isOpponentBlot(state: GameState, point: number, color: Color): boolean {
-  return color === "white" ? state.points[point] === -1 : state.points[point] === 1;
+function isOpponentBlot(
+  state: GameState,
+  point: number,
+  color: Color,
+): boolean {
+  return color === "white"
+    ? state.points[point] === -1
+    : state.points[point] === 1;
 }
 
 /** True if `point` has 2+ opponent checkers (blocked, can't land here). */
-function isOpponentBlockade(state: GameState, point: number, color: Color): boolean {
-  return color === "white" ? state.points[point] <= -2 : state.points[point] >= 2;
+function isOpponentBlockade(
+  state: GameState,
+  point: number,
+  color: Color,
+): boolean {
+  return color === "white"
+    ? state.points[point] <= -2
+    : state.points[point] >= 2;
 }
 
 /** Count of `color`'s checkers currently on the board (not on bar, not borne off). */
@@ -140,7 +153,9 @@ function allCheckersAccountedInHome(state: GameState, color: Color): boolean {
 
 /** Full check: can `color` legally bear off? */
 function canBearOff(state: GameState, color: Color): boolean {
-  return allCheckersInHome(state, color) && allCheckersAccountedInHome(state, color);
+  return (
+    allCheckersInHome(state, color) && allCheckersAccountedInHome(state, color)
+  );
 }
 
 /**
@@ -189,11 +204,11 @@ function barEntryPoint(die: number, color: Color): number {
  */
 export function initialBoard(): number[] {
   const points = new Array(BOARD_SIZE).fill(0);
-  points[23] = 2;   // white
+  points[23] = 2; // white
   points[12] = 5;
   points[7] = 3;
   points[5] = 5;
-  points[0] = -2;   // black
+  points[0] = -2; // black
   points[11] = -5;
   points[16] = -3;
   points[18] = -5;
@@ -230,7 +245,9 @@ export function cloneState(state: GameState): GameState {
     dice: [...state.dice],
     remaining: [...state.remaining],
     openingRoll: { ...state.openingRoll },
-    lastMove: state.lastMove ? state.lastMove.map((move) => ({ ...move })) : null,
+    lastMove: state.lastMove
+      ? state.lastMove.map((move) => ({ ...move }))
+      : null,
     moveHistory: state.moveHistory ? [...state.moveHistory] : null,
   };
 }
@@ -354,7 +371,11 @@ export function allLegalMoves(state: GameState, color: Color): Move[] {
  *   4. Checks for win conditions
  *   5. Auto-passes the turn if no legal moves remain
  */
-export function applyMove(state: GameState, move: Move, color: Color): GameState {
+export function applyMove(
+  state: GameState,
+  move: Move,
+  color: Color,
+): GameState {
   const next = cloneState(state);
   const opponentColor = opponent(color);
 
@@ -487,8 +508,8 @@ export function applyOpeningRoll(state: GameState, color: Color): GameState {
   const firstPlayer: Color = whiteRoll > blackRoll ? "white" : "black";
   next.turn = firstPlayer;
   next.dice = [whiteRoll, blackRoll];
-  next.remaining = [whiteRoll, blackRoll];
-  next.phase = "moving";
+  next.remaining = [];
+  next.phase = "opening_result";
   next.lastMove = [];
   next.moveHistory = [];
   next.message = `${firstPlayer === "white" ? "White" : "Black"} starts`;
@@ -580,7 +601,12 @@ function applyWin(state: GameState, winner: Color): GameState {
   if (state.home[loser] === 0) {
     // Opponent hasn't borne off any checkers — gammon or backgammon.
     const loserOnBar = state.bar[loser] > 0;
-    const loserInWinnerHome = hasCheckersInRange(state, loser, HOME[winner].start, HOME[winner].end);
+    const loserInWinnerHome = hasCheckersInRange(
+      state,
+      loser,
+      HOME[winner].start,
+      HOME[winner].end,
+    );
     state.winType = loserOnBar || loserInWinnerHome ? "backgammon" : "gammon";
   } else {
     state.winType = "single";
@@ -592,7 +618,12 @@ function applyWin(state: GameState, winner: Color): GameState {
 }
 
 /** Check if `color` has any checkers in the given point range. */
-function hasCheckersInRange(state: GameState, color: Color, rangeStart: number, rangeEnd: number): boolean {
+function hasCheckersInRange(
+  state: GameState,
+  color: Color,
+  rangeStart: number,
+  rangeEnd: number,
+): boolean {
   for (let i = rangeStart; i <= rangeEnd; i++) {
     if (isOwnedBy(state, i, color)) return true;
   }
