@@ -4,7 +4,6 @@ import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
 import { DiceRow, RollPrompt } from "../Dice";
-import { clientLogger } from "@/services/logger";
 
 interface GameScreenProps {
   onLeave?: () => void;
@@ -31,6 +30,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     gameResult,
     whiteName,
     blackName,
+    handleNextGame,
     handleHome,
   } = useGame();
 
@@ -67,7 +67,6 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   if (!state) {
     return <div className={styles.loading}>Initializing game...</div>;
   }
-  clientLogger.debug("" + gameResult?.targetPoints);
 
   return (
     <div className={styles.container}>
@@ -82,7 +81,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
           matchTarget={gameResult.targetPoints}
           whiteName={whiteName}
           blackName={blackName}
-          onNext={handleHome}
+          onNext={handleNextGame}
           onHome={onLeave || handleHome}
         />
       )}
@@ -119,7 +118,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
           if (isOpeningResult && orr) {
             return (
               <div className={styles.overlayDim}>
-                <div className={styles.overlayCard}>
+                <div className={styles.overlayCard} data-testid="opening-result-overlay">
                   <div style={{ marginBottom: "0.75rem" }}>
                     <DiceRow
                       dice={[]}

@@ -1,7 +1,8 @@
 import { motion } from "motion/react";
 import { useState, useRef, useCallback } from "react";
 import type { Color } from "@/lib/backgammon/engine";
-import RollingDie, { pipPositions } from "../animations/RollingDie/RollingDie";
+import RollingDie from "../animations/RollingDie/RollingDie";
+import { pipPositions } from "../animations/RollingDie/pipPositions";
 import styles from "./Dice.module.css";
 
 export function Die({

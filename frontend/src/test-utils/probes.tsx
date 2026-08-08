@@ -16,6 +16,22 @@ export function StartMidGame() {
   return <div />;
 }
 
+export function SeedRolling() {
+  const { updateState } = useGame();
+  useEffect(() => {
+    updateState({ ...newGame(), phase: "rolling", turn: "white", dice: [], remaining: [] });
+  }, [updateState]);
+  return <div />;
+}
+
+export function SeedRollingBot() {
+  const { updateState } = useGame();
+  useEffect(() => {
+    updateState({ ...newGame(), phase: "rolling", turn: "black", dice: [], remaining: [] });
+  }, [updateState]);
+  return <div />;
+}
+
 export function GameProbe({ from, to }: { from: number; to: number }) {
   const {
     state,
@@ -25,6 +41,9 @@ export function GameProbe({ from, to }: { from: number; to: number }) {
     openingRollResult,
     noMovesMessage,
     isLoading,
+    error,
+    gameResult,
+    handleNextGame,
   } = useGame();
   return (
     <div>
@@ -34,6 +53,10 @@ export function GameProbe({ from, to }: { from: number; to: number }) {
       <div data-testid="dice">{JSON.stringify(state?.dice ?? [])}</div>
       <div data-testid="opening-result">{JSON.stringify(openingRollResult)}</div>
       <div data-testid="no-moves">{String(Boolean(noMovesMessage))}</div>
+      <div data-testid="error">{error ?? ""}</div>
+      <div data-testid="game-result">
+        {JSON.stringify(gameResult ? { winner: gameResult.winner } : null)}
+      </div>
       <button data-testid="move" onClick={() => makeMove(from, to)}>
         move
       </button>
@@ -42,6 +65,9 @@ export function GameProbe({ from, to }: { from: number; to: number }) {
       </button>
       <button data-testid="roll" onClick={() => rollDice()}>
         roll
+      </button>
+      <button data-testid="next" onClick={handleNextGame}>
+        next
       </button>
     </div>
   );

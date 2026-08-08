@@ -1,39 +1,6 @@
 import { motion } from "motion/react";
 import styles from "./RollingDie.module.css";
-
-export const pipPositions: Record<number, [number, number][]> = {
-  1: [[50, 50]],
-  2: [
-    [25, 25],
-    [75, 75],
-  ],
-  3: [
-    [25, 25],
-    [50, 50],
-    [75, 75],
-  ],
-  4: [
-    [25, 25],
-    [75, 25],
-    [25, 75],
-    [75, 75],
-  ],
-  5: [
-    [25, 25],
-    [75, 25],
-    [50, 50],
-    [25, 75],
-    [75, 75],
-  ],
-  6: [
-    [25, 25],
-    [75, 25],
-    [25, 50],
-    [75, 50],
-    [25, 75],
-    [75, 75],
-  ],
-};
+import { pipPositions } from "./pipPositions";
 
 /** A single die face with pip pattern for the 3D cube */
 function DieFace({

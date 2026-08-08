@@ -477,13 +477,13 @@ export function applyRoll(state: GameState, customDice?: number[]): GameState {
  *   - Higher roll wins and becomes the first turn.
  *   - Tie → both roll again.
  */
-export function applyOpeningRoll(state: GameState, color: Color): GameState {
+export function applyOpeningRoll(state: GameState, color: Color, customDie?: number): GameState {
   const next = cloneState(state);
 
   // Already rolled — ignore.
   if (next.openingRoll[color] !== null) return next;
 
-  next.openingRoll[color] = rollDie();
+  next.openingRoll[color] = customDie ?? rollDie();
 
   // If only one player has rolled, hand the dice to the other player.
   if (next.openingRoll.white === null || next.openingRoll.black === null) {

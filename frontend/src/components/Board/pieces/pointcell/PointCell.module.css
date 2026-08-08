@@ -55,7 +55,7 @@
 }
 
 .triangleDarkTop {
-  background: linear-gradient(180deg, #4a2f1a 0%, #1a0e06 100%);
+  background: linear-gradient(180deg, #000000 0%, #1a0e06 100%);
 
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
@@ -77,7 +77,7 @@
 .glowLegal {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(232, 191, 135, 0.55),
+    rgba(0, 0, 0, 0.55),
     transparent 70%
   );
 }
@@ -85,7 +85,7 @@
 .glowSelected {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(232, 191, 135, 0.75),
+    rgba(4, 3, 1, 0.75),
     transparent 70%
   );
 }
@@ -93,7 +93,7 @@
 .glowFrom {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(232, 191, 135, 0.2),
+    rgba(0, 0, 0, 0.763),
     transparent 70%
   );
 }

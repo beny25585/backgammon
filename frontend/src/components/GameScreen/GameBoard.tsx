@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
@@ -35,21 +35,27 @@ export default function GameBoard({
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
 
+  const isMyTurn = state.turn === playerColor && state.phase === "moving";
+
+  useEffect(() => {
+    if (!isMyTurn) setSelected(null);
+  }, [isMyTurn]);
+
   const legalFromPoints = useMemo(() => {
-    if (!state || !state.points) return [];
+    if (!isMyTurn || !state || !state.points) return [];
     const moves = allLegalMoves(state, playerColor);
     const unique = new Set<Source>();
     for (const m of moves) unique.add(m.from);
     return Array.from(unique);
-  }, [state, playerColor]);
+  }, [state, playerColor, isMyTurn]);
 
   const legalTargets = useMemo(() => {
-    if (!state || !state.points || selected === null) return [];
+    if (!isMyTurn || !state || !state.points || selected === null) return [];
     const moves = legalMovesFrom(state, selected, playerColor);
     const unique = new Set<Target>();
     for (const m of moves) unique.add(m.to);
     return Array.from(unique);
-  }, [state, selected, playerColor]);
+  }, [state, selected, playerColor, isMyTurn]);
 
   function handleSelect(from: Source | null) {
     setSelected(from);

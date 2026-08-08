@@ -1,45 +1,10 @@
+/* eslint-disable react-refresh/only-export-components */
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { GameContext } from "../services/gameContext";
-import { newGame } from "../lib/backgammon/engine";
+import { makeMockContext, makeGameState } from "./gameState";
 import type { GameContextType } from "../types/context";
 import type { GameState, Color } from "../types/game";
-
-export function makeGameState(overrides: Partial<GameState> = {}): GameState {
-  return { ...newGame(), ...overrides };
-}
-
-export function makeMockContext(overrides: Partial<GameContextType> = {}): GameContextType {
-  return {
-    state: makeGameState(),
-    playerColor: "white",
-    whiteName: null,
-    blackName: null,
-    isLoading: false,
-    error: null,
-    openingRollResult: null,
-    setOpeningRollResult: () => {},
-    reconnected: false,
-    opponentConnected: true,
-  timeControl: null,
-  clock: null,
-  turnStartedAt: null,
-    gameResult: null,
-    matchScore: null,
-    handleNextGame: () => {},
-    handleHome: () => {},
-    updateState: () => {},
-    makeMove: () => {},
-    rollDice: () => {},
-    offerDouble: () => {},
-    respondToDouble: () => {},
-    endTurn: () => {},
-    undoMove: () => {},
-    giveUp: () => {},
-    noMovesMessage: null,
-    ...overrides,
-  };
-}
 
 interface MockGameWrapperProps {
   children: ReactNode;

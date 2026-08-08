@@ -96,10 +96,20 @@ def save_game_state(game_state):
 # Track connected users per room: {room_group_name: {user_id: channel_name}}
 _connected_users: dict = {}
 
+# Per-room auto-next-game timers: {room_group_name: asyncio.Task}. The countdown
+# belongs to the room, not any socket, so it survives disconnects.
+_auto_next_tasks: dict = {}
+# Epoch ms deadlines keyed by room_group_name, used to report remaining seconds
+# to a reconnecting player.
+_auto_next_deadlines: dict = {}
+
 
 class GameConsumer(AsyncWebsocketConsumer):
     # How long the opening result stays on screen before the winner must roll.
     OPENING_RESULT_DELAY = 3.0
+    # How long a finished (but not match-ending) game waits before the server
+    # auto-starts the next game of the match.
+    NEXT_GAME_DELAY = 30.0
 
     async def connect(self):
         # Validate JWT from query string
@@ -592,6 +602,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         payload = game_ended_payload(state, winner, win_type, reason, room)
         payload['matchOver'] = match_over
         payload['nextGame'] = not match_over
+        if not match_over:
+            payload['nextGameIn'] = int(GameConsumer.NEXT_GAME_DELAY)
+            await self._arm_auto_next_game()
         logger.info(f"WS game_ended: room={self.room_id} winner={winner} win_type={win_type} reason={reason} match_over={match_over}")
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -608,9 +621,91 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         payload['matchOver'] = False
         payload['nextGame'] = True
+        payload['nextGameIn'] = self._remaining_next_game_seconds()
+        # Make sure the auto-start countdown is still armed for the room.
+        if self.room_group_name not in _auto_next_tasks:
+            await self._arm_auto_next_game()
         await self.channel_layer.group_send(
             self.room_group_name,
             {'type': 'game_ended', 'payload': payload},
+        )
+
+    def _remaining_next_game_seconds(self):
+        """Whole seconds left before the server auto-starts the next game."""
+        deadline = _auto_next_deadlines.get(self.room_group_name)
+        if deadline is None:
+            return int(GameConsumer.NEXT_GAME_DELAY)
+        remaining = max(1, (deadline - int(time_module.time() * 1000)) // 1000)
+        return int(min(remaining, GameConsumer.NEXT_GAME_DELAY))
+
+    async def _arm_auto_next_game(self):
+        """(Re)schedule the room's auto-start for the next game of the match."""
+        if self.room_group_name in _auto_next_tasks:
+            _auto_next_tasks[self.room_group_name].cancel()
+        delay = GameConsumer.NEXT_GAME_DELAY
+        _auto_next_deadlines[self.room_group_name] = (
+            int(time_module.time() * 1000) + int(delay * 1000)
+        )
+        task = asyncio.create_task(
+            self._auto_next_game_watch(delay),
+            name=f'auto_next_{self.room_group_name}',
+        )
+        _auto_next_tasks[self.room_group_name] = task
+
+    async def _auto_next_game_watch(self, delay):
+        """Wait out the countdown, then start the next game of the match."""
+        try:
+            await asyncio.sleep(delay)
+            await self._start_next_game()
+        except Exception:
+            logger.exception("WS auto next game failed", extra={"room_id": self.room_id})
+        finally:
+            _auto_next_tasks.pop(self.room_group_name, None)
+            _auto_next_deadlines.pop(self.room_group_name, None)
+
+    async def _start_next_game(self):
+        """Start the next game of a match, mirroring the `next_game` intent."""
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing':
+            return
+        gs = await get_game_state(room)
+        stored = dict(gs.state_data or {})
+        if stored.get('phase') != 'game_over' or not stored.get('winner'):
+            return
+        if not stored.get('matchScored'):
+            return
+        engine = BackgammonEngine(stored)
+        result = await self._handle_next_game(engine)
+        if not result.get('success'):
+            return
+
+        state = engine.state
+        sequence = await record_event_and_advance(room, None, 'next_game', state)
+        state['version'] = sequence
+
+        now_ms = int(time_module.time() * 1000)
+        clock, turn_started_at, new_active, timed_out, _deadline = compute_clock(
+            stored, state, now_ms, room.time_control
+        )
+        if clock is not None:
+            state['clock'] = clock
+            state['turnStartedAt'] = turn_started_at
+
+        gs.state_data = state
+        await save_game_state(gs)
+
+        if clock is not None and new_active:
+            await self._reschedule_timeout_from_state()
+
+        logger.info(f"WS auto next game started: room={self.room_id}")
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {
+                'type': 'game_message',
+                'event_type': 'state_update',
+                'payload': state,
+                'playerColor': None,
+            }
         )
 
     async def game_ended(self, event):

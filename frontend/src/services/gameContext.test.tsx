@@ -111,6 +111,13 @@ async function emitBroadcast(page: Page, state: GameState) {
   }, state);
 }
 
+async function emitGameEnded(page: Page, payload: Record<string, unknown>) {
+  await page.evaluate((p) => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "game_ended", payload: p });
+  }, payload);
+}
+
 async function mountProbe(
   mount: ComponentFixtures["mount"],
   page: Page,
@@ -258,4 +265,66 @@ test("opening result broadcast populates the opening result", async ({
   await expect(component.getByTestId("opening-result")).toHaveText(
     '{"myDie":5,"opponentDie":3,"winner":"white"}',
   );
+});
+
+function gameOverState(): GameState {
+  return { ...newGame(), phase: "game_over", winner: "white", version: 2 };
+}
+
+test("game_ended sets the result and a fresh state_update clears it", async ({
+  mount,
+  page,
+}) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+
+  await emitGameEnded(page, {
+    winner: "white",
+    winType: "single",
+    points: 1,
+    cube: 1,
+    whiteScore: 1,
+    blackScore: 0,
+    targetPoints: 7,
+  });
+
+  await expect(component.getByTestId("game-result")).toHaveText(
+    '{"winner":"white"}',
+  );
+
+  // Server auto-starts the next game and broadcasts a fresh opening roll.
+  await emitBroadcast(page, { ...gameOverState(), version: 3, phase: "opening_roll" });
+
+  await expect(component.getByTestId("game-result")).toHaveText("null");
+  await expect(component.getByTestId("phase")).toHaveText("opening_roll");
+});
+
+test("handleNextGame sends a next_game intent", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+
+  await emitGameEnded(page, {
+    winner: "white",
+    winType: "single",
+    points: 1,
+    cube: 1,
+    whiteScore: 1,
+    blackScore: 0,
+    targetPoints: 7,
+  });
+  await expect(component.getByTestId("game-result")).toHaveText(
+    '{"winner":"white"}',
+  );
+
+  await component.getByTestId("next").click();
+
+  await expect
+    .poll(
+      async () =>
+        (await sentMessages(page)).some(
+          (m) => m.payload?.action === "next_game",
+        ),
+      { timeout: 3000 },
+    )
+    .toBe(true);
 });

@@ -937,6 +937,9 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertEqual(event["payload"]["targetPoints"], 7)
         self.assertEqual(event["payload"]["matchOver"], False)
         self.assertEqual(event["payload"]["nextGame"], True)
+        self.assertIn("nextGameIn", event["payload"])
+        self.assertGreater(event["payload"]["nextGameIn"], 0)
+        self.assertLessEqual(event["payload"]["nextGameIn"], int(GameConsumer.NEXT_GAME_DELAY))
 
         await database_sync_to_async(self.room.refresh_from_db)()
         self.assertEqual(self.room.status, "playing")
@@ -947,6 +950,65 @@ class GameEndConsumerTests(TransactionTestCase):
 
         await comm_white.disconnect()
         await comm_black.disconnect()
+
+    async def test_auto_starts_next_game_after_countdown(self):
+        await self._set_target(5)
+        comm_white, comm_black = await self._connect_both()
+
+        with patch.object(GameConsumer, "NEXT_GAME_DELAY", 0.2):
+            await comm_white.send_json_to({
+                "type": "game_ended",
+                "payload": {"winner": "white", "winType": "single", "reason": "bear_off", "cube": 1},
+            })
+            event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+
+            fresh = await self._receive_until(
+                comm_black,
+                lambda e: e.get("type") == "state_update"
+                and not e.get("initial")
+                and e.get("payload", {}).get("phase") == "opening_roll"
+                and e.get("payload", {}).get("version", 0) > event["payload"].get("version", 0),
+            )
+
+        initial = BackgammonEngine.get_initial_state()
+        self.assertEqual(fresh["payload"]["points"], initial["points"])
+        self.assertEqual(fresh["payload"]["openingRoll"], {"white": None, "black": None})
+        self.assertEqual(fresh["payload"]["turn"], "white")
+        self.assertIsNone(fresh["payload"].get("winner"))
+        # Clocks reset for the new game.
+        self.assertEqual(fresh["payload"]["clock"], {"white": 120_000, "black": 120_000})
+
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.status, "playing")
+        self.assertEqual(self.room.white_score, 1)
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_reconnect_mid_match_replays_result_with_remaining_countdown(self):
+        await self._set_target(5)
+        comm_white, comm_black = await self._connect_both()
+
+        await comm_white.send_json_to({
+            "type": "game_ended",
+            "payload": {"winner": "white", "winType": "single", "reason": "bear_off", "cube": 1},
+        })
+        await self._receive_until(comm_white, lambda e: e.get("type") == "game_ended")
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+        comm_re = self._make_communicator(self.white_user)
+        await comm_re.connect(timeout=10)
+        await comm_re.receive_json_from()  # state_update (initial)
+
+        event = await self._receive_until(comm_re, lambda e: e.get("type") == "game_ended")
+        self.assertEqual(event["payload"]["winner"], "white")
+        self.assertIn("nextGameIn", event["payload"])
+        self.assertGreater(event["payload"]["nextGameIn"], 0)
+        self.assertLessEqual(event["payload"]["nextGameIn"], int(GameConsumer.NEXT_GAME_DELAY))
+
+        await comm_re.disconnect()
 
     async def test_game_ended_message_is_idempotent(self):
         await self._set_target(1)

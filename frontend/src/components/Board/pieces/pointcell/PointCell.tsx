@@ -79,11 +79,13 @@ export default function PointCell({
           animate={{ opacity: 1 }}
           className={`${styles.highlight} ${isLegalTarget ? styles.pulse : ""}`}
           style={{
+
+            //set the color for the available move/selected/target 
             background: isLegalTarget
-              ? "radial-gradient(circle at 50% 50%, rgba(232,191,135,0.55), transparent 70%)"
+              ? "radial-gradient(circle at 50% 50%, rgba(54, 252, 24, 0.69), transparent 70%)"
               : selected
-                ? "radial-gradient(circle at 50% 50%, rgba(232,191,135,0.75), transparent 70%)"
-                : "radial-gradient(circle at 50% 50%, rgba(232,191,135,0.2), transparent 70%)",
+                ? "radial-gradient(circle at 50% 50%, rgb(63, 159, 172), transparent 70%)"
+                : "radial-gradient(circle at 50% 50%, rgb(119, 109, 4), transparent 70%)",
           }}
         />
       )}

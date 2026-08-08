@@ -30,6 +30,7 @@ export interface GameContextType {
     matchScore: Record<Color, number>;
     targetPoints: number;
   } | null;
+  nextGameCountdown: number | null;
   matchScore: Record<Color, number> | null;
   handleNextGame: () => void;
   handleHome: () => void;

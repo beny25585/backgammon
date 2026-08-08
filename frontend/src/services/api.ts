@@ -67,3 +67,9 @@ export async function getMatchDetail(id: string) {
 export async function getStats() {
   return apiFetch("/api/stats/");
 }
+
+export async function fetchDice(type: "opening" | "normal"): Promise<[number, number]> {
+  const data = await apiFetch(`/api/dice/roll/?type=${type}`);
+  const dice = data.dice as number[];
+  return [dice[0], dice[1]];
+}

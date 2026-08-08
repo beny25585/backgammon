@@ -37,6 +37,7 @@ export default function AnimatedNumber({
       intervalId = window.setInterval(() => {
         const elapsed = Date.now() - start;
         const progress = Math.min(1, elapsed / total);
+        setValue(Math.round(from + delta * easeOut(progress)));
         if (progress >= 1) {
           setValue(to);
           if (intervalId != null) {

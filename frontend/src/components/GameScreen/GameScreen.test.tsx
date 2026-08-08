@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import GameScreen from "./GameScreen";
-import { MockGameWrapper, makeGameState } from "../../test-utils/wrappers";
+import { MockGameWrapper } from "../../test-utils/wrappers";
+import { makeGameState } from "../../test-utils/gameState";
 
 test("opening result overlay shows both dice and the winner", async ({
   mount,
@@ -21,7 +22,9 @@ test("opening result overlay shows both dice and the winner", async ({
     </MockGameWrapper>,
   );
   await expect(component.getByText("You go first!")).toBeVisible();
-  await expect(component.getByText("Opponent")).toBeVisible();
+  await expect(
+    component.getByTestId("opening-result-overlay").getByText("Opponent"),
+  ).toBeVisible();
 });
 
 test("opening roll prompt appears for the player whose turn it is", async ({

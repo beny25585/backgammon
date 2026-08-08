@@ -70,6 +70,34 @@ test("clicking a checker then a legal target calls makeMove", async ({ mount }) 
   expect(moveCalls[0]).toEqual([23, 19]);
 });
 
+test("no highlights and no moves when it is not the player's turn", async ({ mount }) => {
+  const moveCalls: [Source, Target][] = [];
+  const state = movingState({ turn: "black", phase: "moving" });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+
+  await expect(component.locator('[class*="highlight"]')).toHaveCount(0);
+
+  await component.locator('[data-point-idx="23"]').click();
+  await component.locator('[data-point-idx="19"]').click();
+  await component.page().waitForTimeout(400);
+  expect(moveCalls.length).toBe(0);
+});
+
+test("highlights appear for the active player's legal source points", async ({ mount }) => {
+  const component = await mountBoard(mount, {
+    state: simpleWhiteState(),
+    playerColor: "white",
+  });
+
+  await expect(
+    component.locator('[data-point-idx="23"] [class*="highlight"]'),
+  ).toHaveCount(1);
+});
+
 test("clicking an illegal point does not call makeMove", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
@@ -232,20 +260,20 @@ test("board point order is mirrored for the black player", async ({ mount }) => 
         .filter((n) => Number.isInteger(n)),
     );
 
-  // White sees points 23..12 across the top and 0..11 across the bottom,
-  // grouped in two columns of six around the bar.
+  // White sees points 12..17, then 11..6 across the top rows and
+  // 18..23, then 5..0 across the bottom rows, grouped around the bar.
   expect(whiteOrder).toEqual([
-    23, 22, 21, 20, 19, 18,
-    0, 1, 2, 3, 4, 5,
-    17, 16, 15, 14, 13, 12,
-    6, 7, 8, 9, 10, 11,
-  ]);
-
-  // Black sits opposite, so each row is mirrored left-to-right.
-  expect(blackOrder).toEqual([
     12, 13, 14, 15, 16, 17,
     11, 10, 9, 8, 7, 6,
     18, 19, 20, 21, 22, 23,
     5, 4, 3, 2, 1, 0,
+  ]);
+
+  // Black sits opposite, so the top and bottom rows are swapped.
+  expect(blackOrder).toEqual([
+    11, 10, 9, 8, 7, 6,
+    12, 13, 14, 15, 16, 17,
+    5, 4, 3, 2, 1, 0,
+    18, 19, 20, 21, 22, 23,
   ]);
 });

@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import {
   createContext,
   useContext,
@@ -49,14 +50,22 @@ export function GameProvider({
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
   const [gameResult, setGameResult] =
     useState<GameContextType["gameResult"]>(null);
+  const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
+    null,
+  );
 
   const socket = getSocketService(serverUrl);
   const lastVersionRef = useRef(0);
   const stateRef = useRef(state);
+  const playerColorRef = useRef(playerColor);
 
   useEffect(() => {
     stateRef.current = state;
   }, [state]);
+
+  useEffect(() => {
+    playerColorRef.current = playerColor;
+  }, [playerColor]);
 
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
@@ -67,16 +76,16 @@ export function GameProvider({
 
   useEffect(() => {
     const token = getAccessToken();
-    if (!token) {
-      setError("Not authenticated");
-      setIsLoading(false);
-      return;
-    }
 
     let hasReceivedState = false;
 
     const connectAndSetup = async () => {
       try {
+        if (!token) {
+          setError("Not authenticated");
+          setIsLoading(false);
+          return;
+        }
         await socket.connect(roomId, token);
         setIsLoading(false);
 
@@ -85,17 +94,19 @@ export function GameProvider({
           const raw = msg.payload as Record<string, unknown>;
           const isInitial = msg.initial === true;
 
-          const buildOpeningResult = (s: Record<string, any>) => {
+          const buildOpeningResult = (s: Record<string, unknown>) => {
+            const openingRoll = s.openingRoll as
+              | { white?: number; black?: number }
+              | undefined;
             if (
               (s.phase === "opening_roll" || s.phase === "opening_result") &&
-              (s.openingRoll?.white != null || s.openingRoll?.black != null)
+              (openingRoll?.white != null || openingRoll?.black != null)
             ) {
               setOpeningRollResult((prev) => ({
-                myDie:
-                  s.openingRoll?.[playerColor] ?? prev?.myDie ?? null,
+                myDie: openingRoll?.[playerColorRef.current] ?? prev?.myDie ?? null,
                 opponentDie:
-                  s.openingRoll?.[
-                    playerColor === "white" ? "black" : "white"
+                  openingRoll?.[
+                    playerColorRef.current === "white" ? "black" : "white"
                   ] ??
                   prev?.opponentDie ??
                   null,
@@ -110,8 +121,8 @@ export function GameProvider({
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
             clientLogger.debug("Initial state update received", {
-              phase: (raw as any).phase,
-              turn: (raw as any).turn,
+              phase: raw.phase,
+              turn: raw.turn,
               version: raw.version,
               playerColorInMsg: msg.playerColor,
             });
@@ -136,7 +147,7 @@ export function GameProvider({
             const tc = (msg as Record<string, unknown>).timeControl;
             if (typeof tc === "string") setTimeControl(parseTimeControl(tc));
 
-            buildOpeningResult(raw as Record<string, any>);
+            buildOpeningResult(raw);
             return;
           }
 
@@ -160,7 +171,7 @@ export function GameProvider({
           if (
             prev &&
             prev.phase === "rolling" &&
-            prev.turn === playerColor &&
+            prev.turn === playerColorRef.current &&
             next.phase === "rolling" &&
             next.turn !== playerColor &&
             (next.dice?.length ?? 0) > 0 &&
@@ -171,7 +182,14 @@ export function GameProvider({
           }
 
           setState(next);
-          buildOpeningResult(raw as Record<string, any>);
+          buildOpeningResult(raw);
+
+          // Server auto-started the next game of the match: a fresh opening
+          // arrives after the countdown, so dismiss the previous result.
+          if (next.phase !== "game_over") {
+            setGameResult(null);
+            setNextGameCountdown(null);
+          }
         });
 
         socket.on("player_joined", (_message) => {
@@ -222,6 +240,7 @@ export function GameProvider({
             whiteScore?: number;
             blackScore?: number;
             targetPoints?: number;
+            nextGameIn?: number;
           };
           const winner = payload?.winner;
           if (!winner) return;
@@ -239,6 +258,13 @@ export function GameProvider({
             },
             targetPoints: payload.targetPoints,
           });
+          const nextGameIn =
+            typeof payload.nextGameIn === "number"
+              ? payload.nextGameIn
+              : null;
+          if (nextGameIn !== null) {
+            setNextGameCountdown(nextGameIn);
+          }
           clearRoom();
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
@@ -248,7 +274,7 @@ export function GameProvider({
         const msg = err instanceof Error ? err.message : "Failed to connect";
         clientLogger.error("Game connect failed", {
           roomId,
-          playerColor,
+          playerColor: playerColorRef.current,
           error: msg,
         });
         setError(msg);
@@ -262,6 +288,16 @@ export function GameProvider({
       socket.removeAllListeners();
     };
   }, [roomId, socket]);
+
+  // Tick down the server-authoritative next-game countdown shown in the result
+  // overlay. The server owns the actual timer; this is display-only.
+  useEffect(() => {
+    if (nextGameCountdown === null || nextGameCountdown <= 0) return;
+    const timer = setTimeout(() => {
+      setNextGameCountdown((prev) => (prev === null ? null : prev - 1));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [nextGameCountdown]);
 
   const rollDice = useCallback(() => {
     const current = stateRef.current;
@@ -290,6 +326,7 @@ export function GameProvider({
     (from: Source, to: Target) => {
       const current = stateRef.current;
       if (!current || current.phase !== "moving") return;
+      if (current.turn !== playerColorRef.current) return;
       sendIntent({ action: "move", from, to });
     },
     [sendIntent],
@@ -333,7 +370,8 @@ export function GameProvider({
 
   const handleNextGame = useCallback(() => {
     setGameResult(null);
-  }, []);
+    sendIntent({ action: "next_game" });
+  }, [sendIntent]);
 
   const handleHome = useCallback(() => {
     setGameResult(null);

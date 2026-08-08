@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import PlayerRow from "./PlayerRow";
-import { makeGameState } from "../../test-utils/wrappers";
+import { makeGameState } from "../../test-utils/gameState";
 
 test("shows the player's chips and score", async ({ mount }) => {
   const row = await mount(

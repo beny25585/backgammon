@@ -9,7 +9,6 @@ import BearOff from "./pieces/bearoff/BearOff";
 import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
 import styles from "../GameScreen/GameScreen.module.css";
 import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
-import { clientLogger } from "@/services/logger";
 
 interface BoardProps {
   state: GameState;

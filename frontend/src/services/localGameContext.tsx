@@ -1,7 +1,7 @@
 import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
 import type { OpeningRollResult } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
-import { saveMatch } from "../services/api";
+import { saveMatch, fetchDice } from "../services/api";
 import {
   newGame,
   applyMove,
@@ -57,15 +57,53 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
   const humanColor: Color = botColor ? (botColor === "white" ? "black" : "white") : "white";
   const [playerColor, setPlayerColor] = useState<Color>(humanColor);
   const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
   const [noMovesMessage, setNoMovesMessage] = useState<{ dice: number[] } | null>(null);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
-  const setTurnColor = (color: Color) => {
-    if (!botColor) setPlayerColor(color);
-  };
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  const playerColorRef = useRef(playerColor);
+  useEffect(() => {
+    playerColorRef.current = playerColor;
+  }, [playerColor]);
+
+  const openingDiceRef = useRef<[number, number] | null>(null);
+  const rollingRef = useRef(false);
+
+  const getOpeningDie = useCallback(async (color: Color): Promise<number | null> => {
+    try {
+      if (!openingDiceRef.current) {
+        openingDiceRef.current = await fetchDice("opening");
+      }
+      return openingDiceRef.current[color === "white" ? 0 : 1];
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Dice service unavailable");
+      return null;
+    }
+  }, []);
+
+  const getTurnDice = useCallback(async (): Promise<number[] | null> => {
+    try {
+      const [a, b] = await fetchDice("normal");
+      return a === b ? [a, a, a, a] : [a, b];
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Dice service unavailable");
+      return null;
+    }
+  }, []);
+
+  const setTurnColor = useCallback(
+    (color: Color) => {
+      if (!botColor) setPlayerColor(color);
+    },
+    [botColor],
+  );
 
   // ── Match tracking ─────────────────────────────────────────────
 
@@ -82,43 +120,80 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
   // Auto-advance to next game after 30s
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(null);
+  const savedMatchRef = useRef(false);
 
   const MATCH_TARGET = matchTarget;
 
-  // Score game when it ends (uses state directly, no setState nesting)
-  useEffect(() => {
-    if (state.phase !== "game_over" || !state.winner) return;
-    if (gameResult !== null) return;
+  const handleNextGame = useCallback(() => {
+    openingDiceRef.current = null;
+    setGameResult(null);
+    setState(newGame());
+    setTurnColor("white");
+    setOpeningRollResult(null);
+  }, [setTurnColor]);
 
-    const base = state.winType === "single" ? 1 : state.winType === "gammon" ? 2 : 3;
-    const points = base * (state.cube || 1);
+  const handleHome = useCallback(() => {
+    openingDiceRef.current = null;
+    setGameResult(null);
+    setMatchWinner(null);
+    setMatchScore({ white: 0, black: 0 });
+    setState(newGame());
+    setTurnColor("white");
+    if (onQuitMatch) onQuitMatch();
+  }, [setTurnColor, onQuitMatch]);
 
-    setGameResult({
-      winner: state.winner,
-      winType: state.winType || "single",
-      points,
-      cube: state.cube || 1,
-      matchScore: { ...matchScore },
-    });
+  // Score game when it ends (uses state directly, no setState nesting).
+  const [prevPhase, setPrevPhase] = useState(state.phase);
+  if (prevPhase !== state.phase) {
+    setPrevPhase(state.phase);
+    if (state.phase === "game_over" && state.winner && gameResult === null) {
+      const base =
+        state.winType === "single"
+          ? 1
+          : state.winType === "gammon"
+            ? 2
+            : 3;
+      const points = base * (state.cube || 1);
 
-    setMatchScore((prev) => {
-      const next = { ...prev };
-      next[state.winner!] += points;
-      if (next[state.winner!] >= MATCH_TARGET) {
-        setMatchWinner(state.winner!);
+      setGameResult({
+        winner: state.winner,
+        winType: state.winType || "single",
+        points,
+        cube: state.cube || 1,
+        matchScore: { ...matchScore },
+      });
+
+      const nextScore = { ...matchScore };
+      nextScore[state.winner] += points;
+      setMatchScore(nextScore);
+      if (nextScore[state.winner] >= MATCH_TARGET) {
+        setMatchWinner(state.winner);
       }
-      return next;
-    });
-  }, [state.phase]);
+    }
+  }
+
+  // Reset the countdown whenever no result is shown or the match is over.
+  if (
+    (!gameResult || matchWinner || MATCH_TARGET <= 1) &&
+    nextGameCountdown !== null
+  ) {
+    setNextGameCountdown(null);
+  }
+
+  // Start the countdown when a new game result is shown.
+  if (
+    gameResult &&
+    !matchWinner &&
+    MATCH_TARGET > 1 &&
+    nextGameCountdown === null
+  ) {
+    setNextGameCountdown(30);
+  }
 
   // Auto-advance when game result is shown and match isn't over
   useEffect(() => {
-    if (!gameResult || matchWinner || MATCH_TARGET <= 1) {
-      setNextGameCountdown(null);
-      return;
-    }
+    if (!gameResult || matchWinner || MATCH_TARGET <= 1) return;
 
-    setNextGameCountdown(30);
     autoAdvanceTimer.current = setTimeout(() => {
       handleNextGame();
     }, 30000);
@@ -131,11 +206,16 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
       clearInterval(tick);
     };
-  }, [gameResult, matchWinner]);
+  }, [gameResult, matchWinner, handleNextGame, MATCH_TARGET]);
 
   // Auto-save match on completion (local/AI mode only — online mode saves server-side)
   useEffect(() => {
-    if (!matchWinner) return;
+    if (!matchWinner) {
+      savedMatchRef.current = false;
+      return;
+    }
+    if (savedMatchRef.current) return;
+    savedMatchRef.current = true;
     saveMatch({
       white_player_id: null,
       black_player_id: null,
@@ -152,23 +232,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
         transcript: extractTranscript(state),
       }],
     }).catch(() => {});
-  }, [matchWinner]);
-
-  function handleNextGame() {
-    setGameResult(null);
-    setState(newGame());
-    setTurnColor("white");
-    setOpeningRollResult(null);
-  }
-
-  function handleHome() {
-    setGameResult(null);
-    setMatchWinner(null);
-    setMatchScore({ white: 0, black: 0 });
-    setState(newGame());
-    setTurnColor("white");
-    if (onQuitMatch) onQuitMatch();
-  }
+  }, [matchWinner, matchScore, state, MATCH_TARGET]);
 
   // ── Bot turn automation ──────────────────────────────────────────
 
@@ -177,115 +241,148 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
     if (state.turn !== botColor) return;
 
     const timer = setTimeout(() => {
-      setState((prev) => {
-        if (prev.turn !== botColor) return prev;
-
-        if (prev.phase === "opening_roll") {
-          const next = applyOpeningRoll(prev, botColor);
-          if (next.phase === "opening_roll") {
-            const other: Color = botColor === "white" ? "black" : "white";
-            setTurnColor(other);
-            return { ...next, turn: other };
-          }
-          const winner: Color = next.turn;
-          setOpeningRollResult({
-            myDie: next.openingRoll.white,
-            opponentDie: next.openingRoll.black,
-            winner,
-          });
-          setTimeout(() => setOpeningRollResult(null), 3500);
-          setTurnColor(next.turn);
-          return next;
-        }
-
-        if (prev.phase === "rolling") {
-          const next = applyRoll(prev);
-          setTurnColor(next.turn);
-          return next;
-        }
-
-        if (prev.phase === "moving") {
-          const move = chooseMove(prev, botColor);
-          if (!move) {
-            const next = { ...prev, remaining: [] as number[] };
-            next.turn = botColor === "white" ? "black" : "white";
-            next.phase = "rolling" as const;
-            next.dice = [];
-            next.lastMove = null;
+      void (async () => {
+        if (state.phase === "opening_roll") {
+          const die = await getOpeningDie(botColor);
+          if (die === null) return;
+          setState((prev) => {
+            if (prev.turn !== botColor || prev.phase !== "opening_roll") return prev;
+            const next = applyOpeningRoll(prev, botColor, die);
+            if (next.phase === "opening_roll") {
+              const other: Color = botColor === "white" ? "black" : "white";
+              setTurnColor(other);
+              return { ...next, turn: other };
+            }
+            const winner: Color = next.turn;
+            setOpeningRollResult({
+              myDie: next.openingRoll.white,
+              opponentDie: next.openingRoll.black,
+              winner,
+            });
+            setTimeout(() => setOpeningRollResult(null), 3500);
             setTurnColor(next.turn);
             return next;
-          }
-          const next = applyMove(prev, move, botColor);
-          setTurnColor(next.turn);
-          return next;
+          });
+          return;
         }
 
-        return prev;
-      });
+        if (state.phase === "rolling") {
+          const dice = await getTurnDice();
+          if (!dice) return;
+          setState((prev) => {
+            if (prev.turn !== botColor || prev.phase !== "rolling") return prev;
+            const next = applyRoll(prev, dice);
+            setTurnColor(next.turn);
+            return next;
+          });
+          return;
+        }
+
+        if (state.phase === "moving") {
+          setState((prev) => {
+            if (prev.turn !== botColor) return prev;
+            const move = chooseMove(prev, botColor);
+            if (!move) {
+              const next = { ...prev, remaining: [] as number[] };
+              next.turn = botColor === "white" ? "black" : "white";
+              next.phase = "rolling" as const;
+              next.dice = [];
+              next.lastMove = null;
+              setTurnColor(next.turn);
+              return next;
+            }
+            const next = applyMove(prev, move, botColor);
+            setTurnColor(next.turn);
+            return next;
+          });
+        }
+      })();
     }, BOT_DELAY);
 
     return () => clearTimeout(timer);
-  }, [state, botColor]);
+  }, [state, botColor, getOpeningDie, getTurnDice, setTurnColor]);
 
   // ── Human actions ──────────────────────────────────────────────
 
   const rollDice = useCallback(() => {
-    setState((prev) => {
-      if (prev.phase === "opening_roll") {
-        const next = applyOpeningRoll(prev, prev.turn);
-        if (next.phase === "opening_roll") {
-          const other: Color = prev.turn === "white" ? "black" : "white";
-          setOpeningRollResult({
-            myDie: next.openingRoll[prev.turn],
-            opponentDie: null,
-            winner: null,
-          });
-          setTurnColor(other);
-          return { ...next, turn: other };
-        }
-        const winner: Color = next.turn;
-        setOpeningRollResult({
-          myDie: next.openingRoll.white,
-          opponentDie: next.openingRoll.black,
-          winner,
-        });
-        setTimeout(() => setOpeningRollResult(null), 3500);
-        setTurnColor(next.turn);
-        return next;
-      }
-      if (prev.phase === "rolling") {
-        const rolled = applyRoll(prev);
-        const hasMoves = allLegalMoves(rolled, rolled.turn).length > 0;
-        setTurnColor(rolled.turn);
-        if (!hasMoves) {
-          const passed: GameState = {
-            ...rolled,
-            remaining: [] as number[],
-            turn: (rolled.turn === "white" ? "black" : "white") as Color,
-            phase: "rolling",
-            dice: [],
-            lastMove: null,
-            moveHistory: null,
-          };
-          setNoMovesMessage({ dice: rolled.dice });
-          setTimeout(() => {
-            setNoMovesMessage(null);
-            setState((current) => {
-              if (!current || current.phase !== "moving" || current.turn !== rolled.turn) return current;
-              return passed;
+    const current = stateRef.current;
+    if (!current) return;
+    if (current.phase !== "opening_roll" && current.phase !== "rolling") return;
+    if (rollingRef.current) return;
+    rollingRef.current = true;
+
+    void (async () => {
+      try {
+        if (current.phase === "opening_roll") {
+          const color = current.turn;
+          const die = await getOpeningDie(color);
+          if (die === null) return;
+          setState((prev) => {
+            if (prev.phase !== "opening_roll" || prev.turn !== color) return prev;
+            const next = applyOpeningRoll(prev, prev.turn, die);
+            if (next.phase === "opening_roll") {
+              const other: Color = prev.turn === "white" ? "black" : "white";
+              setOpeningRollResult({
+                myDie: next.openingRoll[prev.turn],
+                opponentDie: null,
+                winner: null,
+              });
+              setTurnColor(other);
+              return { ...next, turn: other };
+            }
+            const winner: Color = next.turn;
+            setOpeningRollResult({
+              myDie: next.openingRoll.white,
+              opponentDie: next.openingRoll.black,
+              winner,
             });
-            setTurnColor(passed.turn);
-          }, 1500);
+            setTimeout(() => setOpeningRollResult(null), 3500);
+            setTurnColor(next.turn);
+            return next;
+          });
+          return;
         }
-        return rolled;
+        if (current.phase === "rolling") {
+          const dice = await getTurnDice();
+          if (!dice) return;
+          setState((prev) => {
+            if (prev.phase !== "rolling") return prev;
+            const rolled = applyRoll(prev, dice);
+            const hasMoves = allLegalMoves(rolled, rolled.turn).length > 0;
+            setTurnColor(rolled.turn);
+            if (!hasMoves) {
+              const passed: GameState = {
+                ...rolled,
+                remaining: [] as number[],
+                turn: (rolled.turn === "white" ? "black" : "white") as Color,
+                phase: "rolling",
+                dice: [],
+                lastMove: null,
+                moveHistory: null,
+              };
+              setNoMovesMessage({ dice: rolled.dice });
+              setTimeout(() => {
+                setNoMovesMessage(null);
+                setState((cur) => {
+                  if (!cur || cur.phase !== "moving" || cur.turn !== rolled.turn) return cur;
+                  return passed;
+                });
+                setTurnColor(passed.turn);
+              }, 1500);
+            }
+            return rolled;
+          });
+        }
+      } finally {
+        rollingRef.current = false;
       }
-      return prev;
-    });
-  }, []);
+    })();
+  }, [getOpeningDie, getTurnDice, setTurnColor]);
 
   const makeMove = useCallback((from: Source, to: Target) => {
     setState((prev) => {
       if (prev.phase !== "moving") return prev;
+      if (prev.turn !== playerColorRef.current) return prev;
       const dest = to === OFF ? OFF : to;
       const moves = allLegalMoves(prev, prev.turn);
       const match = moves.find(
@@ -296,7 +393,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       setTurnColor(next.turn);
       return next;
     });
-  }, []);
+  }, [setTurnColor]);
 
   const offerDoubleAction = useCallback(() => {
     setState((prev) => {
@@ -311,7 +408,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       if (next.phase !== "game_over") setTurnColor(next.turn);
       return next;
     });
-  }, []);
+  }, [setTurnColor]);
 
   const endTurn = useCallback(() => {
     setState((prev) => {
@@ -325,7 +422,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       setTurnColor(next.turn);
       return next;
     });
-  }, []);
+  }, [setTurnColor]);
 
   const undoMove = useCallback(() => {
     setState((prev) => {
@@ -334,7 +431,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       setTurnColor(restored.turn);
       return restored;
     });
-  }, []);
+  }, [setTurnColor]);
 
   const updateState = useCallback((s: GameState) => setState(s), []);
 
