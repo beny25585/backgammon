@@ -114,10 +114,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(12px, 2vw, 22px);
+  padding: clamp(18px, 3vw, 30px);
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(5px);
-  border-radius: clamp(14px, 1.8vw, 20px);
+  border-radius: clamp(18px, 2.4vw, 26px);
   border: 1px solid rgba(201, 169, 97, 0.25);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }

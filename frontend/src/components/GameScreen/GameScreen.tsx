@@ -42,7 +42,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
     state?.phase === "rolling" &&
-    state?.dice.length === 0 &&
+    state?.remaining.length === 0 &&
     state?.turn === playerColor;
 
   useEffect(() => {

@@ -90,6 +90,16 @@ export function DiceRow({
   );
 }
 
+/** Finger-tap icon — signals the button is clickable */
+function TapIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M9 11.24V7.5C9 6.12 10.12 5 11.5 5S14 6.12 14 7.5v3.74c1.21-.81 2-2.18 2-3.74C16 5.01 13.99 3 11.5 3S7 5.01 7 7.5c0 1.56.79 2.93 2 3.74z" />
+      <path d="M21.84 16.63l-4.54-2.26c-.17-.07-.35-.11-.54-.11H16v-6c0-.83-.67-1.5-1.5-1.5S13 7.17 13 8v10.74l-3.43-.72c-.08-.01-.15-.03-.24-.03-.31 0-.59.13-.79.33l-.79.8 4.94 4.94c.27.27.65.44 1.06.44h6.79c.75 0 1.33-.55 1.44-1.28l.75-5.27c.01-.07.02-.14.02-.2 0-.62-.38-1.16-.91-1.38z" />
+    </svg>
+  );
+}
+
 /** Animated rolling dice — click to trigger the actual roll */
 export function RollPrompt({
   onRoll,
@@ -121,11 +131,15 @@ export function RollPrompt({
     <motion.button
       onClick={handleClick}
       className={styles.rollBtn}
-      whileTap={{ scale: 0.92 }}
+      whileHover={{ scale: 1.05 }}
+      whileTap={{ scale: 0.94 }}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
     >
+      <span className={styles.pulseRing} aria-hidden="true" />
+      <span className={`${styles.pulseRing} ${styles.pulseRingDelay}`} aria-hidden="true" />
+      <TapIcon className={styles.tapIcon} />
       <RollingDie
         rolling={rolling}
         count={count}

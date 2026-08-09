@@ -10,6 +10,7 @@ test("shows the player's chips and score", async ({ mount }) => {
       label="You (White)"
       active={false}
       self
+      score={0}
     />,
   );
   await expect(row.getByText("Off 5")).toBeVisible();

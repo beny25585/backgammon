@@ -8,7 +8,11 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { GameContextType, GameResult, OpeningRollResult } from "../types/context";
+import type {
+  GameContextType,
+  GameResult,
+  OpeningRollResult,
+} from "../types/context";
 import type { GameState, Color } from "../types/game";
 import type { Source, Target } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
@@ -52,6 +56,10 @@ export function GameProvider({
   const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
     null,
   );
+  const [matchScore, setMatchScore] = useState<Record<Color, number>>({
+    white: 0,
+    black: 0,
+  });
 
   const socket = getSocketService(serverUrl);
   const lastVersionRef = useRef(0);
@@ -102,17 +110,15 @@ export function GameProvider({
               (openingRoll?.white != null || openingRoll?.black != null)
             ) {
               setOpeningRollResult((prev) => ({
-                myDie: openingRoll?.[playerColorRef.current] ?? prev?.myDie ?? null,
+                myDie:
+                  openingRoll?.[playerColorRef.current] ?? prev?.myDie ?? null,
                 opponentDie:
                   openingRoll?.[
                     playerColorRef.current === "white" ? "black" : "white"
                   ] ??
                   prev?.opponentDie ??
                   null,
-                winner:
-                  s.phase === "opening_result"
-                    ? (s.turn as Color)
-                    : null,
+                winner: s.phase === "opening_result" ? (s.turn as Color) : null,
               }));
             }
           };
@@ -151,8 +157,7 @@ export function GameProvider({
           }
 
           // Authoritative broadcast: ignore stale versions, apply everything.
-          const version =
-            typeof raw.version === "number" ? raw.version : 0;
+          const version = typeof raw.version === "number" ? raw.version : 0;
           if (version > 0 && version <= lastVersionRef.current) {
             clientLogger.warn("Stale state_update ignored", {
               version,
@@ -243,6 +248,11 @@ export function GameProvider({
             nextGameIn?: number;
           };
           const winner = payload?.winner;
+          const match = {
+            white: payload.whiteScore ?? 0,
+            black: payload.blackScore ?? 0,
+          };
+          setMatchScore(match);
           if (!winner) return;
           clientLogger.info("Game ended", { winner, reason: payload.reason });
           setGameResult({
@@ -252,16 +262,11 @@ export function GameProvider({
               "single",
             points: payload.points ?? 1,
             cube: payload.cube ?? 1,
-            matchScore: {
-              white: payload.whiteScore ?? 0,
-              black: payload.blackScore ?? 0,
-            },
+            matchScore: match,
             targetPoints: payload.targetPoints ?? 0,
           });
           const nextGameIn =
-            typeof payload.nextGameIn === "number"
-              ? payload.nextGameIn
-              : null;
+            typeof payload.nextGameIn === "number" ? payload.nextGameIn : null;
           if (nextGameIn !== null) {
             setNextGameCountdown(nextGameIn);
           }
@@ -397,7 +402,7 @@ export function GameProvider({
         turnStartedAt: state?.turnStartedAt ?? null,
         gameResult,
         nextGameCountdown,
-        matchScore: gameResult?.matchScore ?? null,
+        matchScore,
         handleNextGame,
         handleHome,
         updateState,

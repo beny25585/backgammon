@@ -35,11 +35,12 @@ export function useLocalClock(
   }, [onTimeout]);
 
   // No limit -> no clock.
-  const [prevTimeControl, setPrevTimeControl] = useState<TimeControl | null>(
-    timeControl,
-  );
-  if (prevTimeControl !== timeControl) {
-    setPrevTimeControl(timeControl);
+  const prevTimeControlRef = useRef<TimeControl | null>(timeControl);
+
+  // Time control changed (e.g. clock enabled/disabled) -> reset both clocks.
+  useEffect(() => {
+    if (prevTimeControlRef.current === timeControl) return;
+    prevTimeControlRef.current = timeControl;
     activeRef.current = null;
     turnStartedAtRef.current = null;
     timedOutRef.current = null;
@@ -49,7 +50,7 @@ export function useLocalClock(
         : null,
     );
     setTurnStartedAt(null);
-  }
+  }, [timeControl]);
 
   // New game (game over -> opening roll) -> restart both clocks.
   useEffect(() => {

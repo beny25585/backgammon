@@ -61,8 +61,8 @@ export default function RollingDie({
           onAnimationComplete={onRollComplete}
           data-testid="rolling-die"
           style={{
-            width: "clamp(48px, 10vw, 64px)",
-            height: "clamp(48px, 10vw, 64px)",
+            width: "clamp(64px, 14vw, 88px)",
+            height: "clamp(64px, 14vw, 88px)",
             transformStyle: "preserve-3d",
           }}
           animate={
@@ -110,32 +110,32 @@ export default function RollingDie({
           <DieFace
             value={1}
             dark={dark}
-            side="translateZ(calc(clamp(24px,5vw,32px)))"
+            side="translateZ(calc(clamp(32px,7vw,44px)))"
           />
           <DieFace
             value={6}
             dark={dark}
-            side="rotateY(180deg) translateZ(calc(clamp(24px,5vw,32px)))"
+            side="rotateY(180deg) translateZ(calc(clamp(32px,7vw,44px)))"
           />
           <DieFace
             value={3}
             dark={dark}
-            side="rotateY(-90deg) translateZ(calc(clamp(24px,5vw,32px)))"
+            side="rotateY(-90deg) translateZ(calc(clamp(32px,7vw,44px)))"
           />
           <DieFace
             value={4}
             dark={dark}
-            side="rotateY(90deg) translateZ(calc(clamp(24px,5vw,32px)))"
+            side="rotateY(90deg) translateZ(calc(clamp(32px,7vw,44px)))"
           />
           <DieFace
             value={2}
             dark={dark}
-            side="rotateX(-90deg) translateZ(calc(clamp(24px,5vw,32px)))"
+            side="rotateX(-90deg) translateZ(calc(clamp(32px,7vw,44px)))"
           />
           <DieFace
             value={5}
             dark={dark}
-            side="rotateX(90deg) translateZ(calc(clamp(24px,5vw,32px)))"
+            side="rotateX(90deg) translateZ(calc(clamp(32px,7vw,44px)))"
           />
         </motion.div>
       ))}

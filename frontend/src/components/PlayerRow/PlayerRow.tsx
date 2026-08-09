@@ -10,7 +10,7 @@ interface PlayerRowProps {
   score?: number;
 }
 
-export default function PlayerRow({ color, state, label, active, self, score = 0 }: PlayerRowProps) {
+export default function PlayerRow({ color, state, label, active, self, score }: PlayerRowProps) {
   const checkersOff = color === "white" ? state.home.white : state.home.black;
   const checkersOnBar = color === "white" ? state.bar.white : state.bar.black;
 

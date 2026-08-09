@@ -44,3 +44,22 @@ test("opening roll prompt appears for the player whose turn it is", async ({
   );
   await expect(component.getByText("Tap to roll")).toBeVisible();
 });
+
+test("roll prompt appears after a server auto-pass (stale dice in rolling state)", async ({
+  mount,
+}) => {
+  const component = await mount(
+    <MockGameWrapper
+      playerColor="white"
+      state={makeGameState({
+        phase: "rolling",
+        turn: "white",
+        dice: [2, 4],
+        remaining: [],
+      })}
+    >
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByText("Tap to roll")).toBeVisible();
+});
