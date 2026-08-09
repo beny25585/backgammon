@@ -1,5 +1,5 @@
 import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
-import type { OpeningRollResult } from "../types/context";
+import type { GameResult, OpeningRollResult } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import { saveMatch, fetchDice } from "../services/api";
 import {
@@ -109,13 +109,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
 
   const [matchScore, setMatchScore] = useState<Record<Color, number>>({ white: 0, black: 0 });
   const [matchWinner, setMatchWinner] = useState<Color | null>(null);
-  const [gameResult, setGameResult] = useState<{
-    winner: Color;
-    winType: "single" | "gammon" | "backgammon";
-    points: number;
-    cube: number;
-    matchScore: Record<Color, number>;
-  } | null>(null);
+  const [gameResult, setGameResult] = useState<GameResult | null>(null);
 
   // Auto-advance to next game after 30s
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,6 +155,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
         points,
         cube: state.cube || 1,
         matchScore: { ...matchScore },
+        targetPoints: MATCH_TARGET,
       });
 
       const nextScore = { ...matchScore };
@@ -469,6 +464,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
         clock: localClock.clock,
         turnStartedAt: localClock.turnStartedAt,
         gameResult,
+        nextGameCountdown,
         matchScore,
         handleNextGame,
         handleHome,

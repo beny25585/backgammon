@@ -34,6 +34,7 @@ function makeMock(): GameContextType {
     clock: null,
     turnStartedAt: null,
     gameResult: null,
+    nextGameCountdown: null,
     matchScore: null,
     handleNextGame: () => {},
     handleHome: () => {},

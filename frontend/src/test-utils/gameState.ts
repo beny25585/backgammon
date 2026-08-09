@@ -22,6 +22,7 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
     clock: null,
     turnStartedAt: null,
     gameResult: null,
+    nextGameCountdown: null,
     matchScore: null,
     handleNextGame: () => {},
     handleHome: () => {},

@@ -8,6 +8,15 @@ export interface OpeningRollResult {
   winner: Color | null;
 }
 
+export interface GameResult {
+  winner: Color;
+  winType: "single" | "gammon" | "backgammon";
+  points: number;
+  cube: number;
+  matchScore: Record<Color, number>;
+  targetPoints: number;
+}
+
 export interface GameContextType {
   state: GameState | null;
   playerColor: Color;
@@ -22,14 +31,7 @@ export interface GameContextType {
   timeControl: TimeControl | null;
   clock: Record<Color, number> | null;
   turnStartedAt: number | null;
-  gameResult: {
-    winner: Color;
-    winType: "single" | "gammon" | "backgammon";
-    points: number;
-    cube: number;
-    matchScore: Record<Color, number>;
-    targetPoints: number;
-  } | null;
+  gameResult: GameResult | null;
   nextGameCountdown: number | null;
   matchScore: Record<Color, number> | null;
   handleNextGame: () => void;

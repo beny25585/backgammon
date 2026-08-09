@@ -33,6 +33,7 @@ const mock: GameContextType = {
   clock: null,
   turnStartedAt: null,
   gameResult: null,
+  nextGameCountdown: null,
   matchScore: { white: 2, black: 3 },
   handleNextGame: () => {},
   handleHome: () => {},

@@ -8,7 +8,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { GameContextType, OpeningRollResult } from "../types/context";
+import type { GameContextType, GameResult, OpeningRollResult } from "../types/context";
 import type { GameState, Color } from "../types/game";
 import type { Source, Target } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
@@ -48,8 +48,7 @@ export function GameProvider({
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
-  const [gameResult, setGameResult] =
-    useState<GameContextType["gameResult"]>(null);
+  const [gameResult, setGameResult] = useState<GameResult | null>(null);
   const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
     null,
   );
@@ -214,12 +213,13 @@ export function GameProvider({
             | string
             | Record<string, unknown>
             | undefined;
-          const msg =
+          const rawMsg =
             typeof payload === "string"
               ? payload
               : typeof m.message === "string"
                 ? m.message
                 : (payload as Record<string, unknown> | undefined)?.message;
+          const msg = typeof rawMsg === "string" ? rawMsg : undefined;
           if (!msg) return;
           // The server auto-resolves the opening once both sockets connect, so
           // a roll intent still in flight can hit a resolved opening. That
@@ -256,7 +256,7 @@ export function GameProvider({
               white: payload.whiteScore ?? 0,
               black: payload.blackScore ?? 0,
             },
-            targetPoints: payload.targetPoints,
+            targetPoints: payload.targetPoints ?? 0,
           });
           const nextGameIn =
             typeof payload.nextGameIn === "number"
@@ -316,6 +316,7 @@ export function GameProvider({
         points: 1,
         cube,
         matchScore: { white: 0, black: 0 },
+        targetPoints: 1,
       });
       socket.send("game_ended", { winner, winType, reason, cube });
     },
@@ -395,6 +396,7 @@ export function GameProvider({
         clock: state?.clock ?? null,
         turnStartedAt: state?.turnStartedAt ?? null,
         gameResult,
+        nextGameCountdown,
         matchScore: gameResult?.matchScore ?? null,
         handleNextGame,
         handleHome,
