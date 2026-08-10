@@ -75,6 +75,14 @@ class Match(models.Model):
     black_score = models.IntegerField(default=0)
     winner = models.CharField(max_length=5, null=True, blank=True)
     games = models.JSONField(default=list)
+    end_reason = models.CharField(max_length=20, null=True, blank=True)
+    first_player = models.CharField(max_length=5, null=True, blank=True)
+    opening_roll = models.JSONField(null=True, blank=True)
+    final_cube = models.IntegerField(default=1)
+    hits = models.IntegerField(default=0)
+    doubles_offered = models.IntegerField(default=0)
+    doubles_accepted = models.IntegerField(default=0)
+    clock_remaining = models.JSONField(null=True, blank=True)
 
     def __str__(self):
         return f"Match {self.id} ({self.white_score}-{self.black_score})"

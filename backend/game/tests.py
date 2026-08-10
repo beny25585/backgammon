@@ -643,11 +643,15 @@ class GameConsumerTests(TransactionTestCase):
 
 class FinalizeRoomTests(TestCase):
     def setUp(self):
+        self.white_player = Player.objects.create(user=User.objects.create_user(username="w1"))
+        self.black_player = Player.objects.create(user=User.objects.create_user(username="b1"))
         self.room = GameRoom.objects.create(
             id=uuid.uuid4(),
             code="FINAL1",
             status="playing",
         )
+        RoomPlayer.objects.create(room=self.room, player=self.white_player, color="white")
+        RoomPlayer.objects.create(room=self.room, player=self.black_player, color="black")
 
     def _state(self, **overrides):
         state = BackgammonEngine.get_initial_state()
@@ -670,6 +674,118 @@ class FinalizeRoomTests(TestCase):
         self.assertEqual(match.winner, 'white')
         self.assertEqual(match.match_type, 'online')
         self.assertEqual(match.games[0]['points_awarded'], 1)
+
+    def test_finalize_room_links_room_players_to_match(self):
+        match = finalize_room(self.room, self._state(), 'white', 'single', 'bear_off')
+
+        self.assertEqual(match.white_player, self.white_player)
+        self.assertEqual(match.black_player, self.black_player)
+
+    def test_finalize_room_records_metadata_fields(self):
+        state = self._state(
+            cube=2,
+            winType='gammon',
+            openingRoll={'white': 4, 'black': 3},
+            clock={'white': 60000, 'black': 120000},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=1,
+            event_type='roll',
+            payload={'dice': [5, 2], 'turn': 'white'},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=2,
+            event_type='move',
+            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white'},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=3,
+            event_type='double',
+            payload={'phase': 'doubling_offered', 'cube': 1, 'doubleOfferedBy': 'white'},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=4,
+            event_type='double_response',
+            payload={'phase': 'rolling', 'cube': 2, 'doubleOfferedBy': None},
+        )
+
+        match = finalize_room(self.room, state, 'white', 'gammon', 'bear_off')
+
+        self.assertEqual(match.end_reason, 'bear_off')
+        self.assertEqual(match.first_player, 'white')
+        self.assertEqual(match.opening_roll, {'white': 4, 'black': 3})
+        self.assertEqual(match.final_cube, 2)
+        self.assertEqual(match.doubles_offered, 1)
+        self.assertEqual(match.doubles_accepted, 1)
+        self.assertIsNotNone(match.duration_seconds)
+        self.assertEqual(match.clock_remaining, {'white': 60000, 'black': 120000})
+
+    def test_finalize_room_enriches_game_entry_with_board_stats(self):
+        state = self._state(
+            winner='black',
+            points=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            bar={'white': 2, 'black': 0},
+            home={'white': 13, 'black': 15},
+        )
+
+        match = finalize_room(self.room, state, 'black', 'single', 'bear_off')
+
+        game = match.games[0]
+        self.assertEqual(game['pips_remaining'], 50)
+        self.assertEqual(game['checkers_on_bar'], 2)
+        self.assertEqual(game['final_cube'], 1)
+
+    def test_finalize_room_counts_hits_from_events(self):
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=1,
+            event_type='move',
+            payload={
+                'points': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                'bar': {'white': 0, 'black': 0},
+                'lastMove': [{'from': 12, 'to': 7}],
+                'turn': 'white',
+            },
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=2,
+            event_type='move',
+            payload={
+                'points': [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                'bar': {'white': 0, 'black': 1},
+                'lastMove': [{'from': 5, 'to': 2}],
+                'turn': 'white',
+            },
+        )
+
+        match = finalize_room(self.room, self._state(), 'white', 'single', 'bear_off')
+
+        self.assertEqual(match.hits, 1)
+
+    def test_finalize_room_builds_transcript_from_events(self):
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=1,
+            event_type='roll',
+            payload={'dice': [5, 2], 'turn': 'white'},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=2,
+            event_type='move',
+            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white'},
+        )
+
+        match = finalize_room(self.room, self._state(), 'white', 'single', 'bear_off')
+
+        self.assertEqual(len(match.games[0]['transcript']), 1)
+        self.assertEqual(match.games[0]['transcript'][0]['turn'], 'white')
+        self.assertEqual(match.games[0]['transcript'][0]['roll'], [5, 2])
 
     def test_finalize_room_applies_win_type_and_cube_multipliers(self):
         match = finalize_room(self.room, self._state(winType='gammon', cube=2), 'white', 'gammon', 'bear_off')
@@ -709,12 +825,16 @@ class MatchContinuationTests(TestCase):
     """record_game_end keeps a room open across games until target points."""
 
     def setUp(self):
+        self.white_player = Player.objects.create(user=User.objects.create_user(username="wc"))
+        self.black_player = Player.objects.create(user=User.objects.create_user(username="bc"))
         self.room = GameRoom.objects.create(
             id=uuid.uuid4(),
             code="MATCH1",
             status="playing",
             target_points=5,
         )
+        RoomPlayer.objects.create(room=self.room, player=self.white_player, color="white")
+        RoomPlayer.objects.create(room=self.room, player=self.black_player, color="black")
 
     def _state(self, **overrides):
         state = BackgammonEngine.get_initial_state()
@@ -770,6 +890,75 @@ class MatchContinuationTests(TestCase):
         self.assertEqual(match.white_score, 5)
         self.assertEqual(len(match.games), 1)
 
+    def test_record_game_end_links_room_players_to_match(self):
+        self.room.white_score = 4
+        self.room.save()
+
+        result = record_game_end(self.room, self._state(), 'white', 'single', 'bear_off')
+
+        match = result['match']
+        self.assertIsNotNone(match)
+        self.assertEqual(match.white_player, self.white_player)
+        self.assertEqual(match.black_player, self.black_player)
+
+    def test_record_game_end_records_metadata_fields(self):
+        self.room.white_score = 4
+        self.room.save()
+
+        result = record_game_end(
+            self.room,
+            self._state(cube=4, openingRoll={'white': 2, 'black': 1}),
+            'white',
+            'single',
+            'give_up',
+        )
+
+        match = result['match']
+        self.assertEqual(match.end_reason, 'give_up')
+        self.assertEqual(match.first_player, 'white')
+        self.assertEqual(match.opening_roll, {'white': 2, 'black': 1})
+        self.assertEqual(match.final_cube, 4)
+
+    def test_record_game_end_games_include_transcript_and_hits(self):
+        self.room.white_score = 4
+        self.room.save()
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=1,
+            event_type='roll',
+            payload={'dice': [4, 3], 'turn': 'black'},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=2,
+            event_type='move',
+            payload={
+                'points': [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                'bar': {'white': 0, 'black': 0},
+                'lastMove': [{'from': 5, 'to': 2}],
+                'turn': 'black',
+            },
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=3,
+            event_type='move',
+            payload={
+                'points': [0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                'bar': {'white': 1, 'black': 0},
+                'lastMove': [{'from': 2, 'to': 5}],
+                'turn': 'black',
+            },
+        )
+
+        result = record_game_end(self.room, self._state(), 'white', 'single', 'bear_off')
+
+        match = result['match']
+        self.assertEqual(match.hits, 1)
+        self.assertEqual(len(match.games), 1)
+        self.assertEqual(match.games[0]['transcript'][0]['turn'], 'black')
+        self.assertEqual(match.games[0]['transcript'][0]['roll'], [4, 3])
+
     def test_record_game_end_applies_multiplier_to_points(self):
         result = record_game_end(
             self.room, self._state(winType='gammon', cube=2), 'white', 'gammon', 'bear_off'
@@ -789,12 +978,25 @@ class MatchContinuationTests(TestCase):
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
 
     def test_record_game_end_saves_transcript_from_history(self):
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=1,
+            event_type='roll',
+            payload={'dice': [3, 2], 'turn': 'white'},
+        )
+        GameEvent.objects.create(
+            room=self.room,
+            sequence=2,
+            event_type='move',
+            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white'},
+        )
         record_game_end(self.room, self._state(), 'white', 'single', 'bear_off')
 
         self.room.refresh_from_db()
         games = self.room.state['match']['games']
         self.assertEqual(games[0]['transcript'][0]['turn'], 'white')
         self.assertEqual(games[0]['transcript'][0]['roll'], [3, 2])
+        self.assertEqual(games[0]['transcript'][0]['moves'], [{'from': 5, 'to': 2}])
 
 
 class TaskWorkerTests(TestCase):

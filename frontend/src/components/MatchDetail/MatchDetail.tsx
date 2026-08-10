@@ -21,6 +21,10 @@ interface MatchData {
   white_score: number;
   black_score: number;
   winner: string | null;
+  end_reason?: string | null;
+  first_player?: string | null;
+  hits?: number;
+  duration_seconds?: number | null;
   games: GameEntry[];
 }
 
@@ -43,6 +47,12 @@ export default function MatchDetail() {
   if (!match) return <div className={styles.loading}>Match not found</div>;
 
   const winnerLabel = match.winner ?? "Pending";
+  const firstPlayerLabel =
+    match.first_player === "white"
+      ? match.whitePlayer?.username ?? "White"
+      : match.first_player === "black"
+        ? match.blackPlayer?.username ?? "Black"
+        : null;
 
   return (
     <main className={styles.container}>
@@ -88,6 +98,31 @@ export default function MatchDetail() {
             </div>
           </div>
         </div>
+
+        {match.duration_seconds != null && (
+          <div className={styles.summaryGrid}>
+            {firstPlayerLabel && (
+              <div className={styles.summaryCard}>
+                <span>First player</span>
+                <strong>{firstPlayerLabel}</strong>
+              </div>
+            )}
+            <div className={styles.summaryCard}>
+              <span>Duration</span>
+              <strong>{Math.round(match.duration_seconds / 60)}m</strong>
+            </div>
+            <div className={styles.summaryCard}>
+              <span>Hits</span>
+              <strong>{match.hits ?? 0}</strong>
+            </div>
+            {match.end_reason && (
+              <div className={styles.summaryCard}>
+                <span>Ended by</span>
+                <strong>{match.end_reason}</strong>
+              </div>
+            )}
+          </div>
+        )}
 
         <h2 className={styles.subtitle}>Games</h2>
         {match.games.map((game, idx) => (

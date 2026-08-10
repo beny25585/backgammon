@@ -49,4 +49,6 @@ class MatchSerializer(serializers.ModelSerializer):
     class Meta:
         model = Match
         fields = ('id', 'created_at', 'duration_seconds', 'whitePlayer', 'blackPlayer',
-                  'match_type', 'target_points', 'white_score', 'black_score', 'winner', 'games')
+                  'match_type', 'target_points', 'white_score', 'black_score', 'winner', 'games',
+                  'end_reason', 'first_player', 'opening_roll', 'final_cube', 'hits',
+                  'doubles_offered', 'doubles_accepted', 'clock_remaining')

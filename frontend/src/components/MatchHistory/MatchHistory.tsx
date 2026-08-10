@@ -13,6 +13,10 @@ interface MatchSummary {
   white_score: number;
   black_score: number;
   winner: string | null;
+  end_reason?: string | null;
+  first_player?: string | null;
+  hits?: number;
+  duration_seconds?: number | null;
 }
 
 export default function MatchHistory() {
