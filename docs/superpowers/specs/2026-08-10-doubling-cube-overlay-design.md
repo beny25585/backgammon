@@ -13,9 +13,13 @@ Date: 2026-08-10
 - Add the existing `DoublingCube` component to the board's dice overlay (`boardOverlay`), rendered to the right of the dice.
 - Show the cube only during the moving phase AND when it's the player's turn, so it signals "your turn — cube context".
 - Restyle the cube: always a white 3D cube face, with the value colored per doubling level. Keep an owner label ("You"/"Center").
-- Generalize `RollingDie` so it can render either pip faces (dice) or a single value face (cube), and use it for a spin transition on the cube.
+  add animathis to roll to the target number if its 2 its flip & roll to 4
+- Generalize `RollingDie` so it can render either pip faces (dice) or a single value face (cube), and use it for a spin transition on the cube. the regilar dice the end of the animation need to lande on the dice results
 - Add an `@animations` alias so imports into the animations folder are stable.
 - Add a new responsive test file that mounts the board at mobile/tablet/desktop sizes and asserts no horizontal overflow + proper fit, using the existing viewport helpers.
+
+- for all the changes make test to make shoor ther are working correctly and functional
+  add test for responsivnes destop tablet and moblie
 
 ## Components / Files
 
@@ -24,10 +28,13 @@ Date: 2026-08-10
 - Inside the `boardOverlay` div (currently rendered when `state.phase === "moving" && state.remaining.length > 0`), append:
 
   ```tsx
-  {isMyTurn && <DoublingCube value={state.cube} owner={state.cubeOwner} />}
+  {
+    isMyTurn && <DoublingCube value={state.cube} owner={state.cubeOwner} />;
+  }
   ```
 
   `isMyTurn` is already computed as `state.turn === playerColor && state.phase === "moving"` (GameBoard.tsx:38).
+
 - Import `DoublingCube` from `../DoublingCube`.
 - The existing `.boardOverlay` flex container (gap, alignment) already provides spacing; dice stay centered and the cube sits to the right.
 - `DiceRow` and the cube must not overlap: keep `gap` and check the overlay fits at 375px (covered by the responsive tests).
@@ -41,21 +48,23 @@ Date: 2026-08-10
     background: linear-gradient(145deg, #ffffff 0%, #e8e8e8 55%, #c9c9c9 100%);
     color: currentColor;
     border: 1px solid rgba(0, 0, 0, 0.18);
-    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    box-shadow:
+      0 10px 20px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9);
   }
   ```
 
 - Keep `.neutral`/`.white`/`.black` as **color-value** classes instead of owner classes. Map value → color:
 
-  | Cube value | Number color |
-  |---|---|
-  | 1 (center) | gray `#9ca3af` |
-  | 2 | red `#e74c3c` |
-  | 4 | blue `#2e86de` |
-  | 8 | green `#27ae60` |
-  | 16 | orange `#d35400` |
-  | 32 | purple `#8e44ad` |
-  | 64 | gold `#e7bd72` |
+  | Cube value | Number color     |
+  | ---------- | ---------------- |
+  | 1 (center) | gray `#9ca3af`   |
+  | 2          | red `#e74c3c`    |
+  | 4          | blue `#2e86de`   |
+  | 8          | green `#27ae60`  |
+  | 16         | orange `#d35400` |
+  | 32         | purple `#8e44ad` |
+  | 64         | gold `#e7bd72`   |
 
 - Owner label: keep the label but show only "You" (when owned by the player) or "Center". The current `ownerLabel` logic ("You"/"Bot") can stay; the cube only renders on the player's turn, so it will read "You".
 

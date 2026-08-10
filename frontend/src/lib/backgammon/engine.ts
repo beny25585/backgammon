@@ -233,6 +233,7 @@ export function newGame(): GameState {
     lastMove: null,
     moveHistory: null,
     message: "Roll to start",
+    
   };
 }
 

@@ -14,6 +14,7 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
     blackName: null,
     isLoading: false,
     error: null,
+    clearError: () => {},
     openingRollResult: null,
     setOpeningRollResult: () => {},
     reconnected: false,
@@ -34,6 +35,7 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
     endTurn: () => {},
     undoMove: () => {},
     giveUp: () => {},
+    leaveGame: () => {},
     noMovesMessage: null,
     ...overrides,
   };

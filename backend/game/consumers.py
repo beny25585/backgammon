@@ -233,6 +233,14 @@ class GameConsumer(AsyncWebsocketConsumer):
                     state_data, state_data['winner'], state_data.get('winType', 'single'), 'state_update',
                     force_close=True,
                 )
+        elif (
+            room.status in ('completed', 'cancelled')
+            and state_data.get('phase') == 'game_over'
+            and state_data.get('winner')
+        ):
+            # The room was already closed (leave, forfeit, or target reached):
+            # re-broadcast the recorded result so the UI shows who won and why.
+            await self._replay_finalized_game_end(state_data, room)
 
         await self.channel_layer.group_send(
             self.room_group_name,
@@ -300,6 +308,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self._handle_intent(data)
             elif message_type == 'give_up':
                 await self._handle_give_up()
+            elif message_type == 'leave':
+                await self._handle_leave()
             elif message_type == 'game_ended':
                 await self._handle_game_ended(payload)
             else:
@@ -521,6 +531,32 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         await self._finalize_and_broadcast(state, winner, 'single', 'give_up')
 
+    async def _handle_leave(self):
+        """Handle a player quitting the match: forfeit and close the room.
+
+        Unlike `give_up` (which only costs the current game of the match),
+        leaving abandons the whole match: the leaver is scored a loss, the
+        opponent wins, and the room is closed immediately.
+        """
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing':
+            logger.warning(f"WS leave on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
+            return await self._send_error('No active game')
+
+        winner = 'black' if self.player_color == 'white' else 'white'
+        logger.info(f"WS leave: {self.player_color} quits, winner={winner} room={self.room_id}")
+
+        game_state = await get_game_state(room)
+        state = dict(game_state.state_data or {})
+        state['phase'] = 'game_over'
+        state['winner'] = winner
+        state['winType'] = 'single'
+        state['gameEndReason'] = 'leave'
+        game_state.state_data = state
+        await save_game_state(game_state)
+
+        await self._finalize_and_broadcast(state, winner, 'single', 'leave', force_close=True)
+
     async def _handle_game_ended(self, payload):
         """Receive a client game_ended signal and finalize the room."""
         room = await get_room(self.room_id)
@@ -596,6 +632,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             match_over = result['match_over']
         stored = dict(stored)
         stored['matchScored'] = True
+        stored['gameEndReason'] = reason
         gs.state_data = stored
         await save_game_state(gs)
         await database_sync_to_async(room.refresh_from_db)()
@@ -625,6 +662,28 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Make sure the auto-start countdown is still armed for the room.
         if self.room_group_name not in _auto_next_tasks:
             await self._arm_auto_next_game()
+        await self.channel_layer.group_send(
+            self.room_group_name,
+            {'type': 'game_ended', 'payload': payload},
+        )
+
+    async def _replay_finalized_game_end(self, state, room):
+        """Re-broadcast the final result for a room that is already closed.
+
+        Used when a returning player lands on a completed/cancelled room whose
+        game was finalized earlier (leave, forfeit, or target reached): the
+        recorded result is replayed so the UI shows who won and why.
+        """
+        winner = state.get('winner')
+        if not winner:
+            return
+        reason = state.get('gameEndReason', 'state_update')
+        payload = game_ended_payload(
+            state, winner, state.get('winType', 'single'), reason, room
+        )
+        payload['matchOver'] = True
+        payload['nextGame'] = False
+        logger.info(f"WS replay finalized game_ended: room={self.room_id} winner={winner} reason={reason}")
         await self.channel_layer.group_send(
             self.room_group_name,
             {'type': 'game_ended', 'payload': payload},

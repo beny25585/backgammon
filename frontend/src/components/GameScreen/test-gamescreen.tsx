@@ -26,6 +26,7 @@ function makeMock(): GameContextType {
     blackName: null,
     isLoading: false,
     error: null,
+    clearError: () => {},
     openingRollResult: null,
     setOpeningRollResult: () => {},
     reconnected: false,
@@ -46,6 +47,7 @@ function makeMock(): GameContextType {
     endTurn: () => {},
     undoMove: () => {},
     giveUp: () => {},
+    leaveGame: () => {},
     noMovesMessage: null,
   };
 }

@@ -236,6 +236,47 @@
   color: #ff6b6b;
 }
 
+.errorCard {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  max-width: min(24rem, calc(100dvw - 2rem));
+  padding: 0.6rem 0.75rem 0.6rem 1rem;
+  border-radius: 12px;
+  background: rgba(30, 12, 14, 0.92);
+  border: 1px solid rgba(255, 107, 107, 0.5);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(8px);
+  color: #ffb3b3;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.errorCardClose {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(255, 107, 107, 0.2);
+  color: #ff6b6b;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.errorCardClose:hover {
+  background: rgba(255, 107, 107, 0.35);
+  color: #fff;
+}
+
 /* === Mobile portrait: fit board to viewport via dvh/dvw === */
 @media (width < 800px) {
   .container {

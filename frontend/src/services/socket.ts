@@ -137,6 +137,7 @@ export class GameSocketService {
   send(type: string, payload: unknown): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
+      clientLogger.info("Sending message", { type, payload });
     } else {
       clientLogger.warn(
         "WebSocket send skipped because socket is not connected",

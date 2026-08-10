@@ -11,6 +11,7 @@ interface FlyingCheckerProps {
   to: Point;
   color: "white" | "black";
   size: number;
+  committed?: boolean;
   onComplete: () => void;
 }
 
@@ -19,13 +20,23 @@ export default function FlyingChecker({
   to,
   color,
   size,
+  committed,
   onComplete,
 }: FlyingCheckerProps) {
+  if (committed) {
+    return (
+      <div
+        className={`${styles.flyer} ${color === "white" ? styles.white : styles.black}`}
+        style={{ top: to.y, left: to.x, width: size, height: size }}
+        data-testid="flying-checker"
+      />
+    );
+  }
   return (
     <motion.div
       initial={{ x: from.x, y: from.y, scale: 1, opacity: 1 }}
-      animate={{ x: to.x, y: to.y, scale: 0.85, opacity: 0.9 }}
-      transition={{ duration: 0.35, ease: [0.25, 0.1, 0.25, 1] }}
+      animate={{ x: to.x, y: to.y, scale: 1, opacity: 1 }}
+      transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
       onAnimationComplete={onComplete}
       className={`${styles.flyer} ${color === "white" ? styles.white : styles.black}`}
       style={{ top: 0, left: 0, width: size, height: size }}

@@ -12,6 +12,7 @@ interface PointCellProps {
   isLegalFrom: boolean;
   lastMoveFrom: Source | null;
   lastMoveTo: Target | null;
+  instantTarget?: Source | null;
   onClick: () => void;
 }
 
@@ -23,6 +24,7 @@ export default function PointCell({
   isLegalTarget,
   isLegalFrom,
   lastMoveTo,
+  instantTarget,
   onClick,
 }: PointCellProps) {
   const isLight = index % 2 === 0;
@@ -36,7 +38,7 @@ export default function PointCell({
         ? "black"
         : null;
 
-  const isMoveTarget = lastMoveTo === index;
+  const isMoveTarget = lastMoveTo === index || instantTarget === index;
 
   const displayedCount = Math.min(count, 5);
 
@@ -95,7 +97,7 @@ export default function PointCell({
           <Checker
             key={i}
             color={color!}
-            flyIn={i === newCheckerIndex}
+            instant={i === newCheckerIndex}
             label={i === 4 && count > 5 ? String(count) : undefined}
           />
         ))}

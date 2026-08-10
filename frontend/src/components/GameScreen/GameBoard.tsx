@@ -15,6 +15,9 @@ interface GameBoardProps {
   onLeave?: () => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
+  rollResult?: number[];
+  onRollLand?: () => void;
+  landing?: boolean;
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: import("../../lib/clock").TimeControl | null;
@@ -29,6 +32,9 @@ export default function GameBoard({
   onLeave,
   needsToRoll,
   onRoll,
+  rollResult,
+  onRollLand,
+  landing,
   clock,
   turnStartedAt,
   timeControl,
@@ -68,7 +74,7 @@ export default function GameBoard({
   }
 
   return (
-    <div className={styles.gameFrame}>
+    <div className={styles.gameFrame} data-testid="board-frame">
       <div className={styles.boardArea}>
         <Board
           state={state}
@@ -81,14 +87,19 @@ export default function GameBoard({
           onUndo={undoMove}
           onConfirm={endTurn}
         />
-        {state.phase !== "opening_roll" && state.phase === "moving" && state.remaining.length > 0 && (
+        {!landing && state.phase !== "opening_roll" && state.phase === "moving" && state.remaining.length > 0 && (
           <div className={styles.boardOverlay} data-testid="dice-overlay">
             <DiceRow dice={state.dice} remaining={state.remaining} color={state.turn} />
           </div>
         )}
         {needsToRoll && onRoll && (
           <div className={styles.boardRollPrompt} data-testid="roll-prompt">
-            <RollPrompt onRoll={onRoll} dark={playerColor === "black"} />
+            <RollPrompt
+              onRoll={onRoll}
+              landOn={rollResult}
+              onLand={onRollLand}
+              dark={playerColor === "black"}
+            />
           </div>
         )}
       </div>

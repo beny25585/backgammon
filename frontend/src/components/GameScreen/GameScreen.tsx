@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
@@ -15,6 +15,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     playerColor,
     isLoading,
     error,
+    clearError,
     makeMove,
     rollDice,
     openingRollResult,
@@ -34,16 +35,38 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     handleHome,
   } = useGame();
 
+  const [rollResult, setRollResult] = useState<number[] | undefined>(undefined);
+  const [landing, setLanding] = useState(false);
+
   const handleRoll = useCallback(() => {
+    setRollResult(undefined);
+    setLanding(true);
     rollDice();
   }, [rollDice]);
+
+  const handleOpeningRoll = useCallback(() => {
+    rollDice();
+  }, [rollDice]);
+
+  useEffect(() => {
+    // Once the server delivers dice during the roll, feed them to the prompt.
+    if (landing && state?.phase === "moving" && state.dice.length > 0) {
+      setRollResult(state.dice);
+    }
+  }, [landing, state?.phase, state?.dice]);
+
+  const handleRollLand = useCallback(() => {
+    setLanding(false);
+    setRollResult(undefined);
+  }, []);
 
   const isOpeningRoll = state?.phase === "opening_roll";
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
-    state?.phase === "rolling" &&
-    state?.remaining.length === 0 &&
-    state?.turn === playerColor;
+    (state?.phase === "rolling" &&
+      state?.remaining.length === 0 &&
+      state?.turn === playerColor) ||
+    (landing && state?.turn === playerColor);
 
   useEffect(() => {
     if (
@@ -60,16 +83,30 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     return <div className={styles.loading}>Connecting to game...</div>;
   }
 
-  if (error) {
-    return <div className={styles.error}>Error: {error}</div>;
-  }
-
   if (!state) {
+    if (error) {
+      return <div className={styles.error}>Error: {error}</div>;
+    }
     return <div className={styles.loading}>Initializing game...</div>;
   }
 
   return (
     <div className={styles.container}>
+      {error && (
+        <div className={styles.errorCard} data-testid="error-card" role="alert">
+          <span>Error: {error}</span>
+          <button
+            type="button"
+            className={styles.errorCardClose}
+            data-testid="error-card-close"
+            aria-label="Dismiss error"
+            onClick={clearError}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {gameResult && (
         <GameResultOverlay
           playerColor={playerColor}
@@ -79,6 +116,8 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
           cube={gameResult.cube}
           matchScore={gameResult.matchScore}
           matchTarget={gameResult.targetPoints}
+          matchOver={gameResult.matchOver}
+          reason={gameResult.reason}
           whiteName={whiteName}
           blackName={blackName}
           onNext={handleNextGame}
@@ -104,6 +143,9 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
             onLeave={onLeave}
             needsToRoll={needsToRoll}
             onRoll={handleRoll}
+            rollResult={rollResult}
+            onRollLand={handleRollLand}
+            landing={landing}
             clock={clock}
             turnStartedAt={turnStartedAt}
             timeControl={timeControl}
@@ -167,9 +209,11 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
               <div className={styles.overlayDim}>
                 <div className={styles.overlayCard}>
                   <RollPrompt
-                    onRoll={handleRoll}
+                    onRoll={handleOpeningRoll}
                     isOpening
                     dark={playerColor === "black"}
+                    landOn={orr?.myDie != null ? [orr.myDie] : undefined}
+                    onLand={() => {}}
                   />
                 </div>
               </div>

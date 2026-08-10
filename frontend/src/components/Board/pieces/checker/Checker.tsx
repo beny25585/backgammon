@@ -4,39 +4,22 @@ import styles from "./Checker.module.css";
 interface CheckerProps {
   color: "white" | "black";
   label?: string;
-  flyIn?: boolean;
+  instant?: boolean;
 }
 
-export default function Checker({ color, label, flyIn }: CheckerProps) {
+export default function Checker({ color, label, instant }: CheckerProps) {
   return (
     <motion.div
       layout
-      initial={
-        flyIn
-          ? {
-              scale: 0,
-              opacity: 0,
-              y: -60,
-            }
-          : {
-              scale: 0.5,
-              opacity: 0,
-              y: -8,
-            }
-      }
+      initial={instant ? false : { scale: 0.5, opacity: 0, y: -8 }}
       animate={{
         scale: 1,
         opacity: 1,
         y: 0,
       }}
       transition={
-        flyIn
-          ? {
-              type: "spring",
-              stiffness: 260,
-              damping: 16,
-              mass: 0.8,
-            }
+        instant
+          ? { duration: 0 }
           : {
               type: "spring",
               stiffness: 320,

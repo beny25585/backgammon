@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import { BAR, OFF } from "@/lib/backgammon/engine";
 import UndoButton from "./buttons/undobutton/UndoButton";
@@ -50,8 +50,34 @@ export function Board({
     toY: number;
     color: Color;
     size: number;
-    to: Target;
+    to: Source | Target;
+    undo?: boolean;
+    committed: boolean;
+    pending:
+      | { kind: "move"; historyLen: number }
+      | { kind: "undo"; historyLen: number };
   } | null>(null);
+
+  const [undoLanding, setUndoLanding] = useState<Source | null>(null);
+
+  useEffect(() => {
+    setUndoLanding(null);
+  }, [state.points]);
+
+  useEffect(() => {
+    if (!flyChecker?.committed) return;
+    const len = state.moveHistory?.length ?? 0;
+    const { kind, historyLen } = flyChecker.pending;
+    const landed =
+      kind === "move" ? len >= historyLen + 1 : len <= historyLen - 1;
+    if (landed) setFlyChecker(null);
+  }, [flyChecker, state.moveHistory]);
+
+  useEffect(() => {
+    if (!flyChecker?.committed) return;
+    const t = setTimeout(() => setFlyChecker(null), 1200);
+    return () => clearTimeout(t);
+  }, [flyChecker?.committed]);
 
   const lastMoveLast = useMemo(() => {
     const lm = state.lastMove;
@@ -61,6 +87,22 @@ export function Board({
   const displayTopPoints = myColor === "black" ? BOTTOM_POINTS : TOP_POINTS;
 
   const displayBottomPoints = myColor === "black" ? TOP_POINTS : BOTTOM_POINTS;
+
+  const computeSlotY = useCallback(
+    (el: HTMLElement, stackIndex: number, isTop: boolean, boardTop: number, checkerPx: number) => {
+      const rect = el.getBoundingClientRect();
+      const gap = 2;
+      const pad = 8; // 0.5rem top/bottom padding on the checker stack
+      // Returns the checker's TOP-LEFT corner so the flyer's translateY aligns.
+      return isTop
+        ? rect.top + pad + stackIndex * (checkerPx + gap) - boardTop
+        : rect.top +
+          rect.height -
+          (pad + stackIndex * (checkerPx + gap) + checkerPx) -
+          boardTop;
+    },
+    [],
+  );
 
   const triggerFly = useCallback(
     (from: Source, to: Target) => {
@@ -83,18 +125,91 @@ export function Board({
       const tRect = toEl.getBoundingClientRect();
       const checkerPx = getCheckerSize(board);
 
+      // The checker being moved leaves from the TOP of the source stack.
+      const fromCount =
+        typeof from === "number" ? Math.abs(state.points[from] ?? 0) : 0;
+      const fromStackIndex = Math.min(Math.max(fromCount - 1, 0), 4);
+      const isFromTop =
+        typeof from === "number" && displayTopPoints.includes(from);
+
+      // The checker lands on TOP of the destination stack (count + 1).
+      const toCount = typeof to === "number" ? Math.abs(state.points[to] ?? 0) : 0;
+      const toStackIndex = Math.min(toCount, 4);
+      const isToTop = typeof to === "number" && displayTopPoints.includes(to);
+
+      const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
+      const toY = computeSlotY(toEl, toStackIndex, isToTop, bRect.top, checkerPx);
+      const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
+      const fromY = computeSlotY(fromEl, fromStackIndex, isFromTop, bRect.top, checkerPx);
+
       setFlyChecker({
-        fromX: fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2,
-        fromY: fRect.top + fRect.height / 2 - bRect.top - checkerPx / 2,
-        toX: tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2,
-        toY: tRect.top + tRect.height / 2 - bRect.top - checkerPx / 2,
+        fromX,
+        fromY,
+        toX,
+        toY,
         color: myColor ?? "white",
         size: checkerPx,
         to,
+        committed: false,
+        pending: { kind: "move", historyLen: state.moveHistory?.length ?? 0 },
       });
     },
-    [myColor, onMove],
+    [myColor, onMove, state.points, displayTopPoints, computeSlotY],
   );
+
+  const handleUndo = useCallback(() => {
+    if (flyChecker) return;
+    const board = boardRef.current;
+    const last = lastMoveLast;
+    if (!board || !last) {
+      onUndo?.();
+      return;
+    }
+    const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${last.to}"]`);
+    const fromEl = board.querySelector<HTMLElement>(`[data-point-idx="${last.from}"]`);
+    if (!toEl || !fromEl) {
+      onUndo?.();
+      return;
+    }
+
+    const bRect = board.getBoundingClientRect();
+    const tRect = toEl.getBoundingClientRect();
+    const fRect = fromEl.getBoundingClientRect();
+    const checkerPx = getCheckerSize(board);
+
+    // Start from the TOP of the destination stack (the checker just moved there).
+    const toCount =
+      typeof last.to === "number" ? Math.abs(state.points[last.to] ?? 0) : 0;
+    const fromStackIndex = Math.min(Math.max(toCount - 1, 0), 4);
+    const isFromTop =
+      typeof last.to === "number" && displayTopPoints.includes(last.to);
+
+    // Land on TOP of the source stack after the checker returns (count + 1).
+    const fromCount =
+      typeof last.from === "number" ? Math.abs(state.points[last.from] ?? 0) : 0;
+    const toStackIndex = Math.min(fromCount, 4);
+    const isToTop =
+      typeof last.from === "number" && displayTopPoints.includes(last.from);
+
+    const toX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
+    const toY = computeSlotY(fromEl, toStackIndex, isToTop, bRect.top, checkerPx);
+    const fromX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
+    const fromY = computeSlotY(toEl, fromStackIndex, isFromTop, bRect.top, checkerPx);
+
+    setFlyChecker({
+      fromX,
+      fromY,
+      toX,
+      toY,
+      color: myColor ?? "white",
+      size: checkerPx,
+      to: last.from,
+      undo: true,
+      committed: false,
+      pending: { kind: "undo", historyLen: state.moveHistory?.length ?? 0 },
+    });
+    setUndoLanding(last.from);
+  }, [myColor, onUndo, state.points, displayTopPoints, computeSlotY, lastMoveLast, flyChecker]);
 
   function handleClick(idx: Source) {
     if (flyChecker) return;
@@ -139,6 +254,7 @@ export function Board({
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
+                  instantTarget={undoLanding}
                 />
               ))}
             </div>
@@ -154,6 +270,7 @@ export function Board({
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
+                  instantTarget={undoLanding}
                 />
               ))}
             </div>
@@ -181,6 +298,7 @@ export function Board({
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
+                  instantTarget={undoLanding}
                 />
               ))}
             </div>
@@ -196,6 +314,7 @@ export function Board({
                   onClick={() => handleClick(idx)}
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
+                  instantTarget={undoLanding}
                 />
               ))}
             </div>
@@ -212,9 +331,10 @@ export function Board({
         </div>
 
         {onUndo &&
+          state.turn === myColor &&
           state.moveHistory &&
           state.moveHistory.length > 0 &&
-          state.phase === "moving" && <UndoButton onClick={onUndo} />}
+          state.phase === "moving" && <UndoButton onClick={handleUndo} />}
         {onConfirm &&
           state.phase === "moving" &&
           state.turn === myColor &&
@@ -227,9 +347,17 @@ export function Board({
           to={{ x: flyChecker.toX, y: flyChecker.toY }}
           color={flyChecker.color}
           size={flyChecker.size}
+          committed={flyChecker.committed}
           onComplete={() => {
-            setFlyChecker(null);
-            onMove(flyChecker.to);
+            const { to, undo } = flyChecker;
+            setFlyChecker((prev) =>
+              prev ? { ...prev, committed: true } : prev,
+            );
+            if (undo) {
+              onUndo?.();
+            } else if (typeof to === "number" || to === "off") {
+              onMove(to);
+            }
           }}
         />
       )}

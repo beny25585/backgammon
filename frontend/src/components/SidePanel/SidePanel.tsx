@@ -19,7 +19,7 @@ interface SidePanelProps {
 
 export default function SidePanel({ state, playerColor, onLeave, clock, turnStartedAt, timeControl }: SidePanelProps) {
   const navigate = useNavigate();
-  const { giveUp, whiteName, blackName, matchScore } = useGame();
+  const { giveUp, leaveGame, whiteName, blackName, matchScore } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
 
   const opponentColor = playerColor === "white" ? "black" : "white";
@@ -33,7 +33,7 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
   const delayMs = timeControl?.delay ?? 0;
 
   return (
-    <div className={styles.panel}>
+    <div className={styles.panel} data-testid="side-panel">
       <div className={styles.section}>
         <PlayerRow
           color={opponentColor}
@@ -103,7 +103,13 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
         )}
 
         {onLeave && (
-          <button onClick={onLeave} className={styles.leaveBtn}>
+          <button
+            onClick={() => {
+              leaveGame();
+              onLeave();
+            }}
+            className={styles.leaveBtn}
+          >
             Leave
           </button>
         )}

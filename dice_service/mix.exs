@@ -6,7 +6,7 @@ defmodule DiceService.MixProject do
       app: :dice_service,
       version: "0.1.0",
       elixir: "~> 1.17",
-      start_permanent: Mix.env() == :prod,
+      start_permanent: Mix.env() == :dev,
       deps: deps(),
       description: description(),
       package: package()

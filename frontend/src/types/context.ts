@@ -15,6 +15,8 @@ export interface GameResult {
   cube: number;
   matchScore: Record<Color, number>;
   targetPoints: number;
+  matchOver?: boolean;
+  reason?: string;
 }
 
 export interface GameContextType {
@@ -24,6 +26,7 @@ export interface GameContextType {
   blackName: string | null;
   isLoading: boolean;
   error: string | null;
+  clearError: () => void;
   openingRollResult: OpeningRollResult | null;
   setOpeningRollResult: (result: OpeningRollResult | null) => void;
   reconnected: boolean;
@@ -44,5 +47,6 @@ export interface GameContextType {
   endTurn: () => void;
   undoMove: () => void;
   giveUp: () => void;
+  leaveGame: () => void;
   noMovesMessage: { dice: number[] } | null;
 }

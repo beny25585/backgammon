@@ -430,6 +430,8 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
 
   const updateState = useCallback((s: GameState) => setState(s), []);
 
+  const clearError = useCallback(() => setError(null), []);
+
   const handleTimeout = useCallback((color: Color) => {
     setState((prev) => {
       if (!prev || prev.phase === "game_over") return prev;
@@ -455,6 +457,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
         blackName: botColor === "black" ? "Bot" : null,
         isLoading,
         error,
+        clearError,
         openingRollResult,
         setOpeningRollResult,
         noMovesMessage,
@@ -476,6 +479,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
         endTurn,
         undoMove,
         giveUp: () => {},
+        leaveGame: () => {},
       }}
     >
       {children}

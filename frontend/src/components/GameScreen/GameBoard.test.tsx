@@ -34,10 +34,12 @@ interface MountProps {
   endTurn?: () => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
+  rollResult?: number[];
+  onRollLand?: () => void;
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
-  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll } = props;
+  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll, rollResult, onRollLand } = props;
   const component = await mount(
     <MockGameWrapper playerColor={playerColor} state={state}>
       <GameBoard
@@ -49,6 +51,8 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
         onLeave={() => {}}
         needsToRoll={needsToRoll}
         onRoll={onRoll}
+        rollResult={rollResult}
+        onRollLand={onRollLand}
       />
     </MockGameWrapper>,
   );
@@ -276,4 +280,46 @@ test("board point order is mirrored for the black player", async ({ mount }) => 
     5, 4, 3, 2, 1, 0,
     18, 19, 20, 21, 22, 23,
   ]);
+});
+
+test("doubling cube appears in the roll prompt on your turn", async ({ mount }) => {
+  const state = movingState({ phase: "rolling", dice: [], remaining: [], cube: 2, cubeOwner: "white" });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    needsToRoll: true,
+    onRoll: () => {},
+  });
+
+  await expect(component.getByTestId("roll-prompt")).toBeVisible();
+  await expect(component.getByTestId("roll-prompt").getByTestId("doubling-cube")).toBeVisible();
+});
+
+test("doubling cube is hidden when it is not your turn", async ({ mount }) => {
+  const state = movingState({ turn: "black", phase: "rolling", dice: [], remaining: [], cube: 2, cubeOwner: "black" });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    needsToRoll: true,
+    onRoll: () => {},
+  });
+
+  await expect(component.getByTestId("roll-prompt")).toBeVisible();
+  await expect(component.getByTestId("roll-prompt").getByTestId("doubling-cube")).toHaveCount(0);
+});
+
+test("roll prompt shows the actual dice result as landOn", async ({ mount }) => {
+  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
+  let landed = 0;
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    needsToRoll: true,
+    onRoll: () => {},
+    rollResult: [3, 5],
+    onRollLand: () => landed++,
+  });
+
+  await expect(component.getByTestId("roll-prompt")).toBeVisible();
+  await expect.poll(() => landed).toBeGreaterThanOrEqual(1);
 });

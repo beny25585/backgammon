@@ -1,7 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useGame } from "../services/gameContext";
 import { newGame } from "../lib/backgammon/engine";
 import { gameOverFixture } from "./fixtures";
+import { MockGameWrapper } from "./wrappers";
+import { makeGameState } from "./gameState";
+import GameScreen from "../components/GameScreen/GameScreen";
 
 export function ClockProbe() {
   const { clock, turnStartedAt } = useGame();
@@ -79,4 +82,22 @@ export function GameOverProbe() {
     updateState(gameOverFixture);
   }, [updateState]);
   return null;
+}
+
+export function MatchScoreProbe() {
+  const { matchScore } = useGame();
+  return <div data-testid="score">{JSON.stringify(matchScore)}</div>;
+}
+
+export function ErrorCardHarness() {
+  const [error, setError] = useState<string | null>("Cannot double");
+  return (
+    <MockGameWrapper
+      playerColor="white"
+      state={makeGameState({ phase: "rolling", turn: "white" })}
+      context={{ error, clearError: () => setError(null) }}
+    >
+      <GameScreen />
+    </MockGameWrapper>
+  );
 }

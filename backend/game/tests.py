@@ -1058,6 +1058,82 @@ class GameEndConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
+    async def test_leave_forfeits_and_closes_room(self):
+        # Unlike give_up (one game), leaving abandons the whole match even
+        # mid-match, so the room closes and the opponent is declared winner.
+        await self._set_target(5)
+        comm_white, comm_black = await self._connect_both()
+
+        await comm_white.send_json_to({"type": "leave", "payload": {}})
+
+        event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+        self.assertEqual(event["payload"]["winner"], "black")
+        self.assertEqual(event["payload"]["loser"], "white")
+        self.assertEqual(event["payload"]["reason"], "leave")
+        self.assertEqual(event["payload"]["matchOver"], True)
+        self.assertEqual(event["payload"]["nextGame"], False)
+
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.status, "completed")
+        self.assertEqual(self.room.black_score, 1)
+        match_count = await database_sync_to_async(
+            lambda: Match.objects.filter(room=self.room).count()
+        )()
+        self.assertEqual(match_count, 1)
+        match = await database_sync_to_async(
+            lambda: Match.objects.filter(room=self.room).first()
+        )()
+        self.assertEqual(match.winner, "black")
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_reconnect_to_closed_leave_room_replays_result(self):
+        await self._set_target(5)
+        comm_white, comm_black = await self._connect_both()
+
+        await comm_white.send_json_to({"type": "leave", "payload": {}})
+        await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+        # The winner returns to a completed room: the recorded result is
+        # replayed with the original reason and the room stays closed.
+        comm_re = self._make_communicator(self.black_user)
+        await comm_re.connect(timeout=10)
+        await comm_re.receive_json_from()  # state_update (initial)
+
+        event = await self._receive_until(comm_re, lambda e: e.get("type") == "game_ended")
+        self.assertEqual(event["payload"]["winner"], "black")
+        self.assertEqual(event["payload"]["reason"], "leave")
+        self.assertEqual(event["payload"]["matchOver"], True)
+        self.assertEqual(event["payload"]["nextGame"], False)
+
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.status, "completed")
+        match_count = await database_sync_to_async(
+            lambda: Match.objects.filter(room=self.room).count()
+        )()
+        self.assertEqual(match_count, 1)
+
+        await comm_re.disconnect()
+
+    async def test_leave_rejected_when_no_active_game(self):
+        comm_white, comm_black = await self._connect_both()
+        await comm_white.send_json_to({"type": "leave", "payload": {}})
+        await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+
+        # A second leave on the now-closed room is rejected.
+        await comm_white.send_json_to({"type": "leave", "payload": {}})
+        event = await self._receive_until(comm_white, lambda e: e.get("type") == "error")
+        self.assertIn("No active game", event["message"])
+
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.status, "completed")
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
     async def test_state_update_with_game_over_finalizes_room(self):
         await self._set_target(1)
         comm_white = self._make_communicator(self.white_user)

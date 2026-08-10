@@ -9,7 +9,6 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
-import { cancelRoom } from "./services/api";
 import AuthScreen from "./components/AuthScreen";
 import HomeScreen from "./components/HomeScreen";
 import WaitingRoom from "./components/WaitingRoom";
@@ -44,7 +43,8 @@ function GameRoute() {
     (new URLSearchParams(location.search).get("color") as Color) || "white";
 
   function handleLeave() {
-    cancelRoom().catch(() => {});
+    // The SidePanel Leave button sends the WS `leave` message (forfeit +
+    // close room) before calling this; we just leave the room view.
     clearRoom();
     navigate("/home", { replace: true });
   }

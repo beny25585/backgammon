@@ -246,6 +246,7 @@ export function GameProvider({
             blackScore?: number;
             targetPoints?: number;
             nextGameIn?: number;
+            matchOver?: boolean;
           };
           const winner = payload?.winner;
           const match = {
@@ -264,6 +265,8 @@ export function GameProvider({
             cube: payload.cube ?? 1,
             matchScore: match,
             targetPoints: payload.targetPoints ?? 0,
+            matchOver: payload.matchOver,
+            reason: payload.reason,
           });
           const nextGameIn =
             typeof payload.nextGameIn === "number" ? payload.nextGameIn : null;
@@ -372,7 +375,13 @@ export function GameProvider({
     endGame(opponent, "single", "give_up", current.cube || 1);
   }, [endGame, playerColor]);
 
+  const leaveGame = useCallback(() => {
+    socket.send("leave", {});
+  }, [socket]);
+
   const updateState = useCallback((s: GameState) => setState(s), []);
+
+  const clearError = useCallback(() => setError(null), []);
 
   const handleNextGame = useCallback(() => {
     setGameResult(null);
@@ -392,6 +401,7 @@ export function GameProvider({
         blackName,
         isLoading,
         error,
+        clearError,
         openingRollResult,
         setOpeningRollResult,
         noMovesMessage,
@@ -413,6 +423,7 @@ export function GameProvider({
         endTurn,
         undoMove,
         giveUp,
+        leaveGame,
       }}
     >
       {children}

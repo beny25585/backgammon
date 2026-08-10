@@ -13,6 +13,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": srcRoot,
+      "@animations": path.resolve(__dirname, "./src/components/animations"),
     },
   },
   optimizeDeps: {
@@ -20,6 +21,7 @@ export default defineConfig({
       resolve: {
         alias: {
           "@": srcRoot,
+          "@animations": path.resolve(__dirname, "./src/components/animations"),
         },
       },
     },

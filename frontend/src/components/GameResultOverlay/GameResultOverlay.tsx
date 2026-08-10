@@ -12,6 +12,8 @@ interface GameResultOverlayProps {
   matchScore: Record<Color, number>;
   matchTarget: number;
   matchWinner?: Color | null;
+  matchOver?: boolean;
+  reason?: string;
   whiteName?: string | null;
   blackName?: string | null;
   countdown?: number | null;
@@ -42,6 +44,8 @@ export default function GameResultOverlay({
   matchScore,
   matchTarget,
   matchWinner = null,
+  matchOver,
+  reason,
   whiteName = null,
   blackName = null,
   countdown,
@@ -50,8 +54,12 @@ export default function GameResultOverlay({
 }: GameResultOverlayProps) {
   const opponentColor = playerColor === "white" ? "black" : "white";
   const youWonGame = winner === playerColor;
+  // The server marks the match as over when the room is closed (target
+  // reached, or the opponent left/forfeited). Fall back to the score-vs-target
+  // heuristic only for callers that don't report `matchOver` (local games).
   const derivedMatchWinner: Color | null =
-    matchWinner ?? (matchScore[winner] >= matchTarget ? winner : null);
+    matchWinner ??
+    (matchOver === true || matchScore[winner] >= matchTarget ? winner : null);
   const isMatchOver = derivedMatchWinner !== null;
   const youWonMatch = derivedMatchWinner === playerColor;
 
@@ -112,6 +120,12 @@ export default function GameResultOverlay({
         </h2>
 
         <p className={styles.subtitle}>{label()}</p>
+
+        {reason === "leave" && (
+          <p className={styles.subtitle} data-testid="opponent-left-note">
+            Opponent left the match
+          </p>
+        )}
 
         <div className={styles.scoreboard}>
           {rows.map((row) => (

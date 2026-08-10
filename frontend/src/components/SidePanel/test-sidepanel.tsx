@@ -25,6 +25,7 @@ const mock: GameContextType = {
   blackName: null,
   isLoading: false,
   error: null,
+  clearError: () => {},
   openingRollResult: null,
   setOpeningRollResult: () => {},
   reconnected: false,
@@ -45,6 +46,7 @@ const mock: GameContextType = {
   endTurn: () => {},
   undoMove: () => {},
   giveUp: () => {},
+  leaveGame: () => {},
   noMovesMessage: null,
 };
 
