@@ -43,9 +43,16 @@
 }
 
 * {
+  max-width: 100dvw;
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 body {
@@ -55,11 +62,6 @@ body {
 
   background-color: var(--color-background);
   color: var(--color-foreground);
-}
-
-#root {
-  width: 100%;
-  min-height: 100vh;
 }
 
 @keyframes pulse-glow {

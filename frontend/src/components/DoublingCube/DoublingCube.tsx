@@ -23,7 +23,7 @@ const CUBE_COLORS: Record<number, string> = {
   64: "#e7bd72", // gold
 };
 
-const SIZES = { width: "clamp(32px, 5vw, 48px)", height: "clamp(32px, 5vw, 48px)" };
+const SIZES = { width: "clamp(32px, 13cqw, 48px)", height: "clamp(32px, 13cqw, 48px)" };
 
 interface DoublingCubeProps {
   value: number;

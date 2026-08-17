@@ -7,6 +7,7 @@ interface BarProps {
   myColor: Color | null;
   selected: boolean;
   isLegalFrom: boolean;
+  hideChecker?: "white" | "black" | null;
   onClick: () => void;
 }
 
@@ -14,6 +15,7 @@ export default function Bar({
   state,
   selected,
   isLegalFrom,
+  hideChecker,
   onClick,
 }: BarProps) {
   return (
@@ -21,13 +23,17 @@ export default function Bar({
       {(selected || isLegalFrom) && <div className={styles.highlight} />}
 
       <div className={styles.checkers}>
-        {Array.from({ length: state.bar.black }).map((_, i) => (
+        {Array.from({
+          length: Math.max(state.bar.black - (hideChecker === "black" ? 1 : 0), 0),
+        }).map((_, i) => (
           <Checker key={i} color="black" />
         ))}
       </div>
 
       <div className={styles.checkers}>
-        {Array.from({ length: state.bar.white }).map((_, i) => (
+        {Array.from({
+          length: Math.max(state.bar.white - (hideChecker === "white" ? 1 : 0), 0),
+        }).map((_, i) => (
           <Checker key={i} color="white" />
         ))}
       </div>

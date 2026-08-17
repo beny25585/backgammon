@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
-import { BAR, OFF } from "@/lib/backgammon/engine";
+import { BAR, OFF, legalMovesFrom, type Move } from "@/lib/backgammon/engine";
 import UndoButton from "./buttons/undobutton/UndoButton";
 import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
 import PointCell from "./pieces/pointcell/PointCell";
@@ -20,6 +20,7 @@ interface BoardProps {
   legalFromPoints: Source[];
   onUndo?: () => void;
   onConfirm?: () => void;
+  autoMove?: Move | null;
 }
 
 function getCheckerSize(board: HTMLElement): number {
@@ -40,6 +41,7 @@ export function Board({
   legalFromPoints,
   onUndo,
   onConfirm,
+  autoMove,
 }: BoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -48,6 +50,8 @@ export function Board({
     fromY: number;
     toX: number;
     toY: number;
+    from: Source | Target;
+    fromCount: number;
     color: Color;
     size: number;
     to: Source | Target;
@@ -127,7 +131,9 @@ export function Board({
 
       // The checker being moved leaves from the TOP of the source stack.
       const fromCount =
-        typeof from === "number" ? Math.abs(state.points[from] ?? 0) : 0;
+        typeof from === "number"
+          ? Math.abs(state.points[from] ?? 0)
+          : Math.abs(state.bar[myColor ?? "white"] ?? 0);
       const fromStackIndex = Math.min(Math.max(fromCount - 1, 0), 4);
       const isFromTop =
         typeof from === "number" && displayTopPoints.includes(from);
@@ -147,6 +153,8 @@ export function Board({
         fromY,
         toX,
         toY,
+        from,
+        fromCount,
         color: myColor ?? "white",
         size: checkerPx,
         to,
@@ -156,6 +164,13 @@ export function Board({
     },
     [myColor, onMove, state.points, displayTopPoints, computeSlotY],
   );
+
+  useEffect(() => {
+    if (!autoMove) return;
+    if (flyChecker) return;
+    triggerFly(autoMove.from, autoMove.to);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoMove]);
 
   const handleUndo = useCallback(() => {
     if (flyChecker) return;
@@ -179,7 +194,9 @@ export function Board({
 
     // Start from the TOP of the destination stack (the checker just moved there).
     const toCount =
-      typeof last.to === "number" ? Math.abs(state.points[last.to] ?? 0) : 0;
+      typeof last.to === "number"
+        ? Math.abs(state.points[last.to] ?? 0)
+        : Math.abs(state.bar[myColor ?? "white"] ?? 0);
     const fromStackIndex = Math.min(Math.max(toCount - 1, 0), 4);
     const isFromTop =
       typeof last.to === "number" && displayTopPoints.includes(last.to);
@@ -201,6 +218,8 @@ export function Board({
       fromY,
       toX,
       toY,
+      from: last.to,
+      fromCount: toCount,
       color: myColor ?? "white",
       size: checkerPx,
       to: last.from,
@@ -228,7 +247,16 @@ export function Board({
         onSelect(null);
       }
     } else if (legalFromPoints.includes(idx)) {
-      onSelect(idx);
+      if (myColor === null) return;
+      const targets = Array.from(
+        new Set(legalMovesFrom(state, idx, myColor).map((m) => m.to)),
+      );
+      if (targets.length === 1) {
+        onSelect(idx);
+        triggerFly(idx, targets[0]);
+      } else {
+        onSelect(idx);
+      }
     }
   }
 
@@ -255,6 +283,7 @@ export function Board({
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
                   instantTarget={undoLanding}
+                  hideTopChecker={!!flyChecker && flyChecker.from === idx && Math.abs(state.points[idx] ?? 0) === flyChecker.fromCount}
                 />
               ))}
             </div>
@@ -271,6 +300,7 @@ export function Board({
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
                   instantTarget={undoLanding}
+                  hideTopChecker={!!flyChecker && flyChecker.from === idx && Math.abs(state.points[idx] ?? 0) === flyChecker.fromCount}
                 />
               ))}
             </div>
@@ -282,6 +312,11 @@ export function Board({
             selected={selected === BAR}
             isLegalFrom={legalFromPoints.includes(BAR)}
             onClick={() => handleClick(BAR)}
+            hideChecker={
+              flyChecker && flyChecker.from === BAR && Math.abs(state.bar[flyChecker.color] ?? 0) === flyChecker.fromCount
+                ? flyChecker.color
+                : null
+            }
           />
 
           <div className={styles.column12}>
@@ -299,6 +334,7 @@ export function Board({
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
                   instantTarget={undoLanding}
+                  hideTopChecker={!!flyChecker && flyChecker.from === idx && Math.abs(state.points[idx] ?? 0) === flyChecker.fromCount}
                 />
               ))}
             </div>
@@ -315,6 +351,7 @@ export function Board({
                   lastMoveFrom={lastMoveLast?.from ?? null}
                   lastMoveTo={lastMoveLast?.to ?? null}
                   instantTarget={undoLanding}
+                  hideTopChecker={!!flyChecker && flyChecker.from === idx && Math.abs(state.points[idx] ?? 0) === flyChecker.fromCount}
                 />
               ))}
             </div>

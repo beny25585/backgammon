@@ -13,13 +13,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 9px 10px;
+  gap: clamp(1px, 0.5cqw, 2px);
+  padding: clamp(6px, 2.2cqw, 9px) clamp(6px, 2.5cqw, 10px);
   min-width: 0;
 }
 
 .label {
-  font-size: 8px;
+  font-size: clamp(7px, 2cqw, 8px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -30,7 +30,7 @@
 }
 
 .time {
-  font-size: 24px;
+  font-size: clamp(14px, 6cqw, 24px);
   font-weight: 900;
   font-variant-numeric: tabular-nums;
   line-height: 1;
@@ -78,14 +78,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: clamp(1px, 0.5cqw, 2px);
+  padding: clamp(5px, 2cqw, 8px) clamp(6px, 2.5cqw, 10px);
   border-left: 1px solid rgba(231, 189, 114, 0.2);
   border-right: 1px solid rgba(231, 189, 114, 0.2);
 }
 
 .delayLabel {
-  font-size: 8px;
+  font-size: clamp(7px, 2cqw, 8px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -94,9 +94,18 @@
 }
 
 .seconds {
-  font-size: 16px;
+  font-size: clamp(11px, 4cqw, 16px);
   font-weight: 800;
   color: #e7bd72;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+}
+
+@media (max-height: 360px) {
+  .side {
+    padding: 4px 6px;
+  }
+  .time {
+    font-size: 15px;
+  }
 }

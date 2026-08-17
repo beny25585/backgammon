@@ -21,18 +21,7 @@ export default function ConfirmButton({ onClick }: ConfirmButtonProps) {
       whileTap={{ scale: 0.95 }}
       title="Confirm and end your turn"
     >
-      <svg
-        width="18"
-        height="18"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#7cd69a"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <polyline points="20 6 9 17 4 12" />
-      </svg>
+      CONFIRM
     </motion.button>
   );
 }

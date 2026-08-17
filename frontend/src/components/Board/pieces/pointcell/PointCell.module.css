@@ -1,15 +1,3 @@
-.cell {
-  position: relative;
-
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-
-  overflow: hidden;
-
-  height: var(--point-h);
-}
-
 .point {
   position: relative;
 

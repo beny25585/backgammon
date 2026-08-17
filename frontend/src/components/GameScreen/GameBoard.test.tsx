@@ -36,10 +36,11 @@ interface MountProps {
   onRoll?: () => void;
   rollResult?: number[];
   onRollLand?: () => void;
+  respondToDouble?: (accept: boolean) => void;
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
-  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll, rollResult, onRollLand } = props;
+  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll, rollResult, onRollLand, respondToDouble } = props;
   const component = await mount(
     <MockGameWrapper playerColor={playerColor} state={state}>
       <GameBoard
@@ -53,6 +54,7 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
         onRoll={onRoll}
         rollResult={rollResult}
         onRollLand={onRollLand}
+        respondToDouble={respondToDouble}
       />
     </MockGameWrapper>,
   );
@@ -62,7 +64,7 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
 test("clicking a checker then a legal target calls makeMove", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
-    state: simpleWhiteState(),
+    state: movingState({ dice: [4, 3], remaining: [4, 3] }),
     playerColor: "white",
     makeMove: (from, to) => moveCalls.push([from, to]),
   });
@@ -72,6 +74,55 @@ test("clicking a checker then a legal target calls makeMove", async ({ mount }) 
 
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([23, 19]);
+});
+
+test("auto-moves on first tap when a checker has a single legal target", async ({ mount }) => {
+  const moveCalls: [Source, Target][] = [];
+  const component = await mountBoard(mount, {
+    state: simpleWhiteState(),
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+
+  await component.locator('[data-point-idx="23"]').click();
+
+  await expect.poll(() => moveCalls.length).toBe(1);
+  expect(moveCalls[0]).toEqual([23, 19]);
+});
+
+test("does not auto-move when a checker has multiple legal targets", async ({ mount }) => {
+  const moveCalls: [Source, Target][] = [];
+  const state = movingState({ dice: [4, 3], remaining: [4, 3] });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+
+  await component.locator('[data-point-idx="23"]').click();
+  await component.page().waitForTimeout(400);
+  expect(moveCalls.length).toBe(0);
+});
+
+test("source checker stays hidden during flight and reappears after", async ({ mount }) => {
+  const component = await mountBoard(mount, {
+    state: simpleWhiteState(),
+    playerColor: "white",
+  });
+
+  await component.locator('[data-point-idx="23"]').click();
+  await component.locator('[data-point-idx="19"]').click();
+
+  const sourceCheckers = component.locator('[data-point-idx="23"] [data-checker]');
+  const flyer = component.locator('[data-testid="flying-checker"]');
+
+  await expect(flyer).toHaveCount(1);
+  await expect(sourceCheckers).toHaveCount(0);
+
+  await component.page().waitForTimeout(1400);
+
+  await expect(flyer).toHaveCount(0);
+  await expect(sourceCheckers).toHaveCount(1);
 });
 
 test("no highlights and no moves when it is not the player's turn", async ({ mount }) => {
@@ -282,44 +333,22 @@ test("board point order is mirrored for the black player", async ({ mount }) => 
   ]);
 });
 
-test("doubling cube appears in the roll prompt on your turn", async ({ mount }) => {
-  const state = movingState({ phase: "rolling", dice: [], remaining: [], cube: 2, cubeOwner: "white" });
+test("banner shows Accept/Decline when opponent offers a double", async ({ mount }) => {
+  let accepted: boolean | null = null;
+  const state = movingState({
+    phase: "doubling_offered",
+    turn: "white",
+    doubleOfferedBy: "black",
+    cube: 2,
+    cubeOwner: "white",
+  });
   const component = await mountBoard(mount, {
     state,
     playerColor: "white",
-    needsToRoll: true,
-    onRoll: () => {},
+    respondToDouble: (a) => (accepted = a),
   });
 
-  await expect(component.getByTestId("roll-prompt")).toBeVisible();
-  await expect(component.getByTestId("roll-prompt").getByTestId("doubling-cube")).toBeVisible();
-});
-
-test("doubling cube is hidden when it is not your turn", async ({ mount }) => {
-  const state = movingState({ turn: "black", phase: "rolling", dice: [], remaining: [], cube: 2, cubeOwner: "black" });
-  const component = await mountBoard(mount, {
-    state,
-    playerColor: "white",
-    needsToRoll: true,
-    onRoll: () => {},
-  });
-
-  await expect(component.getByTestId("roll-prompt")).toBeVisible();
-  await expect(component.getByTestId("roll-prompt").getByTestId("doubling-cube")).toHaveCount(0);
-});
-
-test("roll prompt shows the actual dice result as landOn", async ({ mount }) => {
-  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
-  let landed = 0;
-  const component = await mountBoard(mount, {
-    state,
-    playerColor: "white",
-    needsToRoll: true,
-    onRoll: () => {},
-    rollResult: [3, 5],
-    onRollLand: () => landed++,
-  });
-
-  await expect(component.getByTestId("roll-prompt")).toBeVisible();
-  await expect.poll(() => landed).toBeGreaterThanOrEqual(1);
+  await expect(component.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "double");
+  await component.getByTestId("double-accept").click();
+  await expect.poll(() => accepted).toBe(true);
 });

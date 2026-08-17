@@ -1,14 +1,14 @@
 .container {
-  width: 100%;
-  height: 90dvh;
+  width: 100dvw;
+  height: 100dvh;
   display: grid;
   grid-template: 1fr / 1fr;
   background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
   padding: 0;
-  --point-h: clamp(105px, 24dvh, 200px);
-  --bar-w: clamp(30px, 4dvw, 60px);
-  --bearoff-w: clamp(22px, 5dvw, 80px);
-  --checker: clamp(20px, 2.8dvw, 80px);
+  /* Sizes scale with the board's own width (.wrapper is the cqw container) */
+  --checker: max(16px, 4cqw);
+  --bar-w: max(16px, 3cqw);
+  --bearoff-w: max(16px, 3cqw);
 }
 
 /* === Board + Side Panel outer frame === */
@@ -27,23 +27,14 @@
   container-type: inline-size;
 }
 
-/* === Landscape mobile: scale down board + sidepanel === */
-@media (max-width: 900px) and (orientation: landscape) {
-  .gameFrame {
-    width: 100vw;
-    height: 100vh;
-    transform: scale(0.75);
-    transform-origin: center center;
-  }
-}
-
 /* === Mobile portrait: fit board to viewport via dvh/dvw === */
 
 .boardArea {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  min-width: 0;
+  width: 100%;
   height: 100%;
+  min-width: 0;
   position: relative;
 }
 
@@ -63,7 +54,7 @@
 .inner {
   height: 100%;
   display: grid;
-  grid-template-columns: 1fr auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
   border-radius: 8px;
   overflow: hidden;
@@ -74,11 +65,12 @@
 .column12 {
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 0;
 }
 
 .row6 {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
 .wrapper {
@@ -86,6 +78,7 @@
   height: 100%;
   overflow: hidden;
   position: relative;
+  container-type: inline-size;
 }
 
 .boardOverlay {
@@ -182,6 +175,9 @@
   box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
   pointer-events: none;
   white-space: nowrap;
+  max-width: calc(100dvw - 1rem);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .overlayDim {
@@ -277,35 +273,43 @@
   color: #fff;
 }
 
-/* === Mobile portrait: fit board to viewport via dvh/dvw === */
-@media (width < 800px) {
+/* === Small portrait screens: stack board above side panel === */
+@media (width < 800px) and (orientation: landscape) {
   .container {
-    --point-h: 0.5rem;
-    --bar-w: 0.5rem;
-    --bearoff-w: 0.5rem;
-    --checker: 1rem;
-    --board-aspect: 1.25;
-    width: 100dvw;
-    height: 100dvh;
+    /* Sizes scale with the board's own width (.wrapper is the cqw container) */
+    --checker: max(5px, 4cqw);
+    --bar-w: max(16px, 3cqw);
+    --bearoff-w: max(16px, 3cqw);
+  }
+
+  .gameFrame {
+    width: 100%;
+    height: 100%;
+  }
+}
+
+@media (width < 800px) and (orientation: portrait) {
+  .container {
+    /* Sizes scale with the board's own width (.wrapper is the cqw container) */
+    --checker: max(20px, 4cqw);
+    --bar-w: max(20px, 3cqw);
+    --bearoff-w: max(20px, 3cqw);
   }
 
   .gameFrame {
     grid-template-columns: 1fr;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-
-  .wrapper {
-    height: auto;
+    grid-template-rows: auto;
+    margin: auto;
     width: 100%;
-    max-width: calc(100dvh * var(--board-aspect));
-    aspect-ratio: var(--board-aspect);
-    margin-inline: auto;
-    align-self: start;
+    height: 90%;
   }
-
   .sidePanel {
+
     border-left: none;
     border-top: 1px solid rgba(201, 169, 97, 0.2);
-    overflow-y: auto;
+  }
+  .boardArea {
+    width: 100%;
+    height: 50vh;
   }
 }

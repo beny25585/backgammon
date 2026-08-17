@@ -9,7 +9,7 @@ interface ControlsProps {
 }
 
 export default function Controls({ playerColor, state }: ControlsProps) {
-  const { offerDouble, respondToDouble } = useGame();
+  const { offerDouble } = useGame();
   const isPlayerTurn = state.turn === playerColor;
   const canDouble =
     state.phase === "rolling" && isPlayerTurn;
@@ -26,24 +26,6 @@ export default function Controls({ playerColor, state }: ControlsProps) {
         >
           ✕2 Double
         </button>
-      )}
-
-      {state.phase === "doubling_offered" && !isPlayerTurn && (
-        <div className={styles.doublePrompt}>
-          <span>Opponent offers double!</span>
-          <button
-            className={`${styles.btn} ${styles.accept}`}
-            onClick={() => respondToDouble(true)}
-          >
-            Accept
-          </button>
-          <button
-            className={`${styles.btn} ${styles.reject}`}
-            onClick={() => respondToDouble(false)}
-          >
-            Decline
-          </button>
-        </div>
       )}
     </div>
   );

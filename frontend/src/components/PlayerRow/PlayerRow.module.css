@@ -1,9 +1,9 @@
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 12px;
+  gap: clamp(6px, 2.5cqw, 10px);
+  padding: clamp(6px, 2.5cqw, 10px) clamp(8px, 3cqw, 12px);
+  border-radius: clamp(10px, 3cqw, 12px);
   border: 1px solid transparent;
   transition: background 0.18s, border-color 0.18s, box-shadow 0.18s;
 }
@@ -26,8 +26,8 @@
 }
 
 .avatar {
-  width: 30px;
-  height: 30px;
+  width: clamp(22px, 8cqw, 30px);
+  height: clamp(22px, 8cqw, 30px);
   border-radius: 50%;
   flex-shrink: 0;
   border: 1px solid rgba(231, 189, 114, 0.25);
@@ -48,7 +48,7 @@
 
 .name {
   display: block;
-  font-size: 12px;
+  font-size: clamp(10px, 3.2cqw, 12px);
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -61,18 +61,18 @@
 
 .chips {
   display: flex;
-  gap: 6px;
+  gap: clamp(4px, 1.5cqw, 6px);
   flex-wrap: wrap;
-  margin-top: 4px;
+  margin-top: clamp(2px, 1cqw, 4px);
 }
 
 .chip {
-  padding: 4px 9px;
+  padding: clamp(3px, 1.5cqw, 4px) clamp(6px, 2.2cqw, 9px);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: rgba(247, 241, 231, 0.8);
-  font-size: 11px;
+  font-size: clamp(9px, 2.8cqw, 11px);
   font-weight: 600;
 }
 
@@ -84,7 +84,7 @@
 }
 
 .score {
-  font-size: 20px;
+  font-size: clamp(15px, 5cqw, 20px);
   font-weight: 900;
   color: #e7bd72;
   letter-spacing: 0.08em;
@@ -99,7 +99,7 @@
 }
 
 .turnBadge {
-  font-size: 9px;
+  font-size: clamp(8px, 2.4cqw, 9px);
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -111,16 +111,16 @@
   color: #e7bd72;
 }
 
-@media (max-width: 767px) {
+@media (max-height: 360px) {
   .row {
-    padding: 8px 10px;
+    gap: 5px;
+    padding: 3px 8px;
   }
-
-  .name {
-    font-size: 11px;
+  .avatar {
+    width: 20px;
+    height: 20px;
   }
-
-  .score {
-    font-size: 17px;
+  .chips {
+    margin-top: 1px;
   }
 }

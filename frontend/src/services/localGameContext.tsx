@@ -105,6 +105,18 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
     [botColor],
   );
 
+  // After the opening roll decides who starts, advance from the result
+  // banner phase to "rolling" so the first player can roll their dice.
+  const advanceToRolling = useCallback(() => {
+    setTimeout(() => {
+      setState((prev) =>
+        prev.phase === "opening_result"
+          ? { ...prev, phase: "rolling" as const }
+          : prev,
+      );
+    }, 2000);
+  }, []);
+
   // ── Match tracking ─────────────────────────────────────────────
 
   const [matchScore, setMatchScore] = useState<Record<Color, number>>({ white: 0, black: 0 });
@@ -255,6 +267,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
               winner,
             });
             setTimeout(() => setOpeningRollResult(null), 3500);
+            advanceToRolling();
             setTurnColor(next.turn);
             return next;
           });
@@ -332,6 +345,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
               winner,
             });
             setTimeout(() => setOpeningRollResult(null), 3500);
+            advanceToRolling();
             setTurnColor(next.turn);
             return next;
           });

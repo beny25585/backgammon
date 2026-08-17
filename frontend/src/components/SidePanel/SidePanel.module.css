@@ -1,11 +1,12 @@
 .panel {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
+  gap: clamp(8px, 3.5cqw, 14px);
+  padding: clamp(8px, 4cqw, 16px);
   background: rgba(8, 23, 27, 0.88);
   border-left: 1px solid rgba(231, 189, 114, 0.18);
   overflow-y: auto;
+  container-type: inline-size;
 }
 
 .section,
@@ -16,21 +17,23 @@
 .actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(6px, 2cqw, 8px);
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: clamp(8px, 3cqw, 12px);
   border-top: 1px solid rgba(231, 189, 114, 0.14);
 }
 
 .resignBtn,
 .leaveBtn {
-  min-height: 44px;
-  padding: 0 14px;
-  border-radius: 12px;
-  font-size: 13px;
+  min-height: clamp(40px, 11.5cqw, 44px);
+  padding: 0 clamp(10px, 3.5cqw, 14px);
+  border-radius: clamp(10px, 3cqw, 12px);
+  font-size: clamp(12px, 3.4cqw, 13px);
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.18s, background 0.18s;
+  transition:
+    transform 0.18s,
+    background 0.18s;
 }
 
 .resignBtn {
@@ -46,9 +49,10 @@
 
 .resignConfirm {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: clamp(6px, 2cqw, 8px);
+  padding: clamp(8px, 2.6cqw, 10px) clamp(10px, 3cqw, 12px);
   border-radius: 14px;
   background: rgba(255, 107, 107, 0.1);
   border: 1px solid rgba(255, 107, 107, 0.24);
@@ -57,18 +61,18 @@
 .resignText {
   flex: 1;
   color: #ff8f8f;
-  font-size: 13px;
+  font-size: clamp(12px, 3.4cqw, 13px);
   font-weight: 700;
   text-align: center;
 }
 
 .confirmYes,
 .confirmNo {
-  min-height: 32px;
-  padding: 0 12px;
-  border-radius: 10px;
+  min-height: clamp(30px, 8.5cqw, 32px);
+  padding: 0 clamp(10px, 3cqw, 12px);
+  border-radius: clamp(8px, 2.5cqw, 10px);
   border: 0;
-  font-size: 12px;
+  font-size: clamp(11px, 3.2cqw, 12px);
   font-weight: 700;
   cursor: pointer;
 }
@@ -95,23 +99,39 @@
   background: rgba(255, 255, 255, 0.07);
 }
 
-@media (max-width: 767px) {
-  .panel {
-    border-left: 0;
-    border-top: 1px solid rgba(231, 189, 114, 0.18);
-  }
-
-  .resignConfirm {
-    flex-wrap: wrap;
-  }
-
-  .resignText {
-    width: 100%;
-  }
-
+@container (max-width: 220px) {
   .confirmYes,
   .confirmNo {
     flex: 1;
   }
 }
 
+/* === Stacked on small portrait: panel sits below the board === */
+@media (width < 800px) and (orientation: portrait) and (min-height: 500px) {
+  .panel {
+    gap: clamp(6px, 2.5cqw, 10px);
+    border-left: none;
+    border-top: 1px solid rgba(231, 189, 114, 0.18);
+  }
+}
+
+@media (max-height: 360px) {
+  .panel {
+    gap: 5px;
+    padding: 5px;
+  }
+  .actions {
+    gap: 3px;
+    padding-top: 4px;
+  }
+  .resignBtn,
+  .leaveBtn {
+    min-height: 26px;
+    font-size: 12px;
+  }
+  .confirmYes,
+  .confirmNo {
+    min-height: 22px;
+    font-size: 11px;
+  }
+}

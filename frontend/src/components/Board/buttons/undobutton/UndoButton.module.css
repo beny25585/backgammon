@@ -1,13 +1,13 @@
 .button {
   position: absolute;
-  left: 31%;
+  left: 10%;
   top: 50%;
   z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 6vmin;
-  height: 6vmin;
+  width: clamp(80px, 12vw, 120px);
+  height: clamp(20px, 5vw, 50px);
   border: 0.4vmin solid rgba(231, 189, 114, 0.58);
   border-radius: 9999px;
   background: linear-gradient(
@@ -22,6 +22,9 @@
   cursor: pointer;
   outline: none;
   transform: translate(-50%, -50%);
+  color: #ffff;
+  font-size: clamp(12px, 2.5vw, 20px);
+  font-weight: 600;
 }
 
 .button:hover {

@@ -13,6 +13,7 @@ interface PointCellProps {
   lastMoveFrom: Source | null;
   lastMoveTo: Target | null;
   instantTarget?: Source | null;
+  hideTopChecker?: boolean;
   onClick: () => void;
 }
 
@@ -25,6 +26,7 @@ export default function PointCell({
   isLegalFrom,
   lastMoveTo,
   instantTarget,
+  hideTopChecker,
   onClick,
 }: PointCellProps) {
   const isLight = index % 2 === 0;
@@ -42,7 +44,9 @@ export default function PointCell({
 
   const displayedCount = Math.min(count, 5);
 
-  const newCheckerIndex = isMoveTarget ? displayedCount - 1 : -1;
+  const renderCount = hideTopChecker ? Math.max(displayedCount - 1, 0) : displayedCount;
+
+  const newCheckerIndex = isMoveTarget ? renderCount - 1 : -1;
 
   return (
     <motion.button
@@ -93,7 +97,7 @@ export default function PointCell({
       )}
 
       <div className={top ? styles.checkersTop : styles.checkersBottom}>
-        {Array.from({ length: displayedCount }).map((_, i) => (
+        {Array.from({ length: renderCount }).map((_, i) => (
           <Checker
             key={i}
             color={color!}

@@ -4,7 +4,7 @@ import { MockGameWrapper } from "../../test-utils/wrappers";
 import { makeGameState } from "../../test-utils/gameState";
 import { ErrorCardHarness } from "../../test-utils/probes";
 
-test("opening result overlay shows both dice and the winner", async ({
+test("opening result shows 'You go first!' in the guidance banner", async ({
   mount,
 }) => {
   const component = await mount(
@@ -15,20 +15,18 @@ test("opening result overlay shows both dice and the winner", async ({
         turn: "white",
         openingRoll: { white: 5, black: 3 },
       })}
-      context={{
-        openingRollResult: { myDie: 5, opponentDie: 3, winner: "white" },
-      }}
     >
       <GameScreen />
     </MockGameWrapper>,
   );
+  await expect(component.getByTestId("guidance-banner")).toHaveAttribute(
+    "data-variant",
+    "opening",
+  );
   await expect(component.getByText("You go first!")).toBeVisible();
-  await expect(
-    component.getByTestId("opening-result-overlay").getByText("Opponent"),
-  ).toBeVisible();
 });
 
-test("opening roll prompt appears for the player whose turn it is", async ({
+test("opening roll prompt appears in the banner for the player whose turn it is", async ({
   mount,
 }) => {
   const component = await mount(
@@ -43,10 +41,11 @@ test("opening roll prompt appears for the player whose turn it is", async ({
       <GameScreen />
     </MockGameWrapper>,
   );
+  await expect(component.getByText("Roll to start")).toBeVisible();
   await expect(component.getByText("Tap to roll")).toBeVisible();
 });
 
-test("roll prompt appears after a server auto-pass (stale dice in rolling state)", async ({
+test("banner shows the roll prompt after a server auto-pass (stale dice in rolling state)", async ({
   mount,
 }) => {
   const component = await mount(
@@ -61,6 +60,10 @@ test("roll prompt appears after a server auto-pass (stale dice in rolling state)
     >
       <GameScreen />
     </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("guidance-banner")).toHaveAttribute(
+    "data-variant",
+    "roll",
   );
   await expect(component.getByText("Tap to roll")).toBeVisible();
 });

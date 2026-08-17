@@ -50,6 +50,29 @@ test("opening roll fetches a dice pair from the Django server", async ({ mount, 
   expect(requests[0]).toContain("type=opening");
 });
 
+test("after the opening roll the first player can roll (phase advances to rolling)", async ({ mount, page }) => {
+  await page.route("**/api/dice/roll/**", async (route) => {
+    await route.fulfill({ json: { dice: [4, 3] } });
+  });
+
+  const component = await mount(
+    <LocalGameProvider matchTarget={1}>
+      <GameProbe from={0} to={0} />
+    </LocalGameProvider>,
+  );
+
+  await component.getByTestId("roll").click();
+  await component.getByTestId("roll").click();
+  await expect(component.getByTestId("opening-result")).toHaveText(
+    '{"myDie":4,"opponentDie":3,"winner":"white"}',
+  );
+
+  await expect(component.getByTestId("phase")).toHaveText("rolling", {
+    timeout: 5000,
+  });
+  expect(await component.getByTestId("phase").textContent()).toBe("rolling");
+});
+
 test("normal turn roll fetches dice from the Django server", async ({ mount, page }) => {
   const requests: string[] = [];
   await page.route("**/api/dice/roll/**", async (route) => {

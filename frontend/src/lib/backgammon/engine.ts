@@ -358,6 +358,21 @@ export function allLegalMoves(state: GameState, color: Color): Move[] {
   return allMoves;
 }
 
+/**
+ * If `color` has exactly one legal placement available, return a matching
+ * move. Otherwise return null. Multiple dice that land on the same point
+ * (e.g. bearing off with either die) still count as a single placement.
+ */
+export function getForcedMove(
+  state: GameState,
+  color: Color,
+): Move | null {
+  const moves = allLegalMoves(state, color);
+  const placements = new Set(moves.map((m) => `${m.from}->${m.to}`));
+  if (placements.size !== 1) return null;
+  return moves[0];
+}
+
 // ============================================================
 // Apply a single move
 // ============================================================

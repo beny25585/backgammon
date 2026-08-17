@@ -79,6 +79,7 @@ interface RollingDieProps {
   variant?: "pips" | "value";
   value?: number;
   valueColor?: string;
+  size?: string;
   landOn?: number[];
   spins?: boolean;
   onRollComplete?: () => void;
@@ -92,6 +93,7 @@ export default function RollingDie({
   dark,
   variant = "pips",
   valueColor,
+  size,
   landOn,
   spins = false,
   onRollComplete,
@@ -115,8 +117,8 @@ export default function RollingDie({
             onAnimationComplete={hasTarget ? onRollComplete : undefined}
             data-testid="rolling-die"
             style={{
-              width: "clamp(64px, 14vw, 88px)",
-              height: "clamp(64px, 14vw, 88px)",
+              width: size ?? "clamp(64px, 14vw, 88px)",
+              height: size ?? "clamp(64px, 14vw, 88px)",
               transformStyle: "preserve-3d",
             }}
             animate={

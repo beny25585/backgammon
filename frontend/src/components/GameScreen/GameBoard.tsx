@@ -2,8 +2,9 @@ import { useState, useMemo, useEffect } from "react";
 import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
+import GuidanceBanner from "../GuidanceBanner";
 import { DiceRow, RollPrompt } from "../Dice";
-import { allLegalMoves, legalMovesFrom, type Source, type Target } from "@/lib/backgammon/engine";
+import { allLegalMoves, legalMovesFrom, getForcedMove, type Source, type Target, type Move } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 
 interface GameBoardProps {
@@ -18,6 +19,7 @@ interface GameBoardProps {
   rollResult?: number[];
   onRollLand?: () => void;
   landing?: boolean;
+  respondToDouble?: (accept: boolean) => void;
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: import("../../lib/clock").TimeControl | null;
@@ -35,11 +37,13 @@ export default function GameBoard({
   rollResult,
   onRollLand,
   landing,
+  respondToDouble,
   clock,
   turnStartedAt,
   timeControl,
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
+  const [autoMove, setAutoMove] = useState<Move | null>(null);
 
   const isMyTurn = state.turn === playerColor && state.phase === "moving";
 
@@ -63,13 +67,34 @@ export default function GameBoard({
     return Array.from(unique);
   }, [state, selected, playerColor, isMyTurn]);
 
+  useEffect(() => {
+    if (!isMyTurn || state.remaining.length === 0) {
+      setAutoMove(null);
+      return;
+    }
+    const forced = getForcedMove(state, playerColor);
+    if (!forced) {
+      setAutoMove(null);
+      return;
+    }
+    const key = `${forced.from}->${forced.to}`;
+    const t = setTimeout(() => {
+      setAutoMove((prev) => {
+        if (prev && `${prev.from}->${prev.to}` === key) return prev;
+        return forced;
+      });
+    }, 800);
+    return () => clearTimeout(t);
+  }, [state, playerColor, isMyTurn]);
+
   function handleSelect(from: Source | null) {
     setSelected(from);
   }
 
   function handleMove(to: Target) {
-    if (selected === null) return;
-    makeMove(selected, to);
+    const from = selected ?? (autoMove?.to === to ? autoMove.from : null);
+    if (from === null) return;
+    makeMove(from, to);
     setSelected(null);
   }
 
@@ -86,6 +111,7 @@ export default function GameBoard({
           legalFromPoints={legalFromPoints}
           onUndo={undoMove}
           onConfirm={endTurn}
+          autoMove={autoMove}
         />
         {!landing && state.phase !== "opening_roll" && state.phase === "moving" && state.remaining.length > 0 && (
           <div className={styles.boardOverlay} data-testid="dice-overlay">
@@ -102,6 +128,11 @@ export default function GameBoard({
             />
           </div>
         )}
+        <GuidanceBanner
+          state={state}
+          playerColor={playerColor}
+          respondToDouble={respondToDouble ?? (() => {})}
+        />
       </div>
       <SidePanel
         state={state}
