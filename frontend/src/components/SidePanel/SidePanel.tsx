@@ -34,7 +34,8 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
 
   return (
     <div className={styles.panel} data-testid="side-panel">
-      <div className={styles.section}>
+      <div className={styles.playersRow}>
+        <div className={styles.section}>
         <PlayerRow
           color={opponentColor}
           state={state}
@@ -55,6 +56,8 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
           score={matchScore?.[playerColor] ?? 0}
         />
       </div>
+      </div>
+      
 
       <div className={styles.section}>
         <Clock
