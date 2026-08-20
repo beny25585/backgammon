@@ -353,6 +353,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if action == 'roll':
             result = await self._handle_roll_intent(engine)
+            logger.info(f"[roll] result success={result.get('success')} msg={result.get('message')}")
         elif action == 'move':
             result = engine.make_move(
                 intent.get('from'), intent.get('to'), self.player_color
@@ -382,9 +383,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             return await self._send_error(f'Unknown action: {action}')
 
         if not result.get('success'):
+            logger.info(f"[intent] FAILED action={action} msg={result.get('message')}")
             return await self._send_error(result.get('message', 'Action rejected'))
 
         state = engine.state
+        logger.info(f"[intent] OK action={action} phase={state.get('phase')} turn={state.get('turn')} dice={state.get('dice')} remaining={state.get('remaining')}")
         sequence = await record_event_and_advance(room, self.player_color, action, state)
         state['version'] = sequence
 

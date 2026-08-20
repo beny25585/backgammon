@@ -1,4 +1,11 @@
-import { useCallback, useState, useEffect, useRef, type ReactNode } from "react";
+import {
+  useCallback,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import type { GameResult, OpeningRollResult } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import { saveMatch, fetchDice } from "../services/api";
@@ -12,18 +19,24 @@ import {
   undoLastMove,
   allLegalMoves,
   OFF,
-  type Source, type Target,
+  type Source,
+  type Target,
 } from "@/lib/backgammon/engine";
 import { chooseMove } from "@/lib/bot/chooseMove";
 import { GameContext } from "./gameContext";
 import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
 import { useLocalClock } from "../hooks/useLocalClock";
 import type { TimeControl } from "../lib/clock";
+import { clientLogger } from "./logger";
 
 function extractTranscript(state: GameState) {
   const history = state.moveHistory;
   if (!history || history.length === 0) return [];
-  const turns: Array<{ turn: string; roll: number[]; moves: Array<{ from: unknown; to: unknown }> }> = [];
+  const turns: Array<{
+    turn: string;
+    roll: number[];
+    moves: Array<{ from: unknown; to: unknown }>;
+  }> = [];
   let current: (typeof turns)[0] | null = null;
   for (let i = 0; i < history.length; i++) {
     const entry = history[i];
@@ -52,19 +65,32 @@ interface LocalGameProviderProps {
 
 const BOT_DELAY = 1000;
 
-export function LocalGameProvider({ children, botColor, matchTarget = 7, timeControl, onQuitMatch }: LocalGameProviderProps) {
+export function LocalGameProvider({
+  children,
+  botColor,
+  matchTarget = 7,
+  timeControl,
+  onQuitMatch,
+}: LocalGameProviderProps) {
   const [state, setState] = useState<GameState>(() => newGame());
-  const humanColor: Color = botColor ? (botColor === "white" ? "black" : "white") : "white";
+  const humanColor: Color = botColor
+    ? botColor === "white"
+      ? "black"
+      : "white"
+    : "white";
   const [playerColor, setPlayerColor] = useState<Color>(humanColor);
   const [isLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [openingRollResult, setOpeningRollResult] = useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] = useState<{ dice: number[] } | null>(null);
+  const [openingRollResult, setOpeningRollResult] =
+    useState<OpeningRollResult | null>(null);
+  const [noMovesMessage, setNoMovesMessage] = useState<{
+    dice: number[];
+  } | null>(null);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
   const stateRef = useRef(state);
-  useEffect(() => {
+  useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);
 
@@ -76,17 +102,20 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
   const openingDiceRef = useRef<[number, number] | null>(null);
   const rollingRef = useRef(false);
 
-  const getOpeningDie = useCallback(async (color: Color): Promise<number | null> => {
-    try {
-      if (!openingDiceRef.current) {
-        openingDiceRef.current = await fetchDice("opening");
+  const getOpeningDie = useCallback(
+    async (color: Color): Promise<number | null> => {
+      try {
+        if (!openingDiceRef.current) {
+          openingDiceRef.current = await fetchDice("opening");
+        }
+        return openingDiceRef.current[color === "white" ? 0 : 1];
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Dice service unavailable");
+        return null;
       }
-      return openingDiceRef.current[color === "white" ? 0 : 1];
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Dice service unavailable");
-      return null;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const getTurnDice = useCallback(async (): Promise<number[] | null> => {
     try {
@@ -108,6 +137,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
   // After the opening roll decides who starts, advance from the result
   // banner phase to "rolling" so the first player can roll their dice.
   const advanceToRolling = useCallback(() => {
+    clientLogger.debug("[advanceToRolling] scheduled");
     setTimeout(() => {
       setState((prev) =>
         prev.phase === "opening_result"
@@ -119,13 +149,18 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
 
   // ── Match tracking ─────────────────────────────────────────────
 
-  const [matchScore, setMatchScore] = useState<Record<Color, number>>({ white: 0, black: 0 });
+  const [matchScore, setMatchScore] = useState<Record<Color, number>>({
+    white: 0,
+    black: 0,
+  });
   const [matchWinner, setMatchWinner] = useState<Color | null>(null);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
 
   // Auto-advance to next game after 30s
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(null);
+  const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
+    null,
+  );
   const savedMatchRef = useRef(false);
 
   const MATCH_TARGET = matchTarget;
@@ -154,11 +189,7 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
     setPrevPhase(state.phase);
     if (state.phase === "game_over" && state.winner && gameResult === null) {
       const base =
-        state.winType === "single"
-          ? 1
-          : state.winType === "gammon"
-            ? 2
-            : 3;
+        state.winType === "single" ? 1 : state.winType === "gammon" ? 2 : 3;
       const points = base * (state.cube || 1);
 
       setGameResult({
@@ -231,13 +262,21 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
       white_score: matchScore.white,
       black_score: matchScore.black,
       winner: matchWinner,
-      games: [{
-        game_number: 1,
-        winner: state.winner,
-        win_type: state.winType || "single",
-        points_awarded: (state.cube || 1) * (state.winType === "gammon" ? 2 : state.winType === "backgammon" ? 3 : 1),
-        transcript: extractTranscript(state),
-      }],
+      games: [
+        {
+          game_number: 1,
+          winner: state.winner,
+          win_type: state.winType || "single",
+          points_awarded:
+            (state.cube || 1) *
+            (state.winType === "gammon"
+              ? 2
+              : state.winType === "backgammon"
+                ? 3
+                : 1),
+          transcript: extractTranscript(state),
+        },
+      ],
     }).catch(() => {});
   }, [matchWinner, matchScore, state, MATCH_TARGET]);
 
@@ -246,6 +285,10 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
   useEffect(() => {
     if (!botColor) return;
     if (state.turn !== botColor) return;
+    clientLogger.debug("[bot automation] firing", {
+      phase: state.phase,
+      turn: state.turn,
+    });
 
     const timer = setTimeout(() => {
       void (async () => {
@@ -253,7 +296,8 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
           const die = await getOpeningDie(botColor);
           if (die === null) return;
           setState((prev) => {
-            if (prev.turn !== botColor || prev.phase !== "opening_roll") return prev;
+            if (prev.turn !== botColor || prev.phase !== "opening_roll")
+              return prev;
             const next = applyOpeningRoll(prev, botColor, die);
             if (next.phase === "opening_roll") {
               const other: Color = botColor === "white" ? "black" : "white";
@@ -280,6 +324,11 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
           setState((prev) => {
             if (prev.turn !== botColor || prev.phase !== "rolling") return prev;
             const next = applyRoll(prev, dice);
+            clientLogger.debug("[bot rolled]", {
+              dice,
+              turn: next.turn,
+              phase: next.phase,
+            });
             setTurnColor(next.turn);
             return next;
           });
@@ -314,6 +363,11 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
 
   const rollDice = useCallback(() => {
     const current = stateRef.current;
+    clientLogger.debug("[local rollDice] called", {
+      phase: current?.phase,
+      turn: current?.turn,
+      rollingRef: rollingRef.current,
+    });
     if (!current) return;
     if (current.phase !== "opening_roll" && current.phase !== "rolling") return;
     if (rollingRef.current) return;
@@ -326,8 +380,15 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
           const die = await getOpeningDie(color);
           if (die === null) return;
           setState((prev) => {
-            if (prev.phase !== "opening_roll" || prev.turn !== color) return prev;
+            if (prev.phase !== "opening_roll" || prev.turn !== color)
+              return prev;
             const next = applyOpeningRoll(prev, prev.turn, die);
+            clientLogger.debug("[opening roll applied]", {
+              die,
+              phase: next.phase,
+              turn: next.turn,
+              openingRoll: next.openingRoll,
+            });
             if (next.phase === "opening_roll") {
               const other: Color = prev.turn === "white" ? "black" : "white";
               setOpeningRollResult({
@@ -353,10 +414,21 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
         }
         if (current.phase === "rolling") {
           const dice = await getTurnDice();
+          clientLogger.debug("[roll dice fetched]", {
+            dice,
+            phaseAtFetch: current.phase,
+            turnAtFetch: current.turn,
+          });
           if (!dice) return;
           setState((prev) => {
             if (prev.phase !== "rolling") return prev;
             const rolled = applyRoll(prev, dice);
+            clientLogger.debug("[turn roll applied]", {
+              dice,
+              fromPhase: prev.phase,
+              toPhase: rolled.phase,
+              turn: rolled.turn,
+            });
             const hasMoves = allLegalMoves(rolled, rolled.turn).length > 0;
             setTurnColor(rolled.turn);
             if (!hasMoves) {
@@ -373,7 +445,12 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
               setTimeout(() => {
                 setNoMovesMessage(null);
                 setState((cur) => {
-                  if (!cur || cur.phase !== "moving" || cur.turn !== rolled.turn) return cur;
+                  if (
+                    !cur ||
+                    cur.phase !== "moving" ||
+                    cur.turn !== rolled.turn
+                  )
+                    return cur;
                   return passed;
                 });
                 setTurnColor(passed.turn);
@@ -388,21 +465,25 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
     })();
   }, [getOpeningDie, getTurnDice, setTurnColor]);
 
-  const makeMove = useCallback((from: Source, to: Target) => {
-    setState((prev) => {
-      if (prev.phase !== "moving") return prev;
-      if (prev.turn !== playerColorRef.current) return prev;
-      const dest = to === OFF ? OFF : to;
-      const moves = allLegalMoves(prev, prev.turn);
-      const match = moves.find(
-        (m: Move) => m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
-      );
-      if (!match) return prev;
-      const next = applyMove(prev, match, prev.turn);
-      setTurnColor(next.turn);
-      return next;
-    });
-  }, [setTurnColor]);
+  const makeMove = useCallback(
+    (from: Source, to: Target) => {
+      setState((prev) => {
+        if (prev.phase !== "moving") return prev;
+        if (prev.turn !== playerColorRef.current) return prev;
+        const dest = to === OFF ? OFF : to;
+        const moves = allLegalMoves(prev, prev.turn);
+        const match = moves.find(
+          (m: Move) =>
+            m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
+        );
+        if (!match) return prev;
+        const next = applyMove(prev, match, prev.turn);
+        setTurnColor(next.turn);
+        return next;
+      });
+    },
+    [setTurnColor],
+  );
 
   const offerDoubleAction = useCallback(() => {
     setState((prev) => {
@@ -411,13 +492,16 @@ export function LocalGameProvider({ children, botColor, matchTarget = 7, timeCon
     });
   }, []);
 
-  const respondToDouble = useCallback((accept: boolean) => {
-    setState((prev) => {
-      const next = respondDouble(prev, accept);
-      if (next.phase !== "game_over") setTurnColor(next.turn);
-      return next;
-    });
-  }, [setTurnColor]);
+  const respondToDouble = useCallback(
+    (accept: boolean) => {
+      setState((prev) => {
+        const next = respondDouble(prev, accept);
+        if (next.phase !== "game_over") setTurnColor(next.turn);
+        return next;
+      });
+    },
+    [setTurnColor],
+  );
 
   const endTurn = useCallback(() => {
     setState((prev) => {

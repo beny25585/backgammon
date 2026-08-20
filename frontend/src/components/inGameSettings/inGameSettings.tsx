@@ -1,0 +1,1 @@
+// need to impliment some setting fo the user on the game roll

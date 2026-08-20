@@ -5,6 +5,7 @@ import {
   useCallback,
   useState,
   useEffect,
+  useLayoutEffect,
   useRef,
   type ReactNode,
 } from "react";
@@ -66,7 +67,7 @@ export function GameProvider({
   const stateRef = useRef(state);
   const playerColorRef = useRef(playerColor);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     stateRef.current = state;
   }, [state]);
 
@@ -187,7 +188,13 @@ export function GameProvider({
 
           setState(next);
           buildOpeningResult(raw);
-
+          clientLogger.debug("[state_update] received", {
+            phase: next.phase,
+            turn: next.turn,
+            dice: next.dice,
+            remaining: next.remaining,
+            myColor: playerColorRef.current,
+          });
           // Server auto-started the next game of the match: a fresh opening
           // arrives after the countdown, so dismiss the previous result.
           if (next.phase !== "game_over") {
@@ -309,6 +316,10 @@ export function GameProvider({
 
   const rollDice = useCallback(() => {
     const current = stateRef.current;
+    clientLogger.debug("[rollDice] called", {
+      phase: current?.phase,
+      turn: current?.turn,
+    });
     if (!current) return;
     if (current.phase !== "opening_roll" && current.phase !== "rolling") {
       return;

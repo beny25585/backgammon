@@ -4,7 +4,14 @@ import { Board } from "../Board";
 import SidePanel from "../SidePanel";
 import GuidanceBanner from "../GuidanceBanner";
 import { DiceRow, RollPrompt } from "../Dice";
-import { allLegalMoves, legalMovesFrom, getForcedMove, type Source, type Target, type Move } from "@/lib/backgammon/engine";
+import {
+  allLegalMoves,
+  legalMovesFrom,
+  getForcedMove,
+  type Source,
+  type Target,
+  type Move,
+} from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 
 interface GameBoardProps {
@@ -23,6 +30,8 @@ interface GameBoardProps {
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: import("../../lib/clock").TimeControl | null;
+  autoRoll?: boolean;
+  onAutoRollChange?: (value: boolean) => void;
 }
 
 export default function GameBoard({
@@ -41,6 +50,8 @@ export default function GameBoard({
   clock,
   turnStartedAt,
   timeControl,
+  autoRoll,
+  onAutoRollChange,
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
   const [autoMove, setAutoMove] = useState<Move | null>(null);
@@ -113,12 +124,19 @@ export default function GameBoard({
           onConfirm={endTurn}
           autoMove={autoMove}
         />
-        {!landing && state.phase !== "opening_roll" && state.phase === "moving" && state.remaining.length > 0 && (
-          <div className={styles.boardOverlay} data-testid="dice-overlay">
-            <DiceRow dice={state.dice} remaining={state.remaining} color={state.turn} />
-          </div>
-        )}
-        {needsToRoll && onRoll && (
+        {!landing &&
+          state.phase !== "opening_roll" &&
+          state.phase === "moving" &&
+          state.remaining.length > 0 && (
+            <div className={styles.boardOverlay} data-testid="dice-overlay">
+              <DiceRow
+                dice={state.dice}
+                remaining={state.remaining}
+                color={state.turn}
+              />
+            </div>
+          )}
+        {needsToRoll && onRoll && !autoRoll && (
           <div className={styles.boardRollPrompt} data-testid="roll-prompt">
             <RollPrompt
               onRoll={onRoll}
@@ -141,6 +159,8 @@ export default function GameBoard({
         clock={clock}
         turnStartedAt={turnStartedAt}
         timeControl={timeControl}
+        autoRoll={autoRoll}
+        onAutoRollChange={onAutoRollChange}
       />
     </div>
   );

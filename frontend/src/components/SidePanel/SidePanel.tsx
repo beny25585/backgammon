@@ -7,6 +7,7 @@ import Controls from "../Controls";
 import Clock from "../Clock";
 import { useGame } from "../../services/gameContext";
 import { activePlayerOf, type TimeControl } from "../../lib/clock";
+import { AutoRoll } from "../autoRoll/AutoRoll";
 
 interface SidePanelProps {
   state: GameState;
@@ -15,9 +16,20 @@ interface SidePanelProps {
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: TimeControl | null;
+  autoRoll?: boolean;
+  onAutoRollChange?: (value: boolean) => void;
 }
 
-export default function SidePanel({ state, playerColor, onLeave, clock, turnStartedAt, timeControl }: SidePanelProps) {
+export default function SidePanel({
+  state,
+  playerColor,
+  onLeave,
+  clock,
+  turnStartedAt,
+  timeControl,
+  autoRoll,
+  onAutoRollChange,
+}: SidePanelProps) {
   const navigate = useNavigate();
   const { giveUp, leaveGame, whiteName, blackName, matchScore } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
@@ -25,8 +37,13 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
   const opponentColor = playerColor === "white" ? "black" : "white";
   const opponentName = playerColor === "white" ? blackName : whiteName;
   const selfName = playerColor === "white" ? whiteName : blackName;
-  const opponentLabel = opponentName || (playerColor === "white" ? "Black Player" : "White Player");
-  const selfLabel = selfName ? `${selfName} (you)` : (playerColor === "white" ? "You (White)" : "You (Black)");;
+  const opponentLabel =
+    opponentName || (playerColor === "white" ? "Black Player" : "White Player");
+  const selfLabel = selfName
+    ? `${selfName} (you)`
+    : playerColor === "white"
+      ? "You (White)"
+      : "You (Black)";
   const stripMyLabel = selfName || "You";
   const stripOppLabel = opponentName || "Opponent";
   const activeColor = activePlayerOf(state);
@@ -36,28 +53,27 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
     <div className={styles.panel} data-testid="side-panel">
       <div className={styles.playersRow}>
         <div className={styles.section}>
-        <PlayerRow
-          color={opponentColor}
-          state={state}
-          label={opponentLabel}
-          active={activeColor === opponentColor}
-          self={false}
-          score={matchScore?.[opponentColor] ?? 0}
-        />
-      </div>
+          <PlayerRow
+            color={opponentColor}
+            state={state}
+            label={opponentLabel}
+            active={activeColor === opponentColor}
+            self={false}
+            score={matchScore?.[opponentColor] ?? 0}
+          />
+        </div>
 
-      <div className={styles.section}>
-        <PlayerRow
-          color={playerColor}
-          state={state}
-          label={selfLabel}
-          active={activeColor === playerColor}
-          self={true}
-          score={matchScore?.[playerColor] ?? 0}
-        />
+        <div className={styles.section}>
+          <PlayerRow
+            color={playerColor}
+            state={state}
+            label={selfLabel}
+            active={activeColor === playerColor}
+            self={true}
+            score={matchScore?.[playerColor] ?? 0}
+          />
+        </div>
       </div>
-      </div>
-      
 
       <div className={styles.section}>
         <Clock
@@ -73,6 +89,11 @@ export default function SidePanel({ state, playerColor, onLeave, clock, turnStar
 
       <div className={styles.section}>
         <Controls playerColor={playerColor} state={state} />
+      </div>
+      <div className={styles.section}>
+        {onAutoRollChange && (
+          <AutoRoll autoRoll={!!autoRoll} onChange={onAutoRollChange} />
+        )}
       </div>
 
       <div className={styles.actions}>

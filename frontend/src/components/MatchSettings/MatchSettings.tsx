@@ -21,11 +21,11 @@ const TARGETS = [1, 3, 5, 7, 9, 11, 13, 15, 21];
 const colorTabs = [
   {
     id: "white",
-    label: "White (first)",
+    label: "White",
   },
   {
     id: "black",
-    label: "Black (second)",
+    label: "Black",
   },
 ];
 
@@ -34,9 +34,7 @@ export default function MatchSettings({
   onStart,
   onCancel,
 }: MatchSettingsProps) {
-  const [playerColor, setPlayerColor] = useState<"white" | "black">(
-    "white",
-  );
+  const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
 
   const [target, setTarget] = useState(7);
 
@@ -119,7 +117,10 @@ export default function MatchSettings({
             <p>Time control</p>
           </div>
           <AnimatedTabs
-            tabs={TIME_CONTROL_PRESETS.map((p) => ({ id: p.id, label: p.label }))}
+            tabs={TIME_CONTROL_PRESETS.map((p) => ({
+              id: p.id,
+              label: p.label,
+            }))}
             activeTab={timeControl}
             onChange={(id) => setTimeControl(id)}
           />
