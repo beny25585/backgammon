@@ -3,7 +3,7 @@ import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
-import { RollPrompt } from "../Dice";
+import { DiceRow, RollPrompt } from "../Dice";
 import { useAutoRoll } from "../autoRoll/AutoRoll";
 import { clientLogger } from "@/services/logger";
 
@@ -31,6 +31,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     gameResult,
     whiteName,
     blackName,
+    openingRollResult,
     handleNextGame,
     handleHome,
   } = useGame();
@@ -79,6 +80,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   }, []);
 
   const isOpeningRoll = state?.phase === "opening_roll";
+  const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
     (state?.phase === "rolling" &&
       state?.remaining.length === 0 &&
@@ -170,6 +172,34 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
               isOpening
               dark={playerColor === "black"}
             />
+          </div>
+        </div>
+      )}
+
+      {isOpeningResult && openingRollResult && (
+        <div className={styles.overlayDim}>
+          <div
+            className={styles.overlayCard}
+            data-testid="opening-result-overlay"
+          >
+            <div style={{ marginBottom: "0.75rem" }}>
+              <DiceRow
+                dice={[]}
+                remaining={[]}
+                color={playerColor}
+                showLabels
+                myRoll={openingRollResult.myDie}
+                opponentRoll={openingRollResult.opponentDie}
+                winner={openingRollResult.winner}
+              />
+            </div>
+            {openingRollResult.winner === playerColor && (
+              <div className={styles.winnerText}>You go first!</div>
+            )}
+            {openingRollResult.winner &&
+              openingRollResult.winner !== playerColor && (
+                <div className={styles.subText}>Opponent goes first</div>
+              )}
           </div>
         </div>
       )}

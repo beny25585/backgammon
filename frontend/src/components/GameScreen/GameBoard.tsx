@@ -8,6 +8,7 @@ import {
   allLegalMoves,
   legalMovesFrom,
   getForcedMove,
+  BAR,
   type Source,
   type Target,
   type Move,
@@ -77,6 +78,16 @@ export default function GameBoard({
     for (const m of moves) unique.add(m.to);
     return Array.from(unique);
   }, [state, selected, playerColor, isMyTurn]);
+
+  useEffect(() => {
+    if (
+      legalFromPoints.length === 1 &&
+      legalFromPoints[0] === BAR &&
+      selected !== BAR
+    ) {
+      setSelected(BAR);
+    }
+  }, [legalFromPoints, selected]);
 
   useEffect(() => {
     if (!isMyTurn || state.remaining.length === 0) {

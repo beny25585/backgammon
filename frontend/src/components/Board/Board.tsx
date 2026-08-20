@@ -29,8 +29,6 @@ function getCheckerSize(board: HTMLElement): number {
   return checkerEl.getBoundingClientRect().width;
 }
 
-
-
 export function Board({
   state,
   myColor,
@@ -65,8 +63,12 @@ export function Board({
 
   const [undoLanding, setUndoLanding] = useState<Source | null>(null);
 
-  const knownLastMoveRef = useRef<{ from: Source | Target; to: Target }[] | null>(null);
-  const humanMoveRef = useRef<{ from: Source | Target; to: Target } | null>(null);
+  const knownLastMoveRef = useRef<
+    { from: Source | Target; to: Target }[] | null
+  >(null);
+  const humanMoveRef = useRef<{ from: Source | Target; to: Target } | null>(
+    null,
+  );
 
   useEffect(() => {
     setUndoLanding(null);
@@ -97,7 +99,13 @@ export function Board({
   const displayBottomPoints = myColor === "black" ? TOP_POINTS : BOTTOM_POINTS;
 
   const computeSlotY = useCallback(
-    (el: HTMLElement, stackIndex: number, isTop: boolean, boardTop: number, checkerPx: number) => {
+    (
+      el: HTMLElement,
+      stackIndex: number,
+      isTop: boolean,
+      boardTop: number,
+      checkerPx: number,
+    ) => {
       const rect = el.getBoundingClientRect();
       const gap = 2;
       const pad = 8; // 0.5rem top/bottom padding on the checker stack
@@ -105,9 +113,9 @@ export function Board({
       return isTop
         ? rect.top + pad + stackIndex * (checkerPx + gap) - boardTop
         : rect.top +
-          rect.height -
-          (pad + stackIndex * (checkerPx + gap) + checkerPx) -
-          boardTop;
+            rect.height -
+            (pad + stackIndex * (checkerPx + gap) + checkerPx) -
+            boardTop;
     },
     [],
   );
@@ -144,14 +152,27 @@ export function Board({
         typeof from === "number" && displayTopPoints.includes(from);
 
       // The checker lands on TOP of the destination stack (count + 1).
-      const toCount = typeof to === "number" ? Math.abs(state.points[to] ?? 0) : 0;
+      const toCount =
+        typeof to === "number" ? Math.abs(state.points[to] ?? 0) : 0;
       const toStackIndex = Math.min(toCount, 4);
       const isToTop = typeof to === "number" && displayTopPoints.includes(to);
 
       const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
-      const toY = computeSlotY(toEl, toStackIndex, isToTop, bRect.top, checkerPx);
+      const toY = computeSlotY(
+        toEl,
+        toStackIndex,
+        isToTop,
+        bRect.top,
+        checkerPx,
+      );
       const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
-      const fromY = computeSlotY(fromEl, fromStackIndex, isFromTop, bRect.top, checkerPx);
+      const fromY = computeSlotY(
+        fromEl,
+        fromStackIndex,
+        isFromTop,
+        bRect.top,
+        checkerPx,
+      );
 
       setFlyChecker({
         fromX,
@@ -177,9 +198,7 @@ export function Board({
       const fromEl = board.querySelector<HTMLElement>(
         `[data-point-idx="${from}"]`,
       );
-      const toEl = board.querySelector<HTMLElement>(
-        `[data-point-idx="${to}"]`,
-      );
+      const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
       if (!fromEl || !toEl) return;
 
       const bRect = board.getBoundingClientRect();
@@ -205,9 +224,21 @@ export function Board({
       const toStackIndex = Math.min(Math.max(toCount - 1, 0), 4);
 
       const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
-      const toY = computeSlotY(toEl, toStackIndex, isToTop, bRect.top, checkerPx);
+      const toY = computeSlotY(
+        toEl,
+        toStackIndex,
+        isToTop,
+        bRect.top,
+        checkerPx,
+      );
       const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
-      const fromY = computeSlotY(fromEl, fromStackIndex, isFromTop, bRect.top, checkerPx);
+      const fromY = computeSlotY(
+        fromEl,
+        fromStackIndex,
+        isFromTop,
+        bRect.top,
+        checkerPx,
+      );
 
       setFlyChecker({
         fromX,
@@ -224,7 +255,13 @@ export function Board({
         pending: { kind: "move", historyLen: state.moveHistory?.length ?? 0 },
       });
     },
-    [state.points, state.bar, state.moveHistory, displayTopPoints, computeSlotY],
+    [
+      state.points,
+      state.bar,
+      state.moveHistory,
+      displayTopPoints,
+      computeSlotY,
+    ],
   );
 
   useEffect(() => {
@@ -267,8 +304,12 @@ export function Board({
       onUndo?.();
       return;
     }
-    const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${last.to}"]`);
-    const fromEl = board.querySelector<HTMLElement>(`[data-point-idx="${last.from}"]`);
+    const toEl = board.querySelector<HTMLElement>(
+      `[data-point-idx="${last.to}"]`,
+    );
+    const fromEl = board.querySelector<HTMLElement>(
+      `[data-point-idx="${last.from}"]`,
+    );
     if (!toEl || !fromEl) {
       onUndo?.();
       return;
@@ -290,15 +331,29 @@ export function Board({
 
     // Land on TOP of the source stack after the checker returns (count + 1).
     const fromCount =
-      typeof last.from === "number" ? Math.abs(state.points[last.from] ?? 0) : 0;
+      typeof last.from === "number"
+        ? Math.abs(state.points[last.from] ?? 0)
+        : 0;
     const toStackIndex = Math.min(fromCount, 4);
     const isToTop =
       typeof last.from === "number" && displayTopPoints.includes(last.from);
 
     const toX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
-    const toY = computeSlotY(fromEl, toStackIndex, isToTop, bRect.top, checkerPx);
+    const toY = computeSlotY(
+      fromEl,
+      toStackIndex,
+      isToTop,
+      bRect.top,
+      checkerPx,
+    );
     const fromX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
-    const fromY = computeSlotY(toEl, fromStackIndex, isFromTop, bRect.top, checkerPx);
+    const fromY = computeSlotY(
+      toEl,
+      fromStackIndex,
+      isFromTop,
+      bRect.top,
+      checkerPx,
+    );
 
     setFlyChecker({
       fromX,
@@ -315,7 +370,15 @@ export function Board({
       pending: { kind: "undo", historyLen: state.moveHistory?.length ?? 0 },
     });
     setUndoLanding(last.from);
-  }, [myColor, onUndo, state.points, displayTopPoints, computeSlotY, lastMoveLast, flyChecker]);
+  }, [
+    myColor,
+    onUndo,
+    state.points,
+    displayTopPoints,
+    computeSlotY,
+    lastMoveLast,
+    flyChecker,
+  ]);
 
   function hideTopCheckerAt(idx: number) {
     if (!flyChecker) return false;
@@ -339,7 +402,7 @@ export function Board({
     if (selected === idx) {
       if (legalTargets.length === 1) {
         triggerFly(selected, legalTargets[0]);
-      } else {
+      } else if (idx !== BAR || legalFromPoints.length > 1) {
         onSelect(null);
       }
     } else if (legalFromPoints.includes(idx)) {
@@ -409,7 +472,10 @@ export function Board({
             isLegalFrom={legalFromPoints.includes(BAR)}
             onClick={() => handleClick(BAR)}
             hideChecker={
-              flyChecker && flyChecker.from === BAR && Math.abs(state.bar[flyChecker.color] ?? 0) === flyChecker.fromCount
+              flyChecker &&
+              flyChecker.from === BAR &&
+              Math.abs(state.bar[flyChecker.color] ?? 0) ===
+                flyChecker.fromCount
                 ? flyChecker.color
                 : null
             }

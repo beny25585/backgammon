@@ -4,9 +4,7 @@ import { MockGameWrapper } from "../../test-utils/wrappers";
 import { makeGameState } from "../../test-utils/gameState";
 import { ErrorCardHarness } from "../../test-utils/probes";
 
-test("opening result shows 'You go first!' in the guidance banner", async ({
-  mount,
-}) => {
+test("opening result shows both dice and the winner", async ({ mount }) => {
   const component = await mount(
     <MockGameWrapper
       playerColor="white"
@@ -15,6 +13,9 @@ test("opening result shows 'You go first!' in the guidance banner", async ({
         turn: "white",
         openingRoll: { white: 5, black: 3 },
       })}
+      context={{
+        openingRollResult: { myDie: 5, opponentDie: 3, winner: "white" },
+      }}
     >
       <GameScreen />
     </MockGameWrapper>,
@@ -24,6 +25,13 @@ test("opening result shows 'You go first!' in the guidance banner", async ({
     "opening",
   );
   await expect(component.getByText("You go first!")).toBeVisible();
+  await expect(component.getByTestId("opening-result-overlay")).toBeVisible();
+  await expect(
+    component.getByTestId("opening-result-overlay").getByText("Opponent"),
+  ).toBeVisible();
+  await expect(
+    component.getByTestId("opening-result-overlay").locator("[data-testid='die']"),
+  ).toHaveCount(2);
 });
 
 test("opening roll prompt appears in the banner for the player whose turn it is", async ({
