@@ -1,11 +1,15 @@
 """
 Tests for ticket redemption and room provisioning.
 
-The tournaments server is a separate repository and shares no code with this one, so these tests
-mint their own tickets with `django.core.signing` exactly as the wire format specifies. That makes
-this module a *restatement* of the contract rather than a check of it: the end-to-end contract
-test that imports both sides belongs with the result-messaging work, and until it exists a drift
-in the payload shape would show up here only as a passing test against the wrong format.
+The tournaments server is a separate repository and shares no code with this one, so most of these
+tests mint their own tickets with `django.core.signing` exactly as the wire format specifies —
+which makes them a *restatement* of the contract rather than a check of it.
+
+The exception, and the reason a drift cannot pass unnoticed, is the pair of golden vectors:
+`TicketContractTests` pins a token the real issuer minted and `ResultSignatureContractTests` pins
+a signature the real tournaments verifier accepted. Both are pinned identically in that repo's
+`gamelink/tests.py`, so a change to either wire format turns one of the two suites red instead of
+leaving both green while the link quietly stops working.
 """
 
 import json
@@ -583,6 +587,95 @@ class ResultSignatureContractTests(TestCase):
                 sign_result_body(
                     RESULT_VECTOR_BODY, RESULT_VECTOR_TIMESTAMP, RESULT_VECTOR_NONCE)
 
+
+# The cross-repo *ticket* contract, frozen — the other direction of the same idea.
+#
+# This token was minted by the tournaments server's own `gamelink.signing.issue_ticket` machinery
+# and is pinned character for character in `gamelink/tests.py::TicketContractTest`, where it has
+# to decode to the same payload. Session 3 checked the ticket direction by hand against the real
+# issuer; that script is gone, and this is what replaces it.
+#
+# Everything else in this module mints its own tickets, which makes it a restatement of the format
+# rather than a check of it: a change to the payload shape on the issuing side would leave both
+# repos' suites green and the link broken. These constants are the one thing here that cannot
+# drift silently.
+TICKET_VECTOR_TOKEN = (
+    "eyJ2IjoxLCJpc3MiOiJ0b3VybmFtZW50cyIsImF1ZCI6ImJhY2tnYW1tb24iLCJqdGkiOiI1ZjNjMWQyZS04YTRi"
+    "LTRjNmQtOWUwZi0xYTJiM2M0ZDVlNmYiLCJpYXQiOjE3NTYzMDAwMDAsImV4cCI6MTc1NjMwMDEyMCwic3ViIjoi"
+    "MGYyYTdiNmMtM2Q0ZS00ZjVhLThiOWMtMGQxZTJmM2E0YjVjIiwibmFtZSI6ImFsaWNlIiwidHJuIjoxNywiZml4"
+    "Ijo0ODIsInNlYXQiOiJwMSIsIm9wcCI6ImJvYiIsInRwIjoxfQ:1x0Qjf:"
+    "FgOctl42KMzHWqwdGqd57k_WoKZLIRZgN52CkAaCZCs"
+)
+TICKET_VECTOR_PAYLOAD = {
+    "v": 1,
+    "iss": "tournaments",
+    "aud": "backgammon",
+    "jti": "5f3c1d2e-8a4b-4c6d-9e0f-1a2b3c4d5e6f",
+    "iat": 1756300000,
+    "exp": 1756300120,
+    "sub": "0f2a7b6c-3d4e-4f5a-8b9c-0d1e2f3a4b5c",
+    "name": "alice",
+    "trn": 17,
+    "fix": 482,
+    "seat": "p1",
+    "opp": "bob",
+    "tp": 1,
+}
+
+
+@link_settings
+class TicketContractTests(TestCase):
+    """Pin the wire format of an inbound ticket against a token the issuer actually produced."""
+
+    def test_the_pinned_ticket_decodes_to_the_documented_payload(self):
+        # Pins the salt, the key derivation, the serializer, the encoding and every claim name at
+        # once — everything this verifier has to agree with the issuer about.
+        payload = signing.loads(
+            TICKET_VECTOR_TOKEN, key=TICKET_SECRET, salt=TICKET_SALT, max_age=None)
+        self.assertEqual(payload, TICKET_VECTOR_PAYLOAD)
+
+    def test_the_real_verifier_gets_past_the_signature_on_the_pinned_ticket(self):
+        # A pinned token is expired by construction — that is what makes it reproducible — so the
+        # furthest it can get is the expiry check. Reaching *that* is the point: a token the
+        # shared secret did not sign is refused earlier, with a different reason, which the next
+        # test pins so that this one cannot pass for the wrong reason.
+        with self.assertRaises(TicketError) as refusal:
+            verify_ticket(TICKET_VECTOR_TOKEN)
+        self.assertEqual(str(refusal.exception), "ticket has expired")
+
+    def test_a_ticket_the_shared_secret_did_not_sign_fails_differently(self):
+        with override_settings(GAMELINK_TICKET_SECRETS=[WRONG_SECRET]):
+            with self.assertRaises(TicketError) as refusal:
+                verify_ticket(TICKET_VECTOR_TOKEN)
+        self.assertEqual(str(refusal.exception), "no configured secret verifies this ticket")
+
+    def test_the_verifier_accepts_the_claim_set_the_issuer_mints(self):
+        # The claims are the pinned ones and only `exp` moves, because an unexpired token cannot
+        # be written down. This is what proves the *whole* public path accepts what tournaments
+        # sends — version, issuer, audience, every required claim and its type, the seat, the
+        # target points and the subject.
+        fresh = signing.dumps(
+            dict(TICKET_VECTOR_PAYLOAD, exp=int(time.time()) + 120),
+            key=TICKET_SECRET,
+            salt=TICKET_SALT,
+            compress=False)
+
+        claims = verify_ticket(fresh)
+
+        self.assertEqual(claims["seat"], "p1")
+        self.assertEqual(claims["trn"], 17)
+        self.assertEqual(claims["fix"], 482)
+        self.assertEqual(claims["tp"], 1)
+        self.assertEqual(claims["sub"], "0f2a7b6c-3d4e-4f5a-8b9c-0d1e2f3a4b5c")
+
+    def test_a_tampered_claim_breaks_the_signature(self):
+        _, timestamp, signature = TICKET_VECTOR_TOKEN.split(":")
+        forged = b64_encode(
+            json.dumps(
+                dict(TICKET_VECTOR_PAYLOAD, fix=999), separators=(",", ":")).encode()).decode()
+
+        with self.assertRaises(TicketError):
+            verify_ticket(f"{forged}:{timestamp}:{signature}")
 
 class ResultTestBase(TestCase):
     """A linked room, ready to produce a result."""
