@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { useGame } from "../services/gameContext";
 import { newGame } from "../lib/backgammon/engine";
 import { gameOverFixture } from "./fixtures";
@@ -99,5 +100,17 @@ export function ErrorCardHarness() {
     >
       <GameScreen />
     </MockGameWrapper>
+  );
+}
+
+
+/**
+ * Renders the router's current location. Playwright's component tests cannot mount a component
+ * declared inside a `.test.tsx` file, so route probes have to live in a module like this one.
+ */
+export function LocationProbe() {
+  const location = useLocation();
+  return (
+    <div data-testid="location">{`${location.pathname}${location.search}`}</div>
   );
 }

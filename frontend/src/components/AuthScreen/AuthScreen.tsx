@@ -26,9 +26,13 @@ export default function AuthScreen() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
-  const [error, setError] = useState(
-    searchParams.get("expired") === "1" ? "Session expired, please log in again" : "",
-  );
+  const [error, setError] = useState(() => {
+    if (searchParams.get("expired") === "1")
+      return "Session expired, please log in again";
+    if (searchParams.get("link") === "invalid")
+      return "That game link is not valid or has expired. Open it again from the tournament.";
+    return "";
+  });
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
