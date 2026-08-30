@@ -20,6 +20,7 @@ from io import StringIO
 from unittest.mock import AsyncMock, patch
 
 import httpx
+from django.contrib import admin as django_admin
 from django.contrib.auth.models import User
 from django.core import signing
 from django.core.exceptions import ImproperlyConfigured
@@ -31,11 +32,13 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
+from game.admin import TaskAdmin
 from game.engine import BackgammonEngine
 from game.game_service import finalize_room, record_game_end
 from game.models import GameRoom, Match, Player, RoomPlayer, Task
 from game.tasks import expire_waiting_rooms
 
+from .housekeeping import purge_redeemed_tickets
 from .identity import resolve_user
 from .models import LinkedIdentity, RedeemedTicket, TournamentLink
 from .outbox import build_result_body, deliver_result, enqueue_result
@@ -1128,3 +1131,133 @@ class CancelledRoomTests(ResultTestBase):
 
         self.assertEqual(self.client.post("/api/rooms/cancel/").status_code, 200)
         self.assertEqual(Task.objects.count(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Housekeeping and the dead-letter view (session 7)
+# ---------------------------------------------------------------------------
+
+
+@link_settings
+class PurgeRedeemedTicketsTests(TestCase):
+    """
+    Forgetting a spent ticket is only safe once the ticket itself can no longer be presented.
+
+    `verify_ticket` refuses an expired ticket before redemption is even considered — by `max_age`
+    on the signature and again by the `exp` claim — so a row past `expires_at` is protecting
+    nothing. A row that has *not* expired is the whole replay defence, and deleting one of those
+    would hand a captured ticket a second use.
+    """
+
+    def setUp(self):
+        self.now = timezone.now()
+
+    def add(self, jti, expires_in):
+        return RedeemedTicket.objects.create(
+            jti=jti, issuer="tournaments", expires_at=self.now + expires_in)
+
+    def test_an_expired_ticket_is_forgotten(self):
+        self.add(uuid.uuid4(), -timedelta(seconds=1))
+
+        self.assertEqual(purge_redeemed_tickets(now=self.now), 1)
+        self.assertEqual(RedeemedTicket.objects.count(), 0)
+
+    def test_a_ticket_that_can_still_be_presented_is_kept(self):
+        live = self.add(uuid.uuid4(), timedelta(seconds=1))
+        # Exactly on the boundary counts as still live: `expires_at__lt` is deliberately strict.
+        boundary = self.add(uuid.uuid4(), timedelta(0))
+
+        self.assertEqual(purge_redeemed_tickets(now=self.now), 0)
+        self.assertEqual(
+            set(RedeemedTicket.objects.values_list("jti", flat=True)), {live.jti, boundary.jti})
+
+    def test_only_the_expired_ones_go(self):
+        for index in range(3):
+            self.add(uuid.uuid4(), -timedelta(minutes=index + 1))
+        kept = self.add(uuid.uuid4(), timedelta(minutes=5))
+
+        self.assertEqual(purge_redeemed_tickets(now=self.now), 3)
+        self.assertEqual(list(RedeemedTicket.objects.values_list("jti", flat=True)), [kept.jti])
+
+    def test_a_second_run_finds_nothing_left_to_do(self):
+        self.add(uuid.uuid4(), -timedelta(seconds=1))
+
+        self.assertEqual(purge_redeemed_tickets(now=self.now), 1)
+        self.assertEqual(purge_redeemed_tickets(now=self.now), 0)
+
+    def test_a_purged_jti_can_be_spent_again_only_because_the_ticket_cannot(self):
+        # The property the whole module rests on, stated as a test: an expired ticket is refused
+        # by the verifier whether or not its jti is still remembered here.
+        payload = dict(
+            v=1, iss="tournaments", aud="backgammon", jti=str(uuid.uuid4()),
+            iat=int(time.time()) - 600, exp=int(time.time()) - 300,
+            sub=str(uuid.uuid4()), name="alice", trn=17, fix=482, seat="p1", opp="bob", tp=1)
+        token = signing.dumps(payload, key=TICKET_SECRET, salt=TICKET_SALT, compress=False)
+
+        self.assertEqual(RedeemedTicket.objects.count(), 0)
+        with self.assertRaises(TicketError):
+            verify_ticket(token)
+
+    def test_the_command_runs_and_says_what_it_did(self):
+        self.add(uuid.uuid4(), -timedelta(seconds=1))
+
+        out = StringIO()
+        call_command("purge_redeemed_tickets", stdout=out)
+
+        self.assertIn("Purged 1 redeemed tickets", out.getvalue())
+        self.assertEqual(RedeemedTicket.objects.count(), 0)
+
+
+class TaskDeadLetterAdminTests(TestCase):
+    """
+    The admin list for `Task` is the only place a permanently failed delivery becomes visible.
+    """
+
+    def admin_for(self, model):
+        return django_admin.site._registry[model]
+
+    def test_the_task_admin_is_registered(self):
+        self.assertIsInstance(self.admin_for(Task), TaskAdmin)
+
+    def test_nothing_about_a_task_can_be_edited_from_the_admin(self):
+        # A queue row is a record of what the server tried to do. Editing one would either forge
+        # that record or re-arm a delivery by hand, which is what `run_tasks` is for.
+        task_admin = self.admin_for(Task)
+
+        self.assertFalse(task_admin.has_add_permission(None))
+        self.assertFalse(task_admin.has_change_permission(None))
+        self.assertEqual(
+            set(task_admin.get_readonly_fields(None)),
+            {field.name for field in Task._meta.fields})
+
+    def test_failed_tasks_can_be_filtered_out_of_the_list(self):
+        # "Dead letters" is `?status__exact=failed` on this list, so status has to be filterable.
+        self.assertIn("status", self.admin_for(Task).list_filter)
+
+    def test_the_error_column_shows_the_exception_rather_than_the_whole_traceback(self):
+        task = Task.objects.create(
+            name="game.link.outbox.deliver_result",
+            status="failed",
+            run_at=timezone.now(),
+            last_error='Traceback (most recent call last):\n  File "x.py", line 1\n'
+                       "RuntimeError: result delivery for fixture 482 refused with HTTP 503\n")
+
+        self.assertEqual(
+            self.admin_for(Task).error(task),
+            "RuntimeError: result delivery for fixture 482 refused with HTTP 503")
+
+    def test_a_long_error_is_truncated_and_an_absent_one_is_blank(self):
+        task_admin = self.admin_for(Task)
+        long_error = Task.objects.create(
+            name="x", status="failed", run_at=timezone.now(), last_error="E" * 500)
+        no_error = Task.objects.create(name="x", status="pending", run_at=timezone.now())
+
+        self.assertEqual(len(task_admin.error(long_error)), 120)
+        self.assertTrue(task_admin.error(long_error).endswith("..."))
+        self.assertEqual(task_admin.error(no_error), "")
+
+    def test_the_attempt_column_shows_progress_towards_giving_up(self):
+        task = Task.objects.create(
+            name="x", status="failed", attempts=3, max_attempts=3, run_at=timezone.now())
+
+        self.assertEqual(self.admin_for(Task).attempt_count(task), "3/3")
