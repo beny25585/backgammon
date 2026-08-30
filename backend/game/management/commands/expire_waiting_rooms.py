@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 
 from ...tasks import expire_waiting_rooms
 
@@ -26,11 +27,12 @@ class Command(BaseCommand):
         if enqueue:
             # create a Task row for background worker to pick up
             from ...models import Task
-            run_at = None
             Task.objects.create(
                 name="game.tasks.expire_waiting_rooms",
                 args=[minutes],
-                run_at=run_at,
+                # `run_tasks` selects on `run_at__lte=now`, and NULL never satisfies that
+                # comparison, so a task enqueued unstamped is invisible to the runner forever.
+                run_at=timezone.now(),
             )
             self.stdout.write(self.style.SUCCESS("Enqueued expire_waiting_rooms task"))
             return

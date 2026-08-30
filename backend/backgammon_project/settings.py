@@ -113,6 +113,21 @@ SIMPLE_JWT = {
     'TOKEN_OBTAIN_SERIALIZER': 'game.token_serializer.CustomTokenObtainPairSerializer',
 }
 
+# Tournament link (see tournaments-backgammon-messaging.md §5). Ships disabled; every secret
+# defaults to empty, and `game.link.checks` refuses to boot a configured-but-weak production.
+GAMELINK_ENABLED = config('GAMELINK_ENABLED', default=False, cast=bool)
+GAMELINK_ISSUER = 'backgammon'
+GAMELINK_ACCEPTED_ISSUERS = ['tournaments']
+GAMELINK_TOURNAMENTS_URL = config('GAMELINK_TOURNAMENTS_URL', default='')
+GAMELINK_FRONTEND_URL = config('GAMELINK_FRONTEND_URL', default='')
+# Verifier takes a list and signer uses the first, so secrets rotate without downtime.
+GAMELINK_TICKET_SECRETS = [s for s in config('GAMELINK_TICKET_SECRETS', default='').split(',') if s]
+GAMELINK_RESULT_SECRET = config('GAMELINK_RESULT_SECRET', default='')
+# Must match the issuer's GAMELINK_TICKET_TTL; a ticket older than this is refused.
+GAMELINK_TICKET_TTL = 120
+# Deliberately not the 24 h SIMPLE_JWT default: a linked session is scoped to the match.
+GAMELINK_LINK_TOKEN_TTL = timedelta(hours=2)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

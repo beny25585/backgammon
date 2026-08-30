@@ -141,3 +141,9 @@ class Task(models.Model):
 
     def __str__(self):
         return f"Task {self.name} ({self.status})"
+
+
+# The tournament link's models live in a subpackage. Django only imports `game.models`, so they
+# are re-exported here to get them into the app registry; without this `makemigrations` sees
+# nothing. They carry `app_label` 'game' and their migrations live in `game/migrations/`.
+from .link.models import LinkedIdentity, RedeemedTicket, TournamentLink  # noqa: E402,F401
