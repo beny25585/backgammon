@@ -1,4 +1,5 @@
 import logging
+from random import random
 import uuid
 from django.db import transaction
 from django.utils import timezone
@@ -7,7 +8,7 @@ from asgiref.sync import async_to_sync
 
 
 from game.engine import BackgammonEngine
-from game.models import BracketMatch, GameRoom, GameState, RoomPlayer, Tournament, TournamentSignup
+from game.models import BracketMatch, GameRoom, GameState, Player, RoomPlayer, Tournament, TournamentSignup
 
 
 logger = logging.getLogger(__name__)

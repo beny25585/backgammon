@@ -4,7 +4,7 @@ import logging
 from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
-from django.db import models as db_models
+from django.db import models as db_models, transaction
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -17,6 +17,8 @@ from channels.layers import get_channel_layer
 
 from .engine import BackgammonEngine
 from .game_service import finalize_room
+from .link.models import TournamentLink
+from .link.outbox import STATUS_CANCELLED, enqueue_result
 from .models import GameRoom, GameState, Match, Player, RoomPlayer
 from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
 from asgiref.sync import async_to_sync
@@ -234,8 +236,16 @@ def cancel_room(request):
     ).first()
     if not room:
         return Response({'error': 'No active room'}, status=status.HTTP_404_NOT_FOUND)
-    room.status = 'cancelled'
-    room.save()
+
+    with transaction.atomic():
+        room.status = 'cancelled'
+        room.save()
+        link = TournamentLink.objects.filter(room=room).first()
+        if link is not None:
+            # A deliberate cancellation is not a forfeit — nobody won anything — so the fixture is
+            # released rather than decided, and stays scorable by hand.
+            enqueue_result(link, None, room, STATUS_CANCELLED, end_reason='cancelled')
+
     return Response({'status': 'cancelled', 'roomId': str(room.id)})
 
 

@@ -3,12 +3,18 @@
 Every way a game can end funnels through `finalize_room` so scoring, Match
 recording and room closure behave identically regardless of the ending
 (bear-off, double-decline, give-up, and any future ending).
+
+A room belonging to an external tournament also reports its outcome from
+here, for the same reason: every ending has to be reported, so the hook
+belongs where every ending already passes.
 """
 
 import uuid
 
 from django.db import transaction
 
+from .link.models import TournamentLink
+from .link.outbox import enqueue_result
 from .models import GameEvent, GameRoom, Match, RoomPlayer
 
 # Multiplier applied per win type before the doubling cube value.
@@ -166,6 +172,18 @@ def _game_entry(state, winner, win_type, points, game_number, transcript):
     return entry
 
 
+def _report_to_tournament(room, match, winner):
+    """Queue this room's result for the tournament it belongs to, if it belongs to one.
+
+    Called inside the caller's `transaction.atomic()`, so an ending that rolls back never
+    leaves a queued result behind. An ordinary room has no link and this is one query.
+    """
+    link = TournamentLink.objects.filter(room=room).first()
+    if link is None:
+        return
+    enqueue_result(link, match, room, 'completed', winner_color=winner)
+
+
 def finalize_room(room, state, winner, win_type, reason):
     """Score the finished game, save a Match, and close the room.
 
@@ -189,7 +207,7 @@ def finalize_room(room, state, winner, win_type, reason):
         games_data = [_game_entry(state, winner, win_type, points, 1, transcript)]
         white_player, black_player = _room_players(locked)
 
-        return Match.objects.create(
+        match = Match.objects.create(
             room=locked,
             match_type='online',
             target_points=locked.target_points,
@@ -201,6 +219,8 @@ def finalize_room(room, state, winner, win_type, reason):
             games=games_data,
             **metadata,
         )
+        _report_to_tournament(locked, match, winner)
+        return match
 
 
 def record_game_end(room, state, winner, win_type, reason):
@@ -264,6 +284,9 @@ def record_game_end(room, state, winner, win_type, reason):
                 games=games,
                 **metadata,
             )
+            # Only the end of the *match* is a fixture result. Individual games inside a
+            # longer match end here too and must not be reported.
+            _report_to_tournament(locked, result['match'], winner)
         else:
             locked.save()
         return result

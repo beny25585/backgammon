@@ -13,6 +13,7 @@ import AuthScreen from "./components/AuthScreen";
 import HomeScreen from "./components/HomeScreen";
 import WaitingRoom from "./components/WaitingRoom";
 import GameScreen from "./components/GameScreen";
+import LinkEntry from "./components/LinkEntry";
 import MatchDetail from "./components/MatchDetail";
 import MatchHistory from "./components/MatchHistory";
 import { GameProvider } from "./services/gameContext";
@@ -122,6 +123,9 @@ export default function Router() {
           </RequireAuth>
         }
       />
+      {/* Deliberately outside RequireAuth: arriving here with a ticket-issued session in
+          the fragment is what establishes auth in the first place. */}
+      <Route path="/link" element={<LinkEntry />} />
       <Route path="/local" element={<LocalRoute />} />
       <Route
         path="/history"

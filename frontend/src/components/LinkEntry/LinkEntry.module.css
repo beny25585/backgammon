@@ -1,0 +1,15 @@
+.container {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(18px, 4vw, 42px);
+  background: linear-gradient(135deg, #071218 0%, #091b1f 50%, #03060d 100%);
+  color: #f7f1e7;
+}
+
+.message {
+  font-size: clamp(15px, 2.4vw, 18px);
+  letter-spacing: 0.02em;
+  opacity: 0.82;
+}
