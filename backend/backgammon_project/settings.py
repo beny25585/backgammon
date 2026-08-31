@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'channels',
     'game',
+    'Tournaments'
 ]
 
 MIDDLEWARE = [
@@ -58,7 +59,8 @@ WSGI_APPLICATION = 'backgammon_project.wsgi.application'
 ASGI_APPLICATION = 'backgammon_project.asgi.application'
 
 DATABASES = {
-    'default': dj_database_url.config(default='sqlite:///db.sqlite3')
+    'default': dj_database_url.parse(config('DATABASE_URL', default='sqlite:///db.sqlite3'))
+
 }
 
 AUTH_PASSWORD_VALIDATORS = []

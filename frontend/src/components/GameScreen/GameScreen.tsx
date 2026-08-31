@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
@@ -6,6 +6,7 @@ import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
 import { DiceRow, RollPrompt } from "../Dice";
 import { useAutoRoll } from "../autoRoll/AutoRoll";
 import { clientLogger } from "@/services/logger";
+import { canOfferDouble } from "@/lib/backgammon/engine";
 
 interface GameScreenProps {
   onLeave?: () => void;
@@ -25,6 +26,7 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     undoMove,
     endTurn,
     respondToDouble,
+    offerDouble,
     clock,
     turnStartedAt,
     timeControl,
@@ -39,12 +41,55 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
   const [rollResult, setRollResult] = useState<number[] | undefined>(undefined);
   const [landing, setLanding] = useState(false);
   const [autoRoll, setAutoRoll] = useAutoRoll();
+  const DOUBLE_WINDOW_SECONDS = 20;
+  const [doubleWindow, setDoubleWindow] = useState(false);
+  const [doubleCountdown, setDoubleCountdown] = useState(DOUBLE_WINDOW_SECONDS);
+  const doubleDecidedRef = useRef(false);
 
   const handleRoll = useCallback(() => {
     setRollResult(undefined);
     setLanding(true);
     rollDice();
   }, [rollDice]);
+
+  useEffect(() => {
+    if (!state) return;
+    const eligible =
+      state.phase === "rolling" &&
+      state.remaining.length === 0 &&
+      state.turn === playerColor &&
+      canOfferDouble(state, playerColor);
+    if (!eligible) {
+      doubleDecidedRef.current = false;
+      setDoubleWindow(false);
+      return;
+    }
+    if (!doubleDecidedRef.current && !doubleWindow) {
+      setDoubleWindow(true);
+      setDoubleCountdown(DOUBLE_WINDOW_SECONDS);
+    }
+  }, [state, playerColor, doubleWindow]);
+
+  useEffect(() => {
+    if (!doubleWindow) return;
+    if (doubleCountdown <= 0) {
+      doubleDecidedRef.current = true;
+      setDoubleWindow(false);
+      return;
+    }
+    const t = setTimeout(() => setDoubleCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [doubleWindow, doubleCountdown]);
+  const handleDoubleOffer = useCallback(() => {
+    doubleDecidedRef.current = true;
+    setDoubleWindow(false);
+    offerDouble();
+  }, [offerDouble]);
+
+  const handleDoubleSkip = useCallback(() => {
+    doubleDecidedRef.current = true;
+    setDoubleWindow(false);
+  }, []);
 
   const handleOpeningRoll = useCallback(() => {
     rollDice();
@@ -69,10 +114,14 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
     });
     if (state.phase === "opening_roll") {
       handleOpeningRoll();
-    } else if (state.phase === "rolling" && state.remaining.length === 0) {
+    } else if (
+      state.phase === "rolling" &&
+      state.remaining.length === 0 &&
+      !doubleWindow
+    ) {
       rollDice();
     }
-  }, [autoRoll, state, playerColor, handleOpeningRoll, rollDice]);
+  }, [autoRoll, state, playerColor, handleOpeningRoll, rollDice, doubleWindow]);
 
   const handleRollLand = useCallback(() => {
     setLanding(false);
