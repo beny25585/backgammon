@@ -38,6 +38,10 @@ def get_room(room_id):
 
 @database_sync_to_async
 def get_username(user_id):
+    player = Player.objects.select_related('user').filter(user_id=user_id).first()
+    if player is not None:
+        return str(player)
+
     try:
         return User.objects.get(id=user_id).username
     except User.DoesNotExist:
@@ -52,11 +56,11 @@ def get_room_player_color(room_id, user_id):
 
 @database_sync_to_async
 def get_room_player_usernames(room_id):
-    """Return usernames for the room's players keyed by color."""
+    """Return display names for the room's players keyed by color."""
     names = {"white": None, "black": None}
     rps = RoomPlayer.objects.filter(room_id=room_id).select_related('player__user')
     for rp in rps:
-        names[rp.color] = rp.player.user.username if rp.player and rp.player.user else None
+        names[rp.color] = str(rp.player) if rp.player else None
     return names
 
 
