@@ -55,6 +55,7 @@ export interface GameState {
   phase: Phase;
   cube: number; // doubling cube value (1, 2, 4, 8...)
   cubeOwner: Color | "center";
+  doublingEnabled?: boolean;
   doubleOfferedBy: Color | null;
   winner: Color | null;
   winType: "single" | "gammon" | "backgammon" | null;
@@ -226,6 +227,7 @@ export function newGame(): GameState {
     phase: "opening_roll",
     cube: 1,
     cubeOwner: "center",
+    doublingEnabled: true,
     doubleOfferedBy: null,
     winner: null,
     winType: null,
@@ -538,6 +540,7 @@ export function applyOpeningRoll(state: GameState, color: Color, customDie?: num
 
 export function offerDouble(state: GameState, color: Color): GameState {
   const next = cloneState(state);
+  if (next.doublingEnabled === false) return next;
   next.phase = "doubling_offered";
   next.doubleOfferedBy = color;
   next.message = `${color === "white" ? "White" : "Black"} offers a double`;
@@ -588,6 +591,7 @@ export function canOfferDouble(state: GameState, color: Color): boolean {
   return (
     state.phase === "rolling" &&
     state.turn === color &&
+    state.doublingEnabled !== false &&
     (state.cubeOwner === "center" || state.cubeOwner === color) &&
     state.cube < CUBE_MAX
   );

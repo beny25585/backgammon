@@ -21,7 +21,7 @@ interface GameBoardProps {
   makeMove: (from: Source, to: Target) => void;
   undoMove?: () => void;
   endTurn?: () => void;
-  onLeave?: () => void;
+  onLeave?: (outcome?: "won" | "lost") => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
   rollResult?: number[];

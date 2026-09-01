@@ -204,18 +204,35 @@ export function GameProvider({
         });
 
         socket.on("player_joined", (_message) => {
+          const payload = (_message as Record<string, unknown>).payload as
+            | { playerColor?: Color }
+            | undefined;
           setIsLoading(false);
-          setOpponentConnected(true);
+          if (payload?.playerColor !== playerColorRef.current) {
+            setOpponentConnected(true);
+          }
         });
 
         socket.on("player_disconnected", (_message) => {
-          setOpponentConnected(false);
+          const payload = (_message as Record<string, unknown>).payload as
+            | { playerColor?: Color }
+            | undefined;
+          if (payload?.playerColor !== playerColorRef.current) {
+            setOpponentConnected(false);
+          }
         });
 
         socket.on("room_status", (_message) => {
           const data = (_message as Record<string, unknown>).payload as {
             connected: number;
+            connectedColors?: Color[];
           };
+          const opponent =
+            playerColorRef.current === "white" ? "black" : "white";
+          if (Array.isArray(data.connectedColors)) {
+            setOpponentConnected(data.connectedColors.includes(opponent));
+            return;
+          }
           setOpponentConnected(data.connected >= 2);
         });
 
@@ -382,9 +399,8 @@ export function GameProvider({
   const giveUp = useCallback(() => {
     const current = stateRef.current;
     if (!current) return;
-    const opponent: Color = playerColor === "white" ? "black" : "white";
-    endGame(opponent, "single", "give_up", current.cube || 1);
-  }, [endGame, playerColor]);
+    socket.send("give_up", {});
+  }, [socket]);
 
   const leaveGame = useCallback(() => {
     socket.send("leave", {});

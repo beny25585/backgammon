@@ -13,6 +13,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
 from .game_service import finalize_room, game_ended_payload, record_game_end
+from .link.live import publish_snapshot
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
 
@@ -99,6 +100,8 @@ def save_game_state(game_state):
 
 # Track connected users per room: {room_group_name: {user_id: channel_name}}
 _connected_users: dict = {}
+# Track connected player colors per room: {room_group_name: {user_id: player_color}}
+_connected_user_colors: dict = {}
 
 # Per-room auto-next-game timers: {room_group_name: asyncio.Task}. The countdown
 # belongs to the room, not any socket, so it survives disconnects.
@@ -198,7 +201,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Track connected user
         if self.room_group_name not in _connected_users:
             _connected_users[self.room_group_name] = {}
+        if self.room_group_name not in _connected_user_colors:
+            _connected_user_colors[self.room_group_name] = {}
         _connected_users[self.room_group_name][self.user_id] = self.channel_name
+        _connected_user_colors[self.room_group_name][self.user_id] = self.player_color
 
         username = await get_username(self.user_id)
 
@@ -254,6 +260,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'username': username,
             }
         )
+        asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state))
 
         await self._broadcast_room_status()
 
@@ -279,19 +286,22 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not hasattr(self, 'room_group_name'):
             return
 
-        if hasattr(self, 'player_color') and self.player_color:
-            await self.channel_layer.group_send(
-                self.room_group_name,
-                {
-                    'type': 'player_disconnected',
-                    'playerColor': self.player_color,
-                }
-            )
-
         if hasattr(self, 'user_id') and self.room_group_name in _connected_users:
-            _connected_users[self.room_group_name].pop(self.user_id, None)
-            if not _connected_users[self.room_group_name]:
+            connected = _connected_users[self.room_group_name]
+            if connected.get(self.user_id) == self.channel_name:
+                connected.pop(self.user_id, None)
+                _connected_user_colors.get(self.room_group_name, {}).pop(self.user_id, None)
+                if hasattr(self, 'player_color') and self.player_color:
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {
+                            'type': 'player_disconnected',
+                            'playerColor': self.player_color,
+                        }
+                    )
+            if not connected:
                 del _connected_users[self.room_group_name]
+                _connected_user_colors.pop(self.room_group_name, None)
             else:
                 await self._broadcast_room_status()
 
@@ -437,6 +447,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'playerColor': self.player_color,
             }
         )
+        asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state))
 
     async def _handle_roll_intent(self, engine):
         """Roll during the opening or a normal turn.
@@ -578,6 +589,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         reason = payload.get('reason', 'game_ended')
         if payload.get('cube') is not None:
             state['cube'] = payload['cube']
+        if state.get('doublingEnabled') is False:
+            state['cube'] = 1
 
         if winner:
             state['phase'] = 'game_over'
@@ -605,7 +618,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
             return {'success': False, 'message': 'No active game'}
+        doubling_enabled = state.get('doublingEnabled', True)
         engine.state = BackgammonEngine.get_initial_state()
+        engine.state['doublingEnabled'] = doubling_enabled
         engine.state['message'] = 'New game started'
         return {'success': True}
 
@@ -843,12 +858,15 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def _broadcast_room_status(self):
         """Broadcast the number of connected users to the room."""
-        count = len(_connected_users.get(self.room_group_name, {}))
+        connected = _connected_users.get(self.room_group_name, {})
+        colors = list(_connected_user_colors.get(self.room_group_name, {}).values())
+        count = len(connected)
         await self.channel_layer.group_send(
             self.room_group_name,
             {
                 'type': 'room_status',
                 'connected': count,
+                'connectedColors': colors,
             }
         )
 
@@ -882,6 +900,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             'type': 'room_status',
             'payload': {
                 'connected': event.get('connected'),
+                'connectedColors': event.get('connectedColors', []),
             }
         }))
 

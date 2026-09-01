@@ -1,5 +1,5 @@
 import styles from "./Controls.module.css";
-import type { GameState, Color } from "@/lib/backgammon/engine";
+import { canOfferDouble, type GameState, type Color } from "@/lib/backgammon/engine";
 import { useGame } from "../../services/gameContext";
 import DoublingCube from "../DoublingCube";
 
@@ -10,13 +10,11 @@ interface ControlsProps {
 
 export default function Controls({ playerColor, state }: ControlsProps) {
   const { offerDouble } = useGame();
-  const isPlayerTurn = state.turn === playerColor;
-  const canDouble =
-    state.phase === "rolling" && isPlayerTurn;
+  const canDouble = canOfferDouble(state, playerColor);
 
   return (
     <div className={styles.controlsContainer}>
-      <DoublingCube value={state.cube} owner={state.cubeOwner} />
+      {state.doublingEnabled !== false && <DoublingCube value={state.cube} owner={state.cubeOwner} />}
 
       {canDouble && (
         <button

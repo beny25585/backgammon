@@ -75,17 +75,26 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+CHANNEL_LAYER_BACKEND = config('CHANNEL_LAYER_BACKEND', default='redis')
+
 # Channels settings
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            'hosts': [config('REDIS_URL', default='redis://127.0.0.1:6379/0')],
-            'capacity': 150,
-            'expiry': 60,
+if CHANNEL_LAYER_BACKEND == 'memory':
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
         },
-    },
-}
+    }
+else:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [config('REDIS_URL', default='redis://127.0.0.1:6379/0')],
+                'capacity': 150,
+                'expiry': 60,
+            },
+        },
+    }
 
 # Tests run each async test in a fresh event loop; the Redis layer is a
 # process-wide singleton whose per-channel asyncio locks leak across loops and
@@ -121,6 +130,10 @@ GAMELINK_ENABLED = config('GAMELINK_ENABLED', default=False, cast=bool)
 GAMELINK_ISSUER = 'backgammon'
 GAMELINK_ACCEPTED_ISSUERS = ['tournaments']
 GAMELINK_TOURNAMENTS_URL = config('GAMELINK_TOURNAMENTS_URL', default='')
+GAMELINK_TOURNAMENTS_FRONTEND_URL = config(
+    'GAMELINK_TOURNAMENTS_FRONTEND_URL',
+    default=GAMELINK_TOURNAMENTS_URL,
+)
 GAMELINK_FRONTEND_URL = config('GAMELINK_FRONTEND_URL', default='')
 # Verifier takes a list and signer uses the first, so secrets rotate without downtime.
 GAMELINK_TICKET_SECRETS = [s for s in config('GAMELINK_TICKET_SECRETS', default='').split(',') if s]

@@ -181,6 +181,7 @@ class Tournament(models.Model):
     target_points = models.PositiveSmallIntegerField(default=5)
     time_control = models.CharField(
         max_length=20, choices=TIME_CHOICES, default="normal")
+    doubling_enabled = models.BooleanField(default=True)
     # need to remove the null option in prod
     created_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="created_tournaments")

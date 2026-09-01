@@ -34,6 +34,7 @@ class BackgammonEngine:
             'phase': 'opening_roll',
             'cube': 1,
             'cubeOwner': 'center',
+            'doublingEnabled': True,
             'doubleOfferedBy': None,
             'winner': None,
             'winType': None,
@@ -60,6 +61,7 @@ class BackgammonEngine:
             'phase': state['phase'],
             'cube': state['cube'],
             'cubeOwner': state['cubeOwner'],
+            'doublingEnabled': state.get('doublingEnabled', True),
             'doubleOfferedBy': state['doubleOfferedBy'],
             'winner': state['winner'],
             'winType': state['winType'],
@@ -322,6 +324,8 @@ class BackgammonEngine:
             s['message'] = f"{turn_name}'s turn"
 
     def offer_double(self, player_color):
+        if not self.state.get('doublingEnabled', True):
+            return {'success': False, 'message': 'Doubling is disabled for this match'}
         if self.state['cubeOwner'] != 'center' and self.state['cubeOwner'] != player_color:
             return {'success': False, 'message': 'Cannot double'}
         if self.state['phase'] != 'rolling':

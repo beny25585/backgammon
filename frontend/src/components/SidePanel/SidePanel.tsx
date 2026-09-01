@@ -12,7 +12,7 @@ import { AutoRoll } from "../autoRoll/AutoRoll";
 interface SidePanelProps {
   state: GameState;
   playerColor: Color;
-  onLeave?: () => void;
+  onLeave?: (outcome?: "won" | "lost") => void;
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: TimeControl | null;
@@ -130,7 +130,7 @@ export default function SidePanel({
           <button
             onClick={() => {
               leaveGame();
-              onLeave();
+              onLeave("lost");
             }}
             className={styles.leaveBtn}
           >

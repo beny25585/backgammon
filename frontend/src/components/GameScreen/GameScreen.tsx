@@ -9,10 +9,11 @@ import { clientLogger } from "@/services/logger";
 import { canOfferDouble } from "@/lib/backgammon/engine";
 
 interface GameScreenProps {
-  onLeave?: () => void;
+  onLeave?: (outcome?: "won" | "lost") => void;
+  homeLabel?: string;
 }
 
-export default function GameScreen({ onLeave }: GameScreenProps) {
+export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   const {
     state,
     playerColor,
@@ -178,7 +179,14 @@ export default function GameScreen({ onLeave }: GameScreenProps) {
           whiteName={whiteName}
           blackName={blackName}
           onNext={handleNextGame}
-          onHome={onLeave || handleHome}
+          onHome={() => {
+            if (!onLeave) {
+              handleHome();
+              return;
+            }
+            onLeave(gameResult.winner === playerColor ? "won" : "lost");
+          }}
+          homeLabel={homeLabel}
         />
       )}
 

@@ -136,6 +136,33 @@ def build_result_body(link, room, match=None, *, status=STATUS_COMPLETED,
         'winner_seat': winner_seat,
         'end_reason': end_reason,
         'finished_at': _iso_utc(finished_at),
+        'match_details': _match_details(match) if match is not None else None,
+    }
+
+
+def _match_details(match):
+    """
+    Return the detailed, read-only audit data the tournament UI can show later.
+
+    The tournament receiver treats unknown fields as audit metadata and stores the whole result
+    body in GameLink.raw_result, so adding this block is backward-compatible.
+    """
+    return {
+        'duration_seconds': match.duration_seconds,
+        'match_type': match.match_type,
+        'white_score': match.white_score,
+        'black_score': match.black_score,
+        'winner': match.winner,
+        'target_points': match.target_points,
+        'games': match.games,
+        'end_reason': match.end_reason,
+        'first_player': match.first_player,
+        'opening_roll': match.opening_roll,
+        'final_cube': match.final_cube,
+        'hits': match.hits,
+        'doubles_offered': match.doubles_offered,
+        'doubles_accepted': match.doubles_accepted,
+        'clock_remaining': match.clock_remaining,
     }
 
 

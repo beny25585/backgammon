@@ -19,12 +19,19 @@ interface GameResultOverlayProps {
   countdown?: number | null;
   onNext: () => void;
   onHome: () => void;
+  homeLabel?: string;
 }
 
 const winLabels = {
-  single: "Wins!",
-  gammon: "Gammon! ×2",
-  backgammon: "Backgammon! ×3",
+  single: "regular win",
+  gammon: "gammon",
+  backgammon: "backgammon",
+};
+
+const pointExplanations = {
+  single: "Regular win: 1 point",
+  gammon: "Gammon: 2 points because the opponent has not borne off any checkers",
+  backgammon: "Backgammon: 3 points because the opponent has not borne off any checkers and still has checkers on the bar or in your home board",
 };
 
 interface ScoreRow {
@@ -51,6 +58,7 @@ export default function GameResultOverlay({
   countdown,
   onNext,
   onHome,
+  homeLabel,
 }: GameResultOverlayProps) {
   const opponentColor = playerColor === "white" ? "black" : "white";
   const youWonGame = winner === playerColor;
@@ -67,6 +75,9 @@ export default function GameResultOverlay({
   const oppName = playerColor === "white" ? blackName : whiteName;
   const selfLabel = selfName || "You";
   const oppLabel = oppName || "Opponent";
+  const winnerLabel = winner === playerColor ? selfLabel : oppLabel;
+  const winnerDisplayLabel = winner === playerColor ? "You" : winnerLabel;
+  const loser = winner === "white" ? "black" : "white";
 
   const selfScore = matchScore[playerColor] ?? 0;
   const oppScore = matchScore[opponentColor] ?? 0;
@@ -84,8 +95,19 @@ export default function GameResultOverlay({
         ];
 
   function label() {
-    const wl = winLabels[winType];
-    return cube > 1 ? `${wl} (cube ×${cube})` : wl;
+    const scope = isMatchOver ? "the match" : "this game";
+    const cubeSuffix = cube > 1 ? ` (cube ×${cube})` : "";
+
+    if (winType === "single") {
+      return `${winnerDisplayLabel} won ${scope}${cubeSuffix}`;
+    }
+
+    return `${winnerDisplayLabel} won ${scope} by ${winLabels[winType]}${cubeSuffix}`;
+  }
+
+  function pointExplanation() {
+    const base = pointExplanations[winType];
+    return cube > 1 ? `${base}; doubled by cube ×${cube} to ${points} points.` : `${base}.`;
   }
 
   return (
@@ -120,10 +142,11 @@ export default function GameResultOverlay({
         </h2>
 
         <p className={styles.subtitle}>{label()}</p>
+        <p className={styles.pointsNote}>{pointExplanation()}</p>
 
         {reason === "leave" && (
           <p className={styles.subtitle} data-testid="opponent-left-note">
-            Opponent left the match
+            {loser === playerColor ? "You left the match" : "Opponent left the match"}
           </p>
         )}
 
@@ -167,7 +190,7 @@ export default function GameResultOverlay({
             onClick={onHome}
             className={`${styles.button} ${isMatchOver ? styles.buttonPrimary : styles.buttonSecondary}`}
           >
-            {isMatchOver ? "Back to Home" : "Quit Match"}
+            {isMatchOver ? (homeLabel ?? "Back to Home") : "Quit Match"}
           </button>
         </div>
 

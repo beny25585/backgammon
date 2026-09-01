@@ -143,6 +143,7 @@ Set in `backend/.env` (gitignored — keep it that way).
 |---|---|---|
 | `GAMELINK_ENABLED` | — | `True` to turn the feature on. Default off. |
 | `GAMELINK_TOURNAMENTS_URL` | when enabled | Base URL of the tournaments server, `https://…`, no path. Results are POSTed here. |
+| `GAMELINK_TOURNAMENTS_FRONTEND_URL` | when enabled | Base URL of the tournaments frontend, `https://…`, no path. Players return here after a linked game. Locally this is usually `http://localhost:5174`. |
 | `GAMELINK_FRONTEND_URL` | when enabled | Base URL of this project's SPA, `https://…`. A redeemed ticket redirects to `{FRONTEND}/link`. |
 | `GAMELINK_TICKET_SECRETS` | when enabled | Comma-separated list. Verifies inbound tickets; **every** entry is tried, so rotation has no gap. |
 | `GAMELINK_RESULT_SECRET` | when enabled | Signs the results this server sends. One value, not a list — this side is the signer. |

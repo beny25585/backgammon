@@ -42,11 +42,21 @@ function GameRoute() {
   const navigate = useNavigate();
   const playerColor =
     (new URLSearchParams(location.search).get("color") as Color) || "white";
+  const params = new URLSearchParams(location.search);
+  const returnUrl = params.get("return");
+  const tournamentId = params.get("tournament");
 
-  function handleLeave() {
+  function handleLeave(outcome?: "won" | "lost") {
     // The SidePanel Leave button sends the WS `leave` message (forfeit +
     // close room) before calling this; we just leave the room view.
     clearRoom();
+    if (returnUrl) {
+      const next = new URL(returnUrl, window.location.origin);
+      if (outcome) next.searchParams.set("matchResult", outcome);
+      if (tournamentId) next.searchParams.set("tournament", tournamentId);
+      window.location.assign(next.toString());
+      return;
+    }
     navigate("/home", { replace: true });
   }
 
@@ -62,7 +72,10 @@ function GameRoute() {
         ).env?.VITE_SERVER_URL
       }
     >
-      <GameScreen onLeave={handleLeave} />
+      <GameScreen
+        onLeave={handleLeave}
+        homeLabel={returnUrl ? "Back to Tournament" : undefined}
+      />
     </GameProvider>
   );
 }

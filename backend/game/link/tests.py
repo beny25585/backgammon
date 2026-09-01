@@ -17,6 +17,7 @@ import time
 import uuid
 from datetime import timedelta
 from io import StringIO
+from urllib.parse import parse_qs
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -58,6 +59,7 @@ WRONG_SECRET = "test-wrong-secret-not-a-real-one-5555555555"
 RESULT_SECRET = "test-result-secret-not-a-real-one-0123456789"
 
 FRONTEND_URL = "https://play.example"
+TOURNAMENTS_FRONTEND_URL = "https://tournaments-ui.example"
 ENTER_URL = "/api/link/enter/"
 
 link_settings = override_settings(
@@ -65,6 +67,7 @@ link_settings = override_settings(
     GAMELINK_TICKET_SECRETS=[TICKET_SECRET],
     GAMELINK_RESULT_SECRET=RESULT_SECRET,
     GAMELINK_TOURNAMENTS_URL="https://tournaments.example",
+    GAMELINK_TOURNAMENTS_FRONTEND_URL=TOURNAMENTS_FRONTEND_URL,
     GAMELINK_FRONTEND_URL=FRONTEND_URL,
 )
 
@@ -147,13 +150,15 @@ class EnterLinkTests(LinkTestBase):
     def test_the_fragment_carries_a_usable_session_for_the_right_room(self):
         response = self.enter(make_ticket())
 
-        fragment = dict(
-            pair.split("=", 1) for pair in response["Location"].split("#", 1)[1].split("&"))
+        fragment_text = response["Location"].split("#", 1)[1]
+        fragment = dict(pair.split("=", 1) for pair in fragment_text.split("&"))
         room = TournamentLink.objects.get().room
         user = LinkedIdentity.objects.get().user
 
         self.assertEqual(fragment["room"], str(room.id))
         self.assertEqual(fragment["color"], "white")
+        self.assertEqual(parse_qs(fragment_text)["return"], [f"{TOURNAMENTS_FRONTEND_URL}/tournaments"])
+        self.assertEqual(fragment["tournament"], "17")
         self.assertEqual(AccessToken(fragment["access"])["user_id"], user.id)
         self.assertIn("refresh", fragment)
 
@@ -723,7 +728,8 @@ class ResultBodyTests(ResultTestBase):
         body = self.body()
         self.assertEqual(set(body), {
             "v", "tournament_id", "fixture_id", "room_id", "match_id", "status",
-            "target_points", "seats", "score", "winner_seat", "end_reason", "finished_at"})
+            "target_points", "seats", "score", "winner_seat", "end_reason", "finished_at",
+            "match_details"})
         self.assertEqual(body["v"], 1)
         self.assertEqual(body["tournament_id"], 17)
         self.assertEqual(body["fixture_id"], 482)
@@ -731,6 +737,10 @@ class ResultBodyTests(ResultTestBase):
         self.assertEqual(body["status"], "completed")
         self.assertEqual(body["target_points"], 1)
         self.assertEqual(body["end_reason"], "bear_off")
+        self.assertEqual(body["match_details"]["winner"], "white")
+        self.assertEqual(body["match_details"]["final_cube"], 1)
+        self.assertEqual(body["match_details"]["games"][0]["winner"], "white")
+        self.assertEqual(body["match_details"]["games"][0]["points_awarded"], 1)
         self.assertRegex(body["finished_at"], r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 
     def test_seats_and_score_follow_seat_p1_color(self):
@@ -762,6 +772,7 @@ class ResultBodyTests(ResultTestBase):
         self.assertEqual(body["status"], "cancelled")
         self.assertIsNone(body["winner_seat"])
         self.assertIsNone(body["match_id"])
+        self.assertIsNone(body["match_details"])
 
     def test_the_match_id_is_the_saved_match(self):
         self.seat_both()

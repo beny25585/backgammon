@@ -39,6 +39,8 @@ export default function LinkEntry() {
     const refresh = fragment.get("refresh");
     const room = fragment.get("room");
     const color = fragment.get("color");
+    const tournament = fragment.get("tournament");
+    const returnUrl = fragment.get("return");
 
     if (!access || !refresh || !room || (color !== "white" && color !== "black")) {
       navigate("/?link=invalid", { replace: true });
@@ -46,7 +48,11 @@ export default function LinkEntry() {
     }
 
     storeTokens({ access, refresh });
-    navigate(`/game/${encodeURIComponent(room)}?color=${color}`, {
+    const params = new URLSearchParams({ color });
+    if (tournament) params.set("tournament", tournament);
+    if (returnUrl) params.set("return", returnUrl);
+
+    navigate(`/game/${encodeURIComponent(room)}?${params.toString()}`, {
       replace: true,
     });
   }, [navigate]);

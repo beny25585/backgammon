@@ -1818,6 +1818,19 @@ class BackgammonEngineTests(TestCase):
     def _engine(self, state=None):
         return BackgammonEngine(state)
 
+    def test_offer_double_is_rejected_when_the_match_disables_doubling(self):
+        state = BackgammonEngine.get_initial_state()
+        state['phase'] = 'rolling'
+        state['doublingEnabled'] = False
+        engine = self._engine(state)
+
+        result = engine.offer_double('white')
+
+        self.assertFalse(result['success'])
+        self.assertEqual(result['message'], 'Doubling is disabled for this match')
+        self.assertEqual(engine.state['cube'], 1)
+        self.assertIsNone(engine.state['doubleOfferedBy'])
+
     def test_roll_dice_uses_injected_values(self):
         engine = self._engine()
         engine.state["phase"] = "rolling"

@@ -146,6 +146,7 @@ def _link_for_fixture(issuer, ticket):
         return link, link.room
 
     initial = BackgammonEngine.get_initial_state()
+    initial['doublingEnabled'] = bool(ticket.get('dbl', True))
     try:
         with transaction.atomic():
             room = GameRoom.objects.create(
@@ -193,12 +194,19 @@ def _handoff(user, room, color, frontend_url):
     access.set_exp(lifetime=settings.GAMELINK_LINK_TOKEN_TTL)
     refresh.set_exp(lifetime=settings.GAMELINK_LINK_TOKEN_TTL)
 
-    fragment = urlencode({
+    fragment_data = {
         'access': str(access),
         'refresh': str(refresh),
         'room': str(room.id),
         'color': color,
-    })
+    }
+    link = getattr(room, 'tournament_link', None)
+    if link:
+        fragment_data.update({
+            'tournament': str(link.tournament_id),
+            'return': f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/tournaments",
+        })
+    fragment = urlencode(fragment_data)
     response = HttpResponseRedirect(f"{frontend_url}/link#{fragment}")
     response['Referrer-Policy'] = 'no-referrer'
     response['Cache-Control'] = 'no-store'

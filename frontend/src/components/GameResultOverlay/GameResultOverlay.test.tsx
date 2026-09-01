@@ -111,6 +111,8 @@ test("player B sees Match Lost when the match is over", async ({ mount }) => {
   );
 
   await expect(component.getByText("Match Lost")).toBeVisible();
+  await expect(component.getByText("alice won the match")).toBeVisible();
+  await expect(component.getByText("Wins!")).not.toBeVisible();
   await expect(component.getByText("Back to Home")).toBeVisible();
   await expect(component.getByText("Next Game →")).not.toBeVisible();
 });
@@ -122,7 +124,7 @@ test("win-type line carries the points info, no +N chip", async ({ mount }) => {
     />,
   );
 
-  await expect(component.getByText("Gammon! ×2")).toBeVisible();
+  await expect(component.getByText("You won this game by gammon (cube ×2)")).toBeVisible();
   await expect(component.getByText("+4")).not.toBeVisible();
   await expect(component.getByText("Wins! → +1")).not.toBeVisible();
 });

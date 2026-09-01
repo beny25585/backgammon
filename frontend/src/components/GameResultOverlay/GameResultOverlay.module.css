@@ -58,6 +58,15 @@
   margin-top: 4px;
 }
 
+.pointsNote {
+  max-width: 280px;
+  margin: 8px auto 0;
+  color: rgba(246, 231, 198, 0.78);
+  font-family: "Assistant", sans-serif;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .scoreboard {
   margin-top: 16px;
   border-radius: 14px;
