@@ -260,7 +260,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'username': username,
             }
         )
-        asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state))
+        asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state_data))
 
         await self._broadcast_room_status()
 
