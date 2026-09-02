@@ -45,7 +45,16 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   const DOUBLE_WINDOW_SECONDS = 20;
   const [doubleWindow, setDoubleWindow] = useState(false);
   const [doubleCountdown, setDoubleCountdown] = useState(DOUBLE_WINDOW_SECONDS);
+  const [doubleOfferPending, setDoubleOfferPending] = useState(false);
   const doubleDecidedRef = useRef(false);
+
+  const canChooseDouble = Boolean(
+    autoRoll &&
+      state?.phase === "rolling" &&
+      state.remaining.length === 0 &&
+      state.turn === playerColor &&
+      canOfferDouble(state, playerColor),
+  );
 
   const handleRoll = useCallback(() => {
     setRollResult(undefined);
@@ -55,21 +64,17 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
   useEffect(() => {
     if (!state) return;
-    const eligible =
-      state.phase === "rolling" &&
-      state.remaining.length === 0 &&
-      state.turn === playerColor &&
-      canOfferDouble(state, playerColor);
-    if (!eligible) {
+    if (!canChooseDouble) {
       doubleDecidedRef.current = false;
       setDoubleWindow(false);
+      setDoubleOfferPending(false);
       return;
     }
     if (!doubleDecidedRef.current && !doubleWindow) {
       setDoubleWindow(true);
       setDoubleCountdown(DOUBLE_WINDOW_SECONDS);
     }
-  }, [state, playerColor, doubleWindow]);
+  }, [canChooseDouble, doubleWindow]);
 
   useEffect(() => {
     if (!doubleWindow) return;
@@ -83,6 +88,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   }, [doubleWindow, doubleCountdown]);
   const handleDoubleOffer = useCallback(() => {
     doubleDecidedRef.current = true;
+    setDoubleOfferPending(true);
     setDoubleWindow(false);
     offerDouble();
   }, [offerDouble]);
@@ -118,11 +124,22 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     } else if (
       state.phase === "rolling" &&
       state.remaining.length === 0 &&
-      !doubleWindow
+      !doubleWindow &&
+      !doubleOfferPending &&
+      (!canChooseDouble || doubleDecidedRef.current)
     ) {
       rollDice();
     }
-  }, [autoRoll, state, playerColor, handleOpeningRoll, rollDice, doubleWindow]);
+  }, [
+    autoRoll,
+    state,
+    playerColor,
+    handleOpeningRoll,
+    rollDice,
+    doubleWindow,
+    doubleOfferPending,
+    canChooseDouble,
+  ]);
 
   const handleRollLand = useCallback(() => {
     setLanding(false);
@@ -257,6 +274,23 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
               openingRollResult.winner !== playerColor && (
                 <div className={styles.subText}>Opponent goes first</div>
               )}
+          </div>
+        </div>
+      )}
+
+      {doubleWindow && (
+        <div className={styles.overlayDim} data-testid="double-decision-overlay">
+          <div className={styles.overlayCard} role="dialog" aria-modal="true" aria-label="Double decision">
+            <div className={styles.winnerText}>Offer a double before rolling?</div>
+            <div className={styles.subText}>Auto roll starts in {doubleCountdown}s</div>
+            <div className={styles.doubleDecisionActions}>
+              <button type="button" className={styles.doubleOfferButton} onClick={handleDoubleOffer}>
+                Offer double
+              </button>
+              <button type="button" className={styles.doubleSkipButton} onClick={handleDoubleSkip}>
+                Roll now
+              </button>
+            </div>
           </div>
         </div>
       )}

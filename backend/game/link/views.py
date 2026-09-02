@@ -153,6 +153,7 @@ def _link_for_fixture(issuer, ticket):
                 code=generate_room_code(),
                 status='waiting',
                 target_points=ticket['tp'],
+                time_control=ticket['tc'],
                 state=initial,
             )
             GameState.objects.create(room=room, state_data=initial)
@@ -204,7 +205,7 @@ def _handoff(user, room, color, frontend_url):
     if link:
         fragment_data.update({
             'tournament': str(link.tournament_id),
-            'return': f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/tournaments",
+            'return': f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/tournaments/",
         })
     fragment = urlencode(fragment_data)
     response = HttpResponseRedirect(f"{frontend_url}/link#{fragment}")

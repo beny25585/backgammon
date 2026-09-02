@@ -89,6 +89,8 @@ def make_ticket(secret=TICKET_SECRET, **overrides):
         "seat": "p1",
         "opp": "bob",
         "tp": 1,
+        "dbl": True,
+        "tc": "normal",
     }
     payload.update(overrides)
     return signing.dumps(payload, key=secret, salt=TICKET_SALT, compress=False)
@@ -143,9 +145,16 @@ class EnterLinkTests(LinkTestBase):
         room = link.room
         self.assertEqual(room.status, "waiting")
         self.assertEqual(room.target_points, 5)
+        self.assertEqual(room.time_control, "normal")
         self.assertTrue(room.state)
         self.assertEqual(room.players.get().color, "white")
         self.assertEqual(RedeemedTicket.objects.get().issuer, "tournaments")
+
+    def test_a_ticket_time_control_configures_the_linked_room(self):
+        response = self.enter(make_ticket(sub=str(uuid.uuid4()), tc="fast"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(TournamentLink.objects.get().room.time_control, "fast")
 
     def test_the_fragment_carries_a_usable_session_for_the_right_room(self):
         response = self.enter(make_ticket())
@@ -157,7 +166,7 @@ class EnterLinkTests(LinkTestBase):
 
         self.assertEqual(fragment["room"], str(room.id))
         self.assertEqual(fragment["color"], "white")
-        self.assertEqual(parse_qs(fragment_text)["return"], [f"{TOURNAMENTS_FRONTEND_URL}/tournaments"])
+        self.assertEqual(parse_qs(fragment_text)["return"], [f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"])
         self.assertEqual(fragment["tournament"], "17")
         self.assertEqual(AccessToken(fragment["access"])["user_id"], user.id)
         self.assertIn("refresh", fragment)
@@ -611,8 +620,8 @@ TICKET_VECTOR_TOKEN = (
     "eyJ2IjoxLCJpc3MiOiJ0b3VybmFtZW50cyIsImF1ZCI6ImJhY2tnYW1tb24iLCJqdGkiOiI1ZjNjMWQyZS04YTRi"
     "LTRjNmQtOWUwZi0xYTJiM2M0ZDVlNmYiLCJpYXQiOjE3NTYzMDAwMDAsImV4cCI6MTc1NjMwMDEyMCwic3ViIjoi"
     "MGYyYTdiNmMtM2Q0ZS00ZjVhLThiOWMtMGQxZTJmM2E0YjVjIiwibmFtZSI6ImFsaWNlIiwidHJuIjoxNywiZml4"
-    "Ijo0ODIsInNlYXQiOiJwMSIsIm9wcCI6ImJvYiIsInRwIjoxfQ:1x0Qjf:"
-    "FgOctl42KMzHWqwdGqd57k_WoKZLIRZgN52CkAaCZCs"
+    "Ijo0ODIsInNlYXQiOiJwMSIsIm9wcCI6ImJvYiIsInRwIjoxLCJkYmwiOnRydWUsInRjIjoibm9ybWFsIn0:1x1hs5:"
+    "dMOvm_vHiAACg1_LE07AU5JhYfpoyCSYWVF6U_kpaMc"
 )
 TICKET_VECTOR_PAYLOAD = {
     "v": 1,
@@ -628,6 +637,8 @@ TICKET_VECTOR_PAYLOAD = {
     "seat": "p1",
     "opp": "bob",
     "tp": 1,
+    "dbl": True,
+    "tc": "normal",
 }
 
 

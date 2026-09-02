@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import styles from "./SidePanel.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
@@ -30,8 +29,7 @@ export default function SidePanel({
   autoRoll,
   onAutoRollChange,
 }: SidePanelProps) {
-  const navigate = useNavigate();
-  const { giveUp, leaveGame, whiteName, blackName, matchScore } = useGame();
+  const { giveUp, whiteName, blackName, matchScore } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
 
   const opponentColor = playerColor === "white" ? "black" : "white";
@@ -112,7 +110,6 @@ export default function SidePanel({
               onClick={() => {
                 giveUp();
                 setShowGiveUp(false);
-                navigate("/home");
               }}
             >
               Yes
@@ -129,8 +126,7 @@ export default function SidePanel({
         {onLeave && (
           <button
             onClick={() => {
-              leaveGame();
-              onLeave("lost");
+              onLeave();
             }}
             className={styles.leaveBtn}
           >

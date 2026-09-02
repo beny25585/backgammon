@@ -34,6 +34,7 @@ TICKET_SALT = 'gamelink.ticket.v1'
 RESULT_SIGNATURE_VERSION = 'v1'
 
 SEATS = ('p1', 'p2')
+TIME_CONTROLS = ('none', 'fast', 'normal', 'slow')
 
 # Claims that must be present, and what each has to be, before anything downstream reads them.
 REQUIRED_CLAIMS = {
@@ -121,6 +122,11 @@ def _validate_claims(payload):
 
     if payload['tp'] < 1:
         raise TicketError('target points must be positive')
+
+    time_control = payload.get('tc', 'normal')
+    if time_control not in TIME_CONTROLS:
+        raise TicketError('unknown time control')
+    payload['tc'] = time_control
 
     try:
         # Normalised here so that everything downstream can treat `sub` as a well-formed id.

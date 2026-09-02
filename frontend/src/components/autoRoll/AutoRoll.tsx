@@ -5,9 +5,10 @@ const STORAGE_KEY = "bg_auto_roll";
 export function useAutoRoll() {
   const [autoRoll, setAutoRoll] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(STORAGE_KEY) === "true";
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved === null ? true : saved === "true";
     } catch {
-      return false;
+      return true;
     }
   });
 

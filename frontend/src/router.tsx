@@ -47,8 +47,6 @@ function GameRoute() {
   const tournamentId = params.get("tournament");
 
   function handleLeave(outcome?: "won" | "lost") {
-    // The SidePanel Leave button sends the WS `leave` message (forfeit +
-    // close room) before calling this; we just leave the room view.
     clearRoom();
     if (returnUrl) {
       const next = new URL(returnUrl, window.location.origin);
