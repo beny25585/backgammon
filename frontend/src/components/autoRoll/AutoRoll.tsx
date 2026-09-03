@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { useI18n } from "../../i18n/I18nProvider";
 import "./AutoRoll.css";
-import { useI18n } from "../../i18n/I18nProvider";
 
 const STORAGE_KEY = "bg_auto_roll";
 export function useAutoRoll() {
