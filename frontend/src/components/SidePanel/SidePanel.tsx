@@ -49,6 +49,12 @@ export default function SidePanel({
 
   return (
     <div className={styles.panel} data-testid="side-panel">
+      <div className={styles.header}>
+        <span className={styles.kicker}>Match control</span>
+        <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>
+          {activeColor === playerColor ? "Your turn" : "Opponent turn"}
+        </span>
+      </div>
       <div className={styles.playersRow}>
         <div className={styles.section}>
           <PlayerRow

@@ -1,18 +1,18 @@
 :root {
   /* Board */
-  --color-board-frame: #3d2817;
-  --color-board-felt: #8b5a2b;
-  --color-point-light: #d4a574;
-  --color-point-dark: #3d2817;
-  --color-checker-white: #ffffff;
-  --color-checker-black: #000000;
-  --color-gold: #c9a961;
+  --color-board-frame: #111a3a;
+  --color-board-felt: #2b63c9;
+  --color-point-light: #76a0ff;
+  --color-point-dark: #34328a;
+  --color-checker-white: #edf2ff;
+  --color-checker-black: #202052;
+  --color-gold: #e3be61;
   --color-text: white;
   --color-text-black: black;
 
   /* App */
-  --color-background: #1a1a1a;
-  --color-foreground: #e0e0e0;
+  --color-background: #080b13;
+  --color-foreground: #eef2ff;
   --color-background-blue: rgb(9, 9, 102);
 
   /* UI */

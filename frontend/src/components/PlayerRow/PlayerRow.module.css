@@ -3,28 +3,28 @@
   align-items: center;
   gap: clamp(6px, 2.5cqw, 10px);
   padding: clamp(6px, 2.5cqw, 10px) clamp(8px, 3cqw, 12px);
-  border-radius: clamp(10px, 3cqw, 12px);
+  border-radius: 6px;
   border: 1px solid transparent;
   transition: background 0.18s, border-color 0.18s, box-shadow 0.18s;
   width: 100%;
-  height: 80%;
+  min-height: clamp(52px, 14cqw, 66px);
 }
 
 .idle {
-  background: rgba(255, 255, 255, 0.03);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.1);
 }
 
 .activeSelf {
-  background: rgba(124, 214, 154, 0.08);
-  border-color: rgba(124, 214, 154, 0.5);
-  box-shadow: 0 0 14px rgba(124, 214, 154, 0.12);
+  background: rgba(79, 127, 235, 0.17);
+  border-color: rgba(114, 154, 255, 0.68);
+  box-shadow: inset 3px 0 0 #78a3ff;
 }
 
 .activeOpponent {
-  background: rgba(231, 189, 114, 0.12);
-  border-color: rgba(231, 189, 114, 0.55);
-  box-shadow: 0 0 14px rgba(231, 189, 114, 0.14);
+  background: rgba(227, 190, 97, 0.12);
+  border-color: rgba(227, 190, 97, 0.6);
+  box-shadow: inset 3px 0 0 #e3be61;
 }
 
 .avatar {
@@ -32,15 +32,15 @@
   height: clamp(22px, 8cqw, 30px);
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(231, 189, 114, 0.25);
+  border: 1px solid rgba(114, 154, 255, 0.4);
 }
 
 .avatar.white {
-  background: radial-gradient(circle at 30% 25%, #ffffff, #f4e4c1 58%, #b89660 100%);
+  background: radial-gradient(circle at 30% 25%, #ffffff, #e7efff 58%, #a9bbe1 100%);
 }
 
 .avatar.black {
-  background: radial-gradient(circle at 30% 25%, #6a4830, #2a1810 58%, #0a0402 100%);
+  background: radial-gradient(circle at 30% 25%, #5752b6, #29276d 58%, #141537 100%);
 }
 
 .info {
@@ -52,8 +52,9 @@
   display: block;
   font-size: clamp(10px, 3.2cqw, 12px);
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #f7f1e7;
 }
 
@@ -88,12 +89,12 @@
 .score {
   font-size: clamp(15px, 5cqw, 20px);
   font-weight: 900;
-  color: #e7bd72;
+  color: #e3be61;
   letter-spacing: 0.08em;
 }
 
 .activeSelf .score {
-  color: #7cd69a;
+  color: #9fc1ff;
 }
 
 .idle .score {
@@ -105,12 +106,12 @@
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #7cd69a;
+  color: #9edeb1;
   white-space: nowrap;
 }
 
 .activeOpponent .turnBadge {
-  color: #e7bd72;
+  color: #e3be61;
 }
 
 @media (max-height: 360px) {
@@ -126,4 +127,3 @@
     margin-top: 1px;
   }
 }
-

@@ -419,6 +419,17 @@ export function Board({
     }
   }
 
+  const canUndo =
+    Boolean(onUndo) &&
+    state.turn === myColor &&
+    Boolean(state.moveHistory?.length) &&
+    state.phase === "moving";
+  const canConfirm =
+    Boolean(onConfirm) &&
+    state.phase === "moving" &&
+    state.turn === myColor &&
+    state.remaining.length === 0;
+
   return (
     <div ref={wrapperRef} className={styles.wrapper}>
       <div
@@ -529,15 +540,16 @@ export function Board({
           />
         </div>
 
-        {onUndo &&
-          state.turn === myColor &&
-          state.moveHistory &&
-          state.moveHistory.length > 0 &&
-          state.phase === "moving" && <UndoButton onClick={handleUndo} />}
-        {onConfirm &&
-          state.phase === "moving" &&
-          state.turn === myColor &&
-          state.remaining.length === 0 && <ConfirmButton onClick={onConfirm} />}
+        {canUndo && (
+          <div className={styles.boardUndoAction}>
+            <UndoButton onClick={handleUndo} />
+          </div>
+        )}
+        {canConfirm && (
+          <div className={styles.boardConfirmAction}>
+            <ConfirmButton onClick={onConfirm} />
+          </div>
+        )}
       </div>
 
       {flyChecker && (

@@ -1,9 +1,15 @@
 .autoRollToggle {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
   cursor: pointer;
   user-select: none;
+  border: 1px solid rgba(114, 154, 255, 0.22);
+  border-radius: 6px;
+  background: rgba(5, 9, 24, 0.28);
 }
 
 .autoRollToggle input {
@@ -19,15 +25,15 @@
   flex: none;
   border-radius: 9999px;
   background: rgba(0, 0, 0, 0.55);
-  border: 2px solid rgba(231, 189, 114, 0.6);
+  border: 2px solid rgba(114, 154, 255, 0.62);
   transition:
     background 0.2s,
     border-color 0.2s;
 }
 
 .autoRollToggle input:checked + .autoRollTrack {
-  background: rgba(231, 189, 114, 0.3);
-  border-color: #e7bd72;
+  background: rgba(79, 127, 235, 0.28);
+  border-color: #5f90f1;
 }
 
 .autoRollThumb {
@@ -38,7 +44,7 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #e7bd72;
+  background: #78a3ff;
   transition: left 0.2s;
 }
 
@@ -51,5 +57,5 @@
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #e7bd72;
+  color: #9fc1ff;
 }

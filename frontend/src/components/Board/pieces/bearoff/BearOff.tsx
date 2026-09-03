@@ -20,7 +20,10 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
         <div className={styles.highlight} />
       )}
       <div className={styles.section}>
-        <div className={styles.label}>Black</div>
+        <div className={styles.label}>
+          <span>Black</span>
+          <span className={styles.count}>{state.home.black}</span>
+        </div>
         {Array.from({ length: Math.min(state.home.black, 15) }).map((_, i) => (
           <motion.div
             key={i}
@@ -31,7 +34,10 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
         ))}
       </div>
       <div className={styles.sectionReverse}>
-        <div className={styles.label}>White</div>
+        <div className={styles.label}>
+          <span>White</span>
+          <span className={styles.count}>{state.home.white}</span>
+        </div>
         {Array.from({ length: Math.min(state.home.white, 15) }).map((_, i) => (
           <motion.div
             key={i}

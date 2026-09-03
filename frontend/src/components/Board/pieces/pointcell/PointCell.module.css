@@ -37,25 +37,25 @@
 /* Triangle colors */
 
 .triangleLightTop {
-  background: linear-gradient(180deg, #e8bf87 0%, #b98548 100%);
+  background: linear-gradient(180deg, #8eb2ff 0%, #5d88ec 100%);
 
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 .triangleDarkTop {
-  background: linear-gradient(180deg, #000000 0%, #1a0e06 100%);
+  background: linear-gradient(180deg, #4b48a7 0%, #29255f 100%);
 
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
 .triangleLightBottom {
-  background: linear-gradient(0deg, #e8bf87 0%, #b98548 100%);
+  background: linear-gradient(0deg, #8eb2ff 0%, #5d88ec 100%);
 
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }
 
 .triangleDarkBottom {
-  background: linear-gradient(0deg, #4a2f1a 0%, #1a0e06 100%);
+  background: linear-gradient(0deg, #4b48a7 0%, #29255f 100%);
 
   clip-path: polygon(50% 0, 100% 100%, 0 100%);
 }

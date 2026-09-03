@@ -156,6 +156,19 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(TournamentLink.objects.get().room.time_control, "fast")
 
+    def test_a_new_ticket_updates_a_waiting_linked_room_settings(self):
+        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", tc="normal", tp=5, dbl=True))
+
+        response = self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", tc="fast", tp=7, dbl=False))
+
+        self.assertEqual(response.status_code, 302)
+        room = TournamentLink.objects.get().room
+        room.refresh_from_db()
+        self.assertEqual(room.time_control, "fast")
+        self.assertEqual(room.target_points, 7)
+        self.assertFalse(room.state["doublingEnabled"])
+        self.assertFalse(GameState.objects.get(room=room).state_data["doublingEnabled"])
+
     def test_the_fragment_carries_a_usable_session_for_the_right_room(self):
         response = self.enter(make_ticket())
 

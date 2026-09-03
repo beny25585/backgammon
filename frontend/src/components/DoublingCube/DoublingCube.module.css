@@ -9,13 +9,13 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: clamp(8px, 2.5cqw, 12px);
+  border-radius: 6px;
   font-weight: 800;
   font-size: clamp(14px, 7cqw, 20px);
   line-height: 1;
   user-select: none;
-  background: linear-gradient(145deg, #ffffff 0%, #e8e8e8 55%, #c9c9c9 100%);
-  border: 1px solid rgba(0, 0, 0, 0.18);
+  background: linear-gradient(145deg, #f8faff 0%, #d8e2fa 58%, #aebee5 100%);
+  border: 1px solid rgba(114, 154, 255, 0.58);
   box-shadow:
     0 10px 20px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -27,7 +27,7 @@
 }
 
 .ownerLabel {
-  color: rgba(247, 241, 231, 0.58);
+  color: rgba(220, 230, 255, 0.66);
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;

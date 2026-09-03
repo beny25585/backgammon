@@ -143,6 +143,7 @@ def _link_for_fixture(issuer, ticket):
     """
     link = TournamentLink.objects.filter(issuer=issuer, fixture_id=ticket['fix']).first()
     if link is not None:
+        _sync_waiting_room_from_ticket(link.room, ticket)
         return link, link.room
 
     initial = BackgammonEngine.get_initial_state()
@@ -169,6 +170,32 @@ def _link_for_fixture(issuer, ticket):
 
     logger.info(f"link room provisioned: issuer={issuer} fixture={ticket['fix']} room={room.code}")
     return link, room
+
+
+def _sync_waiting_room_from_ticket(room, ticket):
+    """Keep a not-yet-started linked room aligned with the latest tournament settings."""
+    if room.status != 'waiting':
+        return
+
+    update_fields = []
+    if room.target_points != ticket['tp']:
+        room.target_points = ticket['tp']
+        update_fields.append('target_points')
+    if room.time_control != ticket['tc']:
+        room.time_control = ticket['tc']
+        update_fields.append('time_control')
+
+    state = dict(room.state or {})
+    doubling_enabled = bool(ticket.get('dbl', True))
+    if state.get('doublingEnabled') != doubling_enabled:
+        state['doublingEnabled'] = doubling_enabled
+        room.state = state
+        update_fields.append('state')
+        GameState.objects.filter(room=room).update(state_data=state)
+
+    if update_fields:
+        update_fields.append('updated_at')
+        room.save(update_fields=update_fields)
 
 
 def _start_if_full(room):

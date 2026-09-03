@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import "@fontsource/assistant";
 import "@fontsource/playfair-display";
 import App from "./App";
+import { I18nProvider } from "./i18n/I18nProvider";
 import { clientLogger } from "./services/logger";
 import "./styles/global.css";
 
@@ -17,8 +18,10 @@ window.addEventListener("unhandledrejection", (e) => {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter basename="/backgammon">
-      <App />
-    </BrowserRouter>
+    <I18nProvider>
+      <BrowserRouter basename="/backgammon">
+        <App />
+      </BrowserRouter>
+    </I18nProvider>
   </StrictMode>,
 );

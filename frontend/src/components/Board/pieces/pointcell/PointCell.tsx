@@ -59,24 +59,15 @@ export default function PointCell({
       data-point-idx={index}
     >
       <div
-        className={styles.background}
-        style={{
-          background: isLight
-            ? `linear-gradient(
-                ${top ? "180deg" : "0deg"},
-                #e8bf87 0%,
-                #b98548 100%
-              )`
-            : `linear-gradient(
-                ${top ? "180deg" : "0deg"},
-                #4a2f1a 0%,
-                #1a0e06 100%
-              )`,
-
-          clipPath: top
-            ? "polygon(0 0, 100% 0, 50% 100%)"
-            : "polygon(50% 0, 100% 100%, 0 100%)",
-        }}
+        className={`${styles.background} ${
+          top
+            ? isLight
+              ? styles.triangleLightTop
+              : styles.triangleDarkTop
+            : isLight
+              ? styles.triangleLightBottom
+              : styles.triangleDarkBottom
+        }`}
       />
 
       {(selected || isLegalTarget || isLegalFrom) && (
@@ -86,12 +77,11 @@ export default function PointCell({
           className={`${styles.highlight} ${isLegalTarget ? styles.pulse : ""}`}
           style={{
 
-            //set the color for the available move/selected/target 
             background: isLegalTarget
-              ? "radial-gradient(circle at 50% 50%, rgba(54, 252, 24, 0.69), transparent 70%)"
+              ? "radial-gradient(circle at 50% 50%, rgba(137, 180, 255, 0.78), transparent 68%)"
               : selected
-                ? "radial-gradient(circle at 50% 50%, rgb(63, 159, 172), transparent 70%)"
-                : "radial-gradient(circle at 50% 50%, rgb(119, 109, 4), transparent 70%)",
+                ? "radial-gradient(circle at 50% 50%, rgba(227, 190, 97, 0.5), transparent 70%)"
+                : "radial-gradient(circle at 50% 50%, rgba(137, 180, 255, 0.28), transparent 70%)",
           }}
         />
       )}

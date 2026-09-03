@@ -3,6 +3,7 @@ import { useState, useRef } from "react";
 import type { Color } from "@/lib/backgammon/engine";
 import RollingDie from "@animations/RollingDie/RollingDie";
 import { pipPositions } from "../animations/RollingDie/pipPositions";
+import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./Dice.module.css";
 
 export function Die({
@@ -55,19 +56,21 @@ export function DiceRow({
   opponentRoll?: number | null;
   winner?: Color | null;
 }) {
+  const { t } = useI18n();
+
   if (showLabels) {
     return (
       <div className={styles.diceRowLabeled}>
         {myRoll !== undefined && (
           <div className={styles.dieColumn}>
             <Die value={myRoll!} dark={color === "black"} />
-            <span className={styles.label}>You</span>
+            <span className={styles.label}>{t("common.you")}</span>
           </div>
         )}
         {opponentRoll !== undefined && (
           <div className={styles.dieColumn}>
             <Die value={opponentRoll!} dark={color !== "black"} />
-            <span className={styles.label}>Opponent</span>
+            <span className={styles.label}>{t("common.opponent")}</span>
           </div>
         )}
       </div>
@@ -121,6 +124,7 @@ export function RollPrompt({
   landOn?: number[];
   onLand?: () => void;
 }) {
+  const { t } = useI18n();
   const [rolling, setRolling] = useState(false);
   const fired = useRef(false);
 
@@ -164,7 +168,7 @@ export function RollPrompt({
           rolling ? { duration: 1 } : { duration: 6, repeat: Infinity }
         }
       >
-        Tap to roll
+        {t("common.tapToRoll")}
       </motion.span>
     </motion.button>
   );

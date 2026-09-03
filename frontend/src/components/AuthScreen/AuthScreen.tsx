@@ -2,24 +2,11 @@ import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import { login, register, storeTokens } from "../../services/auth";
+import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./AuthScreen.module.css";
 
-const highlights = [
-  {
-    title: "Fast entry",
-    text: "Get into a match in a few seconds, without a noisy setup.",
-  },
-  {
-    title: "Clear states",
-    text: "See login, register, and loading states at a glance.",
-  },
-  {
-    title: "Same visual DNA",
-    text: "Matches the homepage without copying it one-to-one.",
-  },
-];
-
 export default function AuthScreen() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [isLogin, setIsLogin] = useState(true);
@@ -28,12 +15,17 @@ export default function AuthScreen() {
   const [password2, setPassword2] = useState("");
   const [error, setError] = useState(() => {
     if (searchParams.get("expired") === "1")
-      return "Session expired, please log in again";
+      return t("auth.expired");
     if (searchParams.get("link") === "invalid")
-      return "That game link is not valid or has expired. Open it again from the tournament.";
+      return t("auth.invalidLink");
     return "";
   });
   const [loading, setLoading] = useState(false);
+  const highlights = [
+    { title: t("auth.fastEntry"), text: t("auth.fastEntryText") },
+    { title: t("auth.clearStates"), text: t("auth.clearStatesText") },
+    { title: t("auth.sameVisual"), text: t("auth.sameVisualText") },
+  ];
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,7 +34,7 @@ export default function AuthScreen() {
 
     try {
       if (!isLogin && password !== password2) {
-        throw new Error("Passwords do not match");
+        throw new Error(t("auth.passwordsMismatch"));
       }
 
       const tokens = isLogin
@@ -51,7 +43,7 @@ export default function AuthScreen() {
       storeTokens(tokens);
       navigate("/home", { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(err instanceof Error ? err.message : t("auth.genericError"));
     } finally {
       setLoading(false);
     }
@@ -77,16 +69,13 @@ export default function AuthScreen() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.55 }}
         >
-          <p className={styles.kicker}>Backgammon club</p>
+          <p className={styles.kicker}>{t("auth.club")}</p>
           <h1>
-            Play with style.
+            {t("auth.heroLine1")}
             <br />
-            Move with purpose.
+            {t("auth.heroLine2")}
           </h1>
-          <p className={styles.heroText}>
-            A calmer entrance into the game: quick to sign in, easy to scan,
-            and shaped to feel like the rest of the app.
-          </p>
+          <p className={styles.heroText}>{t("auth.heroText")}</p>
 
           <div className={styles.highlights}>
             {highlights.map((item) => (
@@ -99,8 +88,8 @@ export default function AuthScreen() {
 
           <div className={styles.boardCard} aria-hidden="true">
             <div className={styles.boardHeader}>
-              <span>Opening board</span>
-              <span>2 players</span>
+              <span>{t("auth.openingBoard")}</span>
+              <span>{t("auth.players")}</span>
             </div>
             <div className={styles.board}>
               <div className={styles.pointsTop}>
@@ -126,7 +115,7 @@ export default function AuthScreen() {
               <span className={`${styles.checker} ${styles.darkChecker} ${styles.checkerFour}`} />
             </div>
             <p className={styles.boardFooter}>
-              Your next match, framed like a proper table game.
+              {t("auth.boardFooter")}
             </p>
           </div>
         </motion.aside>
@@ -140,17 +129,17 @@ export default function AuthScreen() {
           <div className={styles.brandRow}>
             <span className={styles.brandMark}>B</span>
             <div>
-              <p>Backgammon</p>
-              <span>Secure sign in</span>
+              <p>{t("common.backgammon")}</p>
+              <span>{t("auth.secureSignIn")}</span>
             </div>
           </div>
 
           <div className={styles.cardHeader}>
-            <h2>{isLogin ? "Welcome back" : "Create your account"}</h2>
+            <h2>{isLogin ? t("auth.welcome") : t("auth.createAccount")}</h2>
             <p>
               {isLogin
-                ? "Use the same visual system as the rest of the app."
-                : "Keep the same experience, just add a new player."}
+                ? t("auth.loginSubtitle")
+                : t("auth.registerSubtitle")}
             </p>
           </div>
 
@@ -160,23 +149,23 @@ export default function AuthScreen() {
               className={`${styles.tab} ${isLogin ? styles.tabActive : ""}`}
               type="button"
             >
-              Log In
+              {t("auth.logIn")}
             </button>
             <button
               onClick={() => isLogin && switchMode()}
               className={`${styles.tab} ${!isLogin ? styles.tabActive : ""}`}
               type="button"
             >
-              Register
+              {t("auth.register")}
             </button>
           </div>
 
           <form onSubmit={handleSubmit} className={styles.form}>
             <label className={styles.field}>
-              <span>Username</span>
+              <span>{t("auth.username")}</span>
               <input
                 type="text"
-                placeholder="Enter your username"
+                placeholder={t("auth.usernamePlaceholder")}
                 value={username}
                 onChange={(event) => setUsername(event.target.value)}
                 className={styles.input}
@@ -186,10 +175,10 @@ export default function AuthScreen() {
             </label>
 
             <label className={styles.field}>
-              <span>Password</span>
+              <span>{t("auth.password")}</span>
               <input
                 type="password"
-                placeholder="Enter your password"
+                placeholder={t("auth.passwordPlaceholder")}
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 className={styles.input}
@@ -200,10 +189,10 @@ export default function AuthScreen() {
 
             {!isLogin && (
               <label className={styles.field}>
-                <span>Confirm password</span>
+                <span>{t("auth.confirmPassword")}</span>
                 <input
                   type="password"
-                  placeholder="Re-enter your password"
+                  placeholder={t("auth.confirmPlaceholder")}
                   value={password2}
                   onChange={(event) => setPassword2(event.target.value)}
                   className={styles.input}
@@ -220,13 +209,13 @@ export default function AuthScreen() {
             )}
 
             <button type="submit" disabled={loading} className={styles.submit}>
-              {loading ? "Please wait..." : isLogin ? "Log In" : "Register"}
+              {loading ? t("auth.pleaseWait") : isLogin ? t("auth.logIn") : t("auth.register")}
             </button>
 
             <p className={styles.helper}>
               {isLogin
-                ? "New here? Switch to register and join the table."
-                : "Already have an account? Go back to log in."}
+                ? t("auth.newHere")
+                : t("auth.hasAccount")}
             </p>
           </form>
         </motion.section>

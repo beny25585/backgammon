@@ -1,9 +1,9 @@
 .strip {
   display: flex;
   align-items: stretch;
-  background: rgba(0, 0, 0, 0.5);
-  border: 1px solid rgba(231, 189, 114, 0.2);
-  border-radius: 12px;
+  background: rgba(5, 9, 24, 0.52);
+  border: 1px solid rgba(114, 154, 255, 0.3);
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -34,6 +34,7 @@
   font-weight: 900;
   font-variant-numeric: tabular-nums;
   line-height: 1;
+  letter-spacing: 0;
 }
 
 .idle .label,
@@ -42,34 +43,34 @@
 }
 
 .myActive {
-  background: rgba(124, 214, 154, 0.12);
+  background: rgba(79, 127, 235, 0.2);
 }
 
 .myActive .label,
 .myActive .time {
-  color: #7cd69a;
+  color: #9fc1ff;
 }
 
 .oppActive {
-  background: rgba(231, 189, 114, 0.12);
+  background: rgba(227, 190, 97, 0.14);
 }
 
 .oppActive .label,
 .oppActive .time {
-  color: #e7bd72;
+  color: #e3be61;
 }
 
 .low .label,
 .low .time {
-  color: #ff6b6b;
+  color: #ff8798;
 }
 
 .low.myActive {
-  background: rgba(255, 107, 107, 0.1);
+  background: rgba(236, 116, 133, 0.14);
 }
 
 .low.oppActive {
-  background: rgba(255, 107, 107, 0.1);
+  background: rgba(236, 116, 133, 0.14);
 }
 
 .delay {
@@ -80,8 +81,8 @@
   justify-content: center;
   gap: clamp(1px, 0.5cqw, 2px);
   padding: clamp(5px, 2cqw, 8px) clamp(6px, 2.5cqw, 10px);
-  border-left: 1px solid rgba(231, 189, 114, 0.2);
-  border-right: 1px solid rgba(231, 189, 114, 0.2);
+  border-left: 1px solid rgba(114, 154, 255, 0.22);
+  border-right: 1px solid rgba(114, 154, 255, 0.22);
 }
 
 .delayLabel {
@@ -96,7 +97,7 @@
 .seconds {
   font-size: clamp(11px, 4cqw, 16px);
   font-weight: 800;
-  color: #e7bd72;
+  color: #e3be61;
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }

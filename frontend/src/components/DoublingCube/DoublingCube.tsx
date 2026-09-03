@@ -14,13 +14,13 @@ import { useGame } from "../../services/gameContext";
  */
 
 const CUBE_COLORS: Record<number, string> = {
-  1: "#9ca3af", // center / unused
-  2: "#e74c3c", // red
-  4: "#2e86de", // blue
-  8: "#27ae60", // green
-  16: "#d35400", // orange
-  32: "#8e44ad", // purple
-  64: "#e7bd72", // gold
+  1: "#7180a8",
+  2: "#4d7fe1",
+  4: "#5d8ff0",
+  8: "#7aa4ff",
+  16: "#a2bcff",
+  32: "#d1dcfa",
+  64: "#e3be61",
 };
 
 const SIZES = { width: "clamp(32px, 13cqw, 48px)", height: "clamp(32px, 13cqw, 48px)" };
@@ -47,7 +47,7 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
       : owner === "white"
         ? whiteName || "White"
         : blackName || "Black";
-  const color = CUBE_COLORS[value] ?? "#9ca3af";
+  const color = CUBE_COLORS[value] ?? "#7180a8";
 
   return (
     <div className={styles.cubeContainer}>

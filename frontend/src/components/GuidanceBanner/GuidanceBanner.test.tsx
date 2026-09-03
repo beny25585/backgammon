@@ -141,7 +141,21 @@ test("dismiss hides the banner until the guidance changes", async ({ mount }) =>
   await expect(c.getByText("Your turn — tap to roll")).toBeVisible();
 });
 
-test("dismiss button is present on every banner", async ({ mount }) => {
+test("dismiss button is present on non-critical guidance", async ({ mount }) => {
   const c = await mountBanner(mount, { phase: "rolling", turn: "white" });
   await expect(c.getByTestId("banner-dismiss")).toBeVisible();
+});
+
+test("double offer cannot be dismissed before a response", async ({ mount }) => {
+  const state = makeGameState({
+    phase: "doubling_offered",
+    turn: "white",
+    doubleOfferedBy: "black",
+  });
+  const c = await mount(
+    <GuidanceBanner state={state} playerColor="white" respondToDouble={() => {}} />,
+  );
+  await expect(c.getByTestId("banner-dismiss")).toHaveCount(0);
+  await expect(c.getByTestId("double-accept")).toBeVisible();
+  await expect(c.getByTestId("double-decline")).toBeVisible();
 });
