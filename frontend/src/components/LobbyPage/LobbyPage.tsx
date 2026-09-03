@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "../../services/authContext";
 import { joinRoom, createRoom } from "@/services/api";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface RoomResponse {
   id: string;
@@ -11,6 +12,7 @@ interface RoomResponse {
 }
 
 export default function LobbyPage() {
+  const { t } = useI18n();
   const { user, logout } = useAuth();
   const [tab, setTab] = useState<"create" | "join">("create");
   const [code, setCode] = useState("");
@@ -25,7 +27,7 @@ export default function LobbyPage() {
       const room = await createRoom();
       setCreatedRoom(room);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create room");
+      setError(err instanceof Error ? err.message : t("home.failedCreateRoom"));
     } finally {
       setLoading(false);
     }
@@ -38,7 +40,7 @@ export default function LobbyPage() {
       const room = await joinRoom(code);
       window.location.href = `/game/${room.code}`;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to join room");
+      setError(err instanceof Error ? err.message : t("home.failedJoinRoom"));
     } finally {
       setLoading(false);
     }
@@ -60,21 +62,21 @@ export default function LobbyPage() {
     <div className="min-h-screen flex items-center justify-center bg-linear-to-br from-[#0a0a0a] to-[#1a1a1a] p-4">
       <div className="bg-checker-black rounded-2xl p-8 w-full max-w-md shadow-2xl border border-gold/30">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gold">Backgammon</h1>
+          <h1 className="text-2xl font-bold text-gold">{t("common.backgammon")}</h1>
           <div className="flex items-center gap-3">
             <span className="text-gold/60 text-sm">{user?.username}</span>
             <button
               onClick={logout}
               className="text-xs text-red-400 hover:text-red-300"
             >
-              Logout
+              {t("home.logout")}
             </button>
           </div>
         </div>
 
         {createdRoom ? (
           <div className="text-center space-y-4">
-            <p className="text-gold">Room created!</p>
+            <p className="text-gold">{t("home.roomCreated")}</p>
             <div
               onClick={copyCode}
               className="text-4xl font-bold text-white bg-black/40 rounded-lg py-4 cursor-pointer hover:bg-black/60 transition"
@@ -82,13 +84,13 @@ export default function LobbyPage() {
               {createdRoom.code}
             </div>
             <p className="text-gold/60 text-sm">
-              Click code to copy. Share it with your opponent.
+              {t("home.roomCreatedHint")}
             </p>
             <button
               onClick={handlePlay}
               className="w-full py-3 rounded-lg bg-linear-to-r from-gold to-[#b8860b] text-black font-bold"
             >
-              Play
+              {t("home.play")}
             </button>
           </div>
         ) : (
@@ -100,7 +102,7 @@ export default function LobbyPage() {
                   tab === "create" ? "bg-gold text-black" : "text-gold/60"
                 }`}
               >
-                Create Room
+                {t("home.createRoom")}
               </button>
               <button
                 onClick={() => setTab("join")}
@@ -108,7 +110,7 @@ export default function LobbyPage() {
                   tab === "join" ? "bg-gold text-black" : "text-gold/60"
                 }`}
               >
-                Join Room
+                {t("home.joinRoom")}
               </button>
             </div>
 
@@ -118,7 +120,7 @@ export default function LobbyPage() {
                 disabled={loading}
                 className="w-full py-3 rounded-lg bg-linear-to-r from-gold to-[#b8860b] text-black font-bold hover:brightness-110 transition disabled:opacity-50"
               >
-                {loading ? "Creating..." : "Create New Room"}
+                {loading ? t("home.creatingRoom") : t("home.createNewRoom")}
               </button>
             ) : (
               <form
@@ -130,7 +132,7 @@ export default function LobbyPage() {
               >
                 <input
                   type="text"
-                  placeholder="Enter room code"
+                  placeholder={t("home.enterRoomCode")}
                   value={code}
                   onChange={(e) => setCode(e.target.value.toUpperCase())}
                   className="w-full px-4 py-3 rounded-lg bg-black/40 border border-gold/20 text-white text-center text-2xl tracking-widest placeholder:text-base focus:outline-none focus:border-gold uppercase"
@@ -142,7 +144,7 @@ export default function LobbyPage() {
                   disabled={loading || code.length !== 6}
                   className="w-full py-3 rounded-lg bg-linear-to-r from-gold to-[#b8860b] text-black font-bold hover:brightness-110 transition disabled:opacity-50"
                 >
-                  {loading ? "Joining..." : "Join Room"}
+                  {loading ? t("home.joining") : t("home.joinRoom")}
                 </button>
               </form>
             )}

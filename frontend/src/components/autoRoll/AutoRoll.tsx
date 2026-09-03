@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useI18n } from "../../i18n/I18nProvider";
 import "./AutoRoll.css";
 
 const STORAGE_KEY = "bg_auto_roll";
@@ -26,6 +27,8 @@ export function AutoRoll({
   autoRoll: boolean;
   onChange: (value: boolean) => void;
 }) {
+  const { t } = useI18n();
+
   return (
     <label className="autoRollToggle" data-testid="auto-roll-toggle">
       <input
@@ -36,7 +39,7 @@ export function AutoRoll({
       <span className="autoRollTrack">
         <span className="autoRollThumb" />
       </span>
-      <span className="autoRollLabel">Auto roll</span>
+      <span className="autoRollLabel">{t("common.autoRoll")}</span>
     </label>
   );
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { listMatches } from "../../services/api";
+import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./MatchHistory.module.css";
 
 interface MatchSummary {
@@ -20,6 +21,7 @@ interface MatchSummary {
 }
 
 export default function MatchHistory() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,7 @@ export default function MatchHistory() {
   }, []);
 
   if (loading) {
-    return <div className={styles.loading}>Loading...</div>;
+    return <div className={styles.loading}>{t("common.loading")}</div>;
   }
 
   return (
@@ -41,30 +43,30 @@ export default function MatchHistory() {
         <div className={styles.brandRow}>
           <span className={styles.brandMark}>B</span>
           <div>
-            <p>Backgammon</p>
-            <span>Match archive</span>
+            <p>{t("common.backgammon")}</p>
+            <span>{t("match.archive")}</span>
           </div>
         </div>
 
         <div className={styles.hero}>
           <div>
-            <p className={styles.kicker}>History</p>
-            <h1 className={styles.title}>Match History</h1>
+            <p className={styles.kicker}>{t("match.history")}</p>
+            <h1 className={styles.title}>{t("match.matchHistory")}</h1>
           </div>
-          <span className={styles.countPill}>{matches.length} matches</span>
+          <span className={styles.countPill}>{t("match.matches", { count: matches.length })}</span>
         </div>
 
       {matches.length === 0 ? (
         <div className={styles.emptyCard}>
-          <p className={styles.empty}>No matches played yet.</p>
+          <p className={styles.empty}>{t("match.empty")}</p>
         </div>
       ) : (
         <div className={styles.table}>
           <div className={styles.header}>
-            <span>Date</span>
-            <span>Opponent</span>
-            <span>Score</span>
-            <span>Result</span>
+            <span>{t("match.date")}</span>
+            <span>{t("match.opponent")}</span>
+            <span>{t("match.score")}</span>
+            <span>{t("match.result")}</span>
           </div>
           {matches.map((m) => (
             <div
@@ -73,10 +75,10 @@ export default function MatchHistory() {
               onClick={() => navigate(`/history/${m.id}`)}
             >
               <span>{new Date(m.created_at).toLocaleDateString()}</span>
-              <span>{m.whitePlayer?.username ?? m.blackPlayer?.username ?? "Unknown"}</span>
+              <span>{m.whitePlayer?.username ?? m.blackPlayer?.username ?? t("match.unknown")}</span>
               <span>{m.white_score} - {m.black_score}</span>
               <span className={m.winner ? styles.won : styles.lost}>
-                {m.winner ? `Won` : `Lost`}
+                {m.winner ? t("match.won") : t("match.lost")}
               </span>
             </div>
           ))}

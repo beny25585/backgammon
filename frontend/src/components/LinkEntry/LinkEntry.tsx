@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { storeTokens } from "../../services/auth";
+import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./LinkEntry.module.css";
 
 // Where the address bar is left pointing once the fragment has been taken out of it. Written out
@@ -19,6 +20,7 @@ const LANDING_PATH = "/backgammon/link";
  * short message and the effect navigates away from it.
  */
 export default function LinkEntry() {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const consumed = useRef(false);
 
@@ -59,7 +61,7 @@ export default function LinkEntry() {
 
   return (
     <div className={styles.container}>
-      <p className={styles.message}>Taking you to your game…</p>
+      <p className={styles.message}>{t("game.takingToGame")}</p>
     </div>
   );
 }

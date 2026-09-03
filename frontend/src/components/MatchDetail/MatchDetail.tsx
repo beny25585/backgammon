@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getMatchDetail } from "../../services/api";
 import ReplayPlayer from "./ReplayPlayer";
+import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./MatchDetail.module.css";
 
 interface GameEntry {
@@ -29,6 +30,7 @@ interface MatchData {
 }
 
 export default function MatchDetail() {
+  const { t } = useI18n();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [match, setMatch] = useState<MatchData | null>(null);
@@ -43,15 +45,15 @@ export default function MatchDetail() {
     }).catch(() => setLoading(false));
   }, [id]);
 
-  if (loading) return <div className={styles.loading}>Loading...</div>;
-  if (!match) return <div className={styles.loading}>Match not found</div>;
+  if (loading) return <div className={styles.loading}>{t("common.loading")}</div>;
+  if (!match) return <div className={styles.loading}>{t("match.notFound")}</div>;
 
-  const winnerLabel = match.winner ?? "Pending";
+  const winnerLabel = match.winner ?? t("common.pending");
   const firstPlayerLabel =
     match.first_player === "white"
-      ? match.whitePlayer?.username ?? "White"
+      ? match.whitePlayer?.username ?? t("common.white")
       : match.first_player === "black"
-        ? match.blackPlayer?.username ?? "Black"
+        ? match.blackPlayer?.username ?? t("common.black")
         : null;
 
   return (
@@ -59,41 +61,41 @@ export default function MatchDetail() {
       <div className={styles.shell}>
         <div className={styles.topRow}>
           <button className={styles.backBtn} onClick={() => navigate("/history")}>
-            &larr; Back
+            &larr; {t("common.back")}
           </button>
-          <span className={styles.pill}>Match detail</span>
+          <span className={styles.pill}>{t("match.detail")}</span>
         </div>
 
         <div className={styles.brandRow}>
           <span className={styles.brandMark}>B</span>
           <div>
-            <p>Backgammon</p>
-            <span>Match replay</span>
+            <p>{t("common.backgammon")}</p>
+            <span>{t("match.replay")}</span>
           </div>
         </div>
 
         <div className={styles.header}>
           <div>
-            <p className={styles.kicker}>Completed match</p>
+            <p className={styles.kicker}>{t("match.completed")}</p>
             <h1 className={styles.title}>
-              {match.whitePlayer?.username ?? "White"} vs {match.blackPlayer?.username ?? "Black"}
+              {match.whitePlayer?.username ?? t("common.white")} vs {match.blackPlayer?.username ?? t("common.black")}
             </h1>
           </div>
           <div className={styles.summaryGrid}>
             <div className={styles.summaryCard}>
-              <span>Score</span>
+              <span>{t("match.score")}</span>
               <strong>{match.white_score} - {match.black_score}</strong>
             </div>
             <div className={styles.summaryCard}>
-              <span>Best of</span>
+              <span>{t("match.bestOf")}</span>
               <strong>{match.target_points}</strong>
             </div>
             <div className={styles.summaryCard}>
-              <span>Winner</span>
+              <span>{t("match.winner")}</span>
               <strong>{winnerLabel}</strong>
             </div>
             <div className={styles.summaryCard}>
-              <span>Date</span>
+              <span>{t("match.date")}</span>
               <strong className={styles.date}>{new Date(match.created_at).toLocaleDateString()}</strong>
             </div>
           </div>
@@ -103,41 +105,41 @@ export default function MatchDetail() {
           <div className={styles.summaryGrid}>
             {firstPlayerLabel && (
               <div className={styles.summaryCard}>
-                <span>First player</span>
+                <span>{t("match.firstPlayer")}</span>
                 <strong>{firstPlayerLabel}</strong>
               </div>
             )}
             <div className={styles.summaryCard}>
-              <span>Duration</span>
+              <span>{t("match.duration")}</span>
               <strong>{Math.round(match.duration_seconds / 60)}m</strong>
             </div>
             <div className={styles.summaryCard}>
-              <span>Hits</span>
+              <span>{t("match.hits")}</span>
               <strong>{match.hits ?? 0}</strong>
             </div>
             {match.end_reason && (
               <div className={styles.summaryCard}>
-                <span>Ended by</span>
+                <span>{t("match.endedBy")}</span>
                 <strong>{match.end_reason}</strong>
               </div>
             )}
           </div>
         )}
 
-        <h2 className={styles.subtitle}>Games</h2>
+        <h2 className={styles.subtitle}>{t("match.games")}</h2>
         {match.games.map((game, idx) => (
           <div key={idx} className={styles.gameCard}>
             <div className={styles.gameInfo}>
-              <span>Game {game.game_number}</span>
-              <span>Winner: {game.winner}</span>
-              <span>Points: {game.points_awarded}</span>
-              <span>Type: {game.win_type}</span>
+              <span>{t("match.game", { number: game.game_number })}</span>
+              <span>{t("match.winnerLine", { winner: game.winner })}</span>
+              <span>{t("match.pointsLine", { points: game.points_awarded })}</span>
+              <span>{t("match.typeLine", { type: game.win_type })}</span>
             </div>
             <button
               className={styles.replayBtn}
               onClick={() => setReplaying(replaying === idx ? null : idx)}
             >
-              {replaying === idx ? "Hide Replay" : "Replay"}
+              {replaying === idx ? t("match.hideReplay") : t("match.replayAction")}
             </button>
             {replaying === idx && game.transcript && (
               <ReplayPlayer transcript={game.transcript} />

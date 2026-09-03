@@ -7,6 +7,7 @@ import Clock from "../Clock";
 import { useGame } from "../../services/gameContext";
 import { activePlayerOf, type TimeControl } from "../../lib/clock";
 import { AutoRoll } from "../autoRoll/AutoRoll";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface SidePanelProps {
   state: GameState;
@@ -29,6 +30,7 @@ export default function SidePanel({
   autoRoll,
   onAutoRollChange,
 }: SidePanelProps) {
+  const { t } = useI18n();
   const { giveUp, whiteName, blackName, matchScore } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
 
@@ -36,23 +38,23 @@ export default function SidePanel({
   const opponentName = playerColor === "white" ? blackName : whiteName;
   const selfName = playerColor === "white" ? whiteName : blackName;
   const opponentLabel =
-    opponentName || (playerColor === "white" ? "Black Player" : "White Player");
+    opponentName || (playerColor === "white" ? t("common.blackPlayer") : t("common.whitePlayer"));
   const selfLabel = selfName
-    ? `${selfName} (you)`
+    ? `${selfName} (${t("common.you")})`
     : playerColor === "white"
-      ? "You (White)"
-      : "You (Black)";
-  const stripMyLabel = selfName || "You";
-  const stripOppLabel = opponentName || "Opponent";
+      ? t("common.youColor", { color: t("common.white") })
+      : t("common.youColor", { color: t("common.black") });
+  const stripMyLabel = selfName || t("common.you");
+  const stripOppLabel = opponentName || t("common.opponent");
   const activeColor = activePlayerOf(state);
   const delayMs = timeControl?.delay ?? 0;
 
   return (
     <div className={styles.panel} data-testid="side-panel">
       <div className={styles.header}>
-        <span className={styles.kicker}>Match control</span>
+        <span className={styles.kicker}>{t("game.matchControl")}</span>
         <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>
-          {activeColor === playerColor ? "Your turn" : "Opponent turn"}
+          {activeColor === playerColor ? t("common.yourTurn") : t("common.opponentTurn")}
         </span>
       </div>
       <div className={styles.playersRow}>
@@ -106,11 +108,11 @@ export default function SidePanel({
             className={styles.resignBtn}
             onClick={() => setShowGiveUp(true)}
           >
-            Give Up
+            {t("common.giveUp")}
           </button>
         ) : (
           <div className={styles.resignConfirm}>
-            <span className={styles.resignText}>Sure?</span>
+            <span className={styles.resignText}>{t("game.sure")}</span>
             <button
               className={styles.confirmYes}
               onClick={() => {
@@ -118,13 +120,13 @@ export default function SidePanel({
                 setShowGiveUp(false);
               }}
             >
-              Yes
+              {t("common.yes")}
             </button>
             <button
               className={styles.confirmNo}
               onClick={() => setShowGiveUp(false)}
             >
-              No
+              {t("common.no")}
             </button>
           </div>
         )}
@@ -136,7 +138,7 @@ export default function SidePanel({
             }}
             className={styles.leaveBtn}
           >
-            Leave
+            {t("common.leave")}
           </button>
         )}
       </div>

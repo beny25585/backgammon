@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import styles from "./Clock.module.css";
 import { formatClock, delayLeft } from "../../lib/clock";
 import type { Color } from "@/lib/backgammon/engine";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface ClockProps {
   clock: Record<Color, number> | null | undefined;
@@ -16,6 +17,7 @@ interface ClockProps {
 const DISPLAY_TICK_MS = 250;
 
 export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, delayMs = 0, turnStartedAt }: ClockProps) {
+  const { t } = useI18n();
   const oppColor: Color = myColor === "white" ? "black" : "white";
   const myActive = activeColor === myColor;
   const oppActive = activeColor === oppColor;
@@ -59,7 +61,7 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
       </div>
       {showDelay && (
         <div className={styles.delay} data-testid="clock-delay">
-          <span className={styles.delayLabel}>Delay</span>
+          <span className={styles.delayLabel}>{t("common.delay")}</span>
           <span className={styles.seconds}>{formatSeconds(delayMsLeft)}</span>
         </div>
       )}

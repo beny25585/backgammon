@@ -5,9 +5,11 @@ import { getSocketService } from "../../services/socket";
 import { getAccessToken } from "../../services/auth";
 import { updateRoomStatus, clearRoom } from "../../services/roomStorage";
 import { cancelRoom } from "../../services/api";
+import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./WaitingRoom.module.css";
 
 export default function WaitingRoom() {
+  const { t } = useI18n();
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
   const navigate = useNavigate();
@@ -85,7 +87,7 @@ export default function WaitingRoom() {
         if (!hasStartedGame.current) setStatus("waiting");
       } catch (err) {
         setStatus("error");
-        setError(err instanceof Error ? err.message : "Failed to connect");
+        setError(err instanceof Error ? err.message : t("waiting.failedConnect"));
       }
     };
 
@@ -124,15 +126,15 @@ export default function WaitingRoom() {
           <div className={styles.brandRow}>
             <span className={styles.brandMark}>B</span>
             <div>
-              <p>Backgammon</p>
-              <span>Waiting room</span>
+              <p>{t("common.backgammon")}</p>
+              <span>{t("waiting.title")}</span>
             </div>
           </div>
         </div>
         <div className={styles.card}>
           <p className={styles.errorText}>{error}</p>
           <button onClick={handleLeave} className={styles.leaveButton}>
-            Back to home
+            {t("waiting.backHome")}
           </button>
         </div>
       </div>
@@ -145,42 +147,42 @@ export default function WaitingRoom() {
         <div className={styles.brandRow}>
           <span className={styles.brandMark}>B</span>
           <div>
-            <p>Backgammon</p>
-            <span>Waiting room</span>
+            <p>{t("common.backgammon")}</p>
+            <span>{t("waiting.title")}</span>
           </div>
         </div>
 
         <div className={styles.card}>
           <div className={styles.cardHeader}>
-            <h1 className={styles.title}>Room ready</h1>
+            <h1 className={styles.title}>{t("waiting.ready")}</h1>
             <span className={styles.statusPill}>
               {status === "connecting"
-                ? "Connecting"
+                ? t("waiting.connectingStatus")
                 : status === "waiting"
-                  ? "Waiting"
-                  : "Starting"}
+                  ? t("waiting.waitingStatus")
+                  : t("waiting.startingStatus")}
             </span>
           </div>
 
           {status === "connecting" && (
             <div className={styles.center}>
               <div className={styles.spinner} />
-              <p className={styles.statusText}>Connecting...</p>
+              <p className={styles.statusText}>{t("waiting.connecting")}</p>
             </div>
           )}
 
           {status === "waiting" && (
             <div className={styles.center}>
               <div className={styles.codeSection}>
-                <div className={styles.codeLabel}>Room Code</div>
+                <div className={styles.codeLabel}>{t("waiting.roomCode")}</div>
                 <div className={styles.codeWrapper}>
                   <span className={styles.code}>{roomCode}</span>
                   <button onClick={handleCopy} className={styles.copyButton}>
-                    {copied ? "Copied!" : "Copy"}
+                    {copied ? t("waiting.copied") : t("waiting.copy")}
                   </button>
                 </div>
                 <p className={styles.shareHint}>
-                  Share this code with your opponent
+                  {t("waiting.shareCode")}
                 </p>
               </div>
               <div className={styles.waitingSection}>
@@ -189,29 +191,29 @@ export default function WaitingRoom() {
                   <span className={styles.dot} />
                   <span className={styles.dot} />
                 </div>
-                <p className={styles.waitingText}>Waiting for opponent...</p>
+                <p className={styles.waitingText}>{t("waiting.waitingOpponent")}</p>
               </div>
-              <p className={styles.statusText}>{connectedCount}/2 connected</p>
+              <p className={styles.statusText}>{t("waiting.connected", { count: connectedCount })}</p>
               <div className={styles.playerInfo}>
-                You: {playerColor === "white" ? "White" : "Black"}
+                {t("waiting.youAre", { color: playerColor === "white" ? t("common.white") : t("common.black") })}
               </div>
               <p className={styles.matchInfo}>
                 {targetPoints === 1
-                  ? "Single Game"
-                  : `First to ${targetPoints} points`}
+                  ? t("settings.singleGame")
+                  : t("settings.firstTo", { points: targetPoints })}
               </p>
             </div>
           )}
 
           {status === "opponent_joined" && (
             <div className={styles.center}>
-              <p className={styles.opponentJoined}>Opponent joined!</p>
-              <p className={styles.startingText}>Starting game...</p>
+              <p className={styles.opponentJoined}>{t("waiting.opponentJoined")}</p>
+              <p className={styles.startingText}>{t("waiting.starting")}</p>
             </div>
           )}
 
           <button onClick={handleLeave} className={styles.leaveButton}>
-            Leave
+            {t("common.leave")}
           </button>
         </div>
       </div>

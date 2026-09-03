@@ -3,6 +3,7 @@ import styles from "./DoublingCube.module.css";
 import RollingDie from "@animations/RollingDie/RollingDie";
 import type { Color } from "@/lib/backgammon/engine";
 import { useGame } from "../../services/gameContext";
+import { useI18n } from "../../i18n/I18nProvider";
 
 /*
  * HOW TO CHANGE THE CUBE STYLE
@@ -34,6 +35,7 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
   const [rolling, setRolling] = useState(false);
   const prevValue = usePrevious(value);
   const { whiteName, blackName } = useGame();
+  const { t } = useI18n();
 
   useEffect(() => {
     if (prevValue !== null && prevValue !== value) {
@@ -45,8 +47,8 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
     owner === "center"
       ? "Center"
       : owner === "white"
-        ? whiteName || "White"
-        : blackName || "Black";
+        ? whiteName || t("common.white")
+        : blackName || t("common.black");
   const color = CUBE_COLORS[value] ?? "#7180a8";
 
   return (
@@ -66,7 +68,7 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
         <div
           className={styles.cubeFace}
           data-testid="doubling-cube"
-          title={`Cube value: ${value}, Owner: ${owner}`}
+          title={t("common.cubeTitle", { value, owner })}
           style={{ color, width: SIZES.width, height: SIZES.height }}
         >
           {value}

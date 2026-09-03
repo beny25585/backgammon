@@ -4,6 +4,7 @@ import type { Color } from "@/lib/backgammon/engine";
 import styles from "./MatchSettings.module.css";
 import AnimatedTabs from "../animations/AnimatedTabs/AnimatedTabs";
 import { TIME_CONTROL_PRESETS } from "../../lib/clock";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface MatchSettingsProps {
   mode: "online" | "bot";
@@ -18,22 +19,12 @@ interface MatchSettingsProps {
 
 const TARGETS = [1, 3, 5, 7, 9, 11, 13, 15, 21];
 
-const colorTabs = [
-  {
-    id: "white",
-    label: "White",
-  },
-  {
-    id: "black",
-    label: "Black",
-  },
-];
-
 export default function MatchSettings({
   mode,
   onStart,
   onCancel,
 }: MatchSettingsProps) {
+  const { t } = useI18n();
   const [playerColor, setPlayerColor] = useState<"white" | "black">("white");
 
   const [target, setTarget] = useState(7);
@@ -52,6 +43,10 @@ export default function MatchSettings({
     id: String(t),
     label: String(t),
   }));
+  const colorTabs = [
+    { id: "white", label: t("common.white") },
+    { id: "black", label: t("common.black") },
+  ];
 
   return (
     <motion.div
@@ -73,26 +68,24 @@ export default function MatchSettings({
         <div className={styles.brandRow}>
           <span className={styles.brandMark}>B</span>
           <div>
-            <p>Backgammon</p>
-            <span>{isOnline ? "Online match" : "Bot match"}</span>
+            <p>{t("common.backgammon")}</p>
+            <span>{isOnline ? t("settings.online") : t("settings.bot")}</span>
           </div>
         </div>
 
         <div className={styles.header}>
           <div>
-            <p className={styles.kicker}>Match settings</p>
+            <p className={styles.kicker}>{t("settings.title")}</p>
             <h2 className={styles.title}>
-              {isOnline ? "Create a private room" : "Set up a solo match"}
+              {isOnline ? t("settings.createPrivateRoom") : t("settings.soloSetup")}
             </h2>
           </div>
-          <p className={styles.subtitle}>
-            Choose your color and target score before starting.
-          </p>
+          <p className={styles.subtitle}>{t("settings.subtitle")}</p>
         </div>
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>
-            <p>Play as</p>
+            <p>{t("settings.playAs")}</p>
           </div>
           <AnimatedTabs
             tabs={colorTabs}
@@ -103,7 +96,7 @@ export default function MatchSettings({
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>
-            <p>{target === 1 ? "Single Game" : `First to ${target} points`}</p>
+            <p>{target === 1 ? t("settings.singleGame") : t("settings.firstTo", { points: target })}</p>
           </div>
           <AnimatedTabs
             tabs={targetTabs}
@@ -114,7 +107,7 @@ export default function MatchSettings({
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>
-            <p>Time control</p>
+            <p>{t("settings.timeControl")}</p>
           </div>
           <AnimatedTabs
             tabs={TIME_CONTROL_PRESETS.map((p) => ({
@@ -128,7 +121,7 @@ export default function MatchSettings({
 
         <div className={styles.actions}>
           <button onClick={onCancel} className={styles.cancelBtn}>
-            Cancel
+            {t("common.cancel")}
           </button>
 
           <button
@@ -149,7 +142,7 @@ export default function MatchSettings({
             }}
             className={styles.startBtn}
           >
-            {isOnline ? "Create Room" : "Start Match"}
+            {isOnline ? t("settings.createRoom") : t("settings.startMatch")}
           </button>
         </div>
       </motion.div>

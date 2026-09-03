@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import type { GameState, Color } from "@/lib/backgammon/engine";
+import { useI18n } from "../../../../i18n/I18nProvider";
 import styles from "./BearOff.module.css";
 
 interface BearOffProps {
@@ -10,6 +11,8 @@ interface BearOffProps {
 }
 
 export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps) {
+  const { t } = useI18n();
+
   return (
     <button
       onClick={onClick}
@@ -21,7 +24,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
       )}
       <div className={styles.section}>
         <div className={styles.label}>
-          <span>Black</span>
+          <span>{t("common.black")}</span>
           <span className={styles.count}>{state.home.black}</span>
         </div>
         {Array.from({ length: Math.min(state.home.black, 15) }).map((_, i) => (
@@ -35,7 +38,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
       </div>
       <div className={styles.sectionReverse}>
         <div className={styles.label}>
-          <span>White</span>
+          <span>{t("common.white")}</span>
           <span className={styles.count}>{state.home.white}</span>
         </div>
         {Array.from({ length: Math.min(state.home.white, 15) }).map((_, i) => (

@@ -7,6 +7,7 @@ import { DiceRow, RollPrompt } from "../Dice";
 import { useAutoRoll } from "../autoRoll/AutoRoll";
 import { clientLogger } from "@/services/logger";
 import { canOfferDouble } from "@/lib/backgammon/engine";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface GameScreenProps {
   onLeave?: (outcome?: "won" | "lost") => void;
@@ -14,6 +15,7 @@ interface GameScreenProps {
 }
 
 export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
+  const { t } = useI18n();
   const {
     state,
     playerColor,
@@ -155,26 +157,26 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     (landing && state?.turn === playerColor);
 
   if (isLoading) {
-    return <div className={styles.loading}>Connecting to game...</div>;
+    return <div className={styles.loading}>{t("game.connecting")}</div>;
   }
 
   if (!state) {
     if (error) {
-      return <div className={styles.error}>Error: {error}</div>;
+      return <div className={styles.error}>{t("common.error")}: {error}</div>;
     }
-    return <div className={styles.loading}>Initializing game...</div>;
+    return <div className={styles.loading}>{t("game.initializing")}</div>;
   }
 
   return (
     <div className={styles.container}>
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
-          <span>Error: {error}</span>
+          <span>{t("common.error")}: {error}</span>
           <button
             type="button"
             className={styles.errorCardClose}
             data-testid="error-card-close"
-            aria-label="Dismiss error"
+            aria-label={t("game.dismissError")}
             onClick={clearError}
           >
             ✕
@@ -209,10 +211,10 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
       {!gameResult && (
         <>
-          {reconnected && <div className={styles.reconnected}>Reconnected</div>}
+          {reconnected && <div className={styles.reconnected}>{t("game.reconnected")}</div>}
           {!opponentConnected && !reconnected && (
             <div className={styles.disconnected}>
-              Opponent disconnected — you can keep playing
+              {t("game.opponentDisconnected")}
             </div>
           )}
 
@@ -268,11 +270,11 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
               />
             </div>
             {openingRollResult.winner === playerColor && (
-              <div className={styles.winnerText}>You go first!</div>
+              <div className={styles.winnerText}>{t("game.youFirst")}</div>
             )}
             {openingRollResult.winner &&
               openingRollResult.winner !== playerColor && (
-                <div className={styles.subText}>Opponent goes first</div>
+                <div className={styles.subText}>{t("game.opponentFirst")}</div>
               )}
           </div>
         </div>
@@ -280,15 +282,15 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
       {doubleWindow && (
         <div className={styles.overlayDim} data-testid="double-decision-overlay">
-          <div className={styles.overlayCard} role="dialog" aria-modal="true" aria-label="Double decision">
-            <div className={styles.winnerText}>Offer a double before rolling?</div>
-            <div className={styles.subText}>Auto roll starts in {doubleCountdown}s</div>
+          <div className={styles.overlayCard} role="dialog" aria-modal="true" aria-label={t("game.doubleDecision")}>
+            <div className={styles.winnerText}>{t("game.offerDoubleBeforeRoll")}</div>
+            <div className={styles.subText}>{t("game.autoRollCountdown", { seconds: doubleCountdown })}</div>
             <div className={styles.doubleDecisionActions}>
               <button type="button" className={styles.doubleOfferButton} onClick={handleDoubleOffer}>
-                Offer double
+                {t("common.offerDoubleButton")}
               </button>
               <button type="button" className={styles.doubleSkipButton} onClick={handleDoubleSkip}>
-                Roll now
+                {t("common.rollNow")}
               </button>
             </div>
           </div>
