@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { listMatches } from "../../services/api";
 import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
 import styles from "./MatchHistory.module.css";
 
 interface MatchSummary {
@@ -21,7 +22,7 @@ interface MatchSummary {
 }
 
 export default function MatchHistory() {
-  const { t } = useI18n();
+  const { t, locale, direction } = useI18n();
   const navigate = useNavigate();
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,15 +38,17 @@ export default function MatchHistory() {
     return <div className={styles.loading}>{t("common.loading")}</div>;
   }
 
+  const backArrow = direction === "rtl" ? "→" : "←";
+
   return (
     <main className={styles.container}>
       <div className={styles.shell}>
-        <div className={styles.brandRow}>
-          <span className={styles.brandMark}>B</span>
-          <div>
-            <p>{t("common.backgammon")}</p>
-            <span>{t("match.archive")}</span>
-          </div>
+        <div className={styles.topRow}>
+          <BrandLockup subtitle={t("match.archive")} size="md" />
+          <button className={styles.homeButton} onClick={() => navigate("/home")}>
+            <span>{backArrow}</span>
+            {t("common.backHome")}
+          </button>
         </div>
 
         <div className={styles.hero}>
@@ -53,7 +56,9 @@ export default function MatchHistory() {
             <p className={styles.kicker}>{t("match.history")}</p>
             <h1 className={styles.title}>{t("match.matchHistory")}</h1>
           </div>
-          <span className={styles.countPill}>{t("match.matches", { count: matches.length })}</span>
+          <span className={styles.countPill}>
+            {t("match.matches", { count: matches.length })}
+          </span>
         </div>
 
       {matches.length === 0 ? (
@@ -74,11 +79,11 @@ export default function MatchHistory() {
               className={styles.row}
               onClick={() => navigate(`/history/${m.id}`)}
             >
-              <span>{new Date(m.created_at).toLocaleDateString()}</span>
+              <span>{new Date(m.created_at).toLocaleDateString(locale === "he" ? "he-IL" : "en-US")}</span>
               <span>{m.whitePlayer?.username ?? m.blackPlayer?.username ?? t("match.unknown")}</span>
               <span>{m.white_score} - {m.black_score}</span>
               <span className={m.winner ? styles.won : styles.lost}>
-                {m.winner ? t("match.won") : t("match.lost")}
+                {m.winner ? t("common.won") : t("common.lost")}
               </span>
             </div>
           ))}
