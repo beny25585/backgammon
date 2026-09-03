@@ -4,8 +4,10 @@
   display: grid;
   place-items: center;
   background:
-    linear-gradient(rgba(8, 11, 19, 0.94), rgba(8, 11, 19, 0.98)),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.018) 0 1px, transparent 1px 42px);
+    radial-gradient(circle at 82% 8%, rgba(229, 180, 77, 0.1), transparent 28%),
+    radial-gradient(circle at 11% 88%, rgba(36, 83, 74, 0.26), transparent 35%),
+    linear-gradient(135deg, rgba(5, 16, 17, 0.97), rgba(2, 7, 9, 0.99) 62%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 42px);
   padding: clamp(10px, 1.8vw, 24px);
   /* Sizes scale with the board's own width (.wrapper is the cqw container) */
   --checker: max(16px, 4cqw);
@@ -15,19 +17,307 @@
 
 /* === Board + Side Panel outer frame === */
 .gameFrame {
+  --lux-case-bg:
+    linear-gradient(90deg, #2b170c, #5c3720 22%, #2b170c 54%, #6f4728 78%, #28150b),
+    #08171b;
+  --lux-case-border: rgba(229, 180, 77, 0.52);
+  --lux-case-glow-top: rgba(255, 233, 178, 0.18);
+  --lux-case-glow-side: rgba(255, 225, 153, 0.16);
+  --lux-case-shadow-bottom: rgba(0, 0, 0, 0.36);
+  --lux-inner-border: rgba(255, 232, 176, 0.13);
+  --lux-material-texture: url("../../assets/6b-material-mahogany.png");
+  --lux-material-layer-blend: multiply;
+  --lux-photo-texture-opacity: 0.42;
+  --lux-frame-texture-opacity: 0.34;
+  --lux-photo-texture-blend: soft-light;
+  --lux-board-area-bg:
+    radial-gradient(circle at 50% 44%, rgba(244, 204, 123, 0.08), transparent 46%),
+    linear-gradient(180deg, rgba(6, 18, 18, 0.5), rgba(3, 9, 10, 0.68));
+  --lux-rail-bg:
+    radial-gradient(circle at 18% 14%, rgba(255, 231, 172, 0.18), transparent 22%),
+    radial-gradient(circle at 88% 82%, rgba(0, 0, 0, 0.34), transparent 32%),
+    linear-gradient(90deg, #231207 0%, #61391f 16%, #2a160b 47%, #7b4a28 72%, #241207 100%);
+  --lux-rail-border: rgba(229, 180, 77, 0.35);
+  --lux-rivet: rgba(244, 194, 91, 0.68);
+  --lux-rivet-soft: rgba(244, 194, 91, 0.16);
+  --lux-field-bg:
+    radial-gradient(ellipse at 50% 44%, rgba(255, 226, 161, 0.12), transparent 52%),
+    linear-gradient(90deg, #5a3320, #83522f 48%, #5a3320);
+  --lux-field-sheen:
+    radial-gradient(ellipse at 50% 12%, rgba(255, 245, 214, 0.13), transparent 38%),
+    radial-gradient(ellipse at 50% 88%, rgba(1, 10, 9, 0.22), transparent 42%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.28), transparent 7%, transparent 93%, rgba(0, 0, 0, 0.28));
+  --lux-point-light-a: #f4e4bd;
+  --lux-point-light-b: #d0a960;
+  --lux-point-light-sheen: rgba(255, 249, 229, 0.88);
+  --lux-point-dark-a: #23675b;
+  --lux-point-dark-b: #082f2c;
+  --lux-point-dark-sheen: rgba(96, 170, 151, 0.22);
+  --lux-point-edge: rgba(0, 0, 0, 0.15);
+  --lux-point-fiber: rgba(255, 255, 255, 0.035);
+  --lux-point-texture-opacity: 0.22;
+  --lux-point-edge-soft: rgba(255, 226, 159, 0.24);
+  --lux-center-belt: rgba(28, 14, 6, 0.88);
+  --lux-row-bg:
+    radial-gradient(circle at 50% 50%, rgba(255, 222, 153, 0.05), transparent 48%),
+    linear-gradient(90deg, rgba(32, 15, 7, 0.2), transparent 20%, transparent 80%, rgba(32, 15, 7, 0.2)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bar-bg:
+    radial-gradient(circle at 50% 8%, rgba(229, 180, 77, 0.11), transparent 38%),
+    linear-gradient(90deg, rgba(255, 231, 177, 0.11), transparent 31%, rgba(0, 0, 0, 0.3)),
+    #251409;
+  --lux-bearoff-bg:
+    radial-gradient(circle at 50% 4%, rgba(229, 180, 77, 0.12), transparent 35%),
+    linear-gradient(90deg, rgba(255, 231, 177, 0.08), transparent 40%, rgba(0, 0, 0, 0.28)),
+    #251409;
+  --lux-panel-bg:
+    radial-gradient(circle at 50% 0, rgba(229, 180, 77, 0.08), transparent 38%),
+    linear-gradient(180deg, rgba(15, 34, 28, 0.98), rgba(6, 18, 18, 0.99));
+  --lux-checker-light-hi: #fffdf4;
+  --lux-checker-light-mid: #fff4d4;
+  --lux-checker-light-low: #d9bf82;
+  --lux-checker-light-deep: #8f6e3f;
+  --lux-checker-light-border: #b88f4f;
+  --lux-checker-dark-hi: #c85a58;
+  --lux-checker-dark-mid: #aa3940;
+  --lux-checker-dark-low: #6f1722;
+  --lux-checker-dark-deep: #260508;
+  --lux-checker-dark-border: #3b070d;
+  --lux-die-dark-hi: #c85a58;
+  --lux-die-dark-low: #3d090f;
+  --lux-die-pip-light: #f8f0d8;
+  --lux-die-pip-dark: #22150c;
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(250px, 23vw, 340px);
+  direction: ltr;
   overflow: hidden;
-  border-radius: 10px;
-  background-color: #10172b;
+  isolation: isolate;
+  border-radius: 12px;
+  background: var(--lux-case-bg);
   box-shadow:
-    0 30px 70px rgba(0, 0, 0, 0.46),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-  border: clamp(1px, 0.25vw, 3px) solid rgba(88, 136, 244, 0.46);
+    0 32px 82px rgba(0, 0, 0, 0.55),
+    0 14px 38px rgba(0, 0, 0, 0.26),
+    inset 0 1px 0 rgba(255, 239, 191, 0.18),
+    inset 0 0 0 1px rgba(5, 2, 0, 0.6);
+  border: clamp(1px, 0.22vw, 3px) solid var(--lux-case-border);
   width: min(100%, 1480px);
   height: min(100%, 900px);
   min-height: 0;
   container-type: inline-size;
+}
+
+.themeRedGreen {
+  --lux-material-texture: url("../../assets/6b-material-mahogany.png");
+  --lux-material-layer-blend: multiply;
+  --lux-photo-texture-opacity: 0.68;
+  --lux-frame-texture-opacity: 0.64;
+  --lux-photo-texture-blend: normal;
+  --lux-point-texture-opacity: 0.3;
+  --lux-point-edge-soft: rgba(255, 210, 130, 0.28);
+  --lux-rail-bg:
+    radial-gradient(circle at 18% 14%, rgba(255, 231, 172, 0.2), transparent 22%),
+    radial-gradient(circle at 88% 82%, rgba(0, 0, 0, 0.38), transparent 32%),
+    linear-gradient(90deg, rgba(18, 7, 2, 0.74), rgba(102, 57, 28, 0.48) 18%, rgba(25, 10, 4, 0.76) 52%, rgba(123, 72, 37, 0.5) 75%, rgba(16, 6, 2, 0.78)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-field-bg:
+    radial-gradient(ellipse at 50% 44%, rgba(255, 226, 161, 0.12), transparent 52%),
+    linear-gradient(90deg, rgba(58, 29, 14, 0.78), rgba(123, 74, 39, 0.54) 48%, rgba(50, 23, 11, 0.82)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-row-bg:
+    radial-gradient(circle at 50% 50%, rgba(255, 222, 153, 0.08), transparent 48%),
+    linear-gradient(90deg, rgba(37, 15, 6, 0.42), transparent 20%, transparent 80%, rgba(37, 15, 6, 0.42)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bar-bg:
+    radial-gradient(circle at 50% 8%, rgba(229, 180, 77, 0.12), transparent 38%),
+    linear-gradient(90deg, rgba(255, 231, 177, 0.1), transparent 31%, rgba(0, 0, 0, 0.32)),
+    linear-gradient(90deg, rgba(20, 9, 4, 0.72), rgba(72, 39, 18, 0.52), rgba(16, 6, 2, 0.78)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bearoff-bg:
+    radial-gradient(circle at 50% 4%, rgba(229, 180, 77, 0.12), transparent 35%),
+    linear-gradient(90deg, rgba(255, 231, 177, 0.08), transparent 40%, rgba(0, 0, 0, 0.28)),
+    linear-gradient(90deg, rgba(20, 9, 4, 0.7), rgba(75, 40, 19, 0.5), rgba(16, 6, 2, 0.76)),
+    var(--lux-material-texture) center / cover no-repeat;
+}
+
+.themeBlueIvory {
+  --lux-material-texture: url("../../assets/6b-material-blue-marble.png");
+  --lux-material-layer-blend: soft-light;
+  --lux-photo-texture-opacity: 0.06;
+  --lux-frame-texture-opacity: 0.04;
+  --lux-photo-texture-blend: soft-light;
+  --lux-case-bg:
+    linear-gradient(90deg, #172331, #37516d 22%, #101a25 54%, #52677b 78%, #111820),
+    #07121a;
+  --lux-case-border: rgba(214, 194, 143, 0.58);
+  --lux-case-glow-top: rgba(229, 238, 247, 0.2);
+  --lux-case-glow-side: rgba(201, 225, 243, 0.17);
+  --lux-inner-border: rgba(244, 236, 213, 0.18);
+  --lux-board-area-bg:
+    radial-gradient(circle at 50% 44%, rgba(214, 194, 143, 0.1), transparent 46%),
+    linear-gradient(180deg, rgba(8, 22, 31, 0.66), rgba(3, 9, 13, 0.74));
+  --lux-rail-bg:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.16), transparent 22%),
+    radial-gradient(circle at 88% 82%, rgba(0, 0, 0, 0.34), transparent 32%),
+    linear-gradient(90deg, rgba(10, 19, 29, 0.98) 0%, rgba(47, 75, 106, 0.95) 19%, rgba(8, 15, 24, 0.98) 49%, rgba(78, 101, 126, 0.94) 75%, rgba(9, 14, 20, 0.98) 100%),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-rail-border: rgba(214, 194, 143, 0.42);
+  --lux-rivet: rgba(236, 222, 180, 0.72);
+  --lux-rivet-soft: rgba(236, 222, 180, 0.18);
+  --lux-field-bg:
+    radial-gradient(ellipse at 50% 44%, rgba(249, 245, 229, 0.14), transparent 52%),
+    linear-gradient(90deg, rgba(18, 37, 58, 0.98), rgba(59, 91, 122, 0.95) 48%, rgba(17, 32, 49, 0.98)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-field-sheen:
+    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.18), transparent 38%),
+    radial-gradient(ellipse at 50% 88%, rgba(1, 8, 14, 0.24), transparent 42%),
+    linear-gradient(90deg, rgba(0, 0, 0, 0.26), transparent 8%, transparent 92%, rgba(0, 0, 0, 0.26));
+  --lux-point-light-a: #f7eed7;
+  --lux-point-light-b: #cdbb8f;
+  --lux-point-light-sheen: rgba(255, 255, 255, 0.9);
+  --lux-point-dark-a: #2a79a9;
+  --lux-point-dark-b: #0a3158;
+  --lux-point-dark-sheen: rgba(184, 225, 250, 0.28);
+  --lux-point-edge: rgba(6, 21, 34, 0.18);
+  --lux-point-fiber: rgba(255, 255, 255, 0.048);
+  --lux-point-texture-opacity: 0.04;
+  --lux-point-edge-soft: rgba(229, 238, 247, 0.24);
+  --lux-center-belt: rgba(16, 27, 39, 0.92);
+  --lux-row-bg:
+    radial-gradient(circle at 50% 50%, rgba(249, 245, 229, 0.07), transparent 48%),
+    linear-gradient(90deg, rgba(9, 20, 32, 0.98), rgba(39, 65, 90, 0.94) 50%, rgba(9, 20, 32, 0.98)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bar-bg:
+    radial-gradient(circle at 50% 8%, rgba(255, 255, 255, 0.12), transparent 38%),
+    linear-gradient(90deg, rgba(236, 222, 180, 0.11), transparent 31%, rgba(0, 0, 0, 0.28)),
+    linear-gradient(90deg, rgba(10, 20, 31, 0.98), rgba(39, 66, 94, 0.94), rgba(8, 15, 23, 0.98)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bearoff-bg:
+    radial-gradient(circle at 50% 4%, rgba(255, 255, 255, 0.13), transparent 35%),
+    linear-gradient(90deg, rgba(236, 222, 180, 0.1), transparent 40%, rgba(0, 0, 0, 0.28)),
+    linear-gradient(90deg, rgba(10, 20, 31, 0.98), rgba(39, 66, 94, 0.94), rgba(8, 15, 23, 0.98)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-panel-bg:
+    radial-gradient(circle at 50% 0, rgba(214, 194, 143, 0.09), transparent 38%),
+    linear-gradient(180deg, rgba(12, 27, 38, 0.98), rgba(5, 13, 19, 0.99));
+  --lux-checker-light-hi: #fffdfa;
+  --lux-checker-light-mid: #f6ecd2;
+  --lux-checker-light-low: #cbb582;
+  --lux-checker-light-deep: #7f704f;
+  --lux-checker-light-border: #c2aa70;
+  --lux-checker-dark-hi: #d8efff;
+  --lux-checker-dark-mid: #2f85b9;
+  --lux-checker-dark-low: #0d4c78;
+  --lux-checker-dark-deep: #071d33;
+  --lux-checker-dark-border: #082a45;
+  --lux-die-dark-hi: #4b9fcb;
+  --lux-die-dark-low: #092540;
+  --lux-die-pip-light: #edf8ff;
+  --lux-die-pip-dark: #071d33;
+}
+
+.themeIvoryGold {
+  --lux-material-texture: url("../../assets/6b-material-ivory-silver-gold.png");
+  --lux-material-layer-blend: soft-light;
+  --lux-case-bg:
+    linear-gradient(90deg, #eee4ca, #bfc3bf 22%, #f7efd8 50%, #d4a849 76%, #f0e7d2),
+    #f1ead9;
+  --lux-case-border: rgba(225, 181, 73, 0.66);
+  --lux-case-glow-top: rgba(255, 255, 255, 0.28);
+  --lux-case-glow-side: rgba(245, 235, 205, 0.22);
+  --lux-inner-border: rgba(151, 131, 84, 0.22);
+  --lux-photo-texture-opacity: 0.1;
+  --lux-frame-texture-opacity: 0.07;
+  --lux-photo-texture-blend: soft-light;
+  --lux-board-area-bg:
+    radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.18), transparent 46%),
+    linear-gradient(180deg, rgba(237, 229, 207, 0.72), rgba(181, 181, 169, 0.54));
+  --lux-rail-bg:
+    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.28), transparent 22%),
+    radial-gradient(circle at 88% 82%, rgba(133, 117, 82, 0.24), transparent 32%),
+    repeating-linear-gradient(0deg, rgba(121, 115, 98, 0.12) 0 1px, transparent 1px 13px),
+    linear-gradient(90deg, rgba(239, 229, 205, 0.84) 0%, rgba(191, 196, 195, 0.78) 18%, rgba(250, 242, 220, 0.82) 49%, rgba(210, 167, 77, 0.72) 74%, rgba(239, 229, 205, 0.84) 100%),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-rail-border: rgba(209, 169, 72, 0.52);
+  --lux-rivet: rgba(212, 148, 26, 0.78);
+  --lux-rivet-soft: rgba(212, 148, 26, 0.2);
+  --lux-field-bg:
+    radial-gradient(ellipse at 50% 44%, rgba(255, 255, 255, 0.2), transparent 52%),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 12px),
+    linear-gradient(90deg, rgba(214, 206, 188, 0.84), rgba(247, 238, 215, 0.76) 48%, rgba(197, 190, 171, 0.84)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-field-sheen:
+    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.22), transparent 38%),
+    radial-gradient(ellipse at 50% 88%, rgba(133, 117, 82, 0.2), transparent 42%),
+    linear-gradient(90deg, rgba(103, 92, 69, 0.2), transparent 8%, transparent 92%, rgba(103, 92, 69, 0.2));
+  --lux-point-light-a: #f2dfae;
+  --lux-point-light-b: #bc9650;
+  --lux-point-light-sheen: rgba(255, 249, 224, 0.76);
+  --lux-point-dark-a: #d2a84b;
+  --lux-point-dark-b: #9a7029;
+  --lux-point-dark-sheen: rgba(255, 243, 203, 0.32);
+  --lux-point-edge: rgba(116, 88, 35, 0.3);
+  --lux-point-fiber: rgba(111, 86, 43, 0.07);
+  --lux-point-texture-opacity: 0.05;
+  --lux-point-edge-soft: rgba(255, 248, 217, 0.28);
+  --lux-center-belt: rgba(192, 182, 158, 0.9);
+  --lux-row-bg:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12), transparent 48%),
+    linear-gradient(90deg, rgba(208, 199, 180, 0.82), rgba(243, 233, 207, 0.7) 50%, rgba(200, 190, 170, 0.82)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bar-bg:
+    radial-gradient(circle at 50% 8%, rgba(255, 255, 255, 0.2), transparent 38%),
+    linear-gradient(90deg, rgba(245, 235, 207, 0.16), transparent 31%, rgba(116, 93, 46, 0.2)),
+    linear-gradient(90deg, rgba(186, 187, 181, 0.82), rgba(239, 229, 205, 0.72), rgba(191, 154, 69, 0.62)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-bearoff-bg:
+    radial-gradient(circle at 50% 4%, rgba(255, 255, 255, 0.22), transparent 35%),
+    linear-gradient(90deg, rgba(245, 235, 207, 0.16), transparent 40%, rgba(116, 93, 46, 0.2)),
+    linear-gradient(90deg, rgba(186, 187, 181, 0.82), rgba(239, 229, 205, 0.72), rgba(191, 154, 69, 0.62)),
+    var(--lux-material-texture) center / cover no-repeat;
+  --lux-panel-bg:
+    radial-gradient(circle at 50% 0, rgba(224, 213, 182, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(31, 31, 27, 0.98), rgba(12, 12, 10, 0.99));
+  --lux-checker-light-hi: #fffefa;
+  --lux-checker-light-mid: #f3e9d2;
+  --lux-checker-light-low: #cbbd98;
+  --lux-checker-light-deep: #847656;
+  --lux-checker-light-border: #b9a777;
+  --lux-checker-dark-hi: #fff1bc;
+  --lux-checker-dark-mid: #d7a843;
+  --lux-checker-dark-low: #9d711e;
+  --lux-checker-dark-deep: #4c3108;
+  --lux-checker-dark-border: #8a631c;
+  --lux-die-dark-hi: #d7a843;
+  --lux-die-dark-low: #4c3108;
+  --lux-die-pip-light: #fff9de;
+  --lux-die-pip-dark: #3f2a08;
+}
+
+.gameFrame::before {
+  content: "";
+  position: absolute;
+  inset: 5px;
+  z-index: 3;
+  pointer-events: none;
+  border: 1px solid var(--lux-inner-border);
+  border-radius: 8px;
+  box-shadow:
+    inset 0 0 0 1px rgba(31, 15, 6, 0.7),
+    inset 0 0 28px rgba(0, 0, 0, 0.28);
+}
+
+.gameFrame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, var(--lux-case-glow-top), transparent 8%, transparent 92%, var(--lux-case-shadow-bottom)),
+    linear-gradient(90deg, var(--lux-case-glow-side), transparent 13%, transparent 87%, rgba(0, 0, 0, 0.34));
+  opacity: 0.72;
 }
 
 /* === Mobile portrait: fit board to viewport via dvh/dvw === */
@@ -35,50 +325,129 @@
 .boardArea {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  direction: ltr;
   width: 100%;
   height: 100%;
   min-width: 0;
   position: relative;
+  background: var(--lux-board-area-bg);
 }
 
 /* === Board inner frame === */
 .frame {
   position: absolute;
-  inset: 0;
-  border-radius: 0;
-  padding: clamp(5px, 0.7vw, 9px);
+  inset: clamp(7px, 0.7vw, 11px);
+  border-radius: 8px;
+  padding: clamp(8px, 0.9vw, 13px);
   box-sizing: border-box;
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.08), transparent 16%, transparent 84%, rgba(0, 0, 0, 0.25)),
-    #15224a;
+  overflow: hidden;
+  background: var(--lux-rail-bg);
   box-shadow:
-    0 30px 80px -30px rgba(0, 0, 0, 0.7),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 30px 80px -28px rgba(0, 0, 0, 0.82),
+    inset 0 0 0 1px rgba(255, 232, 176, 0.2),
+    inset 0 0 0 5px rgba(7, 3, 1, 0.54),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--lux-rail-border);
+}
+
+.frame::before,
+.frame::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.frame::before {
+  inset: clamp(5px, 0.45vw, 8px);
+  z-index: 2;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 231, 172, 0.2);
+  box-shadow:
+    inset 0 0 0 2px rgba(18, 8, 2, 0.64),
+    inset 0 0 18px rgba(0, 0, 0, 0.35);
+}
+
+.frame::after {
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at 2.4% 3%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px),
+    radial-gradient(circle at 97.6% 3%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px),
+    radial-gradient(circle at 2.4% 97%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px),
+    radial-gradient(circle at 97.6% 97%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px);
 }
 
 .inner {
+  position: relative;
+  z-index: 1;
   height: 100%;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
-  border-radius: 4px;
+  border-radius: 5px;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.075), transparent 48%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 4px),
-    #2a61c7;
-  box-shadow: inset 0 0 46px rgba(8, 14, 45, 0.66);
+  background: var(--lux-field-bg);
+  box-shadow:
+    inset 0 0 60px rgba(2, 7, 9, 0.68),
+    inset 0 0 0 1px rgba(255, 235, 185, 0.08);
+}
+
+.inner::before,
+.inner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.inner::before {
+  z-index: 0;
+  background: var(--lux-field-sheen);
+  opacity: 1;
+}
+
+.inner::after {
+  z-index: 3;
+  background: none;
+  mix-blend-mode: soft-light;
+  border: 1px solid rgba(255, 233, 178, 0.08);
+  box-shadow:
+    inset 0 0 0 1px rgba(32, 14, 5, 0.62),
+    inset 0 16px 20px rgba(255, 231, 172, 0.06),
+    inset 0 -22px 26px rgba(0, 0, 0, 0.28);
+}
+
+.themeRedGreen .inner::after {
+  background: none;
 }
 
 .column12 {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(6px, 0.72cqw, 11px);
   min-width: 0;
+  background:
+    linear-gradient(
+      180deg,
+      transparent calc(50% - 8px),
+      var(--lux-center-belt) calc(50% - 8px),
+      var(--lux-center-belt) calc(50% + 8px),
+      transparent calc(50% + 8px)
+    );
+  box-shadow:
+    inset 0 0 0 1px rgba(34, 16, 6, 0.52),
+    inset 0 0 34px rgba(0, 0, 0, 0.18);
 }
 
 .row6 {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: clamp(1px, 0.12cqw, 2px);
+  min-height: 0;
+  background: var(--lux-row-bg);
 }
 
 .wrapper {
@@ -117,10 +486,10 @@
   align-items: center;
   gap: var(--dice-overlay-gap);
   padding: clamp(4px, 0.8vw, 8px) clamp(10px, 2vw, 18px);
-  background: rgba(13, 20, 44, 0.9);
+  background: rgba(7, 20, 18, 0.9);
   backdrop-filter: blur(5px);
   border-radius: 5px;
-  border: 1px solid rgba(114, 154, 255, 0.55);
+  border: 1px solid rgba(229, 180, 77, 0.38);
   pointer-events: none;
 }
 
@@ -136,10 +505,10 @@
   align-items: center;
   justify-content: center;
   padding: clamp(18px, 3vw, 30px);
-  background: rgba(13, 20, 44, 0.94);
+  background: rgba(7, 20, 18, 0.93);
   backdrop-filter: blur(5px);
   border-radius: 6px;
-  border: 1px solid rgba(114, 154, 255, 0.55);
+  border: 1px solid rgba(229, 180, 77, 0.38);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
@@ -147,8 +516,9 @@
 .sidePanel {
   display: flex;
   flex-direction: column;
-  background: #152019;
-  border-left: 1px solid rgba(217, 182, 93, 0.2);
+  direction: rtl;
+  background: var(--lux-panel-bg);
+  border-left: 1px solid rgba(229, 180, 77, 0.26);
   gap: clamp(6px, 1vw, 12px);
   padding: clamp(8px, 1.5vw, 16px);
   overflow-y: auto;
@@ -160,7 +530,7 @@
   background: rgba(255, 107, 107, 0.15);
   border: 1px solid rgba(255, 107, 107, 0.3);
   color: #ff6b6b;
-  font-size: clamp(11px, 1.4vw, 14px);
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
@@ -220,18 +590,18 @@
 }
 
 .overlayCard {
-  background: #10172b;
+  background: rgba(8, 23, 27, 0.96);
   backdrop-filter: blur(12px);
   border-radius: 8px;
   padding: clamp(18px, 3vw, 32px);
   box-shadow: 0 25px 50px rgba(0, 0, 0, 0.42);
-  border: 1px solid rgba(114, 154, 255, 0.38);
+  border: 1px solid rgba(229, 180, 77, 0.34);
   text-align: center;
   min-width: 16rem;
 }
 
 .winnerText {
-  color: #8eb4ff;
+  color: #f5d28c;
   font-size: 1rem;
   font-weight: 700;
 }
@@ -265,9 +635,9 @@
 }
 
 .doubleOfferButton {
-  background: #3f79e4;
-  border-color: #5f90f1;
-  color: #f7f9ff;
+  background: linear-gradient(135deg, #e7bd72, #c8932f);
+  border-color: rgba(229, 180, 77, 0.64);
+  color: #10292d;
 }
 
 .doubleSkipButton {
@@ -283,7 +653,7 @@
   justify-content: center;
   width: 100%;
   height: 100dvh;
-  font-size: clamp(16px, 2vw, 20px);
+  font-size: 18px;
   font-weight: 500;
 }
 .error {

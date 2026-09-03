@@ -14,6 +14,10 @@ import {
   type Move,
 } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
+import {
+  DEFAULT_BOARD_THEME,
+  type BoardTheme,
+} from "../BoardThemeSelector/boardThemes";
 
 interface GameBoardProps {
   state: GameState;
@@ -33,7 +37,15 @@ interface GameBoardProps {
   timeControl?: import("../../lib/clock").TimeControl | null;
   autoRoll?: boolean;
   onAutoRollChange?: (value: boolean) => void;
+  boardTheme?: BoardTheme;
+  onBoardThemeChange?: (theme: BoardTheme) => void;
 }
+
+const themeClassByTheme: Record<BoardTheme, string> = {
+  redGreen: styles.themeRedGreen,
+  blueIvory: styles.themeBlueIvory,
+  ivoryGold: styles.themeIvoryGold,
+};
 
 export default function GameBoard({
   state,
@@ -53,11 +65,14 @@ export default function GameBoard({
   timeControl,
   autoRoll,
   onAutoRollChange,
+  boardTheme,
+  onBoardThemeChange,
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
   const [autoMove, setAutoMove] = useState<Move | null>(null);
 
   const isMyTurn = state.turn === playerColor && state.phase === "moving";
+  const selectedBoardTheme = boardTheme ?? DEFAULT_BOARD_THEME;
 
   useEffect(() => {
     if (!isMyTurn) setSelected(null);
@@ -121,7 +136,10 @@ export default function GameBoard({
   }
 
   return (
-    <div className={styles.gameFrame} data-testid="board-frame">
+    <div
+      className={`${styles.gameFrame} ${themeClassByTheme[selectedBoardTheme]}`}
+      data-testid="board-frame"
+    >
       <div className={styles.boardArea}>
         <Board
           state={state}
@@ -172,6 +190,8 @@ export default function GameBoard({
         timeControl={timeControl}
         autoRoll={autoRoll}
         onAutoRollChange={onAutoRollChange}
+        boardTheme={boardTheme}
+        onBoardThemeChange={onBoardThemeChange}
       />
     </div>
   );

@@ -8,6 +8,8 @@ import { useGame } from "../../services/gameContext";
 import { activePlayerOf, type TimeControl } from "../../lib/clock";
 import { AutoRoll } from "../autoRoll/AutoRoll";
 import { useI18n } from "../../i18n/I18nProvider";
+import BoardThemeSelector from "../BoardThemeSelector/BoardThemeSelector";
+import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
 
 interface SidePanelProps {
   state: GameState;
@@ -18,6 +20,8 @@ interface SidePanelProps {
   timeControl?: TimeControl | null;
   autoRoll?: boolean;
   onAutoRollChange?: (value: boolean) => void;
+  boardTheme?: BoardTheme;
+  onBoardThemeChange?: (theme: BoardTheme) => void;
 }
 
 export default function SidePanel({
@@ -29,6 +33,8 @@ export default function SidePanel({
   timeControl,
   autoRoll,
   onAutoRollChange,
+  boardTheme,
+  onBoardThemeChange,
 }: SidePanelProps) {
   const { t } = useI18n();
   const { giveUp, whiteName, blackName, matchScore } = useGame();
@@ -40,10 +46,10 @@ export default function SidePanel({
   const opponentLabel =
     opponentName || (playerColor === "white" ? t("common.blackPlayer") : t("common.whitePlayer"));
   const selfLabel = selfName
-    ? `${selfName} (${t("common.you")})`
+    ? `${selfName} (${t("common.youLower")})`
     : playerColor === "white"
-      ? t("common.youColor", { color: t("common.white") })
-      : t("common.youColor", { color: t("common.black") });
+      ? `${t("common.you")} (${t("common.white")})`
+      : `${t("common.you")} (${t("common.black")})`;
   const stripMyLabel = selfName || t("common.you");
   const stripOppLabel = opponentName || t("common.opponent");
   const activeColor = activePlayerOf(state);
@@ -96,6 +102,11 @@ export default function SidePanel({
       <div className={styles.section}>
         <Controls playerColor={playerColor} state={state} />
       </div>
+      {boardTheme && onBoardThemeChange && (
+        <div className={styles.section}>
+          <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} />
+        </div>
+      )}
       <div className={styles.section}>
         {onAutoRollChange && (
           <AutoRoll autoRoll={!!autoRoll} onChange={onAutoRollChange} />
@@ -108,7 +119,7 @@ export default function SidePanel({
             className={styles.resignBtn}
             onClick={() => setShowGiveUp(true)}
           >
-            {t("common.giveUp")}
+            {t("game.giveUp")}
           </button>
         ) : (
           <div className={styles.resignConfirm}>

@@ -78,10 +78,10 @@ export default function PointCell({
           style={{
 
             background: isLegalTarget
-              ? "radial-gradient(circle at 50% 50%, rgba(137, 180, 255, 0.78), transparent 68%)"
+              ? "radial-gradient(circle at 50% 50%, rgba(229, 180, 77, 0.66), transparent 68%)"
               : selected
                 ? "radial-gradient(circle at 50% 50%, rgba(227, 190, 97, 0.5), transparent 70%)"
-                : "radial-gradient(circle at 50% 50%, rgba(137, 180, 255, 0.28), transparent 70%)",
+                : "radial-gradient(circle at 50% 50%, rgba(229, 180, 77, 0.3), transparent 70%)",
           }}
         />
       )}

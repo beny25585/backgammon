@@ -8,6 +8,18 @@ import { useAutoRoll } from "../autoRoll/AutoRoll";
 import { clientLogger } from "@/services/logger";
 import { canOfferDouble } from "@/lib/backgammon/engine";
 import { useI18n } from "../../i18n/I18nProvider";
+import {
+  DEFAULT_BOARD_THEME,
+  isBoardTheme,
+  type BoardTheme,
+} from "../BoardThemeSelector/boardThemes";
+
+const BOARD_THEME_STORAGE_KEY = "6b-board-theme";
+
+function initialBoardTheme(): BoardTheme {
+  const saved = window.localStorage.getItem(BOARD_THEME_STORAGE_KEY);
+  return isBoardTheme(saved) ? saved : DEFAULT_BOARD_THEME;
+}
 
 interface GameScreenProps {
   onLeave?: (outcome?: "won" | "lost") => void;
@@ -44,6 +56,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   const [rollResult, setRollResult] = useState<number[] | undefined>(undefined);
   const [landing, setLanding] = useState(false);
   const [autoRoll, setAutoRoll] = useAutoRoll();
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
   const DOUBLE_WINDOW_SECONDS = 20;
   const [doubleWindow, setDoubleWindow] = useState(false);
   const [doubleCountdown, setDoubleCountdown] = useState(DOUBLE_WINDOW_SECONDS);
@@ -63,6 +76,10 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     setLanding(true);
     rollDice();
   }, [rollDice]);
+
+  useEffect(() => {
+    window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
+  }, [boardTheme]);
 
   useEffect(() => {
     if (!state) return;
@@ -162,7 +179,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
   if (!state) {
     if (error) {
-      return <div className={styles.error}>{t("common.error")}: {error}</div>;
+      return <div className={styles.error}>{t("game.errorPrefix")}: {error}</div>;
     }
     return <div className={styles.loading}>{t("game.initializing")}</div>;
   }
@@ -171,7 +188,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     <div className={styles.container}>
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
-          <span>{t("common.error")}: {error}</span>
+          <span>{t("game.errorPrefix")}: {error}</span>
           <button
             type="button"
             className={styles.errorCardClose}
@@ -226,6 +243,8 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             endTurn={endTurn}
             autoRoll={autoRoll}
             onAutoRollChange={setAutoRoll}
+            boardTheme={boardTheme}
+            onBoardThemeChange={setBoardTheme}
             needsToRoll={needsToRoll}
             onRoll={handleRoll}
             rollResult={rollResult}
@@ -284,13 +303,15 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
         <div className={styles.overlayDim} data-testid="double-decision-overlay">
           <div className={styles.overlayCard} role="dialog" aria-modal="true" aria-label={t("game.doubleDecision")}>
             <div className={styles.winnerText}>{t("game.offerDoubleBeforeRoll")}</div>
-            <div className={styles.subText}>{t("game.autoRollCountdown", { seconds: doubleCountdown })}</div>
+            <div className={styles.subText}>
+              {t("game.autoRollCountdown", { seconds: doubleCountdown })}
+            </div>
             <div className={styles.doubleDecisionActions}>
               <button type="button" className={styles.doubleOfferButton} onClick={handleDoubleOffer}>
-                {t("common.offerDoubleButton")}
+                {t("game.offerDouble")}
               </button>
               <button type="button" className={styles.doubleSkipButton} onClick={handleDoubleSkip}>
-                {t("common.rollNow")}
+                {t("game.rollNow")}
               </button>
             </div>
           </div>

@@ -11,16 +11,27 @@
 
   width: var(--bar-w);
 
-  background:
-    linear-gradient(90deg, rgba(255, 255, 255, 0.08), transparent 35%, rgba(0, 0, 0, 0.22)),
-    #162450;
+  background: #251409;
+  background: var(--lux-bar-bg, #251409);
 
   box-shadow:
-    inset 2px 0 4px rgba(0, 0, 0, 0.5),
-    inset -2px 0 4px rgba(0, 0, 0, 0.5);
+    inset 2px 0 5px rgba(0, 0, 0, 0.62),
+    inset -2px 0 5px rgba(0, 0, 0, 0.62),
+    inset 0 0 0 1px rgba(229, 180, 77, 0.13);
 
   border: none;
   cursor: pointer;
+}
+
+.bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: var(--lux-material-texture) center / cover no-repeat;
+  mix-blend-mode: var(--lux-photo-texture-blend, soft-light);
+  opacity: calc(var(--lux-frame-texture-opacity, 0.28) + 0.08);
 }
 
 .bar:focus {
@@ -30,14 +41,16 @@
 .highlight {
   position: absolute;
   inset: 0;
+  z-index: 1;
 
-  background: rgba(103, 151, 255, 0.38);
+  background: rgba(229, 180, 77, 0.28);
 
   animation: pulseGlow 1.5s infinite;
 }
 
 .checkers {
   position: relative;
+  z-index: 2;
 
   display: flex;
   flex-direction: column;

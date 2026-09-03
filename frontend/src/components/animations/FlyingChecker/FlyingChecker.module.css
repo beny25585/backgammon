@@ -3,38 +3,85 @@
   border-radius: 9999px;
   z-index: 50;
   pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;
 }
 
 .white {
-  background: radial-gradient(
-    circle at 30% 25%,
-    #ffffff,
-    #f4e4c1 55%,
-    #b89660 100%
-  );
-
+  background:
+    radial-gradient(
+      circle at 34% 23%,
+      rgba(255, 255, 255, 0.96) 0%,
+      rgba(255, 255, 255, 0.96) 10%,
+      rgba(255, 248, 230, 0.72) 11%,
+      rgba(255, 248, 230, 0.72) 20%,
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 50% 56%,
+      var(--lux-checker-light-mid, #fff4d4) 0%,
+      var(--lux-checker-light-mid, #fff4d4) 39%,
+      var(--lux-checker-light-low, #d9bf82) 68%,
+      var(--lux-checker-light-deep, #8f6e3f) 100%
+    );
   box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.7),
-    inset 0 -3px 4px rgba(0, 0, 0, 0.35),
-    inset 0 2px 2px rgba(255, 255, 255, 0.15),
-    0 0 24px rgba(201, 169, 97, 0.5);
-
-  border: 1px solid #c9a961;
+    0 7px 22px rgba(0, 0, 0, 0.72),
+    inset 0 2px 3px rgba(255, 255, 255, 0.72),
+    inset 0 -5px 9px rgba(95, 60, 25, 0.42),
+    inset 0 0 0 2px rgba(255, 239, 199, 0.62),
+    inset 0 0 0 5px rgba(149, 112, 59, 0.24),
+    0 0 24px rgba(201, 169, 97, 0.38);
+  border: 1px solid var(--lux-checker-light-border, #b88f4f);
 }
 
 .black {
-  background: radial-gradient(
-    circle at 30% 25%,
-    #6a4830,
-    #2a1810 55%,
-    #0a0402 100%
-  );
-
+  background:
+    radial-gradient(
+      circle at 32% 22%,
+      rgba(255, 206, 177, 0.5) 0%,
+      rgba(255, 206, 177, 0.5) 9%,
+      rgba(180, 73, 61, 0.28) 10%,
+      rgba(180, 73, 61, 0.28) 19%,
+      transparent 21%
+    ),
+    radial-gradient(
+      circle at 50% 56%,
+      var(--lux-checker-dark-mid, #aa3940) 0%,
+      var(--lux-checker-dark-mid, #aa3940) 34%,
+      var(--lux-checker-dark-low, #6f1722) 65%,
+      var(--lux-checker-dark-deep, #260508) 100%
+    );
   box-shadow:
-    0 6px 20px rgba(0, 0, 0, 0.7),
-    inset 0 -3px 4px rgba(0, 0, 0, 0.35),
-    inset 0 2px 2px rgba(255, 255, 255, 0.15),
-    0 0 24px rgba(201, 169, 97, 0.5);
+    0 7px 22px rgba(0, 0, 0, 0.74),
+    0 0 0 1px rgba(229, 180, 77, 0.12),
+    inset 0 2px 3px rgba(255, 207, 174, 0.22),
+    inset 0 -5px 10px rgba(10, 0, 2, 0.72),
+    inset 0 0 0 2px rgba(130, 33, 39, 0.95),
+    inset 0 0 0 5px rgba(255, 217, 160, 0.08),
+    0 0 24px rgba(201, 169, 97, 0.28);
+  border: 1px solid var(--lux-checker-dark-border, #3b070d);
+}
 
-  border: 1px solid #000;
+.flyer::before,
+.flyer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.flyer::before {
+  inset: 11%;
+  border: 1px solid rgba(255, 239, 196, 0.34);
+  box-shadow:
+    inset 0 2px 3px rgba(255, 255, 255, 0.18),
+    inset 0 -2px 3px rgba(0, 0, 0, 0.18);
+}
+
+.flyer::after {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.24), transparent 27%),
+    radial-gradient(circle at 68% 78%, rgba(0, 0, 0, 0.2), transparent 42%);
+  mix-blend-mode: soft-light;
 }

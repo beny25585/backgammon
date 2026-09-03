@@ -31,7 +31,7 @@ export default function Checker({ color, label, instant }: CheckerProps) {
         color === "white" ? styles.white : styles.black
       }`}
     >
-      {label}
+      {label && <span className={styles.label}>{label}</span>}
     </motion.div>
   );
 }
