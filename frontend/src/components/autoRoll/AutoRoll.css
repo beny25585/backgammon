@@ -9,7 +9,8 @@
   user-select: none;
   border: 1px solid rgba(114, 154, 255, 0.22);
   border-radius: 6px;
-  background: rgba(5, 9, 24, 0.28);
+  background: rgba(7, 19, 20, 0.38);
+  border-color: rgba(231, 189, 114, 0.18);
 }
 
 .autoRollToggle input {
@@ -25,37 +26,36 @@
   flex: none;
   border-radius: 9999px;
   background: rgba(0, 0, 0, 0.55);
-  border: 2px solid rgba(114, 154, 255, 0.62);
+  border: 2px solid rgba(231, 189, 114, 0.38);
   transition:
     background 0.2s,
     border-color 0.2s;
 }
 
 .autoRollToggle input:checked + .autoRollTrack {
-  background: rgba(79, 127, 235, 0.28);
-  border-color: #5f90f1;
+  background: rgba(229, 180, 77, 0.28);
+  border-color: #e5b44d;
 }
 
 .autoRollThumb {
   position: absolute;
   top: 50%;
-  left: 2px;
+  inset-inline-start: 2px;
   transform: translateY(-50%);
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #78a3ff;
-  transition: left 0.2s;
+  background: #e5b44d;
+  transition: inset-inline-start 0.2s;
 }
 
 .autoRollToggle input:checked + .autoRollTrack .autoRollThumb {
-  left: 20px;
+  inset-inline-start: 20px;
 }
 
 .autoRollLabel {
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #9fc1ff;
+  letter-spacing: 0;
+  color: #f5d28c;
 }

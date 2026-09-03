@@ -4,6 +4,7 @@ import styles from "./GuidanceBanner.module.css";
 import type { Color, GameState } from "@/lib/backgammon/engine";
 import { getGuidance } from "./guidance";
 import type { GuidanceVariant } from "./guidance";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface GuidanceBannerProps {
   state: GameState;
@@ -26,11 +27,28 @@ function variantClass(variant: GuidanceVariant): string {
   }
 }
 
+const guidanceTextKeys: Record<string, string> = {
+  "Waiting to start": "guidance.waitingStart",
+  "Roll to start": "guidance.rollStart",
+  "Waiting for opponent's roll": "guidance.waitingRoll",
+  "You go first!": "guidance.youFirst",
+  "Opponent goes first": "guidance.opponentFirst",
+  "Opponent offers a double!": "guidance.opponentDouble",
+  "Waiting for their response": "guidance.waitingResponse",
+  "Your turn — tap to roll": "guidance.yourRoll",
+  "Opponent is thinking…": "guidance.opponentThinking",
+  "Confirm your turn": "guidance.confirmTurn",
+  "No moves available — turn passes": "guidance.noMoves",
+  "Forced move — playing automatically": "guidance.forcedMove",
+  "Waiting…": "guidance.waiting",
+};
+
 export default function GuidanceBanner({
   state,
   playerColor,
   respondToDouble,
 }: GuidanceBannerProps) {
+  const { t, locale } = useI18n();
   const [responding, setResponding] = useState(false);
   const [showTransient, setShowTransient] = useState(false);
 
@@ -63,6 +81,11 @@ export default function GuidanceBanner({
     respondToDouble(accept);
   };
 
+  const text =
+    locale === "he"
+      ? t(guidanceTextKeys[guidance.text] ?? `guidance.${guidance.variant}`)
+      : guidance.text;
+
   return (
     <div className={`${styles.wrapper} ${isDecision ? styles.decision : styles.toast}`}>
       <motion.div
@@ -74,7 +97,7 @@ export default function GuidanceBanner({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <span className={styles.text}>{guidance.text}</span>
+        <span className={styles.text}>{text}</span>
         {isDecision && (
           <div className={styles.actions}>
             <button
@@ -84,7 +107,7 @@ export default function GuidanceBanner({
               disabled={responding}
               data-testid="double-accept"
             >
-              {responding ? "Sending..." : "Accept"}
+              {responding ? t("common.sending") : t("common.accept")}
             </button>
             <button
               type="button"
@@ -93,7 +116,7 @@ export default function GuidanceBanner({
               disabled={responding}
               data-testid="double-decline"
             >
-              Decline
+              {t("common.decline")}
             </button>
           </div>
         )}

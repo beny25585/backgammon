@@ -16,15 +16,15 @@
 }
 
 .activeSelf {
-  background: rgba(79, 127, 235, 0.17);
-  border-color: rgba(114, 154, 255, 0.68);
-  box-shadow: inset 3px 0 0 #78a3ff;
+  background: rgba(229, 180, 77, 0.14);
+  border-color: rgba(229, 180, 77, 0.62);
+  box-shadow: inset -3px 0 0 #e5b44d;
 }
 
 .activeOpponent {
   background: rgba(227, 190, 97, 0.12);
   border-color: rgba(227, 190, 97, 0.6);
-  box-shadow: inset 3px 0 0 #e3be61;
+  box-shadow: inset -3px 0 0 #e3be61;
 }
 
 .avatar {
@@ -32,15 +32,35 @@
   height: clamp(22px, 8cqw, 30px);
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(114, 154, 255, 0.4);
+  border: 1px solid rgba(229, 180, 77, 0.42);
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.24),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.35),
+    0 4px 10px rgba(0, 0, 0, 0.28);
 }
 
 .avatar.white {
-  background: radial-gradient(circle at 30% 25%, #ffffff, #e7efff 58%, #a9bbe1 100%);
+  background:
+    radial-gradient(circle at 34% 23%, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.95) 18%, transparent 20%),
+    radial-gradient(
+      circle at 50% 56%,
+      var(--lux-checker-light-mid, #fff4d4) 0%,
+      var(--lux-checker-light-mid, #fff4d4) 39%,
+      var(--lux-checker-light-low, #d9bf82) 68%,
+      var(--lux-checker-light-deep, #8f6e3f) 100%
+    );
 }
 
 .avatar.black {
-  background: radial-gradient(circle at 30% 25%, #5752b6, #29276d 58%, #141537 100%);
+  background:
+    radial-gradient(circle at 32% 22%, rgba(255, 206, 177, 0.5) 0%, rgba(255, 206, 177, 0.5) 18%, transparent 20%),
+    radial-gradient(
+      circle at 50% 56%,
+      var(--lux-checker-dark-mid, #aa3940) 0%,
+      var(--lux-checker-dark-mid, #aa3940) 34%,
+      var(--lux-checker-dark-low, #6f1722) 65%,
+      var(--lux-checker-dark-deep, #260508) 100%
+    );
 }
 
 .info {
@@ -50,7 +70,7 @@
 
 .name {
   display: block;
-  font-size: clamp(10px, 3.2cqw, 12px);
+  font-size: 12px;
   font-weight: 800;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -62,21 +82,18 @@
   color: rgba(247, 241, 231, 0.55);
 }
 
-.chips {
+.meta {
   display: flex;
   gap: clamp(4px, 1.5cqw, 6px);
   flex-wrap: wrap;
   margin-top: clamp(2px, 1cqw, 4px);
+  color: rgba(247, 241, 231, 0.46);
+  font-size: 11px;
+  font-weight: 700;
 }
 
-.chip {
-  padding: clamp(3px, 1.5cqw, 4px) clamp(6px, 2.2cqw, 9px);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: rgba(247, 241, 231, 0.8);
-  font-size: clamp(9px, 2.8cqw, 11px);
-  font-weight: 600;
+.meta span {
+  color: rgba(231, 189, 114, 0.6);
 }
 
 .scoreWrap {
@@ -87,14 +104,14 @@
 }
 
 .score {
-  font-size: clamp(15px, 5cqw, 20px);
+  font-size: 20px;
   font-weight: 900;
   color: #e3be61;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
 }
 
 .activeSelf .score {
-  color: #9fc1ff;
+  color: #f5d28c;
 }
 
 .idle .score {
@@ -102,10 +119,9 @@
 }
 
 .turnBadge {
-  font-size: clamp(8px, 2.4cqw, 9px);
+  font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   color: #9edeb1;
   white-space: nowrap;
 }
@@ -123,7 +139,7 @@
     width: 20px;
     height: 20px;
   }
-  .chips {
+  .meta {
     margin-top: 1px;
   }
 }

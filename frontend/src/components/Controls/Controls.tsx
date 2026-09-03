@@ -29,7 +29,7 @@ export default function Controls({ playerColor, state }: ControlsProps) {
           onClick={offerDouble}
           title={t("common.offerDouble")}
         >
-          ✕2 Double
+          {t("common.offerDoubleShort")}
         </button>
       )}
     </div>

@@ -49,7 +49,7 @@ export default function GameResultOverlay({
   onHome,
   homeLabel,
 }: GameResultOverlayProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const opponentColor = playerColor === "white" ? "black" : "white";
   const youWonGame = winner === playerColor;
   // The server marks the match as over when the room is closed (target
@@ -68,6 +68,16 @@ export default function GameResultOverlay({
   const winnerLabel = winner === playerColor ? selfLabel : oppLabel;
   const winnerDisplayLabel = winner === playerColor ? t("common.you") : winnerLabel;
   const loser = winner === "white" ? "black" : "white";
+  const winLabels = {
+    single: t("game.regularWin"),
+    gammon: t("game.gammonWin"),
+    backgammon: t("game.backgammonWin"),
+  };
+  const pointExplanations = {
+    single: t("game.regularExplanation"),
+    gammon: t("game.gammonExplanation"),
+    backgammon: t("game.backgammonExplanation"),
+  };
 
   const selfScore = matchScore[playerColor] ?? 0;
   const oppScore = matchScore[opponentColor] ?? 0;
@@ -85,8 +95,20 @@ export default function GameResultOverlay({
         ];
 
   function label() {
-    const scope = isMatchOver ? t("game.matchScope") : t("game.gameScope");
-    const cubeSuffix = cube > 1 ? t("game.cubeSuffix", { cube }) : "";
+    if (locale === "he") {
+      const scope = isMatchOver ? "במשחק" : "במערכה הזאת";
+      const cubeSuffix = cube > 1 ? ` (${t("common.doublingCube")} פי ${cube})` : "";
+      const verb = winner === playerColor ? "ניצחת" : `${winnerDisplayLabel} ניצח`;
+
+      if (winType === "single") {
+        return `${verb} ${scope}${cubeSuffix}`;
+      }
+
+      return `${verb} ${scope} ב${winLabels[winType]}${cubeSuffix}`;
+    }
+
+    const scope = isMatchOver ? "the match" : "this game";
+    const cubeSuffix = cube > 1 ? ` (cube ×${cube})` : "";
 
     if (winType === "single") {
       return t("game.wonScope", { winner: winnerDisplayLabel, scope, cube: cubeSuffix });
@@ -96,8 +118,11 @@ export default function GameResultOverlay({
   }
 
   function pointExplanation() {
-    const base = t(`game.${winType}Points`);
-    return cube > 1 ? t("game.doubledPoints", { base, cube, points }) : t("game.sentence", { base });
+    const base = pointExplanations[winType];
+    if (locale === "he") {
+      return cube > 1 ? `${base} קוביית ההכפלה מעלה את הערך ל-${points} נקודות.` : base;
+    }
+    return cube > 1 ? `${base}; doubled by cube ×${cube} to ${points} points.` : `${base}.`;
   }
 
   return (
@@ -113,11 +138,7 @@ export default function GameResultOverlay({
         animate={{ scale: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 200, damping: 16 }}
       >
-        {isMatchOver && (
-          <span className={styles.emoji} role="img" aria-hidden="true">
-            {youWonMatch ? "🏆" : "😞"}
-          </span>
-        )}
+        {isMatchOver && <span className={styles.resultMark} aria-hidden="true" />}
 
         <h2
           className={`${styles.title} ${youWonGame || youWonMatch ? styles.titleWin : styles.titleLose}`}
@@ -147,9 +168,9 @@ export default function GameResultOverlay({
               className={`${styles.row} ${row.isWinner ? styles.rowWin : ""}`}
               data-testid={`score-row-${row.color}`}
             >
-              <span className={styles.nameWrap}>
-                <span className={styles.name}>{row.name}</span>
-                {row.isYou && <span className={styles.youTag}>{t("common.you")}</span>}
+                <span className={styles.nameWrap}>
+                  <span className={styles.name}>{row.name}</span>
+                {row.isYou && <span className={styles.youTag}>{t("common.youLower")}</span>}
               </span>
               {row.isWinner ? (
                 <AnimatedNumber
@@ -173,20 +194,20 @@ export default function GameResultOverlay({
               onClick={onNext}
               className={`${styles.button} ${styles.buttonPrimary}`}
             >
-              {t("game.nextGame")}
+              {t("game.nextGameAction")}
             </button>
           )}
           <button
             onClick={onHome}
             className={`${styles.button} ${isMatchOver ? styles.buttonPrimary : styles.buttonSecondary}`}
           >
-            {isMatchOver ? (homeLabel ?? t("game.backHome")) : t("game.quitMatch")}
+            {isMatchOver ? (homeLabel ?? t("common.backHome")) : t("game.quitMatch")}
           </button>
         </div>
 
         {!isMatchOver && countdown != null && matchTarget > 1 && (
           <p className={styles.autoNote}>
-            {t("game.autoNext", { seconds: countdown })}
+            {t("game.nextAuto", { seconds: countdown })}
           </p>
         )}
       </motion.div>

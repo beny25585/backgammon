@@ -6,8 +6,8 @@
   justify-content: center;
   min-height: clamp(52px, 14cqw, 66px);
   padding: 8px 10px;
-  border: 1px solid rgba(114, 154, 255, 0.22);
-  background: rgba(5, 9, 24, 0.28);
+  border: 1px solid rgba(231, 189, 114, 0.18);
+  background: rgba(7, 19, 20, 0.38);
   border-radius: 6px;
 }
 
@@ -20,11 +20,10 @@
 }
 
 .label {
-  color: rgba(220, 230, 255, 0.48);
+  color: rgba(247, 241, 231, 0.48);
   font-size: 9px;
   font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .cubeBlock + .btn {
@@ -36,12 +35,12 @@
   padding: 0 clamp(10px, 3.5cqw, 14px);
   border: none;
   border-radius: 5px;
-  font-size: clamp(11px, 3.4cqw, 13px);
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
   transition: transform 0.18s, background 0.18s, box-shadow 0.18s;
   white-space: nowrap;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
 }
 
 .primary {
@@ -61,14 +60,14 @@
 }
 
 .secondary {
-  background: #3f79e4;
-  color: #f7f9ff;
-  border: 1px solid #5f90f1;
+  background: rgba(229, 180, 77, 0.14);
+  color: #f5d28c;
+  border: 1px solid rgba(229, 180, 77, 0.34);
 }
 
 .secondary:hover:not(:disabled) {
   transform: translateY(-1px);
-  background: #4c85ef;
+  background: rgba(229, 180, 77, 0.22);
 }
 
 .secondary:disabled {
@@ -114,7 +113,7 @@
   background: rgba(231, 189, 114, 0.08);
   border: 1px solid rgba(231, 189, 114, 0.22);
   font-weight: 700;
-  font-size: clamp(11px, 3.2cqw, 12px);
+  font-size: 12px;
   color: #f7f1e7;
 }
 

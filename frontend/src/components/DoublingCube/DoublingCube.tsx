@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import styles from "./DoublingCube.module.css";
 import RollingDie from "@animations/RollingDie/RollingDie";
 import type { Color } from "@/lib/backgammon/engine";
-import { useGame } from "../../services/gameContext";
 import { useI18n } from "../../i18n/I18nProvider";
+import { useOptionalGame } from "../../services/gameContext";
 
 /*
  * HOW TO CHANGE THE CUBE STYLE
@@ -15,13 +15,13 @@ import { useI18n } from "../../i18n/I18nProvider";
  */
 
 const CUBE_COLORS: Record<number, string> = {
-  1: "#7180a8",
-  2: "#4d7fe1",
-  4: "#5d8ff0",
-  8: "#7aa4ff",
-  16: "#a2bcff",
-  32: "#d1dcfa",
-  64: "#e3be61",
+  1: "#a47b36",
+  2: "#e74c3c",
+  4: "#d4941a",
+  8: "#e5b44d",
+  16: "#f1dfb7",
+  32: "#f7f1e7",
+  64: "#fff4cf",
 };
 
 const SIZES = { width: "clamp(32px, 13cqw, 48px)", height: "clamp(32px, 13cqw, 48px)" };
@@ -32,10 +32,10 @@ interface DoublingCubeProps {
 }
 
 export default function DoublingCube({ value, owner }: DoublingCubeProps) {
+  const { t } = useI18n();
+  const game = useOptionalGame();
   const [rolling, setRolling] = useState(false);
   const prevValue = usePrevious(value);
-  const { whiteName, blackName } = useGame();
-  const { t } = useI18n();
 
   useEffect(() => {
     if (prevValue !== null && prevValue !== value) {
@@ -45,11 +45,15 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
 
   const ownerLabel =
     owner === "center"
-      ? "Center"
+      ? t("common.center")
       : owner === "white"
-        ? whiteName || t("common.white")
-        : blackName || t("common.black");
-  const color = CUBE_COLORS[value] ?? "#7180a8";
+        ? game
+          ? game.whiteName || t("common.white")
+          : t("common.you")
+        : game
+          ? game.blackName || t("common.black")
+          : t("common.opponent");
+  const color = CUBE_COLORS[value] ?? "#d4941a";
 
   return (
     <div className={styles.cubeContainer}>
@@ -68,7 +72,7 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
         <div
           className={styles.cubeFace}
           data-testid="doubling-cube"
-          title={t("common.cubeTitle", { value, owner })}
+          title={t("common.cubeTitle", { value, owner: ownerLabel })}
           style={{ color, width: SIZES.width, height: SIZES.height }}
         >
           {value}

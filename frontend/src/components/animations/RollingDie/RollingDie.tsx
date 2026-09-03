@@ -62,7 +62,9 @@ function DieFace({
             style={{
               left: `${x}%`,
               top: `${y}%`,
-              backgroundColor: dark ? "#edf2ff" : "#20245a",
+              backgroundColor: dark
+                ? "var(--lux-die-pip-light, #edf2ff)"
+                : "var(--lux-die-pip-dark, #20245a)",
             }}
           />
         ))

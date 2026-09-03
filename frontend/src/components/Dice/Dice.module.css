@@ -3,19 +3,26 @@
   height: clamp(2rem, 10vw, 3rem);
   border-radius: 5px;
   position: relative;
-  box-shadow: 0 5px 12px rgba(2, 5, 18, 0.35);
+  box-shadow:
+    0 6px 14px rgba(2, 5, 18, 0.38),
+    inset 0 1px 1px rgba(255, 255, 255, 0.22),
+    inset 0 -3px 5px rgba(0, 0, 0, 0.28);
 }
 
 .dieDark {
-  background: linear-gradient(145deg, #5a59ba, #23245c);
-  color: #edf2ff;
-  border: 1px solid rgba(148, 171, 255, 0.42);
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 201, 166, 0.35), transparent 28%),
+    linear-gradient(145deg, var(--lux-die-dark-hi, #9f3540), var(--lux-die-dark-low, #3d090f) 72%);
+  color: var(--lux-die-pip-light, #f1dfb7);
+  border: 1px solid rgba(229, 180, 77, 0.32);
 }
 
 .dieLight {
-  background: linear-gradient(145deg, #ffffff, #cddafa);
-  color: #20245a;
-  border: 1px solid rgba(207, 220, 255, 0.9);
+  background:
+    radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 0.58), transparent 28%),
+    linear-gradient(145deg, var(--lux-checker-light-hi, #fff8e7), var(--lux-checker-light-low, #ddc391));
+  color: var(--lux-die-pip-dark, #19130d);
+  border: 1px solid rgba(229, 180, 77, 0.55);
 }
 
 .pip {
@@ -53,8 +60,7 @@
 .label {
   color: rgba(247, 241, 231, 0.72);
   font-size: 0.75rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .rollBtn {
@@ -64,8 +70,8 @@
   align-items: center;
   gap: clamp(10px, 2vw, 14px);
   cursor: pointer;
-  background: #172657;
-  border: 1px solid rgba(114, 154, 255, 0.7);
+  background: rgba(8, 23, 27, 0.92);
+  border: 1px solid rgba(229, 180, 77, 0.5);
   border-radius: 8px;
   padding: clamp(18px, 3vw, 26px) clamp(28px, 5vw, 42px);
   box-shadow: 0 16px 32px rgba(2, 5, 18, 0.42);
@@ -73,8 +79,8 @@
 }
 
 .rollBtn:hover {
-  background: #20356f;
-  border-color: #9cbcff;
+  background: rgba(13, 34, 38, 0.95);
+  border-color: #e5b44d;
 }
 
 .rollBtn:focus {
@@ -85,7 +91,7 @@
   position: absolute;
   inset: -4px;
   border-radius: inherit;
-  border: 1px solid rgba(114, 154, 255, 0.6);
+  border: 1px solid rgba(229, 180, 77, 0.54);
   animation: ringPulse 2.4s ease-out infinite;
   pointer-events: none;
 }
@@ -109,7 +115,7 @@
 .tapIcon {
   width: clamp(24px, 4.5vw, 34px);
   height: clamp(24px, 4.5vw, 34px);
-  color: #a9c4ff;
+  color: #e5b44d;
   filter: none;
   animation: tapPulse 2.2s ease-in-out infinite;
   pointer-events: none;
@@ -129,11 +135,10 @@
 }
 
 .rollLabel {
-  color: #edf2ff;
-  font-size: clamp(0.85rem, 2vw, 1rem);
+  color: #f7f1e7;
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0;
   white-space: nowrap;
 }
 

@@ -14,7 +14,7 @@
   cursor: pointer;
   outline: none;
   color: rgba(247, 241, 227, 0.92);
-  font-size: clamp(11px, 1.4vw, 14px);
+  font-size: 13px;
   font-weight: 800;
 }
 

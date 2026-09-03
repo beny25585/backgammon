@@ -344,21 +344,6 @@ export function GameProvider({
     sendIntent({ action: "roll" });
   }, [sendIntent]);
 
-  const endGame = useCallback(
-    (winner: Color, winType: string, reason: string, cube: number) => {
-      setGameResult({
-        winner,
-        winType: (winType as "single" | "gammon" | "backgammon") || "single",
-        points: 1,
-        cube,
-        matchScore: { white: 0, black: 0 },
-        targetPoints: 1,
-      });
-      socket.send("game_ended", { winner, winType, reason, cube });
-    },
-    [socket],
-  );
-
   const makeMove = useCallback(
     (from: Source, to: Target) => {
       const current = stateRef.current;
@@ -462,4 +447,8 @@ export function useGame(): GameContextType {
   const context = useContext(GameContext);
   if (!context) throw new Error("useGame must be used within GameProvider");
   return context;
+}
+
+export function useOptionalGame(): GameContextType | undefined {
+  return useContext(GameContext);
 }
