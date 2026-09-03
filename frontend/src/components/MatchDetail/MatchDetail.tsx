@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { getMatchDetail } from "../../services/api";
-import ReplayPlayer from "./ReplayPlayer";
 import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
+import ReplayPlayer from "./ReplayPlayer";
 import styles from "./MatchDetail.module.css";
 
 interface GameEntry {
@@ -30,7 +31,7 @@ interface MatchData {
 }
 
 export default function MatchDetail() {
-  const { t } = useI18n();
+  const { t, locale, direction } = useI18n();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [match, setMatch] = useState<MatchData | null>(null);
@@ -55,30 +56,27 @@ export default function MatchDetail() {
       : match.first_player === "black"
         ? match.blackPlayer?.username ?? t("common.black")
         : null;
+  const whiteLabel = match.whitePlayer?.username ?? t("common.white");
+  const blackLabel = match.blackPlayer?.username ?? t("common.black");
+  const backArrow = direction === "rtl" ? "→" : "←";
 
   return (
     <main className={styles.container}>
       <div className={styles.shell}>
         <div className={styles.topRow}>
           <button className={styles.backBtn} onClick={() => navigate("/history")}>
-            &larr; {t("common.back")}
+            {backArrow} {t("common.back")}
           </button>
           <span className={styles.pill}>{t("match.detail")}</span>
         </div>
 
-        <div className={styles.brandRow}>
-          <span className={styles.brandMark}>B</span>
-          <div>
-            <p>{t("common.backgammon")}</p>
-            <span>{t("match.replay")}</span>
-          </div>
-        </div>
+        <BrandLockup subtitle={t("match.replay")} size="md" />
 
         <div className={styles.header}>
           <div>
             <p className={styles.kicker}>{t("match.completed")}</p>
             <h1 className={styles.title}>
-              {match.whitePlayer?.username ?? t("common.white")} vs {match.blackPlayer?.username ?? t("common.black")}
+              {whiteLabel} {t("match.versus")} {blackLabel}
             </h1>
           </div>
           <div className={styles.summaryGrid}>
@@ -96,7 +94,9 @@ export default function MatchDetail() {
             </div>
             <div className={styles.summaryCard}>
               <span>{t("match.date")}</span>
-              <strong className={styles.date}>{new Date(match.created_at).toLocaleDateString()}</strong>
+              <strong className={styles.date}>
+                {new Date(match.created_at).toLocaleDateString(locale === "he" ? "he-IL" : "en-US")}
+              </strong>
             </div>
           </div>
         </div>
@@ -111,7 +111,9 @@ export default function MatchDetail() {
             )}
             <div className={styles.summaryCard}>
               <span>{t("match.duration")}</span>
-              <strong>{Math.round(match.duration_seconds / 60)}m</strong>
+              <strong>
+                {t("match.minutes", { minutes: Math.round(match.duration_seconds / 60) })}
+              </strong>
             </div>
             <div className={styles.summaryCard}>
               <span>{t("match.hits")}</span>

@@ -15,7 +15,7 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 function initialLocale(): Locale {
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (saved && locales.includes(saved as Locale)) return saved as Locale;
-  return window.navigator.language.startsWith("he") ? "he" : "en";
+  return "he";
 }
 
 function lookup(locale: Locale, key: string): string | undefined {
@@ -55,6 +55,24 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useI18n() {
   const context = useContext(I18nContext);
-  if (!context) throw new Error("useI18n must be used inside I18nProvider");
-  return context;
+  if (context) return context;
+
+  const locale =
+    typeof document !== "undefined" && document.documentElement.lang === "he"
+      ? "he"
+      : "en";
+  const direction = locale === "he" ? "rtl" : "ltr";
+
+  return {
+    locale,
+    direction,
+    t: (key: string, params: Record<string, string | number> = {}) => {
+      const template = lookup(locale, key) ?? key;
+      return Object.entries(params).reduce(
+        (text, [name, paramValue]) => text.split(`{${name}}`).join(String(paramValue)),
+        template,
+      );
+    },
+    toggleLocale: () => {},
+  } satisfies I18nContextValue;
 }

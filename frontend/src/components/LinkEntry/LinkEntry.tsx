@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { storeTokens } from "../../services/auth";
 import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
 import styles from "./LinkEntry.module.css";
 
 // Where the address bar is left pointing once the fragment has been taken out of it. Written out
@@ -61,7 +62,10 @@ export default function LinkEntry() {
 
   return (
     <div className={styles.container}>
-      <p className={styles.message}>{t("game.takingToGame")}</p>
+      <div className={styles.card}>
+        <BrandLockup subtitle={t("common.room")} size="md" />
+        <p className={styles.message}>{t("game.takingToGame")}</p>
+      </div>
     </div>
   );
 }

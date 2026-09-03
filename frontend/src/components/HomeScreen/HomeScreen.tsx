@@ -5,9 +5,10 @@ import type { Color } from "../../types/game";
 import { createRoom, joinRoom, cancelRoom, getActiveRoom } from "../../services/api";
 import { clearTokens, getAccessToken } from "../../services/auth";
 import { saveRoom, clearRoom, getRoom } from "../../services/roomStorage";
+import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
 import MatchSettings from "../MatchSettings/MatchSettings";
 import AnimatedTabs from "@/components/animations/AnimatedTabs/AnimatedTabs";
-import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./HomeScreen.module.css";
 
 interface RoomResponse {
@@ -20,12 +21,8 @@ interface RoomResponse {
 }
 
 export default function HomeScreen() {
-  const { t } = useI18n();
+  const { t, direction } = useI18n();
   const navigate = useNavigate();
-  const tabs = [
-    { id: "create", label: t("home.createRoom") },
-    { id: "join", label: t("home.joinWithCode") },
-  ];
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -38,11 +35,11 @@ export default function HomeScreen() {
   const [username] = useState(() => {
     try {
       const token = getAccessToken();
-      if (!token) return t("home.player");
+      if (!token) return t("common.you");
       const payload = JSON.parse(atob(token.split(".")[1]));
-      return typeof payload.username === "string" ? payload.username : t("home.player");
+      return typeof payload.username === "string" ? payload.username : t("common.you");
     } catch {
-      return t("home.player");
+      return t("common.you");
     }
   });
   const [userId] = useState(() => {
@@ -126,7 +123,7 @@ export default function HomeScreen() {
         },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("home.failedCreateRoom"));
+      setError(err instanceof Error ? err.message : t("home.createFailed"));
     } finally {
       setLoading(false);
     }
@@ -150,7 +147,7 @@ export default function HomeScreen() {
         state: { playerColor },
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("home.failedJoinRoom"));
+      setError(err instanceof Error ? err.message : t("home.joinFailed"));
     } finally {
       setLoading(false);
     }
@@ -186,21 +183,24 @@ export default function HomeScreen() {
     });
   }
 
+  const tabs = [
+    { id: "create", label: t("home.createRoom") },
+    { id: "join", label: t("home.joinWithCode") },
+  ];
+  const actionArrow = direction === "rtl" ? "←" : "→";
+  const externalArrow = direction === "rtl" ? "↖" : "↗";
+
   return (
     <main className={styles.container} key={roomKey}>
-      <div className={styles.ambientGlow} />
       <nav className={styles.nav} aria-label={t("home.nav")}>
-        <div className={styles.brand}>
-          <span className={styles.brandMark}>B</span>
-          <span>{t("common.backgammon")}</span>
-        </div>
+        <BrandLockup subtitle={t("common.room")} size="sm" />
         <div className={styles.account}>
           <span className={styles.avatar}>
             {username.charAt(0).toUpperCase()}
           </span>
           <span className={styles.username}>{username}</span>
           <button onClick={handleLogoutClick} className={styles.logout}>
-            {t("home.logout")}
+            {t("common.logout")}
           </button>
         </div>
       </nav>
@@ -213,12 +213,12 @@ export default function HomeScreen() {
           transition={{ duration: 0.5 }}
         >
           <p className={styles.eyebrow}>
-            <span /> {t("home.classic")}
+            <span /> {t("home.eyebrow")}
           </p>
           <h1>
-            {t("home.makeMove")}
+            {t("home.heroLine1")}
             <br />
-            <em>{t("home.hero")}</em>
+            <em>{t("home.heroLine2")}</em>
           </h1>
           <p className={styles.intro}>{t("home.intro")}</p>
           <div className={styles.heroActions}>
@@ -226,13 +226,13 @@ export default function HomeScreen() {
               onClick={() => setShowSettings("create")}
               className={styles.playNow}
             >
-              {t("home.playOnline")} <span>→</span>
+              {t("home.online")} <span>{actionArrow}</span>
             </button>
             <button
               onClick={() => setShowSettings("bot")}
               className={styles.secondaryAction}
             >
-              {t("home.playAi")}
+              {t("home.bot")}
             </button>
           </div>
           <div className={styles.stats}>
@@ -241,7 +241,7 @@ export default function HomeScreen() {
               <span>{t("home.points")}</span>
             </div>
             <div>
-              <strong>2</strong>
+              <strong>3</strong>
               <span>{t("home.modes")}</span>
             </div>
             <div>
@@ -258,44 +258,10 @@ export default function HomeScreen() {
           transition={{ duration: 0.65, delay: 0.12 }}
           aria-hidden="true"
         >
-          <div className={styles.die}>
-            <i />
-            <i />
-            <i />
-            <i />
-            <i />
-          </div>
           <div className={styles.boardFrame}>
-            <div className={styles.board}>
-              <div className={styles.pointsTop}>
-                {Array.from({ length: 12 }, (_, index) => (
-                  <span
-                    key={index}
-                    className={index % 2 ? styles.lightPoint : styles.darkPoint}
-                  />
-                ))}
-              </div>
-              <div className={styles.boardBar} />
-              <div className={styles.pointsBottom}>
-                {Array.from({ length: 12 }, (_, index) => (
-                  <span
-                    key={index}
-                    className={index % 2 ? styles.darkPoint : styles.lightPoint}
-                  />
-                ))}
-              </div>
-              <div
-                className={`${styles.checker} ${styles.whiteChecker} ${styles.checkerOne}`}
-              />
-              <div
-                className={`${styles.checker} ${styles.whiteChecker} ${styles.checkerTwo}`}
-              />
-              <div
-                className={`${styles.checker} ${styles.blackChecker} ${styles.checkerThree}`}
-              />
-              <div
-                className={`${styles.checker} ${styles.blackChecker} ${styles.checkerFour}`}
-              />
+            <div className={styles.throwLayer} aria-hidden="true">
+              <span className={styles.throwCup} />
+              <span className={styles.throwDice} />
             </div>
           </div>
           <p className={styles.boardCaption}>{t("home.caption")}</p>
@@ -312,7 +278,7 @@ export default function HomeScreen() {
             onClick={() => navigate("/history")}
             className={styles.historyLink}
           >
-            {t("home.history")} <span>↗</span>
+            {t("home.historyCta")} <span>{externalArrow}</span>
           </button>
         </div>
         <AnimatedTabs
@@ -322,14 +288,14 @@ export default function HomeScreen() {
         />
         {mode === "create" ? (
           <div className={styles.createContent}>
-            <p>{t("home.createPitch")}</p>
+            <p>{t("home.shareRoom")}</p>
             <button
               onClick={() => setShowSettings("create")}
               disabled={loading}
               className={styles.panelPrimary}
             >
               {loading ? t("home.creatingRoom") : t("home.createPrivate")}
-              <span>→</span>
+              <span>{actionArrow}</span>
             </button>
           </div>
         ) : (
@@ -369,12 +335,12 @@ export default function HomeScreen() {
           onClick={() => setShowSettings("bot")}
           className={styles.modeCard}
         >
-          <span className={styles.modeIcon}>♞</span>
+          <span className={styles.modeIcon}>⚂</span>
           <span>
             <strong>{t("home.solo")}</strong>
             <small>{t("home.soloText")}</small>
           </span>
-          <b>→</b>
+          <b>{actionArrow}</b>
         </button>
         <button onClick={() => navigate("/local")} className={styles.modeCard}>
           <span className={styles.modeIcon}>◎</span>
@@ -382,7 +348,7 @@ export default function HomeScreen() {
             <strong>{t("home.passPlay")}</strong>
             <small>{t("home.passPlayText")}</small>
           </span>
-          <b>→</b>
+          <b>{actionArrow}</b>
         </button>
       </section>
 
@@ -405,10 +371,9 @@ export default function HomeScreen() {
           </div>
           <div className={styles.activeActions}>
             <button onClick={handleRejoin}>
-              {" "}
               {activeRoom.status === "waiting"
                 ? t("home.openRoom")
-                : t("home.returnGame")}{" "}
+                : t("home.returnToGame")}
             </button>
             <button onClick={handleCancelRoom} className={styles.cancel}>
               {t("common.cancel")}

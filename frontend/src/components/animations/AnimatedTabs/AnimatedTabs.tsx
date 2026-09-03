@@ -1,4 +1,5 @@
 import { motion } from "motion/react";
+import { useI18n } from "@/i18n/I18nProvider";
 import styles from "./AnimatedTabs.module.css";
 
 export type TabItem = {
@@ -17,7 +18,9 @@ export default function AnimatedTabs({
   activeTab,
   onChange,
 }: AnimatedTabsProps) {
+  const { direction } = useI18n();
   const activeIndex = tabs.findIndex((tab) => tab.id === activeTab);
+  const x = direction === "rtl" ? activeIndex * -100 : activeIndex * 100;
 
   return (
     <div
@@ -31,7 +34,7 @@ export default function AnimatedTabs({
       <motion.div
         className={styles.activeTab}
         animate={{
-          x: `${activeIndex * 100}%`,
+          x: `${x}%`,
         }}
         transition={{
           type: "spring",

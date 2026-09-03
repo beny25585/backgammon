@@ -7,6 +7,7 @@
     radial-gradient(circle at bottom right, rgba(21, 61, 66, 0.82), transparent 34%),
     linear-gradient(135deg, #071218 0%, #091b1f 50%, #03060d 100%);
   color: #f7f1e7;
+  font-family: var(--font-body);
 }
 
 .container::before {
@@ -50,7 +51,7 @@
 
 .backBtn:hover {
   background: rgba(231, 189, 114, 0.08);
-  transform: translateX(-1px);
+  transform: translateY(-1px);
 }
 
 .pill {
@@ -64,48 +65,15 @@
   color: #e7bd72;
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.4px;
+  letter-spacing: 0;
   white-space: nowrap;
-}
-
-.brandRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.brandMark {
-  display: grid;
-  place-items: center;
-  width: 38px;
-  height: 38px;
-  border: 1px solid #e7bd72;
-  color: #e7bd72;
-  font-family: "Playfair Display", serif;
-  font-size: 21px;
-  flex: none;
-}
-
-.brandRow p {
-  margin: 0;
-  color: #f7f1e7;
-  font-family: "Playfair Display", serif;
-  font-size: 21px;
-  font-weight: 700;
-}
-
-.brandRow span {
-  display: block;
-  color: rgba(247, 241, 231, 0.52);
-  font-size: 12px;
 }
 
 .header {
   display: grid;
   gap: 16px;
   padding: clamp(22px, 3vw, 34px);
-  border-radius: 28px;
+  border-radius: 18px;
   border: 1px solid rgba(231, 189, 114, 0.18);
   background: rgba(8, 23, 27, 0.88);
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.3);
@@ -117,16 +85,15 @@
   color: #e7bd72;
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.8px;
+  letter-spacing: 0;
 }
 
 .title {
   margin: 0;
-  font-family: "Playfair Display", serif;
-  font-size: clamp(30px, 5vw, 48px);
+  font-family: var(--font-display);
+  font-size: 44px;
   line-height: 1.05;
-  letter-spacing: -1px;
+  letter-spacing: 0;
 }
 
 .summaryGrid {
@@ -139,7 +106,7 @@
   display: grid;
   gap: 7px;
   padding: 16px;
-  border-radius: 18px;
+  border-radius: 12px;
   border: 1px solid rgba(231, 189, 114, 0.14);
   background: rgba(255, 255, 255, 0.04);
 }
@@ -148,15 +115,14 @@
   color: rgba(255, 255, 255, 0.5);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 1.2px;
+  letter-spacing: 0;
 }
 
 .summaryCard strong {
   color: #f7f1e7;
-  font-family: "Playfair Display", serif;
+  font-family: var(--font-display);
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .date {
@@ -167,9 +133,9 @@
 .subtitle {
   margin: 8px 0 0;
   color: #f7f1e7;
-  font-family: "Playfair Display", serif;
+  font-family: var(--font-display);
   font-size: 22px;
-  font-weight: 600;
+  font-weight: 800;
 }
 
 .loading {
@@ -188,7 +154,7 @@
   display: grid;
   gap: 14px;
   padding: 18px;
-  border-radius: 24px;
+  border-radius: 16px;
   border: 1px solid rgba(231, 189, 114, 0.18);
   background: rgba(8, 23, 27, 0.82);
   box-shadow: 0 22px 50px rgba(0, 0, 0, 0.24);
@@ -204,7 +170,7 @@
 
 .gameInfo span {
   padding: 7px 10px;
-  border-radius: 999px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -213,7 +179,7 @@
   width: fit-content;
   min-height: 42px;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: 10px;
   background: linear-gradient(135deg, #e7bd72, #c8932f);
   border: 0;
   color: #10292d;
@@ -241,11 +207,6 @@
 
   .summaryGrid {
     grid-template-columns: 1fr;
-  }
-
-  .brandRow {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .gameInfo {

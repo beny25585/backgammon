@@ -1,11 +1,34 @@
 :root {
+  /* 6B brand */
+  --font-body: "Assistant", "Heebo", Arial, sans-serif;
+  --font-display: "Assistant", "Heebo", Arial, sans-serif;
+  --color-brand-black: #000000;
+  --color-brand-gold: #d4941a;
+  --color-brand-gold-light: #e5b44d;
+  --color-brand-gold-soft: #e7bd72;
+  --color-ink: #071218;
+  --color-ink-2: #091b1f;
+  --color-ink-3: #03060d;
+  --color-felt: #153d42;
+  --color-felt-2: #102b31;
+  --color-parchment: #f0e3cd;
+  --color-parchment-2: #e7d0a5;
+  --color-wood: #684332;
+  --color-point-warm: #d67749;
+  --color-point-cool: #31565b;
+  --color-text-soft: rgba(247, 241, 231, 0.76);
+  --color-text-muted: rgba(247, 241, 231, 0.56);
+  --shadow-panel: 0 30px 80px rgba(0, 0, 0, 0.38);
+  --surface-panel: rgba(8, 23, 27, 0.9);
+
   /* Board */
-  --color-board-frame: #111a3a;
-  --color-board-felt: #2b63c9;
-  --color-point-light: #76a0ff;
-  --color-point-dark: #34328a;
-  --color-checker-white: #edf2ff;
-  --color-checker-black: #202052;
+  --color-board-frame: #2a170c;
+  --color-board-felt: #184b44;
+  --color-point-light: #f2dfb5;
+  --color-point-dark: #0f5348;
+  --color-checker-white: #fff8e7;
+  --color-checker-black: #7b1e28;
+  --color-checker-black-deep: #2b070b;
   --color-gold: #e3be61;
   --color-text: white;
   --color-text-black: black;
@@ -13,10 +36,10 @@
   /* App */
   --color-background: #080b13;
   --color-foreground: #eef2ff;
-  --color-background-blue: rgb(9, 9, 102);
+  --color-background-blue: #153d42;
 
   /* UI */
-  --color-primary: #3b82f6;
+  --color-primary: #d4941a;
   --color-primary-foreground: #ffffff;
 
   --color-secondary: #363738;
@@ -30,10 +53,10 @@
   --color-error: #ef4444;
   --color-success: #22c55e;
   --color-warning: #f59e0b;
-  --color-info: #3b82f6;
+  --color-info: #e5b44d;
 
-  --color-border: #334155;
-  --color-input: #1e293b;
+  --color-border: rgba(229, 180, 77, 0.24);
+  --color-input: #102329;
 
   /* Radius */
   --radius-sm: 4px;
@@ -56,12 +79,27 @@ body,
 }
 
 body {
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
-    Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  font-family: var(--font-body);
 
   background-color: var(--color-background);
   color: var(--color-foreground);
+}
+
+html[lang="en"] {
+  --font-display: "Playfair Display", "Assistant", serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--color-brand-gold-light);
+  outline-offset: 3px;
 }
 
 @keyframes pulse-glow {

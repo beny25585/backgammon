@@ -5,6 +5,7 @@ import styles from "./MatchSettings.module.css";
 import AnimatedTabs from "../animations/AnimatedTabs/AnimatedTabs";
 import { TIME_CONTROL_PRESETS } from "../../lib/clock";
 import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
 
 interface MatchSettingsProps {
   mode: "online" | "bot";
@@ -44,9 +45,19 @@ export default function MatchSettings({
     label: String(t),
   }));
   const colorTabs = [
-    { id: "white", label: t("common.white") },
-    { id: "black", label: t("common.black") },
+    {
+      id: "white",
+      label: t("common.playAsWhite"),
+    },
+    {
+      id: "black",
+      label: t("common.playAsBlack"),
+    },
   ];
+  const timeTabs = TIME_CONTROL_PRESETS.map((preset) => ({
+    id: preset.id,
+    label: t(`settings.${preset.id === "none" ? "noLimit" : preset.id}`),
+  }));
 
   return (
     <motion.div
@@ -65,19 +76,16 @@ export default function MatchSettings({
           damping: 16,
         }}
       >
-        <div className={styles.brandRow}>
-          <span className={styles.brandMark}>B</span>
-          <div>
-            <p>{t("common.backgammon")}</p>
-            <span>{isOnline ? t("settings.online") : t("settings.bot")}</span>
-          </div>
-        </div>
+        <BrandLockup
+          subtitle={isOnline ? t("settings.online") : t("settings.bot")}
+          size="md"
+        />
 
         <div className={styles.header}>
           <div>
             <p className={styles.kicker}>{t("settings.title")}</p>
             <h2 className={styles.title}>
-              {isOnline ? t("settings.createPrivateRoom") : t("settings.soloSetup")}
+              {isOnline ? t("settings.createPrivate") : t("settings.setupSolo")}
             </h2>
           </div>
           <p className={styles.subtitle}>{t("settings.subtitle")}</p>
@@ -96,7 +104,11 @@ export default function MatchSettings({
 
         <div className={styles.section}>
           <div className={styles.sectionLabel}>
-            <p>{target === 1 ? t("settings.singleGame") : t("settings.firstTo", { points: target })}</p>
+            <p>
+              {target === 1
+                ? t("settings.singleGame")
+                : t("settings.firstTo", { points: target })}
+            </p>
           </div>
           <AnimatedTabs
             tabs={targetTabs}
@@ -110,10 +122,7 @@ export default function MatchSettings({
             <p>{t("settings.timeControl")}</p>
           </div>
           <AnimatedTabs
-            tabs={TIME_CONTROL_PRESETS.map((p) => ({
-              id: p.id,
-              label: p.label,
-            }))}
+            tabs={timeTabs}
             activeTab={timeControl}
             onChange={(id) => setTimeControl(id)}
           />

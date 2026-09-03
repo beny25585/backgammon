@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "motion/react";
 import { login, register, storeTokens } from "../../services/auth";
 import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
 import styles from "./AuthScreen.module.css";
 
 export default function AuthScreen() {
@@ -21,11 +22,6 @@ export default function AuthScreen() {
     return "";
   });
   const [loading, setLoading] = useState(false);
-  const highlights = [
-    { title: t("auth.fastEntry"), text: t("auth.fastEntryText") },
-    { title: t("auth.clearStates"), text: t("auth.clearStatesText") },
-    { title: t("auth.sameVisual"), text: t("auth.sameVisualText") },
-  ];
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -54,14 +50,8 @@ export default function AuthScreen() {
     setError("");
   }
 
-  const pointsTop = Array.from({ length: 12 }, (_, index) => index);
-  const pointsBottom = Array.from({ length: 12 }, (_, index) => index);
-
   return (
     <main className={styles.container}>
-      <div className={styles.glowA} />
-      <div className={styles.glowB} />
-
       <section className={styles.shell}>
         <motion.aside
           className={styles.hero}
@@ -77,46 +67,8 @@ export default function AuthScreen() {
           </h1>
           <p className={styles.heroText}>{t("auth.heroText")}</p>
 
-          <div className={styles.highlights}>
-            {highlights.map((item) => (
-              <article key={item.title} className={styles.highlight}>
-                <strong>{item.title}</strong>
-                <span>{item.text}</span>
-              </article>
-            ))}
-          </div>
-
           <div className={styles.boardCard} aria-hidden="true">
-            <div className={styles.boardHeader}>
-              <span>{t("auth.openingBoard")}</span>
-              <span>{t("auth.players")}</span>
-            </div>
-            <div className={styles.board}>
-              <div className={styles.pointsTop}>
-                {pointsTop.map((index) => (
-                  <span
-                    key={`top-${index}`}
-                    className={index % 2 === 0 ? styles.darkPoint : styles.lightPoint}
-                  />
-                ))}
-              </div>
-              <div className={styles.bar} />
-              <div className={styles.pointsBottom}>
-                {pointsBottom.map((index) => (
-                  <span
-                    key={`bottom-${index}`}
-                    className={index % 2 === 0 ? styles.lightPoint : styles.darkPoint}
-                  />
-                ))}
-              </div>
-              <span className={`${styles.checker} ${styles.goldChecker} ${styles.checkerOne}`} />
-              <span className={`${styles.checker} ${styles.goldChecker} ${styles.checkerTwo}`} />
-              <span className={`${styles.checker} ${styles.darkChecker} ${styles.checkerThree}`} />
-              <span className={`${styles.checker} ${styles.darkChecker} ${styles.checkerFour}`} />
-            </div>
-            <p className={styles.boardFooter}>
-              {t("auth.boardFooter")}
-            </p>
+            <div className={styles.boardSurface} />
           </div>
         </motion.aside>
 
@@ -126,13 +78,7 @@ export default function AuthScreen() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.08 }}
         >
-          <div className={styles.brandRow}>
-            <span className={styles.brandMark}>B</span>
-            <div>
-              <p>{t("common.backgammon")}</p>
-              <span>{t("auth.secureSignIn")}</span>
-            </div>
-          </div>
+          <BrandLockup subtitle={t("auth.secureSignIn")} size="lg" />
 
           <div className={styles.cardHeader}>
             <h2>{isLogin ? t("auth.welcome") : t("auth.createAccount")}</h2>
@@ -148,6 +94,7 @@ export default function AuthScreen() {
               onClick={() => !isLogin && switchMode()}
               className={`${styles.tab} ${isLogin ? styles.tabActive : ""}`}
               type="button"
+              aria-pressed={isLogin}
             >
               {t("auth.logIn")}
             </button>
@@ -155,6 +102,7 @@ export default function AuthScreen() {
               onClick={() => isLogin && switchMode()}
               className={`${styles.tab} ${!isLogin ? styles.tabActive : ""}`}
               type="button"
+              aria-pressed={!isLogin}
             >
               {t("auth.register")}
             </button>
@@ -212,11 +160,11 @@ export default function AuthScreen() {
               {loading ? t("auth.pleaseWait") : isLogin ? t("auth.logIn") : t("auth.register")}
             </button>
 
-            <p className={styles.helper}>
+            <button type="button" className={styles.helperButton} onClick={switchMode}>
               {isLogin
                 ? t("auth.newHere")
                 : t("auth.hasAccount")}
-            </p>
+            </button>
           </form>
         </motion.section>
       </section>

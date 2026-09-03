@@ -4,12 +4,27 @@
   align-items: center;
   justify-content: center;
   padding: clamp(18px, 4vw, 42px);
-  background: linear-gradient(135deg, #071218 0%, #091b1f 50%, #03060d 100%);
+  background:
+    radial-gradient(circle at top left, rgba(201, 169, 97, 0.12), transparent 28%),
+    linear-gradient(135deg, #071218 0%, #091b1f 50%, #03060d 100%);
   color: #f7f1e7;
+  font-family: var(--font-body);
+}
+
+.card {
+  display: grid;
+  gap: 18px;
+  place-items: center;
+  width: min(100%, 360px);
+  padding: 28px;
+  border-radius: 18px;
+  border: 1px solid rgba(231, 189, 114, 0.22);
+  background: rgba(8, 23, 27, 0.88);
+  box-shadow: var(--shadow-panel);
 }
 
 .message {
-  font-size: clamp(15px, 2.4vw, 18px);
-  letter-spacing: 0.02em;
+  font-size: 16px;
+  letter-spacing: 0;
   opacity: 0.82;
 }

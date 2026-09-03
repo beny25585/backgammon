@@ -6,6 +6,7 @@ import { getAccessToken } from "../../services/auth";
 import { updateRoomStatus, clearRoom } from "../../services/roomStorage";
 import { cancelRoom } from "../../services/api";
 import { useI18n } from "../../i18n/I18nProvider";
+import BrandLockup from "../BrandLockup";
 import styles from "./WaitingRoom.module.css";
 
 export default function WaitingRoom() {
@@ -87,7 +88,7 @@ export default function WaitingRoom() {
         if (!hasStartedGame.current) setStatus("waiting");
       } catch (err) {
         setStatus("error");
-        setError(err instanceof Error ? err.message : t("waiting.failedConnect"));
+        setError(err instanceof Error ? err.message : t("waiting.connectFailed"));
       }
     };
 
@@ -123,18 +124,12 @@ export default function WaitingRoom() {
     return (
       <div className={styles.container}>
         <div className={styles.shell}>
-          <div className={styles.brandRow}>
-            <span className={styles.brandMark}>B</span>
-            <div>
-              <p>{t("common.backgammon")}</p>
-              <span>{t("waiting.title")}</span>
-            </div>
-          </div>
+          <BrandLockup subtitle={t("waiting.title")} size="md" />
         </div>
         <div className={styles.card}>
           <p className={styles.errorText}>{error}</p>
           <button onClick={handleLeave} className={styles.leaveButton}>
-            {t("waiting.backHome")}
+            {t("common.backHome")}
           </button>
         </div>
       </div>
@@ -144,23 +139,17 @@ export default function WaitingRoom() {
   return (
     <div className={styles.container}>
       <div className={styles.shell}>
-        <div className={styles.brandRow}>
-          <span className={styles.brandMark}>B</span>
-          <div>
-            <p>{t("common.backgammon")}</p>
-            <span>{t("waiting.title")}</span>
-          </div>
-        </div>
+        <BrandLockup subtitle={t("waiting.title")} size="md" />
 
         <div className={styles.card}>
           <div className={styles.cardHeader}>
             <h1 className={styles.title}>{t("waiting.ready")}</h1>
             <span className={styles.statusPill}>
               {status === "connecting"
-                ? t("waiting.connectingStatus")
+                ? t("waiting.statusConnecting")
                 : status === "waiting"
-                  ? t("waiting.waitingStatus")
-                  : t("waiting.startingStatus")}
+                  ? t("waiting.statusWaiting")
+                  : t("waiting.statusStarting")}
             </span>
           </div>
 
@@ -178,12 +167,10 @@ export default function WaitingRoom() {
                 <div className={styles.codeWrapper}>
                   <span className={styles.code}>{roomCode}</span>
                   <button onClick={handleCopy} className={styles.copyButton}>
-                    {copied ? t("waiting.copied") : t("waiting.copy")}
+                    {copied ? t("common.copied") : t("common.copy")}
                   </button>
                 </div>
-                <p className={styles.shareHint}>
-                  {t("waiting.shareCode")}
-                </p>
+                <p className={styles.shareHint}>{t("waiting.shareHint")}</p>
               </div>
               <div className={styles.waitingSection}>
                 <div className={styles.dots}>
@@ -193,14 +180,21 @@ export default function WaitingRoom() {
                 </div>
                 <p className={styles.waitingText}>{t("waiting.waitingOpponent")}</p>
               </div>
-              <p className={styles.statusText}>{t("waiting.connected", { count: connectedCount })}</p>
+              <p className={styles.statusText}>
+                {t("waiting.connected", { count: connectedCount })}
+              </p>
               <div className={styles.playerInfo}>
-                {t("waiting.youAre", { color: playerColor === "white" ? t("common.white") : t("common.black") })}
+                {t("waiting.youAre", {
+                  color:
+                    playerColor === "white"
+                      ? t("common.white")
+                      : t("common.black"),
+                })}
               </div>
               <p className={styles.matchInfo}>
                 {targetPoints === 1
                   ? t("settings.singleGame")
-                  : t("settings.firstTo", { points: targetPoints })}
+                  : t("waiting.firstTo", { points: targetPoints })}
               </p>
             </div>
           )}
