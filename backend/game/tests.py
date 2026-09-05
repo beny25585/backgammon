@@ -367,7 +367,7 @@ class GameConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_clock_starts_only_after_opening_roll_resolves(self):
+    async def test_clock_stays_stopped_until_the_first_roll_after_opening_resolves(self):
         GameConsumer.OPENING_RESULT_DELAY = 0.1
         try:
             comm_white, comm_black = await self._connect_both()
@@ -378,10 +378,11 @@ class GameConsumerTests(TransactionTestCase):
             self.assertIsNone(event['payload'].get('turnStartedAt'))
             winner = event['payload']['turn']  # whoever rolled higher
 
-            # Opening resolved: the winner must roll. The clock starts here.
+            # Opening resolved: the winner must choose whether to double/roll.
+            # The clock still waits until the roll produces playable dice.
             event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'rolling')
             self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
-            self.assertIsInstance(event['payload'].get('turnStartedAt'), int)
+            self.assertIsNone(event['payload'].get('turnStartedAt'))
             self.assertEqual(event['payload']['turn'], winner)
         finally:
             GameConsumer.OPENING_RESULT_DELAY = 3.0
@@ -1648,6 +1649,64 @@ class ClockHelperTests(TestCase):
     def test_active_player_is_turn_normally(self):
         from game.clock import active_player
         self.assertEqual(active_player({'phase': 'moving', 'turn': 'white'}), 'white')
+
+    def test_active_player_none_while_waiting_to_roll(self):
+        from game.clock import active_player
+        self.assertIsNone(active_player({'phase': 'rolling', 'turn': 'white', 'remaining': []}))
+
+    def test_active_player_is_turn_after_dice_are_rolled(self):
+        from game.clock import active_player
+        self.assertEqual(active_player({'phase': 'moving', 'turn': 'white', 'remaining': [3, 5]}), 'white')
+
+    def test_clock_does_not_start_after_double_accept_until_dice_are_rolled(self):
+        from game.clock import compute_clock
+        stored = {
+            'phase': 'doubling_offered',
+            'turn': 'white',
+            'doubleOfferedBy': 'white',
+            'clock': {'white': 120_000, 'black': 120_000},
+            'turnStartedAt': 1_000,
+        }
+        incoming = {
+            'phase': 'rolling',
+            'turn': 'white',
+            'dice': [],
+            'remaining': [],
+            'doubleOfferedBy': None,
+        }
+
+        clock, turn_started_at, active, timed_out, deadline = compute_clock(
+            stored, incoming, 9_000, 'normal')
+
+        self.assertEqual(clock, {'white': 120_000, 'black': 120_000})
+        self.assertIsNone(turn_started_at)
+        self.assertIsNone(active)
+        self.assertFalse(timed_out)
+        self.assertIsNone(deadline)
+
+    def test_clock_starts_when_dice_are_rolled_and_player_can_move(self):
+        from game.clock import compute_clock
+        stored = {
+            'phase': 'rolling',
+            'turn': 'white',
+            'clock': {'white': 120_000, 'black': 120_000},
+            'turnStartedAt': None,
+        }
+        incoming = {
+            'phase': 'moving',
+            'turn': 'white',
+            'dice': [3, 5],
+            'remaining': [3, 5],
+        }
+
+        clock, turn_started_at, active, timed_out, deadline = compute_clock(
+            stored, incoming, 9_000, 'normal')
+
+        self.assertEqual(clock, {'white': 120_000, 'black': 120_000})
+        self.assertEqual(turn_started_at, 9_000)
+        self.assertEqual(active, 'white')
+        self.assertFalse(timed_out)
+        self.assertEqual(deadline, 9_000 + 12_000 + 120_000)
 
     def test_active_player_responder_pays_during_doubling(self):
         from game.clock import active_player

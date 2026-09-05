@@ -37,10 +37,11 @@ interface MountProps {
   rollResult?: number[];
   onRollLand?: () => void;
   respondToDouble?: (accept: boolean) => void;
+  noMovesMessage?: { dice: number[] } | null;
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
-  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll, rollResult, onRollLand, respondToDouble } = props;
+  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll, rollResult, onRollLand, respondToDouble, noMovesMessage } = props;
   const component = await mount(
     <MockGameWrapper playerColor={playerColor} state={state}>
       <GameBoard
@@ -55,6 +56,7 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
         rollResult={rollResult}
         onRollLand={onRollLand}
         respondToDouble={respondToDouble}
+        noMovesMessage={noMovesMessage}
       />
     </MockGameWrapper>,
   );
@@ -174,6 +176,25 @@ test("dice overlay shows during moving phase with remaining dice", async ({ moun
 
   await expect(component.getByTestId("dice-overlay")).toBeVisible();
   await expect(component.getByTestId("die")).toHaveCount(2);
+});
+
+test("no-moves overlay shows the rolled dice and message", async ({ mount }) => {
+  const state = movingState({
+    phase: "rolling",
+    turn: "white",
+    dice: [2, 4],
+    remaining: [],
+    message: "No legal moves",
+  });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "black",
+    noMovesMessage: { dice: [2, 4] },
+  });
+
+  await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
+  await expect(component.getByTestId("no-moves-overlay")).toContainText("No legal moves available");
+  await expect(component.getByTestId("no-moves-overlay").getByTestId("die")).toHaveCount(2);
 });
 
 test("dice overlay is visible to the opponent when it's their turn", async ({ mount }) => {

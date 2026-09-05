@@ -337,6 +337,7 @@
 .frame {
   position: absolute;
   inset: clamp(7px, 0.7vw, 11px);
+  direction: ltr;
   border-radius: 8px;
   padding: clamp(8px, 0.9vw, 13px);
   box-sizing: border-box;
@@ -382,6 +383,7 @@
   position: relative;
   z-index: 1;
   height: 100%;
+  direction: ltr;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
@@ -453,6 +455,7 @@
 .wrapper {
   width: 100%;
   height: 100%;
+  direction: ltr;
   overflow: hidden;
   position: relative;
   container-type: inline-size;
@@ -491,6 +494,29 @@
   border-radius: 5px;
   border: 1px solid rgba(229, 180, 77, 0.38);
   pointer-events: none;
+}
+
+.noMovesOverlay {
+  position: absolute;
+  top: calc(50% - clamp(72px, 11cqw, 124px));
+  left: 50%;
+  z-index: 46;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--dice-overlay-gap);
+  padding: clamp(8px, 1vw, 12px) clamp(12px, 2vw, 20px);
+  color: #ffe7a3;
+  font-weight: 800;
+  background: rgba(40, 24, 10, 0.94);
+  border: 1px solid rgba(255, 204, 102, 0.62);
+  border-radius: 6px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.noMovesOverlay [data-testid="die"] {
+  opacity: 1;
 }
 
 .boardRollPrompt {

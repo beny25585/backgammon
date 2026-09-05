@@ -49,6 +49,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     whiteName,
     blackName,
     openingRollResult,
+    noMovesMessage,
     handleNextGame,
     handleHome,
   } = useGame();
@@ -131,6 +132,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   useEffect(() => {
     if (!autoRoll) return;
     if (!state) return;
+    if (noMovesMessage) return;
     if (state.turn !== playerColor) return;
     clientLogger.debug("[autoRoll] effect fired", {
       phase: state.phase,
@@ -158,6 +160,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     doubleWindow,
     doubleOfferPending,
     canChooseDouble,
+    noMovesMessage,
   ]);
 
   const handleRollLand = useCallback(() => {
@@ -168,10 +171,11 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   const isOpeningRoll = state?.phase === "opening_roll";
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
-    (state?.phase === "rolling" &&
+    !noMovesMessage &&
+    ((state?.phase === "rolling" &&
       state?.remaining.length === 0 &&
       state?.turn === playerColor) ||
-    (landing && state?.turn === playerColor);
+      (landing && state?.turn === playerColor));
 
   if (isLoading) {
     return <div className={styles.loading}>{t("game.connecting")}</div>;
@@ -255,6 +259,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             clock={clock}
             turnStartedAt={turnStartedAt}
             timeControl={timeControl}
+            noMovesMessage={noMovesMessage}
           />
         </>
       )}

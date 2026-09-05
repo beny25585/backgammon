@@ -75,6 +75,11 @@ export function useLocalClock(
       const started = Date.now();
       setTurnStartedAt(started);
       turnStartedAtRef.current = started;
+    } else if (prev && active === null) {
+      const elapsed = turnStartedAtRef.current != null ? Date.now() - turnStartedAtRef.current : 0;
+      setClock((c) => (c ? applyClockTransition(c, prev, null, elapsed, timeControl.delay) : c));
+      setTurnStartedAt(null);
+      turnStartedAtRef.current = null;
     } else if (prev === null && active !== null && turnStartedAtRef.current === null) {
       const started = Date.now();
       setTurnStartedAt(started);

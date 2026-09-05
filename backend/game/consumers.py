@@ -506,7 +506,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         sequence = await record_event_and_advance(room, None, 'opening_result_done', state)
         state['version'] = sequence
 
-        # The winner is now on the clock.
+        # The winner can now choose whether to double or roll. The clock starts
+        # only once dice are rolled and the state becomes moving.
         now_ms = int(time_module.time() * 1000)
         stored = state
         clock, turn_started_at, new_active, _timed_out, _deadline = compute_clock(

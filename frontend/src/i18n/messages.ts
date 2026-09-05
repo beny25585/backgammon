@@ -169,6 +169,7 @@ export const messages = {
       regularExplanation: 'Regular win: 1 point',
       gammonExplanation: 'Gammon: 2 points because the opponent has not borne off any checkers',
       backgammonExplanation: 'Backgammon: 3 points because the opponent has not borne off any checkers and still has checkers on the bar or in your home board',
+      noMovesAvailable: 'No legal moves available',
     },
     match: {
       archive: 'Match archive',
@@ -440,6 +441,7 @@ export const messages = {
       regularExplanation: 'ניצחון רגיל: נקודה אחת.',
       gammonExplanation: 'גמון: 2 נקודות כשהיריב עדיין לא הוציא חיילים.',
       backgammonExplanation: 'בקגמון: 3 נקודות כשהיריב לא הוציא חיילים ועדיין יש לו חיילים על הבר או בבית שלך.',
+      noMovesAvailable: 'אין מהלכים אפשריים',
     },
     match: {
       archive: 'ארכיון משחקים',

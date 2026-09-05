@@ -35,6 +35,11 @@ test("activePlayerOf charges the responder during doubling", () => {
   expect(activePlayerOf(state)).toBe("black");
 });
 
+test("activePlayerOf waits after double accept until dice are rolled", () => {
+  expect(activePlayerOf({ ...newGame(), phase: "rolling", turn: "white", dice: [], remaining: [] })).toBeNull();
+  expect(activePlayerOf({ ...newGame(), phase: "moving", turn: "white", dice: [3, 5], remaining: [3, 5] })).toBe("white");
+});
+
 test("applyClockTransition charges only time beyond the delay", () => {
   const clock = { white: 120_000, black: 120_000 };
   // Moved in 5s, delay 12s: nothing charged, no bonus banked.
@@ -59,6 +64,14 @@ test("applyClockTransition floors at zero", () => {
 test("applyClockTransition no-ops when the active player is unchanged", () => {
   const clock = { white: 120_000, black: 120_000 };
   expect(applyClockTransition(clock, "white", "white", 5_000, 12_000)).toEqual(clock);
+});
+
+test("applyClockTransition charges when play pauses after the delay", () => {
+  const clock = { white: 120_000, black: 120_000 };
+  expect(applyClockTransition(clock, "black", null, 15_000, 12_000)).toEqual({
+    white: 120_000,
+    black: 117_000,
+  });
 });
 
 test("reserveLeft and delayLeft expose the two live counters", () => {

@@ -125,7 +125,7 @@ export function getGuidance(
     if (state.remaining.length === 0) {
       return {
         variant: "confirm",
-        text: "press Confirm to end your turn",
+        text: "Confirm your turn",
         dice: NO_DICE,
         remaining: NO_DICE,
         interactive: null,

@@ -1,10 +1,8 @@
 import {
   Routes,
   Route,
-  Navigate,
   useParams,
   useLocation,
-  useNavigate,
 } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
@@ -21,25 +19,28 @@ import { LocalGameProvider } from "./services/localGameContext";
 import { parseTimeControl } from "./lib/clock";
 import type { Color } from "./types/game";
 
+const TOURNAMENTS_URL =
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
+    ?.VITE_TOURNAMENTS_URL ?? "http://127.0.0.1:5174/tournaments/";
+
+function ReturnToTournaments() {
+  window.location.replace(TOURNAMENTS_URL);
+  return null;
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = getAccessToken();
   if (token && isTokenExpired(token)) {
     clearTokens();
-    return <Navigate to="/?expired=1" replace />;
+    return <ReturnToTournaments />;
   }
-  if (!token) return <Navigate to="/" replace />;
-  return <>{children}</>;
-}
-
-function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
-  if (getAccessToken()) return <Navigate to="/home" replace />;
+  if (!token) return <ReturnToTournaments />;
   return <>{children}</>;
 }
 
 function GameRoute() {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
-  const navigate = useNavigate();
   const playerColor =
     (new URLSearchParams(location.search).get("color") as Color) || "white";
   const params = new URLSearchParams(location.search);
@@ -55,7 +56,7 @@ function GameRoute() {
       window.location.assign(next.toString());
       return;
     }
-    navigate("/home", { replace: true });
+    window.location.assign(TOURNAMENTS_URL);
   }
 
   return (
@@ -80,7 +81,6 @@ function GameRoute() {
 
 function LocalRoute() {
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const botParam = params.get("bot");
   const targetParam = params.get("target");
   const timeParam = params.get("time");
@@ -92,9 +92,9 @@ function LocalRoute() {
       botColor={botColor}
       matchTarget={matchTarget}
       timeControl={parseTimeControl(timeParam)}
-      onQuitMatch={() => navigate("/home", { replace: true })}
+      onQuitMatch={() => window.location.assign(TOURNAMENTS_URL)}
     >
-      <GameScreen onLeave={() => navigate("/home", { replace: true })} />
+      <GameScreen onLeave={() => window.location.assign(TOURNAMENTS_URL)} />
     </LocalGameProvider>
   );
 }
@@ -102,22 +102,8 @@ function LocalRoute() {
 export default function Router() {
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <RedirectIfAuthed>
-            <AuthScreen />
-          </RedirectIfAuthed>
-        }
-      />
-      <Route
-        path="/home"
-        element={
-          <RequireAuth>
-            <HomeScreen />
-          </RequireAuth>
-        }
-      />
+      <Route path="/" element={<ReturnToTournaments />} />
+      <Route path="/home" element={<ReturnToTournaments />} />
       <Route
         path="/waiting/:roomId"
         element={
@@ -156,7 +142,7 @@ export default function Router() {
       />
       <Route
         path="*"
-        element={<Navigate to={getAccessToken() ? "/home" : "/"} replace />}
+        element={<ReturnToTournaments />}
       />
     </Routes>
   );

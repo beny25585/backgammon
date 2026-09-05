@@ -18,6 +18,7 @@ import {
   DEFAULT_BOARD_THEME,
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface GameBoardProps {
   state: GameState;
@@ -39,6 +40,7 @@ interface GameBoardProps {
   onAutoRollChange?: (value: boolean) => void;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
+  noMovesMessage?: { dice: number[] } | null;
 }
 
 const themeClassByTheme: Record<BoardTheme, string> = {
@@ -67,7 +69,9 @@ export default function GameBoard({
   onAutoRollChange,
   boardTheme,
   onBoardThemeChange,
+  noMovesMessage,
 }: GameBoardProps) {
+  const { t } = useI18n();
   const [selected, setSelected] = useState<Source | null>(null);
   const [autoMove, setAutoMove] = useState<Move | null>(null);
 
@@ -165,6 +169,17 @@ export default function GameBoard({
               />
             </div>
           )}
+        {noMovesMessage && (
+          <div className={styles.noMovesOverlay} data-testid="no-moves-overlay">
+            <DiceRow
+              dice={noMovesMessage.dice}
+              remaining={[]}
+              color={state.turn === "white" ? "black" : "white"}
+              forceActive
+            />
+            <span>{t("game.noMovesAvailable")}</span>
+          </div>
+        )}
         {needsToRoll && onRoll && !autoRoll && (
           <div className={styles.boardRollPrompt} data-testid="roll-prompt">
             <RollPrompt

@@ -36,7 +36,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from game.admin import TaskAdmin
 from game.engine import BackgammonEngine
 from game.game_service import finalize_room, record_game_end
-from game.models import GameRoom, Match, Player, RoomPlayer, Task
+from game.models import GameRoom, GameState, Match, Player, RoomPlayer, Task
 from game.tasks import expire_waiting_rooms
 
 from .housekeeping import purge_redeemed_tickets
@@ -802,6 +802,59 @@ class ResultBodyTests(ResultTestBase):
         self.seat_both()
         result = record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
         self.assertEqual(self.body()["match_id"], str(result["match"].id))
+
+
+@link_settings
+class LinkedGameFlowPayloadTests(LinkTestBase):
+    """A game entered from a tournament reports only the points that were actually won."""
+
+    def test_first_game_in_a_match_to_five_awards_one_point_without_reporting_fixture(self):
+        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", name="alice", tp=5))
+        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", name="bob", tp=5))
+
+        link = TournamentLink.objects.select_related("room").get()
+        room = link.room
+        state = BackgammonEngine.get_initial_state()
+        state.update({"winner": "white", "winType": "single", "cube": 1})
+
+        with patch("game.link.outbox.httpx.post") as post:
+            result = record_game_end(room, state, "white", "single", "bear_off")
+
+        room.refresh_from_db()
+        link.refresh_from_db()
+
+        self.assertEqual(result["points"], 1)
+        self.assertFalse(result["match_over"])
+        self.assertEqual(room.white_score, 1)
+        self.assertEqual(room.black_score, 0)
+        self.assertEqual(room.target_points, 5)
+        self.assertEqual(room.status, "playing")
+        self.assertEqual(link.result_status, "pending")
+        self.assertEqual(Task.objects.count(), 0)
+        post.assert_not_called()
+
+    def test_entering_from_tournaments_and_finishing_sends_a_single_point_score(self):
+        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", name="alice", tp=1))
+        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", name="bob", tp=1))
+
+        link = TournamentLink.objects.select_related("room").get()
+        room = link.room
+        state = BackgammonEngine.get_initial_state()
+        state.update({"winner": "white", "winType": "single", "cube": 1})
+
+        with patch("game.link.outbox.httpx.post", return_value=FakeResponse()) as post:
+            with self.captureOnCommitCallbacks(execute=True):
+                record_game_end(room, state, "white", "single", "bear_off")
+
+        post.assert_called_once()
+        sent = json.loads(post.call_args.kwargs["content"])
+
+        self.assertEqual(sent["fixture_id"], 482)
+        self.assertEqual(sent["status"], "completed")
+        self.assertEqual(sent["seats"], {"p1": "white", "p2": "black"})
+        self.assertEqual(sent["score"], {"p1": 1, "p2": 0})
+        self.assertEqual(sent["winner_seat"], "p1")
+        self.assertEqual(sent["match_details"]["games"][0]["points_awarded"], 1)
 
 
 @link_settings
