@@ -10,10 +10,7 @@ declare const process: any;
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const srcRoot = path.resolve(__dirname, "./src");
 
-const defaultChromiumPath = path.join(
-  process.env.HOME ?? "",
-  ".cache/ms-playwright/chromium-1234/chrome-linux64/chrome",
-);
+const chromiumPath = process.env.CHROMIUM_PATH;
 
 export default defineConfig({
   testDir: "./src",
@@ -35,8 +32,6 @@ export default defineConfig({
     },
     ctTemplateDir: "src/test-utils",
     testIdAttribute: "data-testid",
-    launchOptions: {
-      executablePath: process.env.CHROMIUM_PATH ?? defaultChromiumPath,
-    },
+    launchOptions: chromiumPath ? { executablePath: chromiumPath } : undefined,
   },
 });
