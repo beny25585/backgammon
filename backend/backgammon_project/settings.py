@@ -25,7 +25,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'channels',
     'game',
-    'Tournaments'
 ]
 
 MIDDLEWARE = [

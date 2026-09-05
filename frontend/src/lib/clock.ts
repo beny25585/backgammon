@@ -34,8 +34,12 @@ export function activePlayerOf(state: GameState | null): Color | null {
   if (
     state.phase === "waiting" ||
     state.phase === "game_over" ||
-    state.phase === "opening_roll"
+    state.phase === "opening_roll" ||
+    state.phase === "opening_result"
   ) {
+    return null;
+  }
+  if (state.phase === "rolling" && (state.remaining?.length ?? 0) === 0) {
     return null;
   }
   if (state.phase === "doubling_offered" && state.doubleOfferedBy) {
@@ -51,7 +55,7 @@ export function applyClockTransition(
   elapsedMs: number,
   delayMs: number,
 ): Record<Color, number> {
-  if (!prevActive || !newActive || prevActive === newActive) return { ...clock };
+  if (!prevActive || prevActive === newActive) return { ...clock };
   const charged = Math.max(0, elapsedMs - delayMs);
   return {
     ...clock,

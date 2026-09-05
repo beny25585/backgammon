@@ -47,6 +47,7 @@ export function DiceRow({
   showLabels,
   myRoll,
   opponentRoll,
+  forceActive,
 }: {
   dice: number[];
   remaining: number[];
@@ -55,6 +56,7 @@ export function DiceRow({
   myRoll?: number | null;
   opponentRoll?: number | null;
   winner?: Color | null;
+  forceActive?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -85,7 +87,7 @@ export function DiceRow({
     <div className={styles.diceRow}>
       {displayed.map((d, i) => {
         const idx = remCopy.indexOf(d);
-        const used = idx < 0;
+        const used = !forceActive && idx < 0;
         if (idx >= 0) remCopy.splice(idx, 1);
         return <Die key={i} value={d} used={used} dark={color === "black"} />;
       })}

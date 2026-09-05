@@ -176,11 +176,11 @@ export function GameProvider({
           if (
             prev &&
             prev.phase === "rolling" &&
-            prev.turn === playerColorRef.current &&
+            prev.turn !== next.turn &&
             next.phase === "rolling" &&
-            next.turn !== playerColor &&
             (next.dice?.length ?? 0) > 0 &&
-            (next.remaining?.length ?? 0) === 0
+            (next.remaining?.length ?? 0) === 0 &&
+            next.message === "No legal moves"
           ) {
             setNoMovesMessage({ dice: next.dice });
             setTimeout(() => setNoMovesMessage(null), 1500);

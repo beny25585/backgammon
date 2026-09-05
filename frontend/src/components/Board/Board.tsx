@@ -431,10 +431,11 @@ export function Board({
     state.remaining.length === 0;
 
   return (
-    <div ref={wrapperRef} className={styles.wrapper}>
+    <div ref={wrapperRef} className={styles.wrapper} dir="ltr">
       <div
         ref={boardRef}
         className={styles.frame}
+        dir="ltr"
         style={{ touchAction: "none" }}
       >
         <div className={styles.inner}>

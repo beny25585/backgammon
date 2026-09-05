@@ -14,6 +14,7 @@ import {
   type Move,
 } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface GameBoardProps {
   state: GameState;
@@ -33,6 +34,7 @@ interface GameBoardProps {
   timeControl?: import("../../lib/clock").TimeControl | null;
   autoRoll?: boolean;
   onAutoRollChange?: (value: boolean) => void;
+  noMovesMessage?: { dice: number[] } | null;
 }
 
 export default function GameBoard({
@@ -53,7 +55,9 @@ export default function GameBoard({
   timeControl,
   autoRoll,
   onAutoRollChange,
+  noMovesMessage,
 }: GameBoardProps) {
+  const { t } = useI18n();
   const [selected, setSelected] = useState<Source | null>(null);
   const [autoMove, setAutoMove] = useState<Move | null>(null);
 
@@ -147,6 +151,17 @@ export default function GameBoard({
               />
             </div>
           )}
+        {noMovesMessage && (
+          <div className={styles.noMovesOverlay} data-testid="no-moves-overlay">
+            <DiceRow
+              dice={noMovesMessage.dice}
+              remaining={[]}
+              color={state.turn === "white" ? "black" : "white"}
+              forceActive
+            />
+            <span>{t("game.noMovesAvailable")}</span>
+          </div>
+        )}
         {needsToRoll && onRoll && !autoRoll && (
           <div className={styles.boardRollPrompt} data-testid="roll-prompt">
             <RollPrompt

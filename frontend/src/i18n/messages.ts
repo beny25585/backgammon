@@ -135,6 +135,7 @@ export const messages = {
       gammon: 'gammon',
       backgammon: 'backgammon',
       regularWinPoints: 'Regular win: 1 point',
+      singlePoints: 'Regular win: 1 point',
       gammonPoints: 'Gammon: 2 points because the opponent has not borne off any checkers',
       backgammonPoints: 'Backgammon: 3 points because the opponent has not borne off any checkers and still has checkers on the bar or in your home board',
       matchScope: 'the match',
@@ -154,6 +155,7 @@ export const messages = {
       backHome: 'Back to Home',
       quitMatch: 'Quit Match',
       autoNext: 'Next game starts automatically in {seconds}s',
+      noMovesAvailable: 'No legal moves available',
     },
     match: {
       archive: 'Match archive',
@@ -366,6 +368,7 @@ export const messages = {
       gammon: 'גמון',
       backgammon: 'בקגמון',
       regularWinPoints: 'ניצחון רגיל: נקודה אחת',
+      singlePoints: 'ניצחון רגיל: נקודה אחת',
       gammonPoints: 'גמון: 2 נקודות כי היריב לא הוציא אף אבן',
       backgammonPoints: 'בקגמון: 3 נקודות כי היריב לא הוציא אף אבן ועדיין יש לו אבנים על הבר או בבית שלך',
       matchScope: 'במשחקון',
@@ -385,6 +388,7 @@ export const messages = {
       backHome: 'חזרה לבית',
       quitMatch: 'יציאה מהמשחק',
       autoNext: 'המשחק הבא יתחיל אוטומטית בעוד {seconds} שניות',
+      noMovesAvailable: 'אין מהלכים אפשריים',
     },
     match: {
       archive: 'ארכיון משחקים',

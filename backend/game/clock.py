@@ -35,8 +35,8 @@ def parse_time_control(preset_id):
 def active_player(state):
     """The color whose clock should tick, or None when the clock is stopped.
 
-    - waiting / game_over / opening_roll -> stopped (the opening roll decides
-      who moves first; no one is on the clock until it resolves)
+    - waiting / game_over / opening_roll / opening_result -> stopped
+    - rolling with no dice selected       -> stopped (pre-roll double window)
     - doubling_offered                    -> the responder decides, so they pay time
     - otherwise                           -> whoever's turn it is
     """
@@ -44,6 +44,8 @@ def active_player(state):
         return None
     phase = state.get('phase')
     if phase in ('waiting', 'game_over', 'opening_roll', 'opening_result'):
+        return None
+    if phase == 'rolling' and len(state.get('remaining') or []) == 0:
         return None
     if phase == 'doubling_offered' and state.get('doubleOfferedBy'):
         return 'black' if state['doubleOfferedBy'] == 'white' else 'white'
@@ -96,6 +98,10 @@ def compute_clock(stored, incoming, now_ms, preset_id):
             elapsed = max(0, now_ms - turn_started_at)
             clock = apply_transition(clock, stored_active, new_active, elapsed, delay_ms)
             turn_started_at = now_ms
+        elif stored_active and not new_active:
+            elapsed = max(0, now_ms - turn_started_at)
+            clock = apply_transition(clock, stored_active, None, elapsed, delay_ms)
+            turn_started_at = None
 
     deadline_ms = None
     if (
