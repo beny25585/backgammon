@@ -32,6 +32,11 @@ test-results/
 playwright-report/
 src/test-utils/.cache/
 
+# Local interface verification screenshots
+frontend/bar-pip-check.png
+frontend/sidepanel-check.png
+frontend/sidepanel-menu-check.png
+
 # Elixir / Mix
 dice_service/_build/
 dice_service/deps/
