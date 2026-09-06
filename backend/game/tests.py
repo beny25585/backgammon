@@ -1276,6 +1276,28 @@ class GameEndConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
+    async def test_give_up_awards_one_point_and_keeps_match_open(self):
+        await self._set_target(5)
+        comm_white, comm_black = await self._connect_both()
+
+        await comm_white.send_json_to({"type": "give_up", "payload": {}})
+
+        event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+        self.assertEqual(event["payload"]["winner"], "black")
+        self.assertEqual(event["payload"]["reason"], "give_up")
+        self.assertEqual(event["payload"]["points"], 1)
+        self.assertEqual(event["payload"]["blackScore"], 1)
+        self.assertEqual(event["payload"]["whiteScore"], 0)
+        self.assertEqual(event["payload"]["matchOver"], False)
+        self.assertEqual(event["payload"]["nextGame"], True)
+
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.status, "playing")
+        self.assertEqual(self.room.black_score, 1)
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
     async def test_leave_forfeits_and_closes_room(self):
         # Unlike give_up (one game), leaving abandons the whole match even
         # mid-match, so the room closes and the opponent is declared winner.

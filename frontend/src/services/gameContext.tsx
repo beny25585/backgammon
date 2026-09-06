@@ -296,22 +296,18 @@ export function GameProvider({
           const matchOver =
             payload.matchOver === true ||
             (targetPoints > 0 && match[winner] >= targetPoints);
-          if (matchOver) {
-            setGameResult({
-              winner,
-              winType:
-                (payload.winType as "single" | "gammon" | "backgammon") ||
-                "single",
-              points: payload.points ?? 1,
-              cube: payload.cube ?? 1,
-              matchScore: match,
-              targetPoints,
-              matchOver: true,
-              reason: payload.reason,
-            });
-          } else {
-            setGameResult(null);
-          }
+          setGameResult({
+            winner,
+            winType:
+              (payload.winType as "single" | "gammon" | "backgammon") ||
+              "single",
+            points: payload.points ?? 1,
+            cube: payload.cube ?? 1,
+            matchScore: match,
+            targetPoints,
+            matchOver,
+            reason: payload.reason,
+          });
           const nextGameIn =
             typeof payload.nextGameIn === "number" ? payload.nextGameIn : null;
           if (matchOver) {
@@ -319,7 +315,7 @@ export function GameProvider({
           } else if (nextGameIn !== null) {
             setNextGameCountdown(nextGameIn);
           }
-          clearRoom();
+          if (matchOver) clearRoom();
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
           );

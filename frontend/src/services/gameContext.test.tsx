@@ -6,6 +6,7 @@ import {
 import type { Page } from "@playwright/test";
 import { GameProvider } from "./gameContext";
 import { GameProbe } from "../test-utils/probes";
+import GameScreen from "../components/GameScreen/GameScreen";
 import type { GameState } from "../lib/backgammon/engine";
 import { newGame } from "../lib/backgammon/engine";
 
@@ -225,6 +226,26 @@ test("undo sends an undo intent", async ({ mount, page }) => {
   expect(undoMsg.payload).toEqual({ action: "undo" });
 });
 
+test("confirming give up sends a give_up message", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameScreen />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+
+  await component.getByRole("button", { name: "Give up" }).click();
+  await component.getByRole("button", { name: "Yes", exact: true }).click();
+
+  await expect
+    .poll(
+      async () => (await sentMessages(page)).some((m) => m.type === "give_up"),
+      { timeout: 3000 },
+    )
+    .toBe(true);
+});
+
 test("server auto-pass after a roll shows the no-moves overlay", async ({
   mount,
   page,
@@ -271,7 +292,7 @@ function gameOverState(): GameState {
   return { ...newGame(), phase: "game_over", winner: "white", version: 2 };
 }
 
-test("an intermediate game end updates state without showing the match result", async ({
+test("an intermediate game end shows its result until the next game starts", async ({
   mount,
   page,
 }) => {
@@ -288,7 +309,9 @@ test("an intermediate game end updates state without showing the match result", 
     targetPoints: 7,
   });
 
-  await expect(component.getByTestId("game-result")).toHaveText("null");
+  await expect(component.getByTestId("game-result")).toHaveText(
+    '{"winner":"white"}',
+  );
 
   // Server auto-starts the next game and broadcasts a fresh opening roll.
   await emitBroadcast(page, { ...gameOverState(), version: 3, phase: "opening_roll" });
@@ -310,7 +333,9 @@ test("handleNextGame sends a next_game intent after an intermediate game", async
     blackScore: 0,
     targetPoints: 7,
   });
-  await expect(component.getByTestId("game-result")).toHaveText("null");
+  await expect(component.getByTestId("game-result")).toHaveText(
+    '{"winner":"white"}',
+  );
 
   await component.getByTestId("next").click();
 
