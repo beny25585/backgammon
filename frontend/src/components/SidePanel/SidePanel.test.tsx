@@ -71,6 +71,8 @@ test("keeps the language switcher inside the hamburger menu", async ({ mount }) 
   );
 
   await expect(component.getByRole("button", { name: "Language" })).toHaveCount(0);
+  await expect(component.getByRole("button", { name: "Install app" })).toHaveCount(0);
   await component.getByRole("button", { name: "Match control" }).click();
   await expect(component.getByRole("button", { name: "Language" })).toBeVisible();
+  await expect(component.getByRole("button", { name: "Install app" })).toBeVisible();
 });

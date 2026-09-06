@@ -9,6 +9,7 @@ import { useI18n } from "../../i18n/I18nProvider";
 import BoardThemeSelector from "../BoardThemeSelector/BoardThemeSelector";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
 import { LanguageSwitcher } from "../LanguageSwitcher/LanguageSwitcher";
+import InstallAppButton from "../InstallAppButton/InstallAppButton";
 
 interface SidePanelProps {
   state: GameState;
@@ -110,6 +111,7 @@ function SidePanel({
 
           <div className={`${styles.section} ${styles.languageSection}`}>
             <LanguageSwitcher />
+            <InstallAppButton />
           </div>
 
           {boardTheme && onBoardThemeChange && (

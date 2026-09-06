@@ -1,12 +1,19 @@
 {
   "name": "Backgammon",
   "short_name": "Backgammon",
+  "id": "/backgammon/",
+  "description": "Play 6B Backgammon online or on one device.",
+  "lang": "he",
+  "dir": "auto",
   "start_url": "/backgammon/",
   "scope": "/backgammon/",
-  "display": "fullscreen",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
   "orientation": "landscape",
   "background_color": "#03090a",
   "theme_color": "#03090a",
+  "categories": ["games"],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/backgammon/pwa-icon-192.png",

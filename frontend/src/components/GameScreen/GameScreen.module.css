@@ -181,7 +181,7 @@
   --ui-bar-overlay: linear-gradient(180deg, rgba(10, 49, 88, 0.72), rgba(4, 17, 35, 0.82));
   --ui-cube-bg: linear-gradient(180deg, #3d6cff, #2439d6);
   --ui-menu-bg: linear-gradient(180deg, rgba(8, 15, 35, 0.98), rgba(2, 6, 17, 0.99));
-  --lux-material-texture: url("../../assets/6b-material-blue-marble.png");
+  --lux-material-texture: linear-gradient(#173653, #173653);
   --lux-material-layer-blend: soft-light;
   --lux-photo-texture-opacity: 0.06;
   --lux-frame-texture-opacity: 0.04;
