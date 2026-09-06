@@ -128,6 +128,21 @@ test("drains the reserve only after the delay elapses", async ({ mount, page }) 
   await expect(clock.getByTestId("clock-my")).toHaveText(/1:57/);
 });
 
+test("keeps running when an active clock is missing turnStartedAt", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date(0) });
+  const clock = await mount(
+    <Clock
+      clock={{ white: 120_000, black: 120_000 }}
+      activeColor="white"
+      myColor="white"
+      myLabel="You"
+      oppLabel="Bob"
+    />,
+  );
+  await page.clock.fastForward(3_000);
+  await expect(clock.getByTestId("clock-my")).toHaveText(/1:57/);
+});
+
 test("keeps the idle player's time frozen", async ({ mount, page }) => {
   await page.clock.install({ time: new Date(0) });
   const clock = await mount(

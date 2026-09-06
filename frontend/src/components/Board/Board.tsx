@@ -107,7 +107,7 @@ export function Board({
 
   useEffect(() => {
     if (!flyChecker?.committed) return;
-    const t = setTimeout(() => setFlyChecker(null), 1200);
+    const t = setTimeout(() => setFlyChecker(null), 600);
     return () => clearTimeout(t);
   }, [flyChecker?.committed]);
 
@@ -467,6 +467,12 @@ export function Board({
     Boolean(onOfferDouble) &&
     myColor !== null &&
     canOfferDouble(state, myColor);
+  const cubePosition =
+    state.cubeOwner === "center"
+      ? "center"
+      : state.cubeOwner === myColor
+        ? "bottom"
+        : "top";
 
   return (
     <div ref={wrapperRef} className={styles.wrapper} dir="ltr">
@@ -529,6 +535,14 @@ export function Board({
                 ? flyChecker.color
                 : null
             }
+            doublingCube={
+              <DoublingCube
+                value={state.cube}
+                owner={state.cubeOwner}
+                showOwner={false}
+              />
+            }
+            cubePosition={cubePosition}
           />
 
           <div className={styles.column12}>
@@ -593,12 +607,12 @@ export function Board({
           <div className={styles.boardDoubleAction}>
             <button
               type="button"
-              className={styles.boardCubeButton}
+              className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
               onClick={onOfferDouble}
               title={t("common.offerDouble")}
               aria-label={t("common.offerDouble")}
             >
-              <DoublingCube value={state.cube} owner={state.cubeOwner} />
+              {t("common.offerDoubleShort")}
             </button>
           </div>
         )}

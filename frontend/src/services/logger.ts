@@ -7,12 +7,18 @@ function getServerUrl(): string {
 }
 
 const API_URL = getServerUrl();
+const isDev = Boolean(
+  (import.meta as ImportMeta & { env?: Record<string, unknown> }).env?.DEV,
+);
+const enabledLevels = new Set(["warn", "error"]);
 
 function sendLog(
   level: string,
   message: string,
   meta: Record<string, unknown> = {},
 ) {
+  if (!isDev && !enabledLevels.has(level)) return;
+
   try {
     fetch(`${API_URL}/api/client-log/`, {
       method: "POST",

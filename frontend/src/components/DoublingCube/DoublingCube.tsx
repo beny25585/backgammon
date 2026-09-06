@@ -29,9 +29,10 @@ const SIZES = { width: "clamp(32px, 13cqw, 48px)", height: "clamp(32px, 13cqw, 4
 interface DoublingCubeProps {
   value: number;
   owner: Color | "center";
+  showOwner?: boolean;
 }
 
-export default function DoublingCube({ value, owner }: DoublingCubeProps) {
+export default function DoublingCube({ value, owner, showOwner = true }: DoublingCubeProps) {
   const { t } = useI18n();
   const game = useOptionalGame();
   const [rolling, setRolling] = useState(false);
@@ -78,7 +79,7 @@ export default function DoublingCube({ value, owner }: DoublingCubeProps) {
           {value}
         </div>
       )}
-      <span className={styles.ownerLabel}>{ownerLabel}</span>
+      {showOwner && <span className={styles.ownerLabel}>{ownerLabel}</span>}
     </div>
   );
 }

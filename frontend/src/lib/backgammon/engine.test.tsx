@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice } from "./engine";
+import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount } from "./engine";
 
 test("new game starts in opening roll with 15 checkers per side", async () => {
   const state = newGame();
@@ -8,6 +8,13 @@ test("new game starts in opening roll with 15 checkers per side", async () => {
   const totalBlack = initialBoard().filter((v) => v < 0).reduce((a, b) => a - b, 0);
   expect(totalWhite).toBe(15);
   expect(totalBlack).toBe(15);
+});
+
+test("new game starts with 167 pips per side", async () => {
+  const state = newGame();
+
+  expect(pipCount(state, "white")).toBe(167);
+  expect(pipCount(state, "black")).toBe(167);
 });
 
 test("applyOpeningRoll uses the provided die instead of rolling locally", async () => {

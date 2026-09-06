@@ -5,7 +5,6 @@ import PlayerRow from "../PlayerRow";
 import Clock from "../Clock";
 import { useGame } from "../../services/gameContext";
 import { activePlayerOf, type TimeControl } from "../../lib/clock";
-import { AutoRoll } from "../autoRoll/AutoRoll";
 import { useI18n } from "../../i18n/I18nProvider";
 import BoardThemeSelector from "../BoardThemeSelector/BoardThemeSelector";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
@@ -17,8 +16,6 @@ interface SidePanelProps {
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: TimeControl | null;
-  autoRoll?: boolean;
-  onAutoRollChange?: (value: boolean) => void;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
 }
@@ -30,14 +27,13 @@ export default function SidePanel({
   clock,
   turnStartedAt,
   timeControl,
-  autoRoll,
-  onAutoRollChange,
   boardTheme,
   onBoardThemeChange,
 }: SidePanelProps) {
   const { t } = useI18n();
   const { giveUp, whiteName, blackName, matchScore } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const opponentColor = playerColor === "white" ? "black" : "white";
   const opponentName = playerColor === "white" ? blackName : whiteName;
@@ -56,13 +52,7 @@ export default function SidePanel({
 
   return (
     <div className={styles.panel} data-testid="side-panel">
-      <div className={styles.header}>
-        <span className={styles.kicker}>{t("game.matchControl")}</span>
-        <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>
-          {activeColor === playerColor ? t("common.yourTurn") : t("common.opponentTurn")}
-        </span>
-      </div>
-      <div className={`${styles.section} ${styles.playerSection}`}>
+      <div className={styles.playerSlot}>
         <PlayerRow
           color={opponentColor}
           state={state}
@@ -73,7 +63,7 @@ export default function SidePanel({
         />
       </div>
 
-      <div className={`${styles.section} ${styles.clockSection}`}>
+      <div className={styles.clockSlot}>
         <Clock
           clock={clock}
           activeColor={activeColor}
@@ -85,7 +75,19 @@ export default function SidePanel({
         />
       </div>
 
-      <div className={`${styles.section} ${styles.playerSection}`}>
+      <button
+        type="button"
+        className={`${styles.menuButton} ${menuOpen ? styles.menuButtonOpen : ""}`}
+        aria-label={t("game.matchControl")}
+        aria-expanded={menuOpen}
+        onClick={() => setMenuOpen((open) => !open)}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+
+      <div className={styles.playerSlot}>
         <PlayerRow
           color={playerColor}
           state={state}
@@ -96,57 +98,76 @@ export default function SidePanel({
         />
       </div>
 
-      {boardTheme && onBoardThemeChange && (
-        <div className={`${styles.section} ${styles.themeSection}`}>
-          <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} />
+      {menuOpen && (
+        <div className={styles.menuDrawer}>
+          <div className={styles.header}>
+            <span className={styles.kicker}>{t("game.matchControl")}</span>
+            <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>
+              {activeColor === playerColor ? t("common.yourTurn") : t("common.opponentTurn")}
+            </span>
+          </div>
+
+          {boardTheme && onBoardThemeChange && (
+            <div className={`${styles.section} ${styles.themeSection}`}>
+              <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} />
+            </div>
+          )}
+          <div className={styles.actions}>
+            {!showGiveUp ? (
+              <button
+                className={styles.resignBtn}
+                onClick={() => setShowGiveUp(true)}
+              >
+                {t("game.giveUp")}
+              </button>
+            ) : (
+              <div className={styles.resignConfirm}>
+                <span className={styles.resignText}>{t("game.sure")}</span>
+                <button
+                  className={styles.confirmYes}
+                  onClick={() => {
+                    giveUp();
+                    setShowGiveUp(false);
+                    setMenuOpen(false);
+                  }}
+                >
+                  {t("common.yes")}
+                </button>
+                <button
+                  className={styles.confirmNo}
+                  onClick={() => setShowGiveUp(false)}
+                >
+                  {t("common.no")}
+                </button>
+              </div>
+            )}
+
+            {onLeave && (
+              <button
+                onClick={() => {
+                  onLeave();
+                  setMenuOpen(false);
+                }}
+                className={styles.leaveBtn}
+              >
+                {t("common.leave")}
+              </button>
+            )}
+          </div>
         </div>
       )}
-      <div className={`${styles.section} ${styles.autoRollSection}`}>
-        {onAutoRollChange && (
-          <AutoRoll autoRoll={!!autoRoll} onChange={onAutoRollChange} />
-        )}
-      </div>
 
-      <div className={styles.actions}>
-        {!showGiveUp ? (
-          <button
-            className={styles.resignBtn}
-            onClick={() => setShowGiveUp(true)}
-          >
-            {t("game.giveUp")}
-          </button>
-        ) : (
-          <div className={styles.resignConfirm}>
-            <span className={styles.resignText}>{t("game.sure")}</span>
-            <button
-              className={styles.confirmYes}
-              onClick={() => {
-                giveUp();
-                setShowGiveUp(false);
-              }}
-            >
-              {t("common.yes")}
-            </button>
-            <button
-              className={styles.confirmNo}
-              onClick={() => setShowGiveUp(false)}
-            >
-              {t("common.no")}
-            </button>
-          </div>
-        )}
-
-        {onLeave && (
-          <button
-            onClick={() => {
-              onLeave();
-            }}
-            className={styles.leaveBtn}
-          >
-            {t("common.leave")}
-          </button>
-        )}
-      </div>
+      {menuOpen && (
+        <button
+          type="button"
+          className={styles.backdrop}
+          aria-label={t("game.dismissError")}
+          onClick={() => {
+            setMenuOpen(false);
+            setShowGiveUp(false);
+          }}
+        />
+      )}
     </div>
   );
 }

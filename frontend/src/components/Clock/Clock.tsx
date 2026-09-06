@@ -26,6 +26,15 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
   // numbers keep moving between server updates. The server (or local hook) owns
   // the real clock; this never decides anything.
   const [now, setNow] = useState(() => turnStartedAt ?? 0);
+  const [fallbackStartedAt, setFallbackStartedAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!activeColor || turnStartedAt != null) {
+      setFallbackStartedAt(null);
+      return;
+    }
+    setFallbackStartedAt(Date.now());
+  }, [activeColor, turnStartedAt]);
 
   useEffect(() => {
     if (!activeColor) return;
@@ -33,18 +42,25 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
     return () => clearInterval(id);
   }, [activeColor]);
 
+  const effectiveTurnStartedAt = turnStartedAt ?? fallbackStartedAt;
+
   // The active player's reserve only drains beyond the per-turn delay.
   function displayValue(color: Color, active: boolean): number | null {
     if (!clock || clock[color] == null) return null;
     if (!active) return clock[color];
-    const charged = turnStartedAt != null ? Math.max(0, now - turnStartedAt - delayMs) : 0;
+    const charged =
+      effectiveTurnStartedAt != null
+        ? Math.max(0, now - effectiveTurnStartedAt - delayMs)
+        : 0;
     return Math.max(0, clock[color] - charged);
   }
 
   const myValue = displayValue(myColor, myActive);
   const oppValue = displayValue(oppColor, oppActive);
 
-  const delayMsLeft = activeColor ? delayLeft(activeColor, turnStartedAt, now, delayMs) : 0;
+  const delayMsLeft = activeColor
+    ? delayLeft(activeColor, effectiveTurnStartedAt, now, delayMs)
+    : 0;
   const showDelay = delayMs > 0 && delayMsLeft > 0;
 
   const myLow = myValue != null && myValue <= 10_000;

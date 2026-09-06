@@ -260,8 +260,48 @@ test("double action appears where undo sits at the start of a turn", async ({ mo
 
   const doubleBtn = component.getByTitle("Offer double to opponent").first();
   await expect(doubleBtn).toBeVisible();
+  await expect(doubleBtn).toHaveText("Double x2");
   await doubleBtn.click();
   expect(doubled).toBe(1);
+});
+
+test("doubling cube sits on the bar and follows its owner from my perspective", async ({ mount }) => {
+  const component = await mountBoard(mount, {
+    state: movingState({ cube: 1, cubeOwner: "center" }),
+    playerColor: "white",
+  });
+
+  const cubeSlot = component.getByTestId("bar-doubling-cube");
+  await expect(cubeSlot).toHaveAttribute("data-cube-position", "center");
+  await expect(cubeSlot.getByTestId("doubling-cube")).toHaveText("1");
+
+  await component.update(
+    <MockGameWrapper
+      playerColor="white"
+      state={movingState({ cube: 2, cubeOwner: "white" })}
+    >
+      <GameBoard
+        state={movingState({ cube: 2, cubeOwner: "white" })}
+        playerColor="white"
+        makeMove={() => {}}
+      />
+    </MockGameWrapper>,
+  );
+  await expect(cubeSlot).toHaveAttribute("data-cube-position", "bottom");
+
+  await component.update(
+    <MockGameWrapper
+      playerColor="white"
+      state={movingState({ cube: 4, cubeOwner: "black" })}
+    >
+      <GameBoard
+        state={movingState({ cube: 4, cubeOwner: "black" })}
+        playerColor="white"
+        makeMove={() => {}}
+      />
+    </MockGameWrapper>,
+  );
+  await expect(cubeSlot).toHaveAttribute("data-cube-position", "top");
 });
 
 test("undo button appears after a move and clicking calls undoMove", async ({ mount }) => {

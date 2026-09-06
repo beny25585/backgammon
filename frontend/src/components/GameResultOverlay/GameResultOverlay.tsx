@@ -204,7 +204,7 @@ export default function GameResultOverlay({
           </div>
           <div className={styles.statRow}>
             <span>{t("common.doublingCube")}</span>
-            <strong>×{cube}</strong>
+            <strong>{cube}</strong>
           </div>
           <div className={styles.statRow}>
             <span>{t("match.result")}</span>

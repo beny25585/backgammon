@@ -4,8 +4,6 @@ import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
 import { DiceRow } from "../Dice";
-import { useAutoRoll } from "../autoRoll/AutoRoll";
-import { clientLogger } from "@/services/logger";
 import { useI18n } from "../../i18n/I18nProvider";
 import {
   DEFAULT_BOARD_THEME,
@@ -54,7 +52,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     handleHome,
   } = useGame();
 
-  const [autoRoll, setAutoRoll] = useAutoRoll();
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
 
   const handleRoll = useCallback(() => {
@@ -64,38 +61,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   useEffect(() => {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
   }, [boardTheme]);
-
-  const handleOpeningRoll = useCallback(() => {
-    rollDice();
-  }, [rollDice]);
-
-  useEffect(() => {
-    if (!autoRoll) return;
-    if (!state) return;
-    if (noMovesMessage) return;
-    if (state.turn !== playerColor) return;
-    clientLogger.debug("[autoRoll] effect fired", {
-      phase: state.phase,
-      turn: state.turn,
-      playerColor,
-      remaining: state.remaining,
-    });
-    if (state.phase === "opening_roll") {
-      handleOpeningRoll();
-    } else if (
-      state.phase === "rolling" &&
-      state.remaining.length === 0
-    ) {
-      rollDice();
-    }
-  }, [
-    autoRoll,
-    state,
-    playerColor,
-    handleOpeningRoll,
-    rollDice,
-    noMovesMessage,
-  ]);
 
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
@@ -174,8 +139,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             undoMove={undoMove}
             endTurn={endTurn}
             offerDouble={offerDouble}
-            autoRoll={autoRoll}
-            onAutoRollChange={setAutoRoll}
             boardTheme={boardTheme}
             onBoardThemeChange={setBoardTheme}
             needsToRoll={needsToRoll}

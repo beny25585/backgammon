@@ -184,6 +184,20 @@ function distanceToBearOff(point: number, color: Color): number {
   return color === "white" ? point + 1 : BOARD_SIZE - point;
 }
 
+export function pipCount(state: GameState, color: Color): number {
+  let total = state.bar[color] * (BOARD_SIZE + 1);
+  for (let point = 0; point < BOARD_SIZE; point++) {
+    const checkers = state.points[point];
+    if (color === "white" && checkers > 0) {
+      total += checkers * distanceToBearOff(point, color);
+    }
+    if (color === "black" && checkers < 0) {
+      total += Math.abs(checkers) * distanceToBearOff(point, color);
+    }
+  }
+  return total;
+}
+
 /** The entry point index when re-entering from the bar with die value `die`. */
 function barEntryPoint(die: number, color: Color): number {
   return color === "white" ? BOARD_SIZE - die : die - 1;

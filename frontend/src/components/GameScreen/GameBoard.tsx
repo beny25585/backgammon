@@ -35,8 +35,6 @@ interface GameBoardProps {
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: import("../../lib/clock").TimeControl | null;
-  autoRoll?: boolean;
-  onAutoRollChange?: (value: boolean) => void;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
   noMovesMessage?: { dice: number[] } | null;
@@ -63,8 +61,6 @@ export default function GameBoard({
   clock,
   turnStartedAt,
   timeControl,
-  autoRoll,
-  onAutoRollChange,
   boardTheme,
   onBoardThemeChange,
   noMovesMessage,
@@ -153,7 +149,7 @@ export default function GameBoard({
           legalFromPoints={legalFromPoints}
           onUndo={undoMove}
           onConfirm={endTurn}
-          onRoll={!autoRoll && needsToRoll ? onRoll : undefined}
+          onRoll={needsToRoll ? onRoll : undefined}
           onOfferDouble={offerDouble}
           autoMove={autoMove}
         />
@@ -193,8 +189,6 @@ export default function GameBoard({
         clock={clock}
         turnStartedAt={turnStartedAt}
         timeControl={timeControl}
-        autoRoll={autoRoll}
-        onAutoRollChange={onAutoRollChange}
         boardTheme={boardTheme}
         onBoardThemeChange={onBoardThemeChange}
       />

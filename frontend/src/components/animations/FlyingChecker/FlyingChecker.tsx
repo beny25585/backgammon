@@ -36,7 +36,7 @@ export default function FlyingChecker({
     <motion.div
       initial={{ x: from.x, y: from.y, scale: 1, opacity: 1 }}
       animate={{ x: to.x, y: to.y, scale: 1, opacity: 1 }}
-      transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+      transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
       onAnimationComplete={onComplete}
       className={`${styles.flyer} ${color === "white" ? styles.white : styles.black}`}
       style={{ top: 0, left: 0, width: size, height: size }}
