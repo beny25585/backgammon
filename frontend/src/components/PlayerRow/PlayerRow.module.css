@@ -154,3 +154,88 @@
     font-size: 8px;
   }
 }
+
+@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+  .row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(26px, 6.4dvh, 34px);
+    grid-template-areas:
+      "avatar score"
+      "info score";
+    justify-items: center;
+    align-content: center;
+    gap: 3px 4px;
+    min-height: 0;
+    height: 100%;
+    padding: 3px 0 3px 3px;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .activeSelf,
+  .activeOpponent {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .avatar {
+    grid-area: avatar;
+    width: clamp(30px, 12dvh, 50px);
+    height: clamp(30px, 12dvh, 50px);
+    border-width: 2px;
+  }
+
+  .activeSelf .avatar,
+  .activeOpponent .avatar {
+    box-shadow:
+      0 0 0 3px rgba(55, 118, 255, 0.34),
+      inset 0 1px 2px rgba(255, 255, 255, 0.24),
+      inset 0 -3px 5px rgba(0, 0, 0, 0.35);
+  }
+
+  .info {
+    grid-area: info;
+    width: 100%;
+    text-align: center;
+  }
+
+  .name {
+    color: #f5f8ff;
+    font-size: clamp(9px, 2.7dvh, 13px);
+    font-weight: 900;
+  }
+
+  .meta {
+    display: none;
+  }
+
+  .scoreWrap {
+    grid-area: score;
+    align-self: center;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .score {
+    display: grid;
+    width: clamp(26px, 6.4dvh, 34px);
+    height: clamp(30px, 8dvh, 42px);
+    place-items: center;
+    border-radius: 4px;
+    color: #090d21;
+    background: #eef3ff;
+    font-size: clamp(17px, 5.2dvh, 24px);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .idle .score {
+    color: #090d21;
+  }
+
+  .turnBadge {
+    display: none;
+  }
+}

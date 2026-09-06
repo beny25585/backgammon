@@ -65,7 +65,7 @@ test("hides routine confirmation guidance", async ({ mount }) => {
   await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
-test("shows no-moves text when nothing legal is available", async ({ mount }) => {
+test("hides no-moves guidance because the board owns transient status", async ({ mount }) => {
   const points = new Array(24).fill(0);
   points[18] = -2; // black blockade on white's entry point for die 6
   const state = makeGameState({
@@ -79,8 +79,7 @@ test("shows no-moves text when nothing legal is available", async ({ mount }) =>
   const c = await mount(
     <GuidanceBanner state={state} playerColor="white" respondToDouble={() => {}} />,
   );
-  await expect(c.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "no-moves");
-  await expect(c.getByText("No moves available — turn passes")).toBeVisible();
+  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
 test("double offer accepts once and disables both actions", async ({ mount }) => {

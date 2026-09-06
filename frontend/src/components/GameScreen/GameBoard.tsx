@@ -3,7 +3,7 @@ import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
 import GuidanceBanner from "../GuidanceBanner";
-import { DiceRow, RollPrompt } from "../Dice";
+import { DiceRow } from "../Dice";
 import {
   allLegalMoves,
   legalMovesFrom,
@@ -31,9 +31,6 @@ interface GameBoardProps {
   onLeave?: (outcome?: "won" | "lost") => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
-  rollResult?: number[];
-  onRollLand?: () => void;
-  landing?: boolean;
   respondToDouble?: (accept: boolean) => void;
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
@@ -62,9 +59,6 @@ export default function GameBoard({
   onLeave,
   needsToRoll,
   onRoll,
-  rollResult,
-  onRollLand,
-  landing,
   respondToDouble,
   clock,
   turnStartedAt,
@@ -159,12 +153,11 @@ export default function GameBoard({
           legalFromPoints={legalFromPoints}
           onUndo={undoMove}
           onConfirm={endTurn}
-          onRoll={!landing && !autoRoll && needsToRoll ? onRoll : undefined}
+          onRoll={!autoRoll && needsToRoll ? onRoll : undefined}
           onOfferDouble={offerDouble}
           autoMove={autoMove}
         />
-        {!landing &&
-          state.phase !== "opening_roll" &&
+        {state.phase !== "opening_roll" &&
           state.phase === "moving" &&
           state.remaining.length > 0 && (
             <div className={styles.boardOverlay} data-testid="dice-overlay">
@@ -185,16 +178,6 @@ export default function GameBoard({
               forceActive
             />
             <span>{t("game.noMovesAvailable")}</span>
-          </div>
-        )}
-        {needsToRoll && onRoll && !autoRoll && landing && (
-          <div className={styles.boardRollPrompt} data-testid="roll-prompt">
-            <RollPrompt
-              onRoll={onRoll}
-              landOn={rollResult}
-              onLand={onRollLand}
-              dark={playerColor === "black"}
-            />
           </div>
         )}
         <GuidanceBanner

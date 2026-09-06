@@ -20,6 +20,11 @@
   min-width: 0;
 }
 
+.playerSection,
+.clockSection {
+  min-width: 0;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -188,33 +193,36 @@
 
 @media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
   .panel {
-    gap: 4px;
-    padding: 5px;
+    justify-content: stretch;
+    gap: clamp(5px, 1.7dvh, 8px);
+    padding: 4px 5px;
+    background: #000;
+    border-inline-start: 0;
     overflow: hidden;
   }
 
   .header {
-    padding-bottom: 0;
-  }
-
-  .kicker {
-    font-size: 9px;
-  }
-
-  .turnSelf,
-  .turnOpponent {
-    padding: 3px 5px;
-    font-size: 8px;
-  }
-
-  .playersRow {
-    display: grid;
-    gap: 4px;
+    display: none;
   }
 
   .themeSection,
   .autoRollSection,
   .actions {
     display: none;
+  }
+
+  .section {
+    min-height: 0;
+  }
+
+  .playerSection {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    min-height: 0;
+  }
+
+  .clockSection {
+    flex: 0 0 auto;
   }
 }

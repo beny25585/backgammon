@@ -7,9 +7,9 @@ export function useAutoRoll() {
   const [autoRoll, setAutoRoll] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      return saved === null ? true : saved === "true";
+      return saved === "true";
     } catch {
-      return true;
+      return false;
     }
   });
 

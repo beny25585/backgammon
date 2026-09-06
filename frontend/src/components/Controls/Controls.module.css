@@ -134,3 +134,30 @@
     font-size: 11px;
   }
 }
+
+@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+  .controlsContainer {
+    min-height: clamp(28px, 8dvh, 38px);
+    padding: 2px;
+    border: 0;
+    background: transparent;
+  }
+
+  .cubeBlock {
+    gap: 0;
+  }
+
+  .label {
+    display: none;
+  }
+
+  .cubeBlock [data-testid="doubling-cube"] {
+    width: clamp(26px, 8dvh, 36px) !important;
+    height: clamp(26px, 8dvh, 36px) !important;
+    font-size: clamp(12px, 3.4dvh, 16px);
+  }
+
+  .cubeBlock span:last-child {
+    display: none;
+  }
+}

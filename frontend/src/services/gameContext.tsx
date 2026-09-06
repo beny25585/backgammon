@@ -15,7 +15,7 @@ import type {
   OpeningRollResult,
 } from "../types/context";
 import type { GameState, Color } from "../types/game";
-import type { Source, Target } from "../lib/backgammon/engine";
+import { reorderDice as reorderGameDice, type Source, type Target } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
@@ -267,6 +267,7 @@ export function GameProvider({
           // "Cannot roll now" is benign — the UI only offers roll when it is
           // the player's turn to roll.
           if (msg === "Cannot roll now") return;
+          if (msg === "Unknown action: reorder_dice") return;
           setError(msg);
         });
 
@@ -377,6 +378,7 @@ export function GameProvider({
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
     if ((current.remaining?.length ?? 0) < 2) return;
+    setState(reorderGameDice(current));
     sendIntent({ action: "reorder_dice" });
   }, [sendIntent]);
 

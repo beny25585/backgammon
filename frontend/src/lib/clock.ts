@@ -39,9 +39,6 @@ export function activePlayerOf(state: GameState | null): Color | null {
   ) {
     return null;
   }
-  if (state.phase === "rolling" && (state.remaining?.length ?? 0) === 0) {
-    return null;
-  }
   if (state.phase === "doubling_offered" && state.doubleOfferedBy) {
     return state.doubleOfferedBy === "white" ? "black" : "white";
   }

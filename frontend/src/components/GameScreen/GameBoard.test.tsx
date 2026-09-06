@@ -35,14 +35,12 @@ interface MountProps {
   offerDouble?: () => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
-  rollResult?: number[];
-  onRollLand?: () => void;
   respondToDouble?: (accept: boolean) => void;
   noMovesMessage?: { dice: number[] } | null;
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
-  const { state, playerColor, makeMove, undoMove, endTurn, offerDouble, needsToRoll, onRoll, rollResult, onRollLand, respondToDouble, noMovesMessage } = props;
+  const { state, playerColor, makeMove, undoMove, endTurn, offerDouble, needsToRoll, onRoll, respondToDouble, noMovesMessage } = props;
   const component = await mount(
     <MockGameWrapper playerColor={playerColor} state={state}>
       <GameBoard
@@ -55,8 +53,6 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
         onLeave={() => {}}
         needsToRoll={needsToRoll}
         onRoll={onRoll}
-        rollResult={rollResult}
-        onRollLand={onRollLand}
         respondToDouble={respondToDouble}
         noMovesMessage={noMovesMessage}
       />

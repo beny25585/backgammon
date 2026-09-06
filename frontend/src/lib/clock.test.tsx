@@ -35,8 +35,8 @@ test("activePlayerOf charges the responder during doubling", () => {
   expect(activePlayerOf(state)).toBe("black");
 });
 
-test("activePlayerOf waits after double accept until dice are rolled", () => {
-  expect(activePlayerOf({ ...newGame(), phase: "rolling", turn: "white", dice: [], remaining: [] })).toBeNull();
+test("activePlayerOf charges the player while choosing roll or double", () => {
+  expect(activePlayerOf({ ...newGame(), phase: "rolling", turn: "white", dice: [], remaining: [] })).toBe("white");
   expect(activePlayerOf({ ...newGame(), phase: "moving", turn: "white", dice: [3, 5], remaining: [3, 5] })).toBe("white");
 });
 

@@ -36,7 +36,7 @@ def active_player(state):
     """The color whose clock should tick, or None when the clock is stopped.
 
     - waiting / game_over / opening_roll / opening_result -> stopped
-    - rolling with no dice selected       -> stopped (pre-roll double window)
+    - rolling                             -> the current player pays while choosing roll/double
     - doubling_offered                    -> the responder decides, so they pay time
     - otherwise                           -> whoever's turn it is
     """
@@ -44,8 +44,6 @@ def active_player(state):
         return None
     phase = state.get('phase')
     if phase in ('waiting', 'game_over', 'opening_roll', 'opening_result'):
-        return None
-    if phase == 'rolling' and len(state.get('remaining') or []) == 0:
         return None
     if phase == 'doubling_offered' and state.get('doubleOfferedBy'):
         return 'black' if state['doubleOfferedBy'] == 'white' else 'white'

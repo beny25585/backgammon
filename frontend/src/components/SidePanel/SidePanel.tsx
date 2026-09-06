@@ -2,7 +2,6 @@ import { useState } from "react";
 import styles from "./SidePanel.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
-import Controls from "../Controls";
 import Clock from "../Clock";
 import { useGame } from "../../services/gameContext";
 import { activePlayerOf, type TimeControl } from "../../lib/clock";
@@ -63,31 +62,18 @@ export default function SidePanel({
           {activeColor === playerColor ? t("common.yourTurn") : t("common.opponentTurn")}
         </span>
       </div>
-      <div className={styles.playersRow}>
-        <div className={styles.section}>
-          <PlayerRow
-            color={opponentColor}
-            state={state}
-            label={opponentLabel}
-            active={activeColor === opponentColor}
-            self={false}
-            score={matchScore?.[opponentColor] ?? 0}
-          />
-        </div>
-
-        <div className={styles.section}>
-          <PlayerRow
-            color={playerColor}
-            state={state}
-            label={selfLabel}
-            active={activeColor === playerColor}
-            self={true}
-            score={matchScore?.[playerColor] ?? 0}
-          />
-        </div>
+      <div className={`${styles.section} ${styles.playerSection}`}>
+        <PlayerRow
+          color={opponentColor}
+          state={state}
+          label={opponentLabel}
+          active={activeColor === opponentColor}
+          self={false}
+          score={matchScore?.[opponentColor] ?? 0}
+        />
       </div>
 
-      <div className={styles.section}>
+      <div className={`${styles.section} ${styles.clockSection}`}>
         <Clock
           clock={clock}
           activeColor={activeColor}
@@ -99,9 +85,17 @@ export default function SidePanel({
         />
       </div>
 
-      <div className={styles.section}>
-        <Controls playerColor={playerColor} state={state} />
+      <div className={`${styles.section} ${styles.playerSection}`}>
+        <PlayerRow
+          color={playerColor}
+          state={state}
+          label={selfLabel}
+          active={activeColor === playerColor}
+          self={true}
+          score={matchScore?.[playerColor] ?? 0}
+        />
       </div>
+
       {boardTheme && onBoardThemeChange && (
         <div className={`${styles.section} ${styles.themeSection}`}>
           <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} />

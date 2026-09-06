@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
-import { DiceRow, RollPrompt } from "../Dice";
+import { DiceRow } from "../Dice";
 import { useAutoRoll } from "../autoRoll/AutoRoll";
 import { clientLogger } from "@/services/logger";
-import { canOfferDouble } from "@/lib/backgammon/engine";
 import { useI18n } from "../../i18n/I18nProvider";
 import {
   DEFAULT_BOARD_THEME,
@@ -55,27 +54,10 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     handleHome,
   } = useGame();
 
-  const [rollResult, setRollResult] = useState<number[] | undefined>(undefined);
-  const [landing, setLanding] = useState(false);
   const [autoRoll, setAutoRoll] = useAutoRoll();
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
-  const DOUBLE_WINDOW_SECONDS = 20;
-  const [doubleWindow, setDoubleWindow] = useState(false);
-  const [doubleCountdown, setDoubleCountdown] = useState(DOUBLE_WINDOW_SECONDS);
-  const [doubleOfferPending, setDoubleOfferPending] = useState(false);
-  const doubleDecidedRef = useRef(false);
-
-  const canChooseDouble = Boolean(
-    autoRoll &&
-      state?.phase === "rolling" &&
-      state.remaining.length === 0 &&
-      state.turn === playerColor &&
-      canOfferDouble(state, playerColor),
-  );
 
   const handleRoll = useCallback(() => {
-    setRollResult(undefined);
-    setLanding(true);
     rollDice();
   }, [rollDice]);
 
@@ -83,52 +65,9 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
   }, [boardTheme]);
 
-  useEffect(() => {
-    if (!state) return;
-    if (!canChooseDouble) {
-      doubleDecidedRef.current = false;
-      setDoubleWindow(false);
-      setDoubleOfferPending(false);
-      return;
-    }
-    if (!doubleDecidedRef.current && !doubleWindow) {
-      setDoubleWindow(true);
-      setDoubleCountdown(DOUBLE_WINDOW_SECONDS);
-    }
-  }, [canChooseDouble, doubleWindow]);
-
-  useEffect(() => {
-    if (!doubleWindow) return;
-    if (doubleCountdown <= 0) {
-      doubleDecidedRef.current = true;
-      setDoubleWindow(false);
-      return;
-    }
-    const t = setTimeout(() => setDoubleCountdown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [doubleWindow, doubleCountdown]);
-  const handleDoubleOffer = useCallback(() => {
-    doubleDecidedRef.current = true;
-    setDoubleOfferPending(true);
-    setDoubleWindow(false);
-    offerDouble();
-  }, [offerDouble]);
-
-  const handleDoubleSkip = useCallback(() => {
-    doubleDecidedRef.current = true;
-    setDoubleWindow(false);
-  }, []);
-
   const handleOpeningRoll = useCallback(() => {
     rollDice();
   }, [rollDice]);
-
-  useEffect(() => {
-    // Once the server delivers dice during the roll, feed them to the prompt.
-    if (landing && state?.phase === "moving" && state.dice.length > 0) {
-      setRollResult(state.dice);
-    }
-  }, [landing, state?.phase, state?.dice]);
 
   useEffect(() => {
     if (!autoRoll) return;
@@ -145,10 +84,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
       handleOpeningRoll();
     } else if (
       state.phase === "rolling" &&
-      state.remaining.length === 0 &&
-      !doubleWindow &&
-      !doubleOfferPending &&
-      (!canChooseDouble || doubleDecidedRef.current)
+      state.remaining.length === 0
     ) {
       rollDice();
     }
@@ -158,25 +94,15 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     playerColor,
     handleOpeningRoll,
     rollDice,
-    doubleWindow,
-    doubleOfferPending,
-    canChooseDouble,
     noMovesMessage,
   ]);
 
-  const handleRollLand = useCallback(() => {
-    setLanding(false);
-    setRollResult(undefined);
-  }, []);
-
-  const isOpeningRoll = state?.phase === "opening_roll";
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
     !noMovesMessage &&
-    ((state?.phase === "rolling" &&
+    (state?.phase === "opening_roll" || state?.phase === "rolling") &&
       state?.remaining.length === 0 &&
-      state?.turn === playerColor) ||
-      (landing && state?.turn === playerColor));
+      state?.turn === playerColor;
 
   if (isLoading) {
     return <div className={styles.loading}>{t("game.connecting")}</div>;
@@ -254,9 +180,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             onBoardThemeChange={setBoardTheme}
             needsToRoll={needsToRoll}
             onRoll={handleRoll}
-            rollResult={rollResult}
-            onRollLand={handleRollLand}
-            landing={landing}
             respondToDouble={respondToDouble}
             onLeave={onLeave}
             clock={clock}
@@ -265,18 +188,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             noMovesMessage={noMovesMessage}
           />
         </>
-      )}
-
-      {isOpeningRoll && state.turn === playerColor && !autoRoll && (
-        <div className={styles.overlayDim}>
-          <div className={styles.overlayCard}>
-            <RollPrompt
-              onRoll={handleOpeningRoll}
-              isOpening
-              dark={playerColor === "black"}
-            />
-          </div>
-        </div>
       )}
 
       {isOpeningResult && openingRollResult && (
@@ -307,24 +218,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
         </div>
       )}
 
-      {doubleWindow && (
-        <div className={styles.overlayDim} data-testid="double-decision-overlay">
-          <div className={styles.overlayCard} role="dialog" aria-modal="true" aria-label={t("game.doubleDecision")}>
-            <div className={styles.winnerText}>{t("game.offerDoubleBeforeRoll")}</div>
-            <div className={styles.subText}>
-              {t("game.autoRollCountdown", { seconds: doubleCountdown })}
-            </div>
-            <div className={styles.doubleDecisionActions}>
-              <button type="button" className={styles.doubleOfferButton} onClick={handleDoubleOffer}>
-                {t("game.offerDouble")}
-              </button>
-              <button type="button" className={styles.doubleSkipButton} onClick={handleDoubleSkip}>
-                {t("game.rollNow")}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

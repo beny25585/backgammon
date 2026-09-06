@@ -1,7 +1,7 @@
 .container {
   width: 100dvw;
-  min-height: 100dvh;
-  height: 100dvh;
+  min-height: var(--app-height, 100dvh);
+  height: var(--app-height, 100dvh);
   display: grid;
   place-items: center;
   background:
@@ -485,11 +485,40 @@
 }
 
 .boardDoubleAction {
-  left: 25%;
+  left: calc((100% - var(--bearoff-w)) / 2);
 }
 
 .boardRollAction {
   left: 75%;
+}
+
+.boardCubeButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(34px, 5.2cqw, 58px);
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  touch-action: manipulation;
+}
+
+.boardCubeButton [data-testid="doubling-cube"] {
+  width: clamp(28px, 4.8cqw, 48px) !important;
+  height: clamp(28px, 4.8cqw, 48px) !important;
+  font-size: clamp(13px, 2.1cqw, 20px);
+}
+
+.boardCubeButton span {
+  display: none;
+}
+
+.boardCubeButton:focus-visible [data-testid="doubling-cube"] {
+  outline: 2px solid #f2c35e;
+  outline-offset: 3px;
 }
 
 .boardTurnButton {
@@ -581,25 +610,6 @@
   opacity: 1;
 }
 
-.boardRollPrompt {
-  width: min(360px, 68%);
-  height: auto;
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 45;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: clamp(18px, 3vw, 30px);
-  background: rgba(7, 20, 18, 0.93);
-  backdrop-filter: blur(5px);
-  border-radius: 6px;
-  border: 1px solid rgba(229, 180, 77, 0.38);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-}
-
 /* === Side panel === */
 .sidePanel {
   display: flex;
@@ -629,7 +639,7 @@
   background: rgba(255, 107, 107, 0.3);
 }
 
-/* === Overlays (RollPrompt, disconnected, reconnected) === */
+/* === Overlays (disconnected, reconnected) === */
 
 .reconnected {
   position: absolute;
@@ -799,10 +809,23 @@
   }
 
   .gameFrame {
-    grid-template-columns: minmax(0, 1fr) clamp(118px, 33dvw, 170px);
+    grid-template-columns: clamp(86px, 19dvw, 116px) minmax(0, 1fr);
     width: 100dvw;
-    height: 100dvh;
+    height: var(--app-height, 100dvh);
     border-width: 0;
+    background: #000;
+  }
+
+  .boardArea {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .sidePanel {
+    grid-column: 1;
+    grid-row: 1;
+    border-left: 0;
+    border-right: 1px solid rgba(32, 62, 130, 0.42);
   }
 }
 
@@ -814,29 +837,57 @@
   }
 
   .gameFrame {
-    grid-template-columns: minmax(0, 1fr) clamp(104px, 30dvw, 132px);
+    grid-template-columns: clamp(76px, 18dvw, 104px) minmax(0, 1fr);
   }
 
   .frame {
-    inset: 4px;
-    padding: 5px;
+    inset: 0;
+    padding: 0;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+    background: var(--lux-rail-bg);
+  }
+
+  .frame::before,
+  .frame::after {
+    display: none;
   }
 
   .boardOverlay {
     padding: 3px 7px;
   }
 
-  .boardRollPrompt {
-    width: min(220px, 62%);
-    padding: 12px;
+  .boardTurnButton {
+    width: clamp(54px, 10dvw, 74px);
+    height: clamp(24px, 8dvh, 32px);
+    border-radius: 4px;
+    font-size: clamp(10px, 3dvh, 13px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.48);
   }
+
+  .boardTurnButtonPrimary {
+    border: 1px solid rgba(120, 140, 255, 0.55);
+    background: #3420a4;
+    color: #f5f4ff;
+  }
+
+  .boardDoubleAction {
+    left: 25%;
+  }
+
+  .boardRollAction,
+  .boardOverlay {
+    left: 75%;
+  }
+
 }
 
 @media (width < 800px) and (orientation: portrait) {
   .container {
     width: 100dvw;
-    min-height: 100dvh;
-    height: 100dvh;
+    min-height: var(--app-height, 100dvh);
+    height: var(--app-height, 100dvh);
     padding: 0;
     place-items: center;
     --checker: max(18px, 4.25cqw);

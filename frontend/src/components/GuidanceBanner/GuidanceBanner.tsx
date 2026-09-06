@@ -50,30 +50,17 @@ export default function GuidanceBanner({
 }: GuidanceBannerProps) {
   const { t, locale } = useI18n();
   const [responding, setResponding] = useState(false);
-  const [showTransient, setShowTransient] = useState(false);
 
   const guidance = getGuidance(state, playerColor);
   const isDecision = guidance?.interactive === "double";
-  const isTransient =
-    guidance?.variant === "forced" || guidance?.variant === "no-moves";
 
   useEffect(() => {
     setResponding(false);
   }, [guidance?.variant, guidance?.text]);
 
-  useEffect(() => {
-    if (!isTransient) {
-      setShowTransient(false);
-      return;
-    }
-    setShowTransient(true);
-    const timeout = window.setTimeout(() => setShowTransient(false), 1400);
-    return () => window.clearTimeout(timeout);
-  }, [guidance?.variant, guidance?.text, isTransient]);
-
   if (!guidance) return null;
 
-  if (!isDecision && (!isTransient || !showTransient)) return null;
+  if (!isDecision) return null;
 
   const respond = (accept: boolean) => {
     if (responding) return;

@@ -81,7 +81,7 @@ export default function GameResultOverlay({
   function label() {
     if (locale === "he") {
       const scope = isMatchOver ? "במשחק" : "במערכה הזאת";
-      const cubeSuffix = cube > 1 ? ` (${t("common.doublingCube")} פי ${cube})` : "";
+      const cubeSuffix = cube > 1 ? " (הכפלה)" : "";
       const verb = winner === playerColor ? "ניצחת" : `${winnerDisplayLabel} ניצח`;
 
       if (winType === "single") {

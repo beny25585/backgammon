@@ -1688,15 +1688,15 @@ class ClockHelperTests(TestCase):
         from game.clock import active_player
         self.assertEqual(active_player({'phase': 'moving', 'turn': 'white'}), 'white')
 
-    def test_active_player_none_while_waiting_to_roll(self):
+    def test_active_player_is_turn_while_waiting_to_roll(self):
         from game.clock import active_player
-        self.assertIsNone(active_player({'phase': 'rolling', 'turn': 'white', 'remaining': []}))
+        self.assertEqual(active_player({'phase': 'rolling', 'turn': 'white', 'remaining': []}), 'white')
 
     def test_active_player_is_turn_after_dice_are_rolled(self):
         from game.clock import active_player
         self.assertEqual(active_player({'phase': 'moving', 'turn': 'white', 'remaining': [3, 5]}), 'white')
 
-    def test_clock_does_not_start_after_double_accept_until_dice_are_rolled(self):
+    def test_clock_starts_after_double_accept_while_waiting_to_roll(self):
         from game.clock import compute_clock
         stored = {
             'phase': 'doubling_offered',
@@ -1717,10 +1717,10 @@ class ClockHelperTests(TestCase):
             stored, incoming, 9_000, 'normal')
 
         self.assertEqual(clock, {'white': 120_000, 'black': 120_000})
-        self.assertIsNone(turn_started_at)
-        self.assertIsNone(active)
+        self.assertEqual(turn_started_at, 9_000)
+        self.assertEqual(active, 'white')
         self.assertFalse(timed_out)
-        self.assertIsNone(deadline)
+        self.assertEqual(deadline, 9_000 + 12_000 + 120_000)
 
     def test_clock_starts_when_dice_are_rolled_and_player_can_move(self):
         from game.clock import compute_clock

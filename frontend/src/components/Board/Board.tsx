@@ -13,6 +13,7 @@ import PointCell from "./pieces/pointcell/PointCell";
 import Bar from "./pieces/bar/Bar";
 import BearOff from "./pieces/bearoff/BearOff";
 import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
+import DoublingCube from "../DoublingCube";
 import styles from "../GameScreen/GameScreen.module.css";
 import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -459,7 +460,7 @@ export function Board({
     state.remaining.length === 0;
   const canRoll =
     Boolean(onRoll) &&
-    state.phase === "rolling" &&
+    (state.phase === "opening_roll" || state.phase === "rolling") &&
     state.turn === myColor &&
     state.remaining.length === 0;
   const canDouble =
@@ -592,11 +593,12 @@ export function Board({
           <div className={styles.boardDoubleAction}>
             <button
               type="button"
-              className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
+              className={styles.boardCubeButton}
               onClick={onOfferDouble}
               title={t("common.offerDouble")}
+              aria-label={t("common.offerDouble")}
             >
-              {t("common.offerDoubleShort")}
+              <DoublingCube value={state.cube} owner={state.cubeOwner} />
             </button>
           </div>
         )}
