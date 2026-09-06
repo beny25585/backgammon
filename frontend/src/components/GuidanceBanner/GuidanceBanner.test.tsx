@@ -96,7 +96,7 @@ test("double offer accepts once and disables both actions", async ({ mount }) =>
       respondToDouble={(a) => (accepted = a)}
     />,
   );
-  await expect(c.getByText("Opponent offers a double!")).toBeVisible();
+  await expect(c.getByTestId("guidance-banner")).toContainText("Opponent offers a double!");
   await c.getByTestId("double-accept").click();
   await expect.poll(() => accepted).toBe(true);
   await expect(c.getByTestId("double-accept")).toBeDisabled();
@@ -133,4 +133,23 @@ test("double offer cannot be dismissed before a response", async ({ mount }) => 
   await expect(c.getByTestId("banner-dismiss")).toHaveCount(0);
   await expect(c.getByTestId("double-accept")).toBeVisible();
   await expect(c.getByTestId("double-decline")).toBeVisible();
+});
+
+test("places Pass on the left and Take on the right", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 474, height: 330 });
+  const state = makeGameState({
+    phase: "doubling_offered",
+    turn: "white",
+    doubleOfferedBy: "black",
+  });
+  const c = await mount(
+    <div style={{ position: "relative", width: "374px", height: "330px" }}>
+      <GuidanceBanner state={state} playerColor="white" respondToDouble={() => {}} />
+    </div>,
+  );
+  const passBox = await c.getByTestId("double-decline").boundingBox();
+  const takeBox = await c.getByTestId("double-accept").boundingBox();
+  expect(passBox).not.toBeNull();
+  expect(takeBox).not.toBeNull();
+  expect(passBox!.x).toBeLessThan(takeBox!.x);
 });

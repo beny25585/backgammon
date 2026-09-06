@@ -14,13 +14,33 @@
 }
 
 .decision {
-  width: min(340px, calc(100% - 32px));
+  inset: 0;
+  width: auto;
+  transform: none;
 }
 
 .decision .banner {
-  min-height: 78px;
-  padding: 16px;
-  flex-wrap: wrap;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.decision .text {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .banner {
@@ -61,10 +81,9 @@
 }
 
 .actions {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-  justify-content: center;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .accept,
@@ -81,9 +100,20 @@
   cursor: pointer;
   outline: none;
   pointer-events: auto;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
   box-shadow:
     0 4px 16px rgba(0, 0, 0, 0.6),
     0 0 20px rgba(201, 169, 97, 0.16);
+}
+
+.accept {
+  left: 75%;
+}
+
+.decline {
+  left: 25%;
 }
 
 .accept {
@@ -110,4 +140,19 @@
 .decline:disabled {
   cursor: wait;
   opacity: 0.65;
+}
+
+@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+  .accept,
+  .decline {
+    width: clamp(54px, 10dvw, 74px);
+    height: clamp(24px, 8dvh, 32px);
+    padding: 0 8px;
+    border-radius: 4px;
+    background: #3420a4;
+    border-color: rgba(120, 140, 255, 0.55);
+    color: #f5f4ff;
+    font-size: clamp(10px, 3dvh, 13px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.48);
+  }
 }

@@ -537,7 +537,7 @@ export function Board({
             }
             doublingCube={
               <DoublingCube
-                value={state.cube}
+                value={state.phase === "doubling_offered" ? state.cube * 2 : state.cube}
                 owner={state.cubeOwner}
                 showOwner={false}
               />

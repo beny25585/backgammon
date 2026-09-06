@@ -443,6 +443,7 @@ test("banner shows Accept/Decline when opponent offers a double", async ({ mount
   });
 
   await expect(component.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "double");
+  await expect(component.getByTestId("doubling-cube")).toHaveText("4");
   await component.getByTestId("double-accept").click();
   await expect.poll(() => accepted).toBe(true);
 });
