@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { test, expect, type ComponentFixtures } from "@playwright/experimental-ct-react";
 import GuidanceBanner from "./GuidanceBanner";
 import { makeGameState } from "../../test-utils/gameState";
@@ -30,30 +29,27 @@ test("renders null during game_over", async ({ mount }) => {
   await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
-test("shows roll text on my turn in rolling phase", async ({ mount }) => {
+test("hides routine roll guidance", async ({ mount }) => {
   const c = await mountBanner(mount, { phase: "rolling", turn: "white" });
-  await expect(c.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "roll");
-  await expect(c.getByText("Your turn — tap to roll")).toBeVisible();
+  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
-test("shows opening roll text on my turn", async ({ mount }) => {
+test("hides routine opening-roll guidance", async ({ mount }) => {
   const c = await mountBanner(mount, { phase: "opening_roll", turn: "white" });
-  await expect(c.getByText("Roll to start")).toBeVisible();
+  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
-test("shows move text without dice during my moving turn", async ({ mount }) => {
+test("hides routine move guidance", async ({ mount }) => {
   const c = await mountBanner(mount, {
     phase: "moving",
     turn: "white",
     dice: [4, 3],
     remaining: [4, 3],
   });
-  await expect(c.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "move");
-  await expect(c.getByText("Your turn — tap a checker to move")).toBeVisible();
-  await expect(c.getByTestId("die")).toHaveCount(0);
+  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
-test("shows opponent thinking text on opponent's turn", async ({ mount }) => {
+test("hides routine opponent-turn guidance", async ({ mount }) => {
   const c = await mountBanner(mount, {
     phase: "moving",
     turn: "black",
@@ -61,13 +57,12 @@ test("shows opponent thinking text on opponent's turn", async ({ mount }) => {
     dice: [4, 3],
     remaining: [4, 3],
   });
-  await expect(c.getByText("Opponent is thinking…")).toBeVisible();
+  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
-test("shows confirm text when all dice used", async ({ mount }) => {
+test("hides routine confirmation guidance", async ({ mount }) => {
   const c = await mountBanner(mount, { phase: "moving", turn: "white", remaining: [] });
-  await expect(c.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "confirm");
-  await expect(c.getByText("Confirm your turn")).toBeVisible();
+  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
 test("shows no-moves text when nothing legal is available", async ({ mount }) => {
@@ -88,7 +83,7 @@ test("shows no-moves text when nothing legal is available", async ({ mount }) =>
   await expect(c.getByText("No moves available — turn passes")).toBeVisible();
 });
 
-test("double offer shows Accept/Decline that call respondToDouble", async ({ mount }) => {
+test("double offer accepts once and disables both actions", async ({ mount }) => {
   let accepted: boolean | null = null;
   const state = makeGameState({
     phase: "doubling_offered",
@@ -105,45 +100,26 @@ test("double offer shows Accept/Decline that call respondToDouble", async ({ mou
   await expect(c.getByText("Opponent offers a double!")).toBeVisible();
   await c.getByTestId("double-accept").click();
   await expect.poll(() => accepted).toBe(true);
+  await expect(c.getByTestId("double-accept")).toBeDisabled();
+  await expect(c.getByTestId("double-decline")).toBeDisabled();
+});
+
+test("double offer can be declined", async ({ mount }) => {
+  let accepted: boolean | null = null;
+  const state = makeGameState({
+    phase: "doubling_offered",
+    turn: "white",
+    doubleOfferedBy: "black",
+  });
+  const c = await mount(
+    <GuidanceBanner
+      state={state}
+      playerColor="white"
+      respondToDouble={(value) => (accepted = value)}
+    />,
+  );
   await c.getByTestId("double-decline").click();
   await expect.poll(() => accepted).toBe(false);
-});
-
-function DismissHarness() {
-  const [state, setState] = useState(() =>
-    makeGameState({ phase: "moving", turn: "white", remaining: [] }),
-  );
-  return (
-    <div>
-      <GuidanceBanner state={state} playerColor="white" respondToDouble={() => {}} />
-      <button
-        type="button"
-        data-testid="change-state"
-        onClick={() =>
-          setState(makeGameState({ phase: "rolling", turn: "white", remaining: [] }))
-        }
-      >
-        change
-      </button>
-    </div>
-  );
-}
-
-test("dismiss hides the banner until the guidance changes", async ({ mount }) => {
-  const c = await mount(<DismissHarness />);
-  await expect(c.getByText("Confirm your turn")).toBeVisible();
-
-  await c.getByTestId("banner-dismiss").click();
-  await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
-
-  await c.getByTestId("change-state").click();
-  await expect(c.getByTestId("guidance-banner")).toBeVisible();
-  await expect(c.getByText("Your turn — tap to roll")).toBeVisible();
-});
-
-test("dismiss button is present on non-critical guidance", async ({ mount }) => {
-  const c = await mountBanner(mount, { phase: "rolling", turn: "white" });
-  await expect(c.getByTestId("banner-dismiss")).toBeVisible();
 });
 
 test("double offer cannot be dismissed before a response", async ({ mount }) => {

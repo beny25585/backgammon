@@ -153,6 +153,18 @@ export function GameProvider({
             const tc = (msg as Record<string, unknown>).timeControl;
             if (typeof tc === "string") setTimeControl(parseTimeControl(tc));
 
+            const score = (msg as Record<string, unknown>).matchScore as
+              | { white?: unknown; black?: unknown }
+              | undefined;
+            if (
+              typeof score?.white === "number" &&
+              Number.isFinite(score.white) &&
+              typeof score.black === "number" &&
+              Number.isFinite(score.black)
+            ) {
+              setMatchScore({ white: score.white, black: score.black });
+            }
+
             buildOpeningResult(raw);
             return;
           }
@@ -280,21 +292,31 @@ export function GameProvider({
           setMatchScore(match);
           if (!winner) return;
           clientLogger.info("Game ended", { winner, reason: payload.reason });
-          setGameResult({
-            winner,
-            winType:
-              (payload.winType as "single" | "gammon" | "backgammon") ||
-              "single",
-            points: payload.points ?? 1,
-            cube: payload.cube ?? 1,
-            matchScore: match,
-            targetPoints: payload.targetPoints ?? 0,
-            matchOver: payload.matchOver,
-            reason: payload.reason,
-          });
+          const targetPoints = payload.targetPoints ?? 0;
+          const matchOver =
+            payload.matchOver === true ||
+            (targetPoints > 0 && match[winner] >= targetPoints);
+          if (matchOver) {
+            setGameResult({
+              winner,
+              winType:
+                (payload.winType as "single" | "gammon" | "backgammon") ||
+                "single",
+              points: payload.points ?? 1,
+              cube: payload.cube ?? 1,
+              matchScore: match,
+              targetPoints,
+              matchOver: true,
+              reason: payload.reason,
+            });
+          } else {
+            setGameResult(null);
+          }
           const nextGameIn =
             typeof payload.nextGameIn === "number" ? payload.nextGameIn : null;
-          if (nextGameIn !== null) {
+          if (matchOver) {
+            setNextGameCountdown(null);
+          } else if (nextGameIn !== null) {
             setNextGameCountdown(nextGameIn);
           }
           clearRoom();

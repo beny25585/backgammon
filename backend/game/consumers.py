@@ -217,6 +217,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             'initial': True,
             'players': players,
             'timeControl': room.time_control,
+            'matchScore': {
+                'white': room.white_score,
+                'black': room.black_score,
+            },
         }))
 
         # Mid-game reconnect: resume the active player's deadline.

@@ -20,11 +20,7 @@ test("opening result shows both dice and the winner", async ({ mount }) => {
       <GameScreen />
     </MockGameWrapper>,
   );
-  await expect(component.getByTestId("guidance-banner")).toHaveAttribute(
-    "data-variant",
-    "opening",
-  );
-  await expect(component.getByText("You go first!")).toBeVisible();
+  await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
   await expect(component.getByTestId("opening-result-overlay")).toBeVisible();
   await expect(
     component.getByTestId("opening-result-overlay").getByText("Opponent"),
@@ -34,9 +30,10 @@ test("opening result shows both dice and the winner", async ({ mount }) => {
   ).toHaveCount(2);
 });
 
-test("opening roll prompt appears in the banner for the player whose turn it is", async ({
-  mount,
+test("opening roll action appears for the player whose turn it is", async ({
+  mount, page,
 }) => {
+  await page.evaluate(() => localStorage.setItem("bg_auto_roll", "false"));
   const component = await mount(
     <MockGameWrapper
       playerColor="white"
@@ -49,13 +46,14 @@ test("opening roll prompt appears in the banner for the player whose turn it is"
       <GameScreen />
     </MockGameWrapper>,
   );
-  await expect(component.getByText("Roll to start")).toBeVisible();
+  await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
   await expect(component.getByText("Tap to roll")).toBeVisible();
 });
 
-test("banner shows the roll prompt after a server auto-pass (stale dice in rolling state)", async ({
-  mount,
+test("roll action remains available after a server auto-pass with stale dice", async ({
+  mount, page,
 }) => {
+  await page.evaluate(() => localStorage.setItem("bg_auto_roll", "false"));
   const component = await mount(
     <MockGameWrapper
       playerColor="white"
@@ -69,10 +67,7 @@ test("banner shows the roll prompt after a server auto-pass (stale dice in rolli
       <GameScreen />
     </MockGameWrapper>,
   );
-  await expect(component.getByTestId("guidance-banner")).toHaveAttribute(
-    "data-variant",
-    "roll",
-  );
+  await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
   await expect(component.getByText("Tap to roll")).toBeVisible();
 });
 

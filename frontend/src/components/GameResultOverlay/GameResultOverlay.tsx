@@ -23,12 +23,8 @@ interface GameResultOverlayProps {
   homeLabel?: string;
 }
 
-interface ScoreRow {
-  color: Color;
-  name: string;
-  score: number;
-  isYou: boolean;
-  isWinner: boolean;
+function initialFor(name: string) {
+  return name.trim().charAt(0).toUpperCase() || "?";
 }
 
 export default function GameResultOverlay({
@@ -50,7 +46,6 @@ export default function GameResultOverlay({
   homeLabel,
 }: GameResultOverlayProps) {
   const { t, locale } = useI18n();
-  const opponentColor = playerColor === "white" ? "black" : "white";
   const youWonGame = winner === playerColor;
   // The server marks the match as over when the room is closed (target
   // reached, or the opponent left/forfeited). Fall back to the score-vs-target
@@ -79,20 +74,9 @@ export default function GameResultOverlay({
     backgammon: t("game.backgammonExplanation"),
   };
 
-  const selfScore = matchScore[playerColor] ?? 0;
-  const oppScore = matchScore[opponentColor] ?? 0;
-
-  // Winner's row sits on top, its score counts up from the value before this win.
-  const rows: ScoreRow[] =
-    winner === playerColor
-      ? [
-          { color: playerColor, name: selfLabel, score: selfScore, isYou: true, isWinner: true },
-          { color: opponentColor, name: oppLabel, score: oppScore, isYou: false, isWinner: false },
-        ]
-      : [
-          { color: opponentColor, name: oppLabel, score: oppScore, isYou: false, isWinner: true },
-          { color: playerColor, name: selfLabel, score: selfScore, isYou: true, isWinner: false },
-        ];
+  const winnerScore = matchScore[winner] ?? 0;
+  const loserScore = matchScore[loser] ?? 0;
+  const loserLabel = loser === playerColor ? selfLabel : oppLabel;
 
   function label() {
     if (locale === "he") {
@@ -114,7 +98,12 @@ export default function GameResultOverlay({
       return t("game.wonScope", { winner: winnerDisplayLabel, scope, cube: cubeSuffix });
     }
 
-    return t("game.wonBy", { winner: winnerDisplayLabel, scope, type: t(`game.${winType}`), cube: cubeSuffix });
+    return t("game.wonBy", {
+      winner: winnerDisplayLabel,
+      scope,
+      type: winLabels[winType],
+      cube: cubeSuffix,
+    });
   }
 
   function pointExplanation() {
@@ -138,22 +127,61 @@ export default function GameResultOverlay({
         animate={{ scale: 1, y: 0 }}
         transition={{ type: "spring", stiffness: 200, damping: 16 }}
       >
-        {isMatchOver && <span className={styles.resultMark} aria-hidden="true" />}
-
-        <h2
-          className={`${styles.title} ${youWonGame || youWonMatch ? styles.titleWin : styles.titleLose}`}
+        <button
+          type="button"
+          className={styles.closeButton}
+          aria-label={isMatchOver ? (homeLabel ?? t("common.backHome")) : t("game.quitMatch")}
+          onClick={onHome}
         >
-          {isMatchOver
-            ? youWonMatch
-              ? t("game.matchWon")
-              : t("game.matchLost")
-            : youWonGame
-              ? t("game.youWin")
-              : t("game.youLost")}
-        </h2>
+          ×
+        </button>
+
+        <div className={styles.resultHeader}>
+          {isMatchOver && <span className={styles.resultMark} aria-hidden="true" />}
+          <p className={styles.kicker}>
+            {isMatchOver ? t("game.matchResult") : t("game.gameResult")}
+          </p>
+          <h2
+            className={`${styles.title} ${youWonGame || youWonMatch ? styles.titleWin : styles.titleLose}`}
+          >
+            {isMatchOver
+              ? youWonMatch
+                ? t("game.matchWon")
+                : t("game.matchLost")
+              : youWonGame
+                ? t("game.youWin")
+                : t("game.youLost")}
+          </h2>
+        </div>
+
+        <div className={styles.heroResult}>
+          <div className={`${styles.playerPanel} ${styles.winnerPanel}`}>
+            <span className={styles.playerRole}>{t("game.winner")}</span>
+            <span className={styles.avatar}>{initialFor(winnerLabel)}</span>
+            <span className={styles.playerName}>{winnerLabel}</span>
+          </div>
+
+          <div className={styles.scoreLockup} aria-label={t("match.score")}>
+            <AnimatedNumber
+              from={Math.max(0, winnerScore - points)}
+              to={winnerScore}
+              className={styles.heroScore}
+              data-testid={`score-${winner}`}
+            />
+            <span className={styles.scoreDivider}>-</span>
+            <span className={styles.heroScore} data-testid={`score-${loser}`}>
+              {loserScore}
+            </span>
+          </div>
+
+          <div className={`${styles.playerPanel} ${styles.loserPanel}`}>
+            <span className={styles.playerRole}>{t("game.loser")}</span>
+            <span className={styles.avatar}>{initialFor(loserLabel)}</span>
+            <span className={styles.playerName}>{loserLabel}</span>
+          </div>
+        </div>
 
         <p className={styles.subtitle}>{label()}</p>
-        <p className={styles.pointsNote}>{pointExplanation()}</p>
 
         {reason === "leave" && (
           <p className={styles.subtitle} data-testid="opponent-left-note">
@@ -162,31 +190,29 @@ export default function GameResultOverlay({
         )}
 
         <div className={styles.scoreboard}>
-          {rows.map((row) => (
-            <div
-              key={row.color}
-              className={`${styles.row} ${row.isWinner ? styles.rowWin : ""}`}
-              data-testid={`score-row-${row.color}`}
-            >
-                <span className={styles.nameWrap}>
-                  <span className={styles.name}>{row.name}</span>
-                {row.isYou && <span className={styles.youTag}>{t("common.youLower")}</span>}
-              </span>
-              {row.isWinner ? (
-                <AnimatedNumber
-                  from={Math.max(0, row.score - points)}
-                  to={row.score}
-                  className={`${styles.score} ${styles.scoreWin}`}
-                  data-testid={`score-${row.color}`}
-                />
-              ) : (
-                <span className={styles.score} data-testid={`score-${row.color}`}>
-                  {row.score}
-                </span>
-              )}
-            </div>
-          ))}
+          <div className={styles.statRow}>
+            <span>{t("game.levelOfPlay")}</span>
+            <strong>{youWonMatch ? t("game.galactic") : t("game.beginner")}</strong>
+          </div>
+          <div className={styles.statRow}>
+            <span>{t("game.matchScore")}</span>
+            <strong>{winnerScore} - {loserScore}</strong>
+          </div>
+          <div className={styles.statRow}>
+            <span>{t("game.pointsAwarded")}</span>
+            <strong>+{points}</strong>
+          </div>
+          <div className={styles.statRow}>
+            <span>{t("common.doublingCube")}</span>
+            <strong>×{cube}</strong>
+          </div>
+          <div className={styles.statRow}>
+            <span>{t("match.result")}</span>
+            <strong>{winLabels[winType]}</strong>
+          </div>
         </div>
+
+        <p className={styles.pointsNote}>{pointExplanation()}</p>
 
         <div className={styles.buttonRow}>
           {!isMatchOver && (

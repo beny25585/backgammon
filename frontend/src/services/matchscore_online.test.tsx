@@ -35,9 +35,16 @@ function freshState(): GameState {
   return { ...newGame(), version: 1 };
 }
 
+async function emitSocket(page: Page, message: unknown) {
+  await page.evaluate((payload) => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit(payload);
+  }, message);
+}
+
 test("online matchScore survives game_ended then fresh opening_roll", async ({ mount, page }) => {
   await seedFakeSocket(page);
-  const component = await mount(
+  await mount(
     <GameProvider roomId="test-room" playerColor="white">
       <MatchScoreProbe />
     </GameProvider>,
@@ -47,18 +54,83 @@ test("online matchScore survives game_ended then fresh opening_roll", async ({ m
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     return !!ws;
   });
-  const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+  await expect(page.getByTestId("score")).toHaveText('{"white":0,"black":0}');
 
-  ws.emit({ type: "state_update", payload: freshState(), playerColor: "white", initial: true });
-  await expect(component.getByTestId("score")).toHaveText('{"white":0,"black":0}');
+  await emitSocket(page, {
+    type: "state_update",
+    payload: freshState(),
+    playerColor: "white",
+    initial: true,
+  });
+  await expect(page.getByTestId("score")).toHaveText('{"white":0,"black":0}');
 
-  ws.emit({
+  await emitSocket(page, {
     type: "game_ended",
     payload: { winner: "white", winType: "single", points: 1, cube: 1, whiteScore: 1, blackScore: 0, targetPoints: 7 },
   });
-  await expect(component.getByTestId("score")).toHaveText('{"white":1,"black":0}');
+  await expect(page.getByTestId("score")).toHaveText('{"white":1,"black":0}');
+  await expect(page.getByTestId("game-result")).toHaveText("null");
 
   // Fresh opening_roll = next game auto-started by server after 30s countdown
-  ws.emit({ type: "state_update", payload: { ...freshState(), version: 2 }, playerColor: "white", initial: false });
-  await expect(component.getByTestId("score")).toHaveText('{"white":1,"black":0}');
+  await emitSocket(page, {
+    type: "state_update",
+    payload: { ...freshState(), version: 2 },
+    playerColor: "white",
+    initial: false,
+  });
+  await expect(page.getByTestId("score")).toHaveText('{"white":1,"black":0}');
+});
+
+test("online result appears only when the match is over", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <MatchScoreProbe />
+    </GameProvider>,
+  );
+
+  await page.waitForFunction(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    return !!ws;
+  });
+
+  await emitSocket(page, {
+    type: "state_update",
+    payload: freshState(),
+    playerColor: "white",
+    initial: true,
+  });
+
+  await emitSocket(page, {
+    type: "game_ended",
+    payload: { winner: "white", winType: "single", points: 1, cube: 1, whiteScore: 7, blackScore: 4, targetPoints: 7 },
+  });
+
+  await expect(page.getByTestId("score")).toHaveText('{"white":7,"black":4}');
+  await expect(page.getByTestId("game-result")).toHaveText('{"winner":"white"}');
+});
+
+test("online matchScore hydrates from the initial reconnect snapshot", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <MatchScoreProbe />
+    </GameProvider>,
+  );
+
+  await page.waitForFunction(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    return !!ws;
+  });
+  await expect(page.getByTestId("score")).toHaveText('{"white":0,"black":0}');
+
+  await emitSocket(page, {
+    type: "state_update",
+    payload: freshState(),
+    playerColor: "white",
+    initial: true,
+    matchScore: { white: 2, black: 1 },
+  });
+
+  await expect(page.getByTestId("score")).toHaveText('{"white":2,"black":1}');
 });

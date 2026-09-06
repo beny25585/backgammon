@@ -161,6 +161,21 @@ class GameConsumerTests(TransactionTestCase):
 
         await communicator.disconnect()
 
+    async def test_initial_state_update_includes_persisted_match_score(self):
+        await database_sync_to_async(GameRoom.objects.filter(pk=self.room.pk).update)(
+            white_score=2,
+            black_score=1,
+        )
+        communicator = self._make_communicator(self.white_user)
+        connected, _ = await communicator.connect(timeout=10)
+        self.assertTrue(connected)
+
+        response = await communicator.receive_json_from()
+
+        self.assertEqual(response["type"], "state_update")
+        self.assertEqual(response["matchScore"], {"white": 2, "black": 1})
+        await communicator.disconnect()
+
     async def test_player_joined_broadcast_includes_username(self):
         comm_white = self._make_communicator(self.white_user)
         await comm_white.connect(timeout=10)

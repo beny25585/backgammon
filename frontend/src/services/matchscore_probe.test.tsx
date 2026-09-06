@@ -17,13 +17,13 @@ test("matchScore persists after auto-advance countdown", async ({
     </LocalGameProvider>,
   );
 
-  await expect(component.getByText("You Win!")).toBeVisible();
+  await expect(component.getByText("You Win!")).toHaveCount(0);
   await expect(component.getByTestId("score")).toHaveText(
     '{"white":4,"black":0}',
   );
 
   await page.clock.fastForward(31000);
-  await expect(component.getByText("You Win!")).not.toBeVisible();
+  await expect(component.getByText("You Win!")).toHaveCount(0);
   const body = await page.evaluate(() => document.body.innerText);
   clientLogger.debug("BODY:", { body });
   clientLogger.debug("ERRORS:", { errors });

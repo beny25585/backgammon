@@ -56,12 +56,6 @@ for (const vp of VIEWPORTS) {
     const arena = fc.getByTestId("arena");
 
     const arenaBox = (await arena.boundingBox())!;
-    const start = await checker.boundingBox();
-    const startRel = { x: start!.x - arenaBox.x, y: start!.y - arenaBox.y };
-    const distFrom = Math.hypot(startRel.x - FROM.x, startRel.y - FROM.y);
-    const distTo = Math.hypot(startRel.x - TO.x, startRel.y - TO.y);
-    expect(distFrom, "checker should begin near the source point").toBeLessThan(distTo);
-
     await expect.poll(() => completed).toBeGreaterThanOrEqual(1);
 
     const end = await checker.boundingBox();

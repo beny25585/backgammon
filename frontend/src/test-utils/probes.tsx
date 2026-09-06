@@ -86,8 +86,15 @@ export function GameOverProbe() {
 }
 
 export function MatchScoreProbe() {
-  const { matchScore } = useGame();
-  return <div data-testid="score">{JSON.stringify(matchScore)}</div>;
+  const { gameResult, matchScore } = useGame();
+  return (
+    <>
+      <div data-testid="score">{JSON.stringify(matchScore)}</div>
+      <div data-testid="game-result">
+        {JSON.stringify(gameResult ? { winner: gameResult.winner } : null)}
+      </div>
+    </>
+  );
 }
 
 export function ErrorCardHarness() {

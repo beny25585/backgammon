@@ -271,7 +271,7 @@ function gameOverState(): GameState {
   return { ...newGame(), phase: "game_over", winner: "white", version: 2 };
 }
 
-test("game_ended sets the result and a fresh state_update clears it", async ({
+test("an intermediate game end updates state without showing the match result", async ({
   mount,
   page,
 }) => {
@@ -288,9 +288,7 @@ test("game_ended sets the result and a fresh state_update clears it", async ({
     targetPoints: 7,
   });
 
-  await expect(component.getByTestId("game-result")).toHaveText(
-    '{"winner":"white"}',
-  );
+  await expect(component.getByTestId("game-result")).toHaveText("null");
 
   // Server auto-starts the next game and broadcasts a fresh opening roll.
   await emitBroadcast(page, { ...gameOverState(), version: 3, phase: "opening_roll" });
@@ -299,7 +297,7 @@ test("game_ended sets the result and a fresh state_update clears it", async ({
   await expect(component.getByTestId("phase")).toHaveText("opening_roll");
 });
 
-test("handleNextGame sends a next_game intent", async ({ mount, page }) => {
+test("handleNextGame sends a next_game intent after an intermediate game", async ({ mount, page }) => {
   const component = await mountProbe(mount, page);
   await emitInitialState(page, { ...midGameState(), version: 1 });
 
@@ -312,9 +310,7 @@ test("handleNextGame sends a next_game intent", async ({ mount, page }) => {
     blackScore: 0,
     targetPoints: 7,
   });
-  await expect(component.getByTestId("game-result")).toHaveText(
-    '{"winner":"white"}',
-  );
+  await expect(component.getByTestId("game-result")).toHaveText("null");
 
   await component.getByTestId("next").click();
 

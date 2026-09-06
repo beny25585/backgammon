@@ -7,8 +7,6 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
-import AuthScreen from "./components/AuthScreen";
-import HomeScreen from "./components/HomeScreen";
 import WaitingRoom from "./components/WaitingRoom";
 import GameScreen from "./components/GameScreen";
 import LinkEntry from "./components/LinkEntry";
@@ -19,9 +17,24 @@ import { LocalGameProvider } from "./services/localGameContext";
 import { parseTimeControl } from "./lib/clock";
 import type { Color } from "./types/game";
 
-const TOURNAMENTS_URL =
+const configuredTournamentsUrl =
   (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
-    ?.VITE_TOURNAMENTS_URL ?? "http://127.0.0.1:5174/tournaments/";
+    ?.VITE_TOURNAMENTS_URL?.trim();
+const TOURNAMENTS_URL = configuredTournamentsUrl || "/tournaments/";
+
+function safeTournamentReturnUrl(value: string | null): URL | null {
+  if (!value) return null;
+  try {
+    const base = new URL(TOURNAMENTS_URL, window.location.origin);
+    const next = new URL(value, window.location.origin);
+    const basePath = base.pathname.replace(/\/+$/, "") || "/";
+    const isWithinBase =
+      next.pathname === basePath || next.pathname.startsWith(`${basePath}/`);
+    return next.origin === base.origin && isWithinBase ? next : null;
+  } catch {
+    return null;
+  }
+}
 
 function ReturnToTournaments() {
   window.location.replace(TOURNAMENTS_URL);
@@ -44,13 +57,13 @@ function GameRoute() {
   const playerColor =
     (new URLSearchParams(location.search).get("color") as Color) || "white";
   const params = new URLSearchParams(location.search);
-  const returnUrl = params.get("return");
+  const returnUrl = safeTournamentReturnUrl(params.get("return"));
   const tournamentId = params.get("tournament");
 
   function handleLeave(outcome?: "won" | "lost") {
     clearRoom();
     if (returnUrl) {
-      const next = new URL(returnUrl, window.location.origin);
+      const next = new URL(returnUrl);
       if (outcome) next.searchParams.set("matchResult", outcome);
       if (tournamentId) next.searchParams.set("tournament", tournamentId);
       window.location.assign(next.toString());

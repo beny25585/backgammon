@@ -156,16 +156,17 @@ export function LocalGameProvider({
   const [matchWinner, setMatchWinner] = useState<Color | null>(null);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
 
-  // Auto-advance to next game after 30s
-  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
-    null,
-  );
+  const nextGameCountdown = null;
   const savedMatchRef = useRef(false);
+  const betweenGamesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const MATCH_TARGET = matchTarget;
 
   const handleNextGame = useCallback(() => {
+    if (betweenGamesTimer.current) {
+      clearTimeout(betweenGamesTimer.current);
+      betweenGamesTimer.current = null;
+    }
     openingDiceRef.current = null;
     setGameResult(null);
     setState(newGame());
@@ -183,68 +184,51 @@ export function LocalGameProvider({
     if (onQuitMatch) onQuitMatch();
   }, [setTurnColor, onQuitMatch]);
 
-  // Score game when it ends (uses state directly, no setState nesting).
-  const [prevPhase, setPrevPhase] = useState(state.phase);
-  if (prevPhase !== state.phase) {
-    setPrevPhase(state.phase);
-    if (state.phase === "game_over" && state.winner && gameResult === null) {
-      const base =
-        state.winType === "single" ? 1 : state.winType === "gammon" ? 2 : 3;
-      const points = base * (state.cube || 1);
+  const prevPhaseRef = useRef(state.phase);
+  useEffect(() => {
+    const phaseChanged = prevPhaseRef.current !== state.phase;
+    prevPhaseRef.current = state.phase;
+    if (!phaseChanged || state.phase !== "game_over" || !state.winner || gameResult) {
+      return;
+    }
 
+    const base =
+      state.winType === "single" ? 1 : state.winType === "gammon" ? 2 : 3;
+    const points = base * (state.cube || 1);
+    const nextScore = {
+      ...matchScore,
+      [state.winner]: matchScore[state.winner] + points,
+    };
+    setMatchScore(nextScore);
+
+    if (nextScore[state.winner] >= MATCH_TARGET) {
+      setMatchWinner(state.winner);
       setGameResult({
         winner: state.winner,
         winType: state.winType || "single",
         points,
         cube: state.cube || 1,
-        matchScore: { ...matchScore },
+        matchScore: nextScore,
         targetPoints: MATCH_TARGET,
+        matchOver: true,
       });
-
-      const nextScore = { ...matchScore };
-      nextScore[state.winner] += points;
-      setMatchScore(nextScore);
-      if (nextScore[state.winner] >= MATCH_TARGET) {
-        setMatchWinner(state.winner);
-      }
+      return;
     }
-  }
 
-  // Reset the countdown whenever no result is shown or the match is over.
-  if (
-    (!gameResult || matchWinner || MATCH_TARGET <= 1) &&
-    nextGameCountdown !== null
-  ) {
-    setNextGameCountdown(null);
-  }
+    if (!betweenGamesTimer.current) {
+      betweenGamesTimer.current = setTimeout(() => {
+        betweenGamesTimer.current = null;
+        handleNextGame();
+      }, 1500);
+    }
+  }, [gameResult, handleNextGame, matchScore, MATCH_TARGET, state]);
 
-  // Start the countdown when a new game result is shown.
-  if (
-    gameResult &&
-    !matchWinner &&
-    MATCH_TARGET > 1 &&
-    nextGameCountdown === null
-  ) {
-    setNextGameCountdown(30);
-  }
-
-  // Auto-advance when game result is shown and match isn't over
-  useEffect(() => {
-    if (!gameResult || matchWinner || MATCH_TARGET <= 1) return;
-
-    autoAdvanceTimer.current = setTimeout(() => {
-      handleNextGame();
-    }, 30000);
-
-    const tick = setInterval(() => {
-      setNextGameCountdown((prev) => (prev == null ? null : prev - 1));
-    }, 1000);
-
-    return () => {
-      if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-      clearInterval(tick);
-    };
-  }, [gameResult, matchWinner, handleNextGame, MATCH_TARGET]);
+  useEffect(
+    () => () => {
+      if (betweenGamesTimer.current) clearTimeout(betweenGamesTimer.current);
+    },
+    [],
+  );
 
   // Auto-save match on completion (local/AI mode only — online mode saves server-side)
   useEffect(() => {

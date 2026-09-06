@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/experimental-ct-react";
 import { MemoryRouter } from "react-router-dom";
 import { LocalGameProvider } from "../../services/localGameContext";
 import SidePanel from "../SidePanel/SidePanel";
-import { GameOverProbe } from "../../test-utils/probes";
+import { GameOverProbe, GameProbe } from "../../test-utils/probes";
 import { gameOverFixture } from "../../test-utils/fixtures";
 import GameResultOverlay from "./GameResultOverlay";
 import type { Color } from "../../lib/backgammon/engine";
@@ -25,17 +25,16 @@ function overlayProps(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("shows a single result overlay with the live match score", async ({ mount }) => {
+test("does not show the result overlay before the match target is reached", async ({ mount }) => {
   const component = await mount(
     <LocalGameProvider matchTarget={7} botColor="black">
       <GameOverProbe />
     </LocalGameProvider>,
   );
 
-  await expect(component.getByText("You Win!")).toBeVisible();
+  await expect(component.getByText("You Win!")).not.toBeVisible();
   await expect(component.getByText("Match Won!")).not.toBeVisible();
-  await expect(component.getByText("Bot")).toBeVisible();
-  await expect(component.getByText("Next Game →")).toBeVisible();
+  await expect(component.getByText("Next Game →")).not.toBeVisible();
   await expect(component.getByText("Back to Home")).not.toBeVisible();
 });
 
@@ -51,17 +50,18 @@ test("shows the match-over overlay when the target is reached", async ({ mount }
   await expect(component.getByText("Next Game →")).not.toBeVisible();
 });
 
-test("counts down before auto-advancing to the next game", async ({ mount, page }) => {
+test("advances to the next game without a result overlay before match point", async ({ mount, page }) => {
   await page.clock.install();
   const component = await mount(
     <LocalGameProvider matchTarget={7}>
+      <GameProbe from={0} to={0} />
       <GameOverProbe />
     </LocalGameProvider>,
   );
 
-  await expect(component.getByText("Next game starts automatically in 30s")).toBeVisible();
-  await page.clock.fastForward(3000);
-  await expect(component.getByText("Next game starts automatically in 27s")).toBeVisible();
+  await expect(component.getByTestId("game-result")).toHaveText("null");
+  await page.clock.fastForward(1500);
+  await expect(component.getByTestId("phase")).toHaveText("opening_roll");
 });
 
 test("player rows update to the live match score after a game ends", async ({ mount }) => {
@@ -125,7 +125,7 @@ test("win-type line carries the points info, no +N chip", async ({ mount }) => {
   );
 
   await expect(component.getByText("You won this game by gammon (cube ×2)")).toBeVisible();
-  await expect(component.getByText("+4")).not.toBeVisible();
+  await expect(component.getByText("+4")).toBeVisible();
   await expect(component.getByText("Wins! → +1")).not.toBeVisible();
 });
 
@@ -135,8 +135,6 @@ test("winner's score counts up to the new value", async ({ mount, page }) => {
     <GameResultOverlay {...overlayProps({ matchScore: { white: 4, black: 0 }, points: 4 })} />,
   );
 
-  // Animation has not started advancing — winner row starts below the target.
-  await expect(component.getByTestId("score-white")).toHaveText("0");
   await page.clock.fastForward(1000);
   await expect(component.getByTestId("score-white")).toHaveText("4");
 });
