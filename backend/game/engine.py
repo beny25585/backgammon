@@ -249,6 +249,57 @@ class BackgammonEngine:
         s['version'] = s.get('version', 0) + 1
         return {'success': True, 'winner': winner, 'both': [w, b]}
 
+    def has_interrupted_opening_move(self):
+        """Return True for the legacy state that discarded the opening dice."""
+        s = self.state
+        opening = s.get('openingRoll') or {}
+        white = opening.get('white')
+        black = opening.get('black')
+        if not isinstance(white, int) or not isinstance(black, int) or white == black:
+            return False
+        winner = 'white' if white > black else 'black'
+        message = str(s.get('message') or '').lower()
+        return (
+            s.get('phase') == 'rolling'
+            and s.get('turn') == winner
+            and not s.get('dice')
+            and not s.get('remaining')
+            and s.get('lastMove') is None
+            and s.get('moveHistory') is None
+            and message in (f'{winner} goes first', f'{winner} starts')
+        )
+
+    def activate_opening_move(self, allow_interrupted=False):
+        """Make the two opening dice playable by the player who rolled higher."""
+        s = self.state
+        if s.get('phase') != 'opening_result':
+            if not allow_interrupted or not self.has_interrupted_opening_move():
+                return {'success': False, 'message': 'Opening roll is not ready'}
+
+        opening = s.get('openingRoll') or {}
+        white = opening.get('white')
+        black = opening.get('black')
+        if not isinstance(white, int) or not isinstance(black, int) or white == black:
+            return {'success': False, 'message': 'Opening dice are incomplete'}
+
+        winner = 'white' if white > black else 'black'
+        opening_dice = self._ordered_dice(white, black)
+        s['turn'] = winner
+        s['dice'] = opening_dice
+        s['remaining'] = list(opening_dice)
+        s['phase'] = 'moving'
+        s['lastMove'] = []
+        s['moveHistory'] = []
+        s['message'] = f'{winner} goes first'
+        s.pop('openingDice', None)
+        s['version'] = s.get('version', 0) + 1
+        return {
+            'success': True,
+            'winner': winner,
+            'dice': opening_dice,
+            'remaining': list(opening_dice),
+        }
+
     def make_move(self, from_point, to_point, player_color):
         if self.state['turn'] != player_color:
             return {'success': False, 'message': 'Not your turn'}

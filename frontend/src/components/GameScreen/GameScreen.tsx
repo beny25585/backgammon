@@ -5,6 +5,7 @@ import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
 import { DiceRow } from "../Dice";
 import { useI18n } from "../../i18n/I18nProvider";
+import type { Color, GameState } from "../../lib/backgammon/engine";
 import {
   DEFAULT_BOARD_THEME,
   isBoardTheme,
@@ -27,6 +28,25 @@ function initialBoardTheme(): BoardTheme {
 interface GameScreenProps {
   onLeave?: (outcome?: "won" | "lost") => void;
   homeLabel?: string;
+}
+
+function hasInterruptedOpeningMove(
+  state: GameState | null,
+  playerColor: Color,
+): boolean {
+  if (!state || state.phase !== "rolling" || state.turn !== playerColor) return false;
+  const { white, black } = state.openingRoll;
+  if (white === null || black === null || white === black) return false;
+  const winner = white > black ? "white" : "black";
+  const message = state.message.toLowerCase();
+  return (
+    playerColor === winner &&
+    state.dice.length === 0 &&
+    state.remaining.length === 0 &&
+    state.lastMove === null &&
+    state.moveHistory === null &&
+    (message === `${winner} goes first` || message === `${winner} starts`)
+  );
 }
 
 export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
@@ -69,12 +89,20 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
   }, [boardTheme]);
 
-  const automaticOpeningRollKey =
+  const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
+  const interruptedOpeningMoveKey =
+    interruptedOpeningMove && state
+      ? `resume:${state.openingRoll.white}:${state.openingRoll.black}`
+      : null;
+  const waitingForOpeningRoll =
     state?.phase === "opening_roll" &&
     state.turn === playerColor &&
-    state.openingRoll[playerColor] === null
+    state.openingRoll[playerColor] === null;
+  const automaticOpeningRollKey =
+    interruptedOpeningMoveKey ??
+    (waitingForOpeningRoll
       ? `${state.turn}:${state.openingRoll.white ?? "-"}:${state.openingRoll.black ?? "-"}`
-      : null;
+      : null);
 
   useEffect(() => {
     if (!automaticOpeningRollKey) {
@@ -90,6 +118,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   const needsToRoll =
     !noMovesMessage &&
     state?.phase === "rolling" &&
+    !interruptedOpeningMove &&
     state.remaining.length === 0 &&
     state.turn === playerColor;
 

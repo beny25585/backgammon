@@ -62,6 +62,33 @@ test("opening roll starts automatically without showing a roll action", async ({
   await expect.poll(() => rolls).toBe(1);
 });
 
+test("recovers an interrupted opening move instead of requesting a new roll", async ({
+  mount,
+}) => {
+  let recoveries = 0;
+  const component = await mount(
+    <MockGameWrapper
+      playerColor="white"
+      state={makeGameState({
+        phase: "rolling",
+        turn: "white",
+        openingRoll: { white: 5, black: 2 },
+        dice: [],
+        remaining: [],
+        lastMove: null,
+        moveHistory: null,
+        message: "white goes first",
+      })}
+      context={{ rollDice: () => recoveries++ }}
+    >
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+
+  await expect(component.getByTitle("Tap to roll")).toHaveCount(0);
+  await expect.poll(() => recoveries).toBe(1);
+});
+
 test("roll action remains available after a server auto-pass with stale dice", async ({
   mount, page,
 }) => {

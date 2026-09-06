@@ -540,6 +540,36 @@ class GameConsumerTests(TransactionTestCase):
             self.assertEqual(len(remaining), 2)
         self.assertEqual(event['payload']['version'], 1)
 
+    async def test_roll_intent_recovers_discarded_opening_dice_without_rerolling(self):
+        await self._seed_state(
+            phase='rolling',
+            turn='white',
+            dice=[],
+            remaining=[],
+            openingRoll={'white': 5, 'black': 2},
+            lastMove=None,
+            moveHistory=None,
+            message='white goes first',
+        )
+        comm_white, comm_black = await self._connect_both()
+
+        with patch('game.consumers.fetch_turn_dice') as fetch_turn:
+            await comm_white.send_json_to({
+                'type': 'state_update',
+                'payload': {'action': 'roll'},
+            })
+            event = await self._receive_until(
+                comm_white,
+                lambda e: e.get('payload', {}).get('phase') == 'moving',
+            )
+
+        fetch_turn.assert_not_called()
+        self.assertEqual(event['payload']['turn'], 'white')
+        self.assertEqual(event['payload']['dice'], [5, 2])
+        self.assertEqual(event['payload']['remaining'], [5, 2])
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
     async def test_illegal_move_rejected_and_state_unchanged(self):
         await self._seed_state(phase='moving', turn='white', dice=[3, 5], remaining=[3, 5])
         comm_white, comm_black = await self._connect_both()
@@ -2037,6 +2067,47 @@ class BackgammonEngineTests(TestCase):
         self.assertEqual(engine.state["turn"], "black")
         self.assertEqual(engine.state["dice"], [6, 1])
         self.assertEqual(engine.state["remaining"], [6, 1])
+
+    def test_activate_opening_move_rebuilds_missing_dice(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update({
+            'phase': 'opening_result',
+            'turn': 'white',
+            'openingRoll': {'white': 5, 'black': 2},
+            'dice': [],
+            'remaining': [],
+        })
+        engine = BackgammonEngine(state)
+
+        result = engine.activate_opening_move()
+
+        self.assertTrue(result['success'])
+        self.assertEqual(engine.state['phase'], 'moving')
+        self.assertEqual(engine.state['turn'], 'white')
+        self.assertEqual(engine.state['dice'], [5, 2])
+        self.assertEqual(engine.state['remaining'], [5, 2])
+
+    def test_interrupted_opening_move_is_not_a_new_turn_roll(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update({
+            'phase': 'rolling',
+            'turn': 'black',
+            'openingRoll': {'white': 1, 'black': 6},
+            'dice': [],
+            'remaining': [],
+            'lastMove': None,
+            'moveHistory': None,
+            'message': 'black goes first',
+        })
+        engine = BackgammonEngine(state)
+
+        self.assertTrue(engine.has_interrupted_opening_move())
+        result = engine.activate_opening_move(allow_interrupted=True)
+
+        self.assertTrue(result['success'])
+        self.assertEqual(engine.state['phase'], 'moving')
+        self.assertEqual(engine.state['dice'], [6, 1])
+        self.assertEqual(engine.state['remaining'], [6, 1])
 
     def test_roll_opening_die_tie_resets_and_rerolls(self):
         engine = self._engine()

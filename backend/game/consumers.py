@@ -433,7 +433,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if clock is not None and new_active:
             await self._reschedule_timeout_from_state()
 
-        # Opening result is only shown briefly; then the winner must roll.
+        # Opening result is only shown briefly; then the winner plays the two
+        # dice that decided the opening roll.
         if state.get('phase') == 'opening_result':
             await self._arm_opening_result_watch()
 
@@ -464,6 +465,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         turn rolls use the normal URL.
         """
         state = engine.state
+        # Recover games that were saved by the old opening flow after it had
+        # cleared the deciding dice. This roll intent restores those dice; it
+        # must never fetch a second roll for the opening winner.
+        if engine.has_interrupted_opening_move():
+            return engine.activate_opening_move(allow_interrupted=True)
         if state.get('phase') == 'opening_roll':
             if state.get('turn') != self.player_color:
                 return {'success': False, 'message': 'Not your turn to roll'}
@@ -504,8 +510,16 @@ class GameConsumer(AsyncWebsocketConsumer):
         if state.get('phase') != 'opening_result':
             return
 
-        state['phase'] = 'moving'
-        state.pop('openingDice', None)
+        engine = BackgammonEngine(state)
+        result = engine.activate_opening_move()
+        if not result.get('success'):
+            logger.warning(
+                "Could not activate opening dice: room=%s message=%s",
+                self.room_id,
+                result.get('message'),
+            )
+            return
+        state = engine.state
         sequence = await record_event_and_advance(room, None, 'opening_result_done', state)
         state['version'] = sequence
 
