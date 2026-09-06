@@ -141,8 +141,9 @@ export default function GameBoard({
     setSelected(from);
   }
 
-  function handleMove(to: Target) {
-    const from = selected ?? (autoMove?.to === to ? autoMove.from : null);
+  function handleMove(to: Target, explicitFrom?: Source) {
+    const from =
+      explicitFrom ?? selected ?? (autoMove?.to === to ? autoMove.from : null);
     if (from === null) return;
     makeMove(from, to);
     setSelected(null);

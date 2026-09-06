@@ -24,7 +24,7 @@ interface BoardProps {
   selected: Source | null;
   legalTargets: Target[];
   onSelect: (from: Source | null) => void;
-  onMove: (to: Target) => void;
+  onMove: (to: Target, from?: Source) => void;
   legalFromPoints: Source[];
   onUndo?: () => void;
   onConfirm?: () => void;
@@ -37,6 +37,17 @@ function getCheckerSize(board: HTMLElement): number {
   const checkerEl = board.querySelector<HTMLElement>("[data-checker]");
   if (!checkerEl) return 30;
   return checkerEl.getBoundingClientRect().width;
+}
+
+function checkerCountAt(
+  state: GameState,
+  location: Source | Target,
+  color: Color,
+): number {
+  if (typeof location === "number") {
+    return Math.abs(state.points[location] ?? 0);
+  }
+  return location === BAR ? state.bar[color] : state.home[color];
 }
 
 function preferredDirectMove(moves: Move[], remaining: number[]): Move | null {
@@ -78,9 +89,6 @@ export function Board({
     undo?: boolean;
     external?: boolean;
     committed: boolean;
-    pending:
-      | { kind: "move"; historyLen: number }
-      | { kind: "undo"; historyLen: number };
   } | null>(null);
 
   const knownLastMoveRef = useRef<
@@ -90,20 +98,21 @@ export function Board({
     null,
   );
 
-  useEffect(() => {
-    if (!flyChecker?.committed) return;
-    const len = state.moveHistory?.length ?? 0;
-    const { kind, historyLen } = flyChecker.pending;
-    const landed =
-      kind === "move" ? len >= historyLen + 1 : len <= historyLen - 1;
-    if (landed) setFlyChecker(null);
-  }, [flyChecker, state.moveHistory]);
+  const flySourceCount = flyChecker
+    ? checkerCountAt(state, flyChecker.from, flyChecker.color)
+    : null;
 
   useEffect(() => {
     if (!flyChecker?.committed) return;
-    const t = setTimeout(() => setFlyChecker(null), 600);
+    const acknowledged =
+      flySourceCount !== null && flySourceCount < flyChecker.fromCount;
+    const t = setTimeout(
+      () =>
+        setFlyChecker((current) => (current === flyChecker ? null : current)),
+      acknowledged ? 0 : 600,
+    );
     return () => clearTimeout(t);
-  }, [flyChecker?.committed]);
+  }, [flyChecker, flySourceCount]);
 
   const lastMoveLast = useMemo(() => {
     const lm = state.lastMove;
@@ -141,7 +150,7 @@ export function Board({
       humanMoveRef.current = { from, to };
       const board = boardRef.current;
       if (!board) {
-        onMove(to);
+        onMove(to, from);
         return;
       }
       const fromEl = board.querySelector<HTMLElement>(
@@ -149,7 +158,7 @@ export function Board({
       );
       const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
       if (!fromEl || !toEl) {
-        onMove(to);
+        onMove(to, from);
         return;
       }
 
@@ -201,15 +210,16 @@ export function Board({
         size: checkerPx,
         to,
         committed: false,
-        pending: { kind: "move", historyLen: state.moveHistory?.length ?? 0 },
       });
+      // Dispatch immediately so the server/local engine works while the visual
+      // animation is running instead of adding the animation time to every move.
+      onMove(to, from);
     },
     [
       myColor,
       onMove,
       state.points,
       state.bar,
-      state.moveHistory?.length,
       displayTopPoints,
       computeSlotY,
     ],
@@ -276,16 +286,9 @@ export function Board({
         to,
         external: true,
         committed: false,
-        pending: { kind: "move", historyLen: state.moveHistory?.length ?? 0 },
       });
     },
-    [
-      state.points,
-      state.bar,
-      state.moveHistory,
-      displayTopPoints,
-      computeSlotY,
-    ],
+    [state.points, state.bar, displayTopPoints, computeSlotY],
   );
 
   useEffect(() => {
@@ -345,10 +348,7 @@ export function Board({
     const checkerPx = getCheckerSize(board);
 
     // Start from the TOP of the destination stack (the checker just moved there).
-    const toCount =
-      typeof last.to === "number"
-        ? Math.abs(state.points[last.to] ?? 0)
-        : Math.abs(state.bar[myColor ?? "white"] ?? 0);
+    const toCount = checkerCountAt(state, last.to, myColor ?? "white");
     const fromStackIndex = Math.min(Math.max(toCount - 1, 0), 4);
     const isFromTop =
       typeof last.to === "number" && displayTopPoints.includes(last.to);
@@ -391,14 +391,12 @@ export function Board({
       to: last.from,
       undo: true,
       committed: false,
-      pending: { kind: "undo", historyLen: state.moveHistory?.length ?? 0 },
     });
+    onUndo?.();
   }, [
     myColor,
     onUndo,
-    state.points,
-    state.bar,
-    state.moveHistory?.length,
+    state,
     displayTopPoints,
     computeSlotY,
     lastMoveLast,
@@ -408,10 +406,9 @@ export function Board({
   function hideTopCheckerAt(idx: number) {
     if (!flyChecker) return false;
     if (flyChecker.external) return flyChecker.to === idx;
-    return (
-      flyChecker.from === idx &&
-      Math.abs(state.points[idx] ?? 0) === flyChecker.fromCount
-    );
+    const stateApplied =
+      flySourceCount !== null && flySourceCount < flyChecker.fromCount;
+    return stateApplied ? flyChecker.to === idx : flyChecker.from === idx;
   }
 
   const handleClick = useCallback((idx: Source) => {
@@ -648,15 +645,9 @@ export function Board({
               setFlyChecker(null);
               return;
             }
-            const { to, undo } = flyChecker;
             setFlyChecker((prev) =>
               prev ? { ...prev, committed: true } : prev,
             );
-            if (undo) {
-              onUndo?.();
-            } else if (typeof to === "number" || to === "off") {
-              onMove(to);
-            }
           }}
         />
       )}

@@ -22,15 +22,18 @@ for (const vp of VIEWPORTS) {
         <FlyingChecker from={FROM} to={TO} color="black" size={36} onComplete={() => {}} />
       </div>,
     );
-    const checker = fc.getByTestId("flying-checker");
+    const flyer = fc.getByTestId("flying-checker");
+    const checker = flyer.locator("[data-checker]");
     await expect(checker).toHaveClass(/black/);
     await expect(checker).not.toHaveClass(/white/);
-    const size = await checker.evaluate((el) => {
+    const size = await flyer.evaluate((el) => {
       const style = getComputedStyle(el);
       return { width: style.width, height: style.height };
     });
     expect(size.width).toBe("36px");
     expect(size.height).toBe("36px");
+    await expect(checker).toHaveCSS("width", "36px");
+    await expect(checker).toHaveCSS("height", "36px");
   });
 
   test(`travels from the source point to the target point (${vp.name})`, async ({

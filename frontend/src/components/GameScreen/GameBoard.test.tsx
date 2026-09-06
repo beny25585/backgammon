@@ -140,6 +140,51 @@ test("source checker stays hidden during flight and reappears after", async ({ m
   await expect(sourceCheckers).toHaveCount(1);
 });
 
+test("releases the board as soon as an authoritative move is applied", async ({
+  mount,
+  page,
+}) => {
+  const initialState = simpleWhiteState();
+  const moveCalls: [Source, Target][] = [];
+  const component = await mountBoard(mount, {
+    state: initialState,
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+  const flyer = component.getByTestId("flying-checker");
+
+  await component.locator('[data-point-idx="23"]').click();
+  expect(moveCalls).toEqual([[23, 19]]);
+
+  const points = [...initialState.points];
+  points[23] = 0;
+  points[19] = 1;
+  const acknowledgedState = movingState({
+    points,
+    phase: "rolling",
+    turn: "black",
+    remaining: [],
+    lastMove: [{ from: 23, to: 19 }],
+    moveHistory: null,
+  });
+  await component.update(
+    <MockGameWrapper playerColor="white" state={acknowledgedState}>
+      <GameBoard
+        state={acknowledgedState}
+        playerColor="white"
+        makeMove={() => {}}
+        onLeave={() => {}}
+      />
+    </MockGameWrapper>,
+  );
+  await page.waitForTimeout(350);
+
+  expect(await flyer.count()).toBe(0);
+  await expect(
+    component.locator('[data-point-idx="19"] [data-checker]'),
+  ).toHaveCount(1);
+});
+
 test("no highlights and no moves when it is not the player's turn", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const state = movingState({ turn: "black", phase: "moving" });
