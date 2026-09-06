@@ -100,7 +100,7 @@ export default function SidePanel({
       </div>
 
       {menuOpen && (
-        <div className={styles.menuDrawer}>
+        <div className={styles.menuDrawer} data-testid="match-control-drawer">
           <div className={styles.header}>
             <span className={styles.kicker}>{t("game.matchControl")}</span>
             <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>

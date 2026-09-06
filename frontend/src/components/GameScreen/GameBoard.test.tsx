@@ -447,3 +447,44 @@ test("banner shows Accept/Decline when opponent offers a double", async ({ mount
   await component.getByTestId("double-accept").click();
   await expect.poll(() => accepted).toBe(true);
 });
+
+test("match control drawer stays above dice and board actions", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 474, height: 330 });
+  const state = movingState({
+    phase: "moving",
+    turn: "white",
+    dice: [5, 3],
+    remaining: [5, 3],
+  });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+  });
+
+  await component.getByRole("button", { name: "Match control" }).click();
+  const drawer = component.getByTestId("match-control-drawer");
+  const dice = component.getByTestId("dice-overlay");
+  await expect(drawer).toBeVisible();
+  await expect(dice).toBeVisible();
+
+  const drawerBox = await drawer.boundingBox();
+  const diceBox = await dice.boundingBox();
+  expect(drawerBox).not.toBeNull();
+  expect(diceBox).not.toBeNull();
+  const left = Math.max(drawerBox!.x, diceBox!.x);
+  const right = Math.min(drawerBox!.x + drawerBox!.width, diceBox!.x + diceBox!.width);
+  const top = Math.max(drawerBox!.y, diceBox!.y);
+  const bottom = Math.min(drawerBox!.y + drawerBox!.height, diceBox!.y + diceBox!.height);
+  expect(right).toBeGreaterThan(left);
+  expect(bottom).toBeGreaterThan(top);
+
+  const topLayer = await page.evaluate(
+    ({ x, y }) =>
+      document
+        .elementFromPoint(x, y)
+        ?.closest("[data-testid]")
+        ?.getAttribute("data-testid"),
+    { x: (left + right) / 2, y: (top + bottom) / 2 },
+  );
+  expect(topLayer).toBe("match-control-drawer");
+});
