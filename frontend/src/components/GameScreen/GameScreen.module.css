@@ -14,11 +14,14 @@
   /* Sizes scale with the board's own width (.wrapper is the cqw container) */
   --checker: max(22px, 4.25cqw);
   --bar-w: max(22px, 3.2cqw);
-  --bearoff-w: clamp(28px, 5.5cqw, 40px);
+  --bearoff-w: clamp(40px, 4.5cqw, 52px);
 }
 
 /* === Board + Side Panel outer frame === */
 .gameFrame {
+  --bearoff-control-right: calc(
+    clamp(1px, 0.22vw, 3px) + clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px
+  );
   --lux-case-bg:
     linear-gradient(90deg, #2b170c, #5c3720 22%, #2b170c 54%, #6f4728 78%, #28150b),
     #08171b;
@@ -837,10 +840,11 @@
     /* Sizes scale with the board's own width (.wrapper is the cqw container) */
     --checker: max(18px, 4.25cqw);
     --bar-w: max(18px, 3.2cqw);
-    --bearoff-w: clamp(28px, 5.5cqw, 36px);
+    --bearoff-w: clamp(40px, 7cqw, 48px);
   }
 
   .gameFrame {
+    --bearoff-control-right: calc(clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px);
     grid-template-columns: clamp(92px, 21dvw, 116px) minmax(0, 1fr);
     width: 100dvw;
     height: var(--app-height, 100dvh);
@@ -865,10 +869,11 @@
   .container {
     --checker: max(15px, 4.55cqw);
     --bar-w: max(13px, 2.7cqw);
-    --bearoff-w: clamp(28px, 5.5cqw, 34px);
+    --bearoff-w: clamp(40px, 8cqw, 46px);
   }
 
   .gameFrame {
+    --bearoff-control-right: 3px;
     grid-template-columns: clamp(88px, 21dvw, 108px) minmax(0, 1fr);
   }
 

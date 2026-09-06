@@ -90,13 +90,13 @@
 .count {
   display: grid;
   place-items: center;
-  min-width: 1rem;
-  height: 1rem;
+  min-width: clamp(18px, 2cqw, 22px);
+  height: clamp(18px, 2cqw, 22px);
   padding: 0 0.2rem;
   border: 1px solid var(--ui-accent-border, rgba(229, 180, 77, 0.42));
   background: var(--ui-accent-faint, rgba(229, 180, 77, 0.12));
   color: var(--ui-accent, #f5d28c);
-  font-size: 8px;
+  font-size: clamp(9px, 1cqw, 11px);
   font-variant-numeric: tabular-nums;
 }
 

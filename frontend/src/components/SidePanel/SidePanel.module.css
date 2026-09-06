@@ -30,14 +30,14 @@
 
 .menuButton {
   position: fixed;
-  right: clamp(6px, 1.2dvw, 14px);
+  right: var(--bearoff-control-right, 6px);
   top: 50%;
   z-index: 32;
   display: grid;
   place-items: center;
   gap: 3px;
-  width: calc(var(--bearoff-w, 34px) - 10px);
-  height: calc(var(--bearoff-w, 34px) - 10px);
+  width: calc(var(--bearoff-w, 40px) - 6px);
+  height: calc(var(--bearoff-w, 40px) - 6px);
   margin: 0;
   padding: 0;
   border: 1px solid var(--ui-accent-border, rgba(73, 104, 255, 0.62));
@@ -229,8 +229,8 @@
   }
 
   .menuButton {
-    width: calc(var(--bearoff-w, 34px) - 10px);
-    height: calc(var(--bearoff-w, 34px) - 10px);
+    width: calc(var(--bearoff-w, 40px) - 6px);
+    height: calc(var(--bearoff-w, 40px) - 6px);
   }
 
   .menuDrawer {
@@ -252,14 +252,14 @@
   }
 
   .menuButton {
-    right: 5px;
-    width: calc(var(--bearoff-w, 34px) - 10px);
-    height: calc(var(--bearoff-w, 34px) - 10px);
-    gap: 2px;
+    right: var(--bearoff-control-right, 3px);
+    width: calc(var(--bearoff-w, 40px) - 6px);
+    height: calc(var(--bearoff-w, 40px) - 6px);
+    gap: 3px;
   }
 
   .menuButton span {
-    height: 2px;
+    height: 3px;
   }
 
   .menuDrawer {

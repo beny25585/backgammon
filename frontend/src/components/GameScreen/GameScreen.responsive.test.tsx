@@ -204,4 +204,7 @@ test("hamburger is centered with both bear-off trays", async ({ mount, page }) =
   const centerX = (box: NonNullable<typeof menu>) => box.x + box.width / 2;
   expect(Math.abs(centerX(menu!) - centerX(top!))).toBeLessThanOrEqual(1);
   expect(Math.abs(centerX(menu!) - centerX(bottom!))).toBeLessThanOrEqual(1);
+  expect(Math.abs(menu!.width - top!.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(menu!.width - bottom!.width)).toBeLessThanOrEqual(1);
+  expect(menu!.width).toBeGreaterThanOrEqual(32);
 });
