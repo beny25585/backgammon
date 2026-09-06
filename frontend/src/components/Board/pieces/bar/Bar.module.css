@@ -124,7 +124,7 @@
 .bottomCheckers {
   position: absolute;
   left: 50%;
-  bottom: 34%;
+  bottom: 26%;
   flex-direction: column-reverse;
   transform: translateX(-50%);
 }
