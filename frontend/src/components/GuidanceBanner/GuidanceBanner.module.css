@@ -62,29 +62,48 @@
 
 .actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
+  width: 100%;
+  justify-content: center;
 }
 
 .accept,
 .decline {
-  padding: clamp(5px, 0.7vw, 8px) clamp(12px, 1.6vw, 18px);
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(76px, 10vw, 110px);
+  height: clamp(36px, 4vw, 46px);
+  padding: 0 12px;
+  border-radius: 5px;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
-  border: none;
+  outline: none;
   pointer-events: auto;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(201, 169, 97, 0.16);
 }
 
 .accept {
-  background: linear-gradient(135deg, #e7bd72, #c8932f);
-  color: #10292d;
+  border: 1px solid rgba(217, 182, 93, 0.7);
+  background: #d9b65d;
+  color: #17251d;
 }
 
 .decline {
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(247, 241, 227, 0.18);
+  border: 1px solid rgba(247, 241, 227, 0.25);
+  background: rgba(15, 29, 21, 0.92);
+  backdrop-filter: blur(4px);
   color: rgba(247, 241, 227, 0.92);
+}
+
+.accept:hover,
+.decline:hover,
+.accept:focus-visible,
+.decline:focus-visible {
+  border-color: #e7bd72;
 }
 
 .accept:disabled,

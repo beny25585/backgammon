@@ -32,6 +32,7 @@ interface MountProps {
   makeMove?: (from: Source, to: Target) => void;
   undoMove?: () => void;
   endTurn?: () => void;
+  offerDouble?: () => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
   rollResult?: number[];
@@ -41,7 +42,7 @@ interface MountProps {
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
-  const { state, playerColor, makeMove, undoMove, endTurn, needsToRoll, onRoll, rollResult, onRollLand, respondToDouble, noMovesMessage } = props;
+  const { state, playerColor, makeMove, undoMove, endTurn, offerDouble, needsToRoll, onRoll, rollResult, onRollLand, respondToDouble, noMovesMessage } = props;
   const component = await mount(
     <MockGameWrapper playerColor={playerColor} state={state}>
       <GameBoard
@@ -50,6 +51,7 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
         makeMove={makeMove ?? (() => {})}
         undoMove={undoMove}
         endTurn={endTurn}
+        offerDouble={offerDouble}
         onLeave={() => {}}
         needsToRoll={needsToRoll}
         onRoll={onRoll}
@@ -92,7 +94,7 @@ test("auto-moves on first tap when a checker has a single legal target", async (
   expect(moveCalls[0]).toEqual([23, 19]);
 });
 
-test("does not auto-move when a checker has multiple legal targets", async ({ mount }) => {
+test("auto-moves with the larger die when a checker has multiple legal targets", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const state = movingState({ dice: [4, 3], remaining: [4, 3] });
   const component = await mountBoard(mount, {
@@ -102,8 +104,23 @@ test("does not auto-move when a checker has multiple legal targets", async ({ mo
   });
 
   await component.locator('[data-point-idx="23"]').click();
-  await component.page().waitForTimeout(400);
-  expect(moveCalls.length).toBe(0);
+  await expect.poll(() => moveCalls.length).toBe(1);
+  expect(moveCalls[0]).toEqual([23, 19]);
+});
+
+test("auto-moves with the smaller die after dice are reordered", async ({ mount }) => {
+  const moveCalls: [Source, Target][] = [];
+  const state = movingState({ dice: [4, 3], remaining: [3, 4] });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+
+  await component.locator('[data-point-idx="23"]').click();
+
+  await expect.poll(() => moveCalls.length).toBe(1);
+  expect(moveCalls[0]).toEqual([23, 20]);
 });
 
 test("source checker stays hidden during flight and reappears after", async ({ mount }) => {
@@ -158,7 +175,7 @@ test("highlights appear for the active player's legal source points", async ({ m
 test("clicking an illegal point does not call makeMove", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
-    state: simpleWhiteState(),
+    state: movingState({ dice: [4, 3], remaining: [4, 3] }),
     playerColor: "white",
     makeMove: (from, to) => moveCalls.push([from, to]),
   });
@@ -166,7 +183,6 @@ test("clicking an illegal point does not call makeMove", async ({ mount }) => {
   await component.locator('[data-point-idx="0"]').click();
   await component.locator('[data-point-idx="1"]').click();
 
-  await component.page().waitForTimeout(400);
   expect(moveCalls.length).toBe(0);
 });
 
@@ -219,16 +235,37 @@ test("no dice overlay during opening roll", async ({ mount }) => {
   await expect(component.getByTestId("dice-overlay")).toHaveCount(0);
 });
 
-test("roll prompt appears when needsToRoll is set", async ({ mount }) => {
+test("roll action appears where confirm sits when needsToRoll is set", async ({ mount }) => {
+  let rolled = 0;
+  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    needsToRoll: true,
+    onRoll: () => rolled++,
+  });
+
+  const rollBtn = component.getByTitle("Tap to roll");
+  await expect(rollBtn).toBeVisible();
+  await rollBtn.click();
+  expect(rolled).toBe(1);
+});
+
+test("double action appears where undo sits at the start of a turn", async ({ mount }) => {
+  let doubled = 0;
   const state = movingState({ phase: "rolling", dice: [], remaining: [] });
   const component = await mountBoard(mount, {
     state,
     playerColor: "white",
     needsToRoll: true,
     onRoll: () => {},
+    offerDouble: () => doubled++,
   });
 
-  await expect(component.getByTestId("roll-prompt")).toBeVisible();
+  const doubleBtn = component.getByTitle("Offer double to opponent").first();
+  await expect(doubleBtn).toBeVisible();
+  await doubleBtn.click();
+  expect(doubled).toBe(1);
 });
 
 test("undo button appears after a move and clicking calls undoMove", async ({ mount }) => {
@@ -245,7 +282,7 @@ test("undo button appears after a move and clicking calls undoMove", async ({ mo
   const undoBtn = component.getByTitle("Undo last move");
   await expect(undoBtn).toBeVisible();
   await undoBtn.click();
-  expect(undoCalled).toBe(1);
+  await expect.poll(() => undoCalled).toBe(1);
 });
 
 test("no undo button before any move is made", async ({ mount }) => {

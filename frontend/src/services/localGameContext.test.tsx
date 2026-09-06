@@ -50,7 +50,7 @@ test("opening roll fetches a dice pair from the Django server", async ({ mount, 
   expect(requests[0]).toContain("type=opening");
 });
 
-test("after the opening roll the first player can roll (phase advances to rolling)", async ({ mount, page }) => {
+test("after the opening result the winner plays both opening dice", async ({ mount, page }) => {
   await page.route("**/api/dice/roll/**", async (route) => {
     await route.fulfill({ json: { dice: [4, 3] } });
   });
@@ -67,10 +67,10 @@ test("after the opening roll the first player can roll (phase advances to rollin
     '{"myDie":4,"opponentDie":3,"winner":"white"}',
   );
 
-  await expect(component.getByTestId("phase")).toHaveText("rolling", {
+  await expect(component.getByTestId("phase")).toHaveText("moving", {
     timeout: 5000,
   });
-  expect(await component.getByTestId("phase").textContent()).toBe("rolling");
+  await expect(component.getByTestId("dice")).toHaveText("[4,3]");
 });
 
 test("normal turn roll fetches dice from the Django server", async ({ mount, page }) => {
@@ -91,7 +91,7 @@ test("normal turn roll fetches dice from the Django server", async ({ mount, pag
   await component.getByTestId("roll").click();
 
   await expect(component.getByTestId("phase")).toHaveText("moving");
-  await expect(component.getByTestId("dice")).toHaveText("[2,5]");
+  await expect(component.getByTestId("dice")).toHaveText("[5,2]");
   expect(requests[0]).toContain("type=normal");
 });
 

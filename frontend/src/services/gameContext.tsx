@@ -372,6 +372,14 @@ export function GameProvider({
     [sendIntent],
   );
 
+  const reorderDice = useCallback(() => {
+    const current = stateRef.current;
+    if (!current || current.phase !== "moving") return;
+    if (current.turn !== playerColorRef.current) return;
+    if ((current.remaining?.length ?? 0) < 2) return;
+    sendIntent({ action: "reorder_dice" });
+  }, [sendIntent]);
+
   const offerDoubleAction = useCallback(() => {
     const current = stateRef.current;
     if (!current || current.phase !== "rolling") return;
@@ -448,6 +456,7 @@ export function GameProvider({
         updateState,
         makeMove,
         rollDice,
+        reorderDice,
         offerDouble: offerDoubleAction,
         respondToDouble,
         endTurn,

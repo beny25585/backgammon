@@ -42,6 +42,7 @@ export interface GameContextType {
   updateState: (newState: GameState) => void;
   makeMove: (from: Source, to: Target) => void;
   rollDice: () => void;
+  reorderDice: () => void;
   offerDouble: () => void;
   respondToDouble: (accept: boolean) => void;
   endTurn: () => void;

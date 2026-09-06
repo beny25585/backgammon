@@ -1,6 +1,12 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
-import { BAR, OFF, legalMovesFrom, type Move } from "@/lib/backgammon/engine";
+import {
+  BAR,
+  OFF,
+  canOfferDouble,
+  legalMovesFrom,
+  type Move,
+} from "@/lib/backgammon/engine";
 import UndoButton from "./buttons/undobutton/UndoButton";
 import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
 import PointCell from "./pieces/pointcell/PointCell";
@@ -9,6 +15,7 @@ import BearOff from "./pieces/bearoff/BearOff";
 import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
 import styles from "../GameScreen/GameScreen.module.css";
 import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface BoardProps {
   state: GameState;
@@ -20,6 +27,8 @@ interface BoardProps {
   legalFromPoints: Source[];
   onUndo?: () => void;
   onConfirm?: () => void;
+  onRoll?: () => void;
+  onOfferDouble?: () => void;
   autoMove?: Move | null;
 }
 
@@ -27,6 +36,15 @@ function getCheckerSize(board: HTMLElement): number {
   const checkerEl = board.querySelector<HTMLElement>("[data-checker]");
   if (!checkerEl) return 30;
   return checkerEl.getBoundingClientRect().width;
+}
+
+function preferredDirectMove(moves: Move[], remaining: number[]): Move | null {
+  if (moves.length === 0) return null;
+  for (const die of remaining) {
+    const move = moves.find((m) => m.die === die);
+    if (move) return move;
+  }
+  return [...moves].sort((a, b) => b.die - a.die)[0];
 }
 
 export function Board({
@@ -39,8 +57,11 @@ export function Board({
   legalFromPoints,
   onUndo,
   onConfirm,
+  onRoll,
+  onOfferDouble,
   autoMove,
 }: BoardProps) {
+  const { t } = useI18n();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [flyChecker, setFlyChecker] = useState<{
@@ -188,7 +209,13 @@ export function Board({
         pending: { kind: "move", historyLen: state.moveHistory?.length ?? 0 },
       });
     },
-    [myColor, onMove, state.points, displayTopPoints, computeSlotY],
+    [
+      myColor,
+      onMove,
+      state.points,
+      displayTopPoints,
+      computeSlotY,
+    ],
   );
 
   const animateExternalMove = useCallback(
@@ -407,12 +434,13 @@ export function Board({
       }
     } else if (legalFromPoints.includes(idx)) {
       if (myColor === null) return;
-      const targets = Array.from(
-        new Set(legalMovesFrom(state, idx, myColor).map((m) => m.to)),
-      );
-      if (targets.length === 1) {
+      const moves = legalMovesFrom(state, idx, myColor);
+      const targets = Array.from(new Set(moves.map((m) => m.to)));
+      const directMove =
+        targets.length === 1 ? moves[0] : preferredDirectMove(moves, state.remaining);
+      if (directMove) {
         onSelect(idx);
-        triggerFly(idx, targets[0]);
+        triggerFly(idx, directMove.to);
       } else {
         onSelect(idx);
       }
@@ -429,6 +457,15 @@ export function Board({
     state.phase === "moving" &&
     state.turn === myColor &&
     state.remaining.length === 0;
+  const canRoll =
+    Boolean(onRoll) &&
+    state.phase === "rolling" &&
+    state.turn === myColor &&
+    state.remaining.length === 0;
+  const canDouble =
+    Boolean(onOfferDouble) &&
+    myColor !== null &&
+    canOfferDouble(state, myColor);
 
   return (
     <div ref={wrapperRef} className={styles.wrapper} dir="ltr">
@@ -549,6 +586,30 @@ export function Board({
         {canConfirm && (
           <div className={styles.boardConfirmAction}>
             <ConfirmButton onClick={onConfirm} />
+          </div>
+        )}
+        {canRoll && canDouble && (
+          <div className={styles.boardDoubleAction}>
+            <button
+              type="button"
+              className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
+              onClick={onOfferDouble}
+              title={t("common.offerDouble")}
+            >
+              {t("common.offerDoubleShort")}
+            </button>
+          </div>
+        )}
+        {canRoll && (
+          <div className={styles.boardRollAction}>
+            <button
+              type="button"
+              className={`${styles.boardTurnButton} ${styles.boardTurnButtonPrimary}`}
+              onClick={onRoll}
+              title={t("common.tapToRoll")}
+            >
+              {t("game.rollNow")}
+            </button>
           </div>
         )}
       </div>

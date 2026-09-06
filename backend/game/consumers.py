@@ -344,7 +344,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         """Server-authoritative dispatcher. Accepts action intents only.
 
         Payload format (frontend Step 5): {'action': 'roll'|'move'|'end_turn'|
-        'undo'|'double'|'double_response', 'from': int, 'to': int|'off',
+        'undo'|'reorder_dice'|'double'|'double_response', 'from': int, 'to': int|'off',
         'accept': bool}. The client never sends game state.
         """
         room = await get_room(self.room_id)
@@ -376,6 +376,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             result = engine.make_move(
                 intent.get('from'), intent.get('to'), self.player_color
             )
+        elif action == 'reorder_dice':
+            result = engine.reorder_dice(self.player_color)
         elif action == 'end_turn':
             if engine.state.get('turn') != self.player_color:
                 result = {'success': False, 'message': 'Not your turn'}
@@ -486,7 +488,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         return {'success': False, 'message': 'Cannot roll now'}
 
     async def _arm_opening_result_watch(self):
-        """(Re)arm the countdown from opening_result to rolling."""
+        """(Re)arm the countdown from opening_result to the first move."""
         if getattr(self, '_opening_watch_task', None):
             self._opening_watch_task.cancel()
         self._opening_watch_task = asyncio.create_task(self._opening_result_watch())
@@ -497,23 +499,19 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not room or room.status != 'playing':
             return
         gs = await get_game_state(room)
-        state = gs.state_data or {}
+        stored = dict(gs.state_data or {})
+        state = dict(stored)
         if state.get('phase') != 'opening_result':
             return
 
-        state['phase'] = 'rolling'
-        state['dice'] = []
-        state['remaining'] = []
-        state['lastMove'] = None
-        state['moveHistory'] = None
+        state['phase'] = 'moving'
         state.pop('openingDice', None)
         sequence = await record_event_and_advance(room, None, 'opening_result_done', state)
         state['version'] = sequence
 
-        # The winner can now choose whether to double or roll. The clock starts
-        # only once dice are rolled and the state becomes moving.
+        # The opening dice are the winner's first playable roll. Start the clock
+        # only after the result banner has finished and those dice become active.
         now_ms = int(time_module.time() * 1000)
-        stored = state
         clock, turn_started_at, new_active, _timed_out, _deadline = compute_clock(
             stored, state, now_ms, room.time_control
         )

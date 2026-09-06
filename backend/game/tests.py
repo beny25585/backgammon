@@ -382,7 +382,7 @@ class GameConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_clock_stays_stopped_until_the_first_roll_after_opening_resolves(self):
+    async def test_clock_starts_when_opening_dice_become_playable(self):
         GameConsumer.OPENING_RESULT_DELAY = 0.1
         try:
             comm_white, comm_black = await self._connect_both()
@@ -393,11 +393,11 @@ class GameConsumerTests(TransactionTestCase):
             self.assertIsNone(event['payload'].get('turnStartedAt'))
             winner = event['payload']['turn']  # whoever rolled higher
 
-            # Opening resolved: the winner must choose whether to double/roll.
-            # The clock still waits until the roll produces playable dice.
-            event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'rolling')
+            # Once the result banner ends, the opening dice become playable and
+            # only then does the winner's clock start.
+            event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'moving')
             self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
-            self.assertIsNone(event['payload'].get('turnStartedAt'))
+            self.assertIsInstance(event['payload'].get('turnStartedAt'), int)
             self.assertEqual(event['payload']['turn'], winner)
         finally:
             GameConsumer.OPENING_RESULT_DELAY = 3.0
@@ -604,16 +604,17 @@ class GameConsumerTests(TransactionTestCase):
         self.assertEqual(self.room.last_sequence, 2)
         await comm2.disconnect()
 
-    async def test_opening_result_transitions_to_rolling_after_delay(self):
+    async def test_opening_result_transitions_to_first_move_after_delay(self):
         GameConsumer.OPENING_RESULT_DELAY = 0.1
         try:
             comm_white, comm_black = await self._connect_both()
             result = await self._resolve_opening(comm_white, comm_black)
             winner = result['event']['payload']['turn']
-            event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'rolling')
-            self.assertEqual(event['payload']['phase'], 'rolling')
-            self.assertEqual(event['payload']['dice'], [])
-            self.assertEqual(event['payload']['remaining'], [])
+            opening_dice = [result['white_die'], result['black_die']]
+            event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'moving')
+            self.assertEqual(event['payload']['phase'], 'moving')
+            self.assertEqual(event['payload']['dice'], opening_dice)
+            self.assertEqual(event['payload']['remaining'], opening_dice)
             self.assertEqual(event['payload']['turn'], winner)
         finally:
             GameConsumer.OPENING_RESULT_DELAY = 3.0
@@ -1931,9 +1932,9 @@ class BackgammonEngineTests(TestCase):
         engine = self._engine()
         engine.state["phase"] = "rolling"
         result = engine.roll_dice(dice=(3, 5))
-        self.assertEqual(result["dice"], [3, 5])
-        self.assertEqual(engine.state["dice"], [3, 5])
-        self.assertEqual(engine.state["remaining"], [3, 5])
+        self.assertEqual(result["dice"], [5, 3])
+        self.assertEqual(engine.state["dice"], [5, 3])
+        self.assertEqual(engine.state["remaining"], [5, 3])
         self.assertEqual(engine.state["phase"], "moving")
         self.assertEqual(engine.state["lastMove"], [])
         self.assertEqual(engine.state["moveHistory"], [])
@@ -1952,8 +1953,8 @@ class BackgammonEngineTests(TestCase):
         engine.state["phase"] = "rolling"
         with patch("game.engine.BackgammonEngine._roll_dice", return_value=[2, 4]):
             result = engine.roll_dice()
-        self.assertEqual(result["dice"], [2, 4])
-        self.assertEqual(engine.state["remaining"], [2, 4])
+        self.assertEqual(result["dice"], [4, 2])
+        self.assertEqual(engine.state["remaining"], [4, 2])
 
     def test_roll_dice_rejects_outside_rolling_phase(self):
         engine = self._engine()
@@ -1961,6 +1962,27 @@ class BackgammonEngineTests(TestCase):
         result = engine.roll_dice(dice=(1, 2))
         self.assertFalse(result["success"])
         self.assertEqual(engine.state["phase"], "moving")
+
+    def test_reorder_dice_changes_which_die_is_used_for_same_destination(self):
+        state = BackgammonEngine.get_initial_state()
+        state["points"] = [0] * 24
+        state["points"][5] = 1
+        state["points"][3] = 1
+        state["turn"] = "white"
+        state["phase"] = "moving"
+        state["dice"] = [5, 3]
+        state["remaining"] = [5, 3]
+        engine = BackgammonEngine(state)
+
+        result = engine.reorder_dice("white")
+        self.assertTrue(result["success"])
+        self.assertEqual(engine.state["remaining"], [3, 5])
+
+        move = engine.make_move(5, 0, "white")
+
+        self.assertTrue(move["success"])
+        self.assertEqual(engine.state["remaining"], [5])
+        self.assertEqual(engine.state["points"][3], 1)
 
     def test_roll_dice_no_legal_moves_switches_turn(self):
         state = BackgammonEngine.get_initial_state()
@@ -1974,7 +1996,7 @@ class BackgammonEngineTests(TestCase):
         state["phase"] = "rolling"
         engine = BackgammonEngine(state)
         result = engine.roll_dice(dice=(1, 2))
-        self.assertEqual(result["dice"], [1, 2])
+        self.assertEqual(result["dice"], [2, 1])
         self.assertEqual(result["remaining"], [])
         self.assertEqual(engine.state["turn"], "black")
         self.assertEqual(engine.state["phase"], "rolling")
@@ -2000,8 +2022,8 @@ class BackgammonEngineTests(TestCase):
         self.assertEqual(result["both"], [5, 2])
         self.assertEqual(engine.state["phase"], "opening_result")
         self.assertEqual(engine.state["turn"], "white")
-        self.assertEqual(engine.state["dice"], [])
-        self.assertEqual(engine.state["remaining"], [])
+        self.assertEqual(engine.state["dice"], [5, 2])
+        self.assertEqual(engine.state["remaining"], [5, 2])
         self.assertEqual(engine.state["openingRoll"], {"white": 5, "black": 2})
         self.assertEqual(engine.state["message"], "white goes first")
         self.assertEqual(engine.state["version"], 2)
@@ -2013,6 +2035,8 @@ class BackgammonEngineTests(TestCase):
         self.assertEqual(result["winner"], "black")
         self.assertEqual(result["both"], [1, 6])
         self.assertEqual(engine.state["turn"], "black")
+        self.assertEqual(engine.state["dice"], [6, 1])
+        self.assertEqual(engine.state["remaining"], [6, 1])
 
     def test_roll_opening_die_tie_resets_and_rerolls(self):
         engine = self._engine()

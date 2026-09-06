@@ -1,6 +1,7 @@
 .container {
   width: 100dvw;
   min-height: 100dvh;
+  height: 100dvh;
   display: grid;
   place-items: center;
   background:
@@ -8,11 +9,12 @@
     radial-gradient(circle at 11% 88%, rgba(36, 83, 74, 0.26), transparent 35%),
     linear-gradient(135deg, rgba(5, 16, 17, 0.97), rgba(2, 7, 9, 0.99) 62%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 42px);
-  padding: clamp(10px, 1.8vw, 24px);
+  padding: 0;
+  overflow: hidden;
   /* Sizes scale with the board's own width (.wrapper is the cqw container) */
-  --checker: max(16px, 4cqw);
-  --bar-w: max(16px, 3cqw);
-  --bearoff-w: max(16px, 3cqw);
+  --checker: max(22px, 4.25cqw);
+  --bar-w: max(22px, 3.2cqw);
+  --bearoff-w: max(22px, 3.2cqw);
 }
 
 /* === Board + Side Panel outer frame === */
@@ -89,11 +91,11 @@
   --lux-die-pip-dark: #22150c;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(250px, 23vw, 340px);
+  grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 380px);
   direction: ltr;
   overflow: hidden;
   isolation: isolate;
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--lux-case-bg);
   box-shadow:
     0 32px 82px rgba(0, 0, 0, 0.55),
@@ -101,8 +103,9 @@
     inset 0 1px 0 rgba(255, 239, 191, 0.18),
     inset 0 0 0 1px rgba(5, 2, 0, 0.6);
   border: clamp(1px, 0.22vw, 3px) solid var(--lux-case-border);
-  width: min(100%, 1480px);
-  height: min(100%, 900px);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   min-height: 0;
   container-type: inline-size;
 }
@@ -462,7 +465,9 @@
 }
 
 .boardUndoAction,
-.boardConfirmAction {
+.boardConfirmAction,
+.boardDoubleAction,
+.boardRollAction {
   position: absolute;
   top: 50%;
   z-index: 40;
@@ -479,21 +484,78 @@
   left: 75%;
 }
 
+.boardDoubleAction {
+  left: 25%;
+}
+
+.boardRollAction {
+  left: 75%;
+}
+
+.boardTurnButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: clamp(94px, 12vw, 128px);
+  height: clamp(36px, 4vw, 46px);
+  border-radius: 5px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.6),
+    0 0 20px rgba(201, 169, 97, 0.16);
+  cursor: pointer;
+  outline: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.boardTurnButton:hover {
+  transform: scale(1.08);
+  border-color: #e7bd72;
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.8),
+    0 0 30px rgba(201, 169, 97, 0.4);
+}
+
+.boardTurnButton:focus-visible {
+  border-color: #e7bd72;
+}
+
+.boardTurnButtonPrimary {
+  border: 1px solid rgba(217, 182, 93, 0.7);
+  background: #d9b65d;
+  color: #17251d;
+}
+
+.boardTurnButtonSecondary {
+  border: 1px solid rgba(247, 241, 227, 0.25);
+  background: rgba(15, 29, 21, 0.92);
+  color: rgba(247, 241, 227, 0.92);
+  backdrop-filter: blur(4px);
+}
+
 .boardOverlay {
   position: absolute;
-  bottom: 50%;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 50%;
+  left: 75%;
+  transform: translate(-50%, -50%);
   z-index: 40;
   display: flex;
   align-items: center;
   gap: var(--dice-overlay-gap);
-  padding: clamp(4px, 0.8vw, 8px) clamp(10px, 2vw, 18px);
-  background: rgba(7, 20, 18, 0.9);
-  backdrop-filter: blur(5px);
-  border-radius: 5px;
-  border: 1px solid rgba(229, 180, 77, 0.38);
-  pointer-events: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  pointer-events: auto;
+  --dice-gap: clamp(3px, 0.65cqw, 7px);
+  --die-size: clamp(17px, 3.25cqw, 28px);
+  --die-radius: 3px;
+  --pip-size: clamp(2px, 0.52cqw, 4px);
 }
 
 .noMovesOverlay {
@@ -731,40 +793,90 @@
 @media (width < 800px) and (orientation: landscape) {
   .container {
     /* Sizes scale with the board's own width (.wrapper is the cqw container) */
-    --checker: max(5px, 4cqw);
-    --bar-w: max(16px, 3cqw);
-    --bearoff-w: max(16px, 3cqw);
+    --checker: max(18px, 4.25cqw);
+    --bar-w: max(18px, 3.2cqw);
+    --bearoff-w: max(18px, 3.2cqw);
   }
 
   .gameFrame {
-    width: 100%;
-    height: 100%;
+    grid-template-columns: minmax(0, 1fr) clamp(118px, 33dvw, 170px);
+    width: 100dvw;
+    height: 100dvh;
+    border-width: 0;
+  }
+}
+
+@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+  .container {
+    --checker: max(15px, 4.55cqw);
+    --bar-w: max(13px, 2.7cqw);
+    --bearoff-w: max(13px, 2.7cqw);
+  }
+
+  .gameFrame {
+    grid-template-columns: minmax(0, 1fr) clamp(104px, 30dvw, 132px);
+  }
+
+  .frame {
+    inset: 4px;
+    padding: 5px;
+  }
+
+  .boardOverlay {
+    padding: 3px 7px;
+  }
+
+  .boardRollPrompt {
+    width: min(220px, 62%);
+    padding: 12px;
   }
 }
 
 @media (width < 800px) and (orientation: portrait) {
   .container {
-    /* Sizes scale with the board's own width (.wrapper is the cqw container) */
-    --checker: max(20px, 4cqw);
-    --bar-w: max(20px, 3cqw);
-    --bearoff-w: max(20px, 3cqw);
+    width: 100dvw;
+    min-height: 100dvh;
+    height: 100dvh;
+    padding: 0;
+    place-items: center;
+    --checker: max(18px, 4.25cqw);
+    --bar-w: max(18px, 3.2cqw);
+    --bearoff-w: max(18px, 3.2cqw);
   }
 
   .gameFrame {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto;
-    margin: auto;
+    grid-template-columns: minmax(0, 1fr) clamp(220px, 28dvh, 300px);
+    grid-template-rows: minmax(0, 1fr);
     width: 100%;
-    height: auto;
-    min-height: calc(100dvh - 20px);
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    opacity: 0.18;
+    pointer-events: none;
   }
-  .sidePanel {
 
-    border-left: none;
-    border-top: 1px solid rgba(201, 169, 97, 0.2);
+  .sidePanel {
+    border-left: 1px solid rgba(229, 180, 77, 0.26);
+    border-top: none;
   }
-  .boardArea {
-    width: 100%;
-    height: clamp(360px, 56dvh, 620px);
+
+  .container::after {
+    content: "סובבו את המסך לרוחב כדי לשחק";
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    padding: 28px;
+    border: 1px solid rgba(229, 180, 77, 0.46);
+    border-radius: 0;
+    background:
+      linear-gradient(180deg, rgba(8, 23, 27, 0.97), rgba(3, 9, 10, 0.98));
+    color: #f5d28c;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
+    text-align: center;
+    font-size: clamp(30px, 8vw, 46px);
+    font-weight: 900;
+    line-height: 1.18;
   }
 }

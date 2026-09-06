@@ -100,10 +100,23 @@
 }
 
 @media (max-height: 360px) {
+  .strip {
+    border-radius: 4px;
+  }
   .side {
-    padding: 4px 6px;
+    padding: 4px;
+  }
+  .label,
+  .delayLabel {
+    font-size: 7px;
   }
   .time {
-    font-size: 15px;
+    font-size: 13px;
+  }
+  .delay {
+    padding: 4px;
+  }
+  .seconds {
+    font-size: 11px;
   }
 }

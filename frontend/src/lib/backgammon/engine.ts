@@ -270,7 +270,19 @@ export function rollDie(): number {
 export function rollDice(): number[] {
   const first = rollDie();
   const second = rollDie();
-  return first === second ? [first, first, first, first] : [first, second];
+  return orderedDice(first, second);
+}
+
+function orderedDice(first: number, second: number): number[] {
+  if (first === second) return [first, first, first, first];
+  return first > second ? [first, second] : [second, first];
+}
+
+export function reorderDice(state: GameState): GameState {
+  if (state.phase !== "moving" || state.remaining.length < 2) return state;
+  const next = cloneState(state);
+  next.remaining.reverse();
+  return next;
 }
 
 // ============================================================
@@ -459,7 +471,9 @@ export function applyMove(
  */
 export function applyRoll(state: GameState, customDice?: number[]): GameState {
   const next = cloneState(state);
-  const roll = customDice ?? rollDice();
+  const roll = customDice
+    ? orderedDice(customDice[0], customDice[1])
+    : rollDice();
 
   // For display: show [a, b] (or [a, a] for doubles).
   // For remaining: store all values (e.g. [6,6,6,6] for double 6s).
@@ -524,9 +538,10 @@ export function applyOpeningRoll(state: GameState, color: Color, customDie?: num
 
   // Determine winner and set the game in motion.
   const firstPlayer: Color = whiteRoll > blackRoll ? "white" : "black";
+  const openingDice = orderedDice(whiteRoll, blackRoll);
   next.turn = firstPlayer;
-  next.dice = [whiteRoll, blackRoll];
-  next.remaining = [];
+  next.dice = openingDice;
+  next.remaining = openingDice;
   next.phase = "opening_result";
   next.lastMove = [];
   next.moveHistory = [];

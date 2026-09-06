@@ -134,12 +134,23 @@
   .row {
     gap: 5px;
     padding: 3px 8px;
+    min-height: 38px;
   }
   .avatar {
     width: 20px;
     height: 20px;
   }
+  .name {
+    font-size: 10px;
+  }
   .meta {
+    display: none;
     margin-top: 1px;
+  }
+  .score {
+    font-size: 17px;
+  }
+  .turnBadge {
+    font-size: 8px;
   }
 }

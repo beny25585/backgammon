@@ -47,7 +47,7 @@ test("opening roll action appears for the player whose turn it is", async ({
     </MockGameWrapper>,
   );
   await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
-  await expect(component.getByText("Tap to roll")).toBeVisible();
+  await expect(component.getByTestId("roll-prompt-btn")).toBeVisible();
 });
 
 test("roll action remains available after a server auto-pass with stale dice", async ({
@@ -68,7 +68,7 @@ test("roll action remains available after a server auto-pass with stale dice", a
     </MockGameWrapper>,
   );
   await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
-  await expect(component.getByText("Tap to roll")).toBeVisible();
+  await expect(component.getByTitle("Tap to roll")).toBeVisible();
 });
 
 test("in-game errors show as a floating card and keep the board visible", async ({

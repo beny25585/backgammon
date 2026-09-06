@@ -30,6 +30,7 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
     updateState: () => {},
     makeMove: () => {},
     rollDice: () => {},
+    reorderDice: () => {},
     offerDouble: () => {},
     respondToDouble: () => {},
     endTurn: () => {},

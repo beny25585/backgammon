@@ -4,6 +4,7 @@ export {
   newGame,
   rollDie,
   rollDice,
+  reorderDice,
   legalMovesFrom,
   allLegalMoves,
   applyMove,

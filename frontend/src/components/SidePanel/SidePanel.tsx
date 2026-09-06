@@ -103,11 +103,11 @@ export default function SidePanel({
         <Controls playerColor={playerColor} state={state} />
       </div>
       {boardTheme && onBoardThemeChange && (
-        <div className={styles.section}>
+        <div className={`${styles.section} ${styles.themeSection}`}>
           <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} />
         </div>
       )}
-      <div className={styles.section}>
+      <div className={`${styles.section} ${styles.autoRollSection}`}>
         {onAutoRollChange && (
           <AutoRoll autoRoll={!!autoRoll} onChange={onAutoRollChange} />
         )}

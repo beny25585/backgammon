@@ -14,6 +14,7 @@ import {
   applyMove,
   applyOpeningRoll,
   applyRoll,
+  reorderDice as reorderGameDice,
   offerDouble,
   respondDouble,
   undoLastMove,
@@ -134,14 +135,13 @@ export function LocalGameProvider({
     [botColor],
   );
 
-  // After the opening roll decides who starts, advance from the result
-  // banner phase to "rolling" so the first player can roll their dice.
-  const advanceToRolling = useCallback(() => {
-    clientLogger.debug("[advanceToRolling] scheduled");
+  // After the result banner, let the winner play the two opening dice.
+  const advanceToOpeningMove = useCallback(() => {
+    clientLogger.debug("[advanceToOpeningMove] scheduled");
     setTimeout(() => {
       setState((prev) =>
         prev.phase === "opening_result"
-          ? { ...prev, phase: "rolling" as const }
+          ? { ...prev, phase: "moving" as const }
           : prev,
       );
     }, 2000);
@@ -295,7 +295,7 @@ export function LocalGameProvider({
               winner,
             });
             setTimeout(() => setOpeningRollResult(null), 3500);
-            advanceToRolling();
+            advanceToOpeningMove();
             setTurnColor(next.turn);
             return next;
           });
@@ -341,7 +341,7 @@ export function LocalGameProvider({
     }, BOT_DELAY);
 
     return () => clearTimeout(timer);
-  }, [state, botColor, getOpeningDie, getTurnDice, setTurnColor]);
+  }, [state, botColor, getOpeningDie, getTurnDice, setTurnColor, advanceToOpeningMove]);
 
   // ── Human actions ──────────────────────────────────────────────
 
@@ -390,7 +390,7 @@ export function LocalGameProvider({
               winner,
             });
             setTimeout(() => setOpeningRollResult(null), 3500);
-            advanceToRolling();
+            advanceToOpeningMove();
             setTurnColor(next.turn);
             return next;
           });
@@ -447,7 +447,15 @@ export function LocalGameProvider({
         rollingRef.current = false;
       }
     })();
-  }, [getOpeningDie, getTurnDice, setTurnColor]);
+  }, [getOpeningDie, getTurnDice, setTurnColor, advanceToOpeningMove]);
+
+  const reorderDice = useCallback(() => {
+    setState((prev) => {
+      if (prev.phase !== "moving") return prev;
+      if (prev.turn !== playerColorRef.current) return prev;
+      return reorderGameDice(prev);
+    });
+  }, []);
 
   const makeMove = useCallback(
     (from: Source, to: Target) => {
@@ -456,10 +464,14 @@ export function LocalGameProvider({
         if (prev.turn !== playerColorRef.current) return prev;
         const dest = to === OFF ? OFF : to;
         const moves = allLegalMoves(prev, prev.turn);
-        const match = moves.find(
+        const matchingMoves = moves.filter(
           (m: Move) =>
             m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
         );
+        const match =
+          prev.remaining
+            .map((die) => matchingMoves.find((m) => m.die === die))
+            .find((move): move is Move => Boolean(move)) ?? matchingMoves[0];
         if (!match) return prev;
         const next = applyMove(prev, match, prev.turn);
         setTurnColor(next.turn);
@@ -556,6 +568,7 @@ export function LocalGameProvider({
         updateState,
         makeMove,
         rollDice,
+        reorderDice,
         offerDouble: offerDoubleAction,
         respondToDouble,
         endTurn,

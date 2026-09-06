@@ -42,6 +42,7 @@ function makeMock(): GameContextType {
     updateState: () => {},
     makeMove: () => {},
     rollDice: () => {},
+    reorderDice: () => {},
     offerDouble: () => {},
     respondToDouble: () => {},
     endTurn: () => {},

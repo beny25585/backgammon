@@ -118,9 +118,19 @@
 }
 
 @media (max-height: 360px) {
+  .controlsContainer {
+    min-height: 34px;
+    padding: 4px;
+  }
+  .cubeBlock {
+    gap: 5px;
+  }
+  .label {
+    display: none;
+  }
   .btn {
     min-height: 26px;
-    padding: 0 10px;
+    padding: 0 8px;
     font-size: 11px;
   }
 }

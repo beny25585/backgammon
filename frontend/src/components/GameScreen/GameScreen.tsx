@@ -36,6 +36,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     clearError,
     makeMove,
     rollDice,
+    reorderDice,
     reconnected,
     opponentConnected,
     undoMove,
@@ -243,8 +244,10 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             state={state}
             playerColor={playerColor}
             makeMove={makeMove}
+            reorderDice={reorderDice}
             undoMove={undoMove}
             endTurn={endTurn}
+            offerDouble={offerDouble}
             autoRoll={autoRoll}
             onAutoRollChange={setAutoRoll}
             boardTheme={boardTheme}

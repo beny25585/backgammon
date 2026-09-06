@@ -106,8 +106,9 @@ export default function GuidanceBanner({
               onClick={() => respond(true)}
               disabled={responding}
               data-testid="double-accept"
+              title={t("common.takeDouble")}
             >
-              {responding ? t("common.sending") : t("common.accept")}
+              {responding ? t("common.sending") : t("common.take")}
             </button>
             <button
               type="button"
@@ -115,8 +116,9 @@ export default function GuidanceBanner({
               onClick={() => respond(false)}
               disabled={responding}
               data-testid="double-decline"
+              title={t("common.passDouble")}
             >
-              {t("common.decline")}
+              {t("common.pass")}
             </button>
           </div>
         )}

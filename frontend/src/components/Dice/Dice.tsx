@@ -48,6 +48,7 @@ export function DiceRow({
   myRoll,
   opponentRoll,
   forceActive,
+  onReorder,
 }: {
   dice: number[];
   remaining: number[];
@@ -57,6 +58,7 @@ export function DiceRow({
   opponentRoll?: number | null;
   winner?: Color | null;
   forceActive?: boolean;
+  onReorder?: () => void;
 }) {
   const { t } = useI18n();
 
@@ -81,16 +83,29 @@ export function DiceRow({
 
   if (dice.length === 0) return null;
   const displayed =
-    dice[0] === dice[1] ? [dice[0], dice[0], dice[0], dice[0]] : dice;
-  const remCopy = [...remaining];
+    dice[0] === dice[1]
+      ? [dice[0], dice[0], dice[0], dice[0]]
+      : [...remaining, ...dice.filter((d) => !remaining.includes(d))];
+  const activeCount = forceActive ? displayed.length : remaining.length;
+  const content = displayed.map((d, i) => {
+    const used = !forceActive && i >= activeCount;
+    return <Die key={i} value={d} used={used} dark={color === "black"} />;
+  });
+  if (onReorder) {
+    return (
+      <button
+        type="button"
+        className={`${styles.diceRow} ${styles.diceButton}`}
+        onClick={onReorder}
+        aria-label={t("game.reorderDice")}
+      >
+        {content}
+      </button>
+    );
+  }
   return (
     <div className={styles.diceRow}>
-      {displayed.map((d, i) => {
-        const idx = remCopy.indexOf(d);
-        const used = !forceActive && idx < 0;
-        if (idx >= 0) remCopy.splice(idx, 1);
-        return <Die key={i} value={d} used={used} dark={color === "black"} />;
-      })}
+      {content}
     </div>
   );
 }

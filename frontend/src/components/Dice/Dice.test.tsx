@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { RollPrompt } from "./Dice";
+import { DiceRow, RollPrompt } from "./Dice";
 
 test("starts spinning on click, then fires onRoll after a short delay", async ({ mount }) => {
   let rolled = 0;
@@ -18,4 +18,20 @@ test("keeps spinning until landOn arrives, then completes", async ({ mount, page
   expect(done).toBe(0); // still spinning — roll not fired yet
   await rp.update(<RollPrompt onRoll={() => {}} onLand={() => done++} landOn={[3, 5]} />);
   await expect.poll(() => done).toBeGreaterThanOrEqual(1);
+});
+
+test("clicking playable dice row requests dice reorder", async ({ mount }) => {
+  let reorderCalls = 0;
+  const row = await mount(
+    <DiceRow
+      dice={[5, 2]}
+      remaining={[5, 2]}
+      color="white"
+      onReorder={() => reorderCalls++}
+    />,
+  );
+
+  await row.click();
+
+  expect(reorderCalls).toBe(1);
 });

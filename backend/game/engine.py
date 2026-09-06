@@ -75,7 +75,13 @@ class BackgammonEngine:
     def _roll_dice():
         a = BackgammonEngine._roll_die()
         b = BackgammonEngine._roll_die()
-        return [a, a, a, a] if a == b else [a, b]
+        return BackgammonEngine._ordered_dice(a, b)
+
+    @staticmethod
+    def _ordered_dice(a, b):
+        if a == b:
+            return [a, a, a, a]
+        return [a, b] if a > b else [b, a]
 
     @staticmethod
     def _direction(color):
@@ -119,7 +125,7 @@ class BackgammonEngine:
 
     def legal_moves_from(self, from_pt, color):
         moves = []
-        dice = list(set(self.state['remaining']))
+        dice = list(dict.fromkeys(self.state['remaining']))
         direc = self._direction(color)
 
         if self.state['bar'][color] > 0 and from_pt != 'bar':
@@ -170,7 +176,7 @@ class BackgammonEngine:
 
         if dice is not None:
             a, b = dice
-            roll = [a, a, a, a] if a == b else [a, b]
+            roll = self._ordered_dice(a, b)
         else:
             roll = self._roll_dice()
 
@@ -232,9 +238,10 @@ class BackgammonEngine:
             return {'success': True, 'phase': 'opening_roll'}
 
         winner = 'white' if w > b else 'black'
+        opening_dice = self._ordered_dice(w, b)
         s['turn'] = winner
-        s['dice'] = []
-        s['remaining'] = []
+        s['dice'] = opening_dice
+        s['remaining'] = opening_dice
         s['phase'] = 'opening_result'
         s['lastMove'] = []
         s['moveHistory'] = []
@@ -261,6 +268,18 @@ class BackgammonEngine:
         self._apply_move(move, player_color)
         self.state['version'] = self.state.get('version', 0) + 1
         return {'success': True, 'message': 'Move executed', 'state': self.state}
+
+    def reorder_dice(self, player_color):
+        if self.state['turn'] != player_color:
+            return {'success': False, 'message': 'Not your turn'}
+        if self.state.get('phase') != 'moving':
+            return {'success': False, 'message': 'Cannot reorder dice now'}
+        if len(self.state.get('remaining') or []) < 2:
+            return {'success': False, 'message': 'No dice to reorder'}
+
+        self.state['remaining'] = list(reversed(self.state['remaining']))
+        self.state['version'] = self.state.get('version', 0) + 1
+        return {'success': True, 'state': self.state}
 
     def _apply_move(self, move, color):
         s = self.state

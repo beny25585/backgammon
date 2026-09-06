@@ -24,8 +24,10 @@ interface GameBoardProps {
   state: GameState;
   playerColor: Color;
   makeMove: (from: Source, to: Target) => void;
+  reorderDice?: () => void;
   undoMove?: () => void;
   endTurn?: () => void;
+  offerDouble?: () => void;
   onLeave?: (outcome?: "won" | "lost") => void;
   needsToRoll?: boolean;
   onRoll?: () => void;
@@ -53,8 +55,10 @@ export default function GameBoard({
   state,
   playerColor,
   makeMove,
+  reorderDice,
   undoMove,
   endTurn,
+  offerDouble,
   onLeave,
   needsToRoll,
   onRoll,
@@ -155,6 +159,8 @@ export default function GameBoard({
           legalFromPoints={legalFromPoints}
           onUndo={undoMove}
           onConfirm={endTurn}
+          onRoll={!landing && !autoRoll && needsToRoll ? onRoll : undefined}
+          onOfferDouble={offerDouble}
           autoMove={autoMove}
         />
         {!landing &&
@@ -166,6 +172,7 @@ export default function GameBoard({
                 dice={state.dice}
                 remaining={state.remaining}
                 color={state.turn}
+                onReorder={isMyTurn ? reorderDice : undefined}
               />
             </div>
           )}
@@ -180,7 +187,7 @@ export default function GameBoard({
             <span>{t("game.noMovesAvailable")}</span>
           </div>
         )}
-        {needsToRoll && onRoll && !autoRoll && (
+        {needsToRoll && onRoll && !autoRoll && landing && (
           <div className={styles.boardRollPrompt} data-testid="roll-prompt">
             <RollPrompt
               onRoll={onRoll}
