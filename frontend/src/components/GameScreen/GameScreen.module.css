@@ -834,8 +834,8 @@
   color: #fff;
 }
 
-/* === Small portrait screens: stack board above side panel === */
-@media (width < 800px) and (orientation: landscape) {
+/* === Landscape phones, including wider screens with a short viewport === */
+@media (width < 800px) and (orientation: landscape), (orientation: landscape) and (max-height: 430px) {
   .container {
     /* Sizes scale with the board's own width (.wrapper is the cqw container) */
     --checker: max(18px, 4.25cqw);
@@ -865,7 +865,7 @@
   }
 }
 
-@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+@media (orientation: landscape) and (max-height: 430px) {
   .container {
     --checker: max(15px, 4.55cqw);
     --bar-w: max(13px, 2.7cqw);

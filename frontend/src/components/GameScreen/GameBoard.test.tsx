@@ -1,7 +1,7 @@
 import { test, expect, type ComponentFixtures } from "@playwright/experimental-ct-react";
 import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
-import { newGame } from "@/lib/backgammon/engine";
+import { applyMove, newGame } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 
 function simpleWhiteState(): GameState {
@@ -58,6 +58,7 @@ async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) 
       />
     </MockGameWrapper>,
   );
+  await expect(component.locator('[data-point-idx="23"]')).toBeAttached();
   return component;
 }
 
@@ -78,8 +79,10 @@ test("clicking a checker then a legal target calls makeMove", async ({ mount }) 
 
 test("auto-moves on first tap when a checker has a single legal target", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
+  const state = simpleWhiteState();
+  state.points[12] = 1; // Keep this tap test independent of the forced-turn timer.
   const component = await mountBoard(mount, {
-    state: simpleWhiteState(),
+    state,
     playerColor: "white",
     makeMove: (from, to) => moveCalls.push([from, to]),
   });
@@ -119,14 +122,15 @@ test("auto-moves with the smaller die after dice are reordered", async ({ mount 
   expect(moveCalls[0]).toEqual([23, 20]);
 });
 
-test("source checker stays hidden during flight and reappears after", async ({ mount }) => {
+test("source checker stays hidden during flight and reappears after", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   const component = await mountBoard(mount, {
     state: simpleWhiteState(),
     playerColor: "white",
   });
 
-  await component.locator('[data-point-idx="23"]').click();
-  await component.locator('[data-point-idx="19"]').click();
+  await component.locator('[data-point-idx="23"]').dispatchEvent("click");
 
   const sourceCheckers = component.locator('[data-point-idx="23"] [data-checker]');
   const flyer = component.locator('[data-testid="flying-checker"]');
@@ -134,7 +138,7 @@ test("source checker stays hidden during flight and reappears after", async ({ m
   await expect(flyer).toHaveCount(1);
   await expect(sourceCheckers).toHaveCount(0);
 
-  await component.page().waitForTimeout(1400);
+  await page.clock.runFor(1400);
 
   await expect(flyer).toHaveCount(0);
   await expect(sourceCheckers).toHaveCount(1);
@@ -144,6 +148,8 @@ test("releases the board as soon as an authoritative move is applied", async ({
   mount,
   page,
 }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   const initialState = simpleWhiteState();
   const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
@@ -153,8 +159,8 @@ test("releases the board as soon as an authoritative move is applied", async ({
   });
   const flyer = component.getByTestId("flying-checker");
 
-  await component.locator('[data-point-idx="23"]').click();
-  expect(moveCalls).toEqual([[23, 19]]);
+  await component.locator('[data-point-idx="23"]').dispatchEvent("click");
+  await expect.poll(() => moveCalls).toEqual([[23, 19]]);
 
   const points = [...initialState.points];
   points[23] = 0;
@@ -177,12 +183,122 @@ test("releases the board as soon as an authoritative move is applied", async ({
       />
     </MockGameWrapper>,
   );
-  await page.waitForTimeout(350);
+  await page.clock.runFor(350);
 
   expect(await flyer.count()).toBe(0);
   await expect(
     component.locator('[data-point-idx="19"] [data-checker]'),
   ).toHaveCount(1);
+});
+
+test("accepts the next move during an applied move's animation", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const points = new Array(24).fill(0);
+  points[23] = 2;
+  points[12] = 1;
+  const initialState = movingState({ points, dice: [4, 3], remaining: [4, 3] });
+  const moveCalls: [Source, Target][] = [];
+  const makeMove = (from: Source, to: Target) => { moveCalls.push([from, to]); };
+  const component = await mountBoard(mount, {
+    state: initialState,
+    playerColor: "white",
+    makeMove,
+  });
+
+  await component.locator('[data-point-idx="23"]').dispatchEvent("click");
+  await expect.poll(() => moveCalls.length).toBe(1);
+  // A second click against an unchanged board must not duplicate the move.
+  await component.locator('[data-point-idx="23"]').dispatchEvent("click");
+  expect(moveCalls).toEqual([[23, 19]]);
+
+  const appliedState = applyMove(initialState, { from: 23, to: 19, die: 4 }, "white");
+  await component.update(
+    <MockGameWrapper playerColor="white" state={appliedState}>
+      <GameBoard state={appliedState} playerColor="white" makeMove={makeMove} />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("flying-checker")).toHaveCount(1);
+  await expect(component.getByTestId("die").first().locator("span")).toHaveCount(3);
+  await component.locator('[data-point-idx="23"]').dispatchEvent("click");
+  await expect.poll(() => moveCalls.length).toBe(2);
+  expect(moveCalls).toEqual([[23, 19], [23, 20]]);
+
+  const finalState = applyMove(appliedState, { from: 23, to: 20, die: 3 }, "white");
+  await component.update(
+    <MockGameWrapper playerColor="white" state={finalState}>
+      <GameBoard state={finalState} playerColor="white" makeMove={makeMove} />
+    </MockGameWrapper>,
+  );
+  await page.clock.runFor(400);
+  await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+  await expect(component.locator('[data-point-idx="19"] [data-checker]')).toHaveCount(1);
+  await expect(component.locator('[data-point-idx="20"] [data-checker]')).toHaveCount(1);
+});
+
+for (const width of [375, 1280]) {
+  for (const destinationCount of [0, 3, 5, -1]) {
+    test(`flight lands exactly on the updated checker (${width}px, destination ${destinationCount})`, async ({ mount, page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.addStyleTag({ content: ":root { --checker: 30px; --bar-w: 30px; --bearoff-w: 40px; }" });
+      await page.clock.install();
+      await page.clock.pauseAt(new Date());
+      const points = new Array(24).fill(0);
+      points[23] = 2;
+      points[12] = 2;
+      points[19] = destinationCount;
+      const state = movingState({ points, dice: [4, 3], remaining: [4, 3] });
+      const component = await mountBoard(mount, { state, playerColor: "white" });
+
+      await component.locator('[data-point-idx="23"]').dispatchEvent("click");
+      // Keep the server response pending until the animation has landed.
+      await page.clock.runFor(300);
+      const landing = await component.getByTestId("flying-checker").boundingBox();
+      expect(landing).not.toBeNull();
+
+      const appliedState = applyMove(state, { from: 23, to: 19, die: 4 }, "white");
+      await component.update(
+        <MockGameWrapper playerColor="white" state={appliedState}>
+          <GameBoard state={appliedState} playerColor="white" makeMove={() => {}} />
+        </MockGameWrapper>,
+      );
+      await expect(component.getByTestId("die").first().locator("span")).toHaveCount(3);
+      await page.clock.runFor(20);
+      await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+      const checker = await component.locator('[data-point-idx="19"] [data-checker]').last().boundingBox();
+      expect(checker).not.toBeNull();
+      expect(Math.abs(landing!.x - checker!.x), "horizontal jump on landing").toBeLessThan(1);
+      expect(Math.abs(landing!.y - checker!.y), "vertical jump on landing").toBeLessThan(1);
+    });
+  }
+}
+
+test("animates the opponent's first move and consecutive updates without leaving a stale flyer", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const points = new Array(24).fill(0);
+  points[0] = -2;
+  let state = movingState({ points, turn: "black", dice: [4, 3], remaining: [4, 3], lastMove: null });
+  const component = await mountBoard(mount, { state, playerColor: "white" });
+  const updateBoard = async () => {
+    await component.update(
+      <MockGameWrapper playerColor="white" state={state}>
+        <GameBoard state={state} playerColor="white" makeMove={() => {}} />
+      </MockGameWrapper>,
+    );
+  };
+  state = applyMove(state, { from: 0, to: 4, die: 4 }, "black");
+  await updateBoard();
+  await expect(component.getByTestId("flying-checker")).toHaveCount(1);
+  await expect(component.locator('[data-point-idx="4"] [data-checker]')).toHaveCount(0);
+
+  state = applyMove(state, { from: 0, to: 3, die: 3 }, "black");
+  await updateBoard();
+  await expect(component.locator('[data-point-idx="4"] [data-checker]')).toHaveCount(1);
+  await expect(component.locator('[data-point-idx="3"] [data-checker]')).toHaveCount(0);
+  await page.clock.runFor(400);
+  await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+  await expect(component.locator('[data-point-idx="3"] [data-checker]')).toHaveCount(1);
 });
 
 test("no highlights and no moves when it is not the player's turn", async ({ mount }) => {
@@ -437,6 +553,8 @@ test("board point order is mirrored for the black player", async ({ mount }) => 
     </div>,
   );
 
+  await expect(component.getByTestId("white-board").locator("[data-point-idx]")).toHaveCount(26);
+  await expect(component.getByTestId("black-board").locator("[data-point-idx]")).toHaveCount(26);
   const whiteOrder = await component
     .getByTestId("white-board")
     .locator("[data-point-idx]")

@@ -31,7 +31,8 @@ test("clicking playable dice row requests dice reorder", async ({ mount }) => {
     />,
   );
 
+  await expect(row.getByTestId("die")).toHaveCount(2);
   await row.click();
 
-  expect(reorderCalls).toBe(1);
+  await expect.poll(() => reorderCalls).toBe(1);
 });

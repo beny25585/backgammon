@@ -14,8 +14,14 @@ import type {
   GameResult,
   OpeningRollResult,
 } from "../types/context";
-import type { GameState, Color } from "../types/game";
-import { reorderDice as reorderGameDice, type Source, type Target } from "../lib/backgammon/engine";
+import type { GameState, Color, Move } from "../types/game";
+import {
+  allLegalMoves,
+  applyMove,
+  reorderDice as reorderGameDice,
+  type Source,
+  type Target,
+} from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
@@ -31,6 +37,31 @@ interface GameProviderProps {
   roomId: string;
   playerColor: Color;
   serverUrl?: string;
+}
+
+interface PendingMove {
+  from: Source;
+  to: Target;
+  sentAt: number;
+}
+
+function applyOptimisticMove(
+  state: GameState,
+  pending: Pick<PendingMove, "from" | "to">,
+  color: Color,
+): GameState | null {
+  if (state.phase !== "moving" || state.turn !== color) return null;
+
+  const matchingMoves = allLegalMoves(state, color).filter(
+    (move) => move.from === pending.from && move.to === pending.to,
+  );
+  const move =
+    state.remaining
+      .map((die) => matchingMoves.find((candidate) => candidate.die === die))
+      .find((candidate): candidate is Move => Boolean(candidate)) ??
+    matchingMoves[0];
+
+  return move ? applyMove(state, move, color) : null;
 }
 
 export function GameProvider({
@@ -65,6 +96,8 @@ export function GameProvider({
   const socket = getSocketService(serverUrl);
   const lastVersionRef = useRef(0);
   const stateRef = useRef(state);
+  const authoritativeStateRef = useRef<GameState | null>(null);
+  const pendingMovesRef = useRef<PendingMove[]>([]);
   const playerColorRef = useRef(playerColor);
 
   useLayoutEffect(() => {
@@ -77,7 +110,9 @@ export function GameProvider({
 
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
-      socket.send("state_update", payload);
+      const sent = socket.send("state_update", payload);
+      if (!sent) setError("Connection lost. Please wait for reconnection.");
+      return sent;
     },
     [socket],
   );
@@ -127,21 +162,29 @@ export function GameProvider({
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
+            setError(null);
             clientLogger.debug("Initial state update received", {
               phase: raw.phase,
               turn: raw.turn,
               version: raw.version,
               playerColorInMsg: msg.playerColor,
             });
-            if (msg.playerColor) setPlayerColor(msg.playerColor as Color);
+            if (msg.playerColor) {
+              playerColorRef.current = msg.playerColor as Color;
+              setPlayerColor(playerColorRef.current);
+            }
             const v = typeof raw.version === "number" ? raw.version : 0;
-            if (v > 0) lastVersionRef.current = v;
+            lastVersionRef.current = v;
             if (hasReceivedState) {
               setReconnected(true);
               setTimeout(() => setReconnected(false), 3000);
             }
             hasReceivedState = true;
-            setState(raw as unknown as GameState);
+            const initialState = raw as unknown as GameState;
+            pendingMovesRef.current = [];
+            authoritativeStateRef.current = initialState;
+            stateRef.current = initialState;
+            setState(initialState);
 
             const players = (msg as Record<string, unknown>).players as
               | { white?: string | null; black?: string | null }
@@ -183,6 +226,44 @@ export function GameProvider({
 
           const prev = stateRef.current;
           const next = raw as unknown as GameState;
+          const sourceColor = msg.playerColor as Color | undefined;
+          const acknowledgedAction =
+            typeof msg.action === "string" ? msg.action : undefined;
+
+          if (
+            sourceColor === playerColorRef.current &&
+            pendingMovesRef.current.length > 0
+          ) {
+            const pending = pendingMovesRef.current[0];
+            const serverMove = next.lastMove?.[next.lastMove.length - 1];
+            const acknowledgesMove =
+              acknowledgedAction === "move" ||
+              (acknowledgedAction === undefined &&
+                serverMove?.from === pending.from &&
+                serverMove?.to === pending.to);
+            if (acknowledgesMove) {
+              pendingMovesRef.current.shift();
+              clientLogger.debug("[move] server acknowledgement", {
+                latencyMs: Math.round(performance.now() - pending.sentAt),
+                version,
+              });
+            }
+          }
+
+          authoritativeStateRef.current = next;
+          let displayedState = next;
+          const replayedMoves: PendingMove[] = [];
+          for (const pending of pendingMovesRef.current) {
+            const replayed = applyOptimisticMove(
+              displayedState,
+              pending,
+              playerColorRef.current,
+            );
+            if (!replayed) break;
+            replayedMoves.push(pending);
+            displayedState = replayed;
+          }
+          pendingMovesRef.current = replayedMoves;
 
           // Server auto-pass: we rolled, but no legal moves existed. Show the
           // "No moves available" overlay briefly with the rolled dice.
@@ -199,7 +280,8 @@ export function GameProvider({
             setTimeout(() => setNoMovesMessage(null), 1500);
           }
 
-          setState(next);
+          stateRef.current = displayedState;
+          setState(displayedState);
           buildOpeningResult(raw);
           clientLogger.debug("[state_update] received", {
             phase: next.phase,
@@ -263,6 +345,22 @@ export function GameProvider({
                 : (payload as Record<string, unknown> | undefined)?.message;
           const msg = typeof rawMsg === "string" ? rawMsg : undefined;
           if (!msg) return;
+          const failedAction =
+            typeof m.action === "string"
+              ? m.action
+              : typeof payload === "object" &&
+                  payload !== null &&
+                  typeof payload.action === "string"
+                ? payload.action
+                : undefined;
+          if (failedAction === "move" && pendingMovesRef.current.length > 0) {
+            pendingMovesRef.current = [];
+            const authoritative = authoritativeStateRef.current;
+            if (authoritative) {
+              stateRef.current = authoritative;
+              setState(authoritative);
+            }
+          }
           // The server auto-resolves the opening once both sockets connect, so
           // a roll intent still in flight can hit a resolved opening. That
           // "Cannot roll now" is benign — the UI only offers roll when it is
@@ -372,7 +470,18 @@ export function GameProvider({
       const current = stateRef.current;
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
-      sendIntent({ action: "move", from, to });
+      const pending: PendingMove = { from, to, sentAt: performance.now() };
+      const optimistic = applyOptimisticMove(
+        current,
+        pending,
+        playerColorRef.current,
+      );
+      if (!sendIntent({ action: "move", from, to })) return;
+      if (optimistic) {
+        pendingMovesRef.current.push(pending);
+        stateRef.current = optimistic;
+        setState(optimistic);
+      }
     },
     [sendIntent],
   );

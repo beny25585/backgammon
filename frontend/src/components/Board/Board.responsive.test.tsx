@@ -99,6 +99,7 @@ for (const vp of VIEWPORTS) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     const component = await mountBoard(mount, busyState());
 
+    await expect(component.locator("[data-checker]").nth(4)).toBeAttached();
     const checkerCount = await component.locator("[data-checker]").count();
     expect(checkerCount, `should render checkers (${vp.name})`).toBeGreaterThanOrEqual(5);
 

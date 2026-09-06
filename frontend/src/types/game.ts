@@ -18,6 +18,7 @@ export interface GameMessage {
     | "double_response"
     | "game_finished";
   payload: unknown;
+  action?: string;
   playerColor?: Color;
   initial?: boolean;
 }

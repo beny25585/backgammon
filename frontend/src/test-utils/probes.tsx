@@ -55,6 +55,9 @@ export function GameProbe({ from, to }: { from: number; to: number }) {
       <div data-testid="version">{String(state?.version ?? "")}</div>
       <div data-testid="phase">{String(state?.phase ?? "")}</div>
       <div data-testid="dice">{JSON.stringify(state?.dice ?? [])}</div>
+      <div data-testid="remaining">{JSON.stringify(state?.remaining ?? [])}</div>
+      <div data-testid="point-23">{String(state?.points?.[23] ?? "")}</div>
+      <div data-testid="point-19">{String(state?.points?.[19] ?? "")}</div>
       <div data-testid="opening-result">{JSON.stringify(openingRollResult)}</div>
       <div data-testid="no-moves">{String(Boolean(noMovesMessage))}</div>
       <div data-testid="error">{error ?? ""}</div>

@@ -227,6 +227,120 @@ test("move sends a move intent with from and to", async ({ mount, page }) => {
   )!;
   expect(moveMsg.payload).not.toHaveProperty("state");
   expect(moveMsg.payload).toEqual({ action: "move", from: 23, to: 19 });
+  await expect(component.getByTestId("remaining")).toHaveText("[]");
+  await expect(component.getByTestId("point-23")).toHaveText("0");
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+});
+
+test("keeps a later optimistic move while the first server acknowledgement arrives", async ({
+  mount,
+  page,
+}) => {
+  const initial = midGameState();
+  initial.points[23] = 2;
+  initial.dice = [4, 4];
+  initial.remaining = [4, 4];
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, initial);
+
+  await component.getByTestId("move").click();
+  await component.getByTestId("move").click();
+  await expect(component.getByTestId("point-23")).toHaveText("0");
+  await expect(component.getByTestId("point-19")).toHaveText("2");
+
+  const firstAck = {
+    ...initial,
+    points: [...initial.points],
+    remaining: [4],
+    lastMove: [{ from: 23, to: 19 }],
+    version: 2,
+  };
+  firstAck.points[23] = 1;
+  firstAck.points[19] = 1;
+  await page.evaluate((s) => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({
+      type: "state_update",
+      payload: s,
+      playerColor: "white",
+      action: "move",
+      initial: false,
+    });
+  }, firstAck);
+
+  await expect(component.getByTestId("point-23")).toHaveText("0");
+  await expect(component.getByTestId("point-19")).toHaveText("2");
+});
+
+test("rolls an optimistic move back when the server rejects it", async ({
+  mount,
+  page,
+}) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+
+  await component.getByTestId("move").click();
+  await expect(component.getByTestId("point-23")).toHaveText("0");
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "error", message: "Invalid move", action: "move" });
+  });
+
+  await expect(component.getByTestId("point-23")).toHaveText("1");
+  await expect(component.getByTestId("point-19")).toHaveText("0");
+  await expect(component.getByTestId("error")).toHaveText("Invalid move");
+});
+
+test("a move during disconnection does not leave an unsent checker on the board", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    Object.assign(ws, { readyState: 3 });
+  });
+  await component.getByTestId("move").click();
+  await expect(component.getByTestId("point-23")).toHaveText("1");
+  await expect(component.getByTestId("point-19")).toHaveText("0");
+  await expect(component.getByTestId("error")).toContainText("Connection lost");
+  expect((await sentMessages(page)).filter(m => m.payload?.action === "move")).toHaveLength(0);
+
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+  await expect(component.getByTestId("error")).toHaveText("");
+});
+
+test("a fresh version-zero snapshot resets the stale-update filter", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...midGameState(), version: 100 });
+  await emitInitialState(page, { ...rollingState(), version: 0 });
+  await emitBroadcast(page, { ...midGameState(), version: 1 });
+  await expect(component.getByTestId("phase")).toHaveText("moving");
+  await expect(component.getByTestId("version")).toHaveText("1");
+});
+
+test("four quick moves stay stable through delayed and stale acknowledgements", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  const initial = { ...midGameState(), dice: [4, 4], remaining: [4, 4, 4, 4] };
+  initial.points[23] = 4;
+  await emitInitialState(page, initial);
+  for (let move = 0; move < 4; move++) await component.getByTestId("move").click();
+  await expect(component.getByTestId("point-19")).toHaveText("4");
+  for (let acknowledged = 1; acknowledged <= 4; acknowledged++) {
+    const points = [...initial.points];
+    points[23] = 4 - acknowledged;
+    points[19] = acknowledged;
+    const snapshot = {
+      ...initial,
+      points,
+      version: acknowledged + 1,
+      remaining: new Array(4 - acknowledged).fill(4),
+      lastMove: Array.from({ length: acknowledged }, () => ({ from: 23, to: 19 })),
+    };
+    await emitBroadcast(page, snapshot);
+    await emitBroadcast(page, { ...initial, version: 1 });
+    await expect(component.getByTestId("point-19")).toHaveText("4");
+    await expect(component.getByTestId("point-23")).toHaveText("0");
+    await expect(component.getByTestId("remaining")).toHaveText("[]");
+  }
 });
 
 test("undo sends an undo intent", async ({ mount, page }) => {

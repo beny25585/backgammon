@@ -1,4 +1,11 @@
-import { useMemo, useRef, useState, useCallback, useEffect } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import {
   BAR,
@@ -76,7 +83,9 @@ export function Board({
   const { t } = useI18n();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const flightIdRef = useRef(0);
   const [flyChecker, setFlyChecker] = useState<{
+    id: number;
     fromX: number;
     fromY: number;
     toX: number;
@@ -92,8 +101,8 @@ export function Board({
   } | null>(null);
 
   const knownLastMoveRef = useRef<
-    { from: Source | Target; to: Target }[] | null
-  >(null);
+    { from: Source | Target; to: Target }[]
+  >(state.lastMove ?? []);
   const humanMoveRef = useRef<{ from: Source | Target; to: Target } | null>(
     null,
   );
@@ -101,6 +110,14 @@ export function Board({
   const flySourceCount = flyChecker
     ? checkerCountAt(state, flyChecker.from, flyChecker.color)
     : null;
+  const flyMoveApplied = Boolean(
+    flyChecker && flySourceCount !== null && flySourceCount < flyChecker.fromCount,
+  );
+  // Once the move is reflected on the board (including optimistic online
+  // updates), further input is safe. The visual animation must not swallow it.
+  const interactionBlocked = Boolean(
+    flyChecker && (flyChecker.external || !flyMoveApplied),
+  );
 
   useEffect(() => {
     if (!flyChecker?.committed) return;
@@ -162,7 +179,8 @@ export function Board({
         return;
       }
 
-      const bRect = board.getBoundingClientRect();
+      // The flyer is positioned inside the wrapper, outside the inset frame.
+      const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
       const fRect = fromEl.getBoundingClientRect();
       const tRect = toEl.getBoundingClientRect();
       const checkerPx = getCheckerSize(board);
@@ -177,8 +195,12 @@ export function Board({
         typeof from === "number" && displayTopPoints.includes(from);
 
       // The checker lands on TOP of the destination stack (count + 1).
+      const targetValue = typeof to === "number" ? (state.points[to] ?? 0) : 0;
+      // A hit replaces the opponent's blot; it does not add a stack slot.
       const toCount =
-        typeof to === "number" ? Math.abs(state.points[to] ?? 0) : 0;
+        (myColor === "black" ? targetValue < 0 : targetValue > 0)
+          ? Math.abs(targetValue)
+          : 0;
       const toStackIndex = Math.min(toCount, 4);
       const isToTop = typeof to === "number" && displayTopPoints.includes(to);
 
@@ -200,6 +222,7 @@ export function Board({
       );
 
       setFlyChecker({
+        id: ++flightIdRef.current,
         fromX,
         fromY,
         toX,
@@ -235,7 +258,7 @@ export function Board({
       const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
       if (!fromEl || !toEl) return;
 
-      const bRect = board.getBoundingClientRect();
+      const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
       const fRect = fromEl.getBoundingClientRect();
       const tRect = toEl.getBoundingClientRect();
       const checkerPx = getCheckerSize(board);
@@ -275,6 +298,7 @@ export function Board({
       );
 
       setFlyChecker({
+        id: ++flightIdRef.current,
         fromX,
         fromY,
         toX,
@@ -295,10 +319,10 @@ export function Board({
     const lm = state.lastMove;
     const known = knownLastMoveRef.current;
     if (lm === null) {
-      knownLastMoveRef.current = null;
+      knownLastMoveRef.current = [];
       return;
     }
-    if (known === null || lm.length <= known.length) {
+    if (lm.length <= known.length) {
       knownLastMoveRef.current = lm;
       return;
     }
@@ -311,7 +335,7 @@ export function Board({
     knownLastMoveRef.current = lm;
     humanMoveRef.current = null;
     if (isHuman) return;
-    if (flyChecker) return;
+    // Replace a superseded flight instead of dropping the new server update.
     const mover: Color = myColor === "black" ? "white" : "black";
     animateExternalMove(last.from, last.to, mover);
   }, [state.lastMove, flyChecker, myColor, animateExternalMove]);
@@ -324,7 +348,7 @@ export function Board({
   }, [autoMove]);
 
   const handleUndo = useCallback(() => {
-    if (flyChecker) return;
+    if (interactionBlocked) return;
     const board = boardRef.current;
     const last = lastMoveLast;
     if (!board || !last) {
@@ -342,7 +366,7 @@ export function Board({
       return;
     }
 
-    const bRect = board.getBoundingClientRect();
+    const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
     const tRect = toEl.getBoundingClientRect();
     const fRect = fromEl.getBoundingClientRect();
     const checkerPx = getCheckerSize(board);
@@ -380,6 +404,7 @@ export function Board({
     );
 
     setFlyChecker({
+      id: ++flightIdRef.current,
       fromX,
       fromY,
       toX,
@@ -400,7 +425,7 @@ export function Board({
     displayTopPoints,
     computeSlotY,
     lastMoveLast,
-    flyChecker,
+    interactionBlocked,
   ]);
 
   function hideTopCheckerAt(idx: number) {
@@ -412,7 +437,7 @@ export function Board({
   }
 
   const handleClick = useCallback((idx: Source) => {
-    if (flyChecker) return;
+    if (interactionBlocked) return;
     if (typeof idx === "number" && legalTargets.includes(idx)) {
       if (selected !== null) {
         triggerFly(selected, idx);
@@ -441,7 +466,7 @@ export function Board({
       }
     }
   }, [
-    flyChecker,
+    interactionBlocked,
     legalTargets,
     selected,
     triggerFly,
@@ -455,7 +480,7 @@ export function Board({
   // Point cells are memoized. Keep the callback passed to all 24 cells stable,
   // while still invoking the newest interaction logic after every state change.
   const handleClickRef = useRef(handleClick);
-  useEffect(() => {
+  useLayoutEffect(() => {
     handleClickRef.current = handleClick;
   }, [handleClick]);
   const handlePointClick = useCallback((idx: number) => {
@@ -590,7 +615,9 @@ export function Board({
             myColor={myColor}
             isLegalTarget={legalTargets.includes(OFF)}
             onClick={() =>
-              legalTargets.includes(OFF) && triggerFly(selected ?? 0, OFF)
+              !interactionBlocked &&
+              legalTargets.includes(OFF) &&
+              triggerFly(selected ?? 0, OFF)
             }
           />
         </div>
@@ -635,19 +662,19 @@ export function Board({
 
       {flyChecker && (
         <FlyingChecker
+          key={flyChecker.id}
           from={{ x: flyChecker.fromX, y: flyChecker.fromY }}
           to={{ x: flyChecker.toX, y: flyChecker.toY }}
           color={flyChecker.color}
           size={flyChecker.size}
           committed={flyChecker.committed}
           onComplete={() => {
-            if (flyChecker.external) {
-              setFlyChecker(null);
-              return;
-            }
-            setFlyChecker((prev) =>
-              prev ? { ...prev, committed: true } : prev,
-            );
+            setFlyChecker((current) => {
+              if (current?.id !== flyChecker.id) return current;
+              return current.external || flyMoveApplied
+                ? null
+                : { ...current, committed: true };
+            });
           }}
         />
       )}

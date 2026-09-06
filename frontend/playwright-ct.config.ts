@@ -11,6 +11,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const srcRoot = path.resolve(__dirname, "./src");
 
 const chromiumPath = process.env.CHROMIUM_PATH;
+const browserName = process.env.TEST_BROWSER === "webkit" ? "webkit" : "chromium";
 
 export default defineConfig({
   testDir: "./src",
@@ -20,6 +21,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
   use: {
+    browserName,
     trace: "on-first-retry",
     ctViteConfig: {
       plugins: [tailwindcss(), react()],
@@ -32,6 +34,6 @@ export default defineConfig({
     },
     ctTemplateDir: "src/test-utils",
     testIdAttribute: "data-testid",
-    launchOptions: chromiumPath ? { executablePath: chromiumPath } : undefined,
+    launchOptions: browserName === "chromium" && chromiumPath ? { executablePath: chromiumPath } : undefined,
   },
 });

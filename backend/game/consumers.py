@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import uuid
 import logging
@@ -8,7 +9,8 @@ from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
-from django.db import models
+from django.db import models, transaction
+from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
@@ -88,6 +90,52 @@ def record_event_and_advance(room, player_color, event_type, payload):
 
 
 @database_sync_to_async
+def persist_state_and_advance(room_id, state):
+    """Persist the authoritative state with one serialized room transaction."""
+    with transaction.atomic():
+        room = GameRoom.objects.select_for_update().get(id=room_id)
+        room.last_sequence += 1
+        room.save(update_fields=['last_sequence'])
+        sequence = room.last_sequence
+        state['version'] = sequence
+        GameState.objects.filter(room_id=room_id).update(
+            state_data=state,
+            updated_at=timezone.now(),
+        )
+    return sequence
+
+
+@database_sync_to_async
+def record_event(room_id, player_color, event_type, payload, sequence):
+    player_id = None
+    if player_color:
+        player_id = (
+            RoomPlayer.objects.filter(room_id=room_id, color=player_color)
+            .values_list('id', flat=True)
+            .first()
+        )
+    GameEvent.objects.create(
+        room_id=room_id,
+        player_id=player_id,
+        sequence=sequence,
+        event_type=event_type,
+        payload=payload,
+    )
+
+
+async def record_event_safely(room_id, player_color, event_type, payload, sequence):
+    try:
+        await record_event(room_id, player_color, event_type, payload, sequence)
+    except Exception:
+        logger.exception(
+            "Background event persistence failed: room=%s action=%s sequence=%s",
+            room_id,
+            event_type,
+            sequence,
+        )
+
+
+@database_sync_to_async
 def get_game_state(room):
     state, _ = GameState.objects.get_or_create(room=room)
     return state
@@ -109,6 +157,15 @@ _auto_next_tasks: dict = {}
 # Epoch ms deadlines keyed by room_group_name, used to report remaining seconds
 # to a reconnecting player.
 _auto_next_deadlines: dict = {}
+# Keep strong references until background persistence finishes.
+_background_tasks: set[asyncio.Task] = set()
+
+
+def run_in_background(coroutine):
+    task = asyncio.create_task(coroutine)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+    return task
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -404,12 +461,12 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         if not result.get('success'):
             logger.info(f"[intent] FAILED action={action} msg={result.get('message')}")
-            return await self._send_error(result.get('message', 'Action rejected'))
+            return await self._send_error(
+                result.get('message', 'Action rejected'), action=action
+            )
 
         state = engine.state
         logger.info(f"[intent] OK action={action} phase={state.get('phase')} turn={state.get('turn')} dice={state.get('dice')} remaining={state.get('remaining')}")
-        sequence = await record_event_and_advance(room, self.player_color, action, state)
-        state['version'] = sequence
 
         # Server-owned clock: recompute from our wall clock, never trust the client.
         now_ms = int(time_module.time() * 1000)
@@ -422,13 +479,20 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['turnStartedAt'] = turn_started_at
 
         if timed_out and new_active:
-            gs.state_data = state
-            await save_game_state(gs)
+            sequence = await persist_state_and_advance(room.id, state)
+            state['version'] = sequence
+            await record_event(
+                room.id,
+                self.player_color,
+                action,
+                copy.deepcopy(state),
+                sequence,
+            )
             winner = 'black' if new_active == 'white' else 'white'
             return await self._forfeit_on_time(winner, new_active)
 
-        gs.state_data = state
-        await save_game_state(gs)
+        sequence = await persist_state_and_advance(room.id, state)
+        state['version'] = sequence
 
         if clock is not None and new_active:
             await self._reschedule_timeout_from_state()
@@ -441,10 +505,24 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Centralized game-end: any game_over state the engine reports finalizes
         # the room (idempotent) and broadcasts game_ended to everyone.
         if state.get('phase') == 'game_over' and state.get('winner'):
+            await record_event(
+                room.id,
+                self.player_color,
+                action,
+                copy.deepcopy(state),
+                sequence,
+            )
             return await self._finalize_and_broadcast(
                 state, state['winner'], state.get('winType', 'single'), action
             )
 
+        run_in_background(record_event_safely(
+            room.id,
+            self.player_color,
+            action,
+            copy.deepcopy(state),
+            sequence,
+        ))
         await self.channel_layer.group_send(
             self.room_group_name,
             {
@@ -452,6 +530,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'event_type': 'state_update',
                 'payload': state,
                 'playerColor': self.player_color,
+                'action': action,
             }
         )
         asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state))
@@ -867,11 +946,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.info(f"WS timeout forfeit: loser={loser} winner={winner} room={self.room_id}")
         await self._finalize_and_broadcast(stored, winner, 'single', 'time')
 
-    async def _send_error(self, message):
-        await self.send(json.dumps({
+    async def _send_error(self, message, action=None):
+        response = {
             'type': 'error',
             'message': message
-        }))
+        }
+        if action:
+            response['action'] = action
+        await self.send(json.dumps(response))
 
     async def _broadcast_room_status(self):
         """Broadcast the number of connected users to the room."""
@@ -888,11 +970,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def game_message(self, event):
-        await self.send(json.dumps({
+        message = {
             'type': event['event_type'],
             'payload': event['payload'],
-            'playerColor': event['playerColor']
-        }))
+            'playerColor': event['playerColor'],
+        }
+        if event.get('action'):
+            message['action'] = event['action']
+        await self.send(json.dumps(message))
 
     async def player_joined(self, event):
         await self.send(json.dumps({

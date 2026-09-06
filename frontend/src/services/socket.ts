@@ -35,12 +35,15 @@ export class GameSocketService {
   private currentToken: string | null = null;
   private currentRoomId: string | null = null;
   private intentionalClose = false;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(url: string = "") {
     this.url = url || "/backgammon";
   }
 
   connect(roomId: string, token?: string): Promise<void> {
+    this.cancelReconnect();
+    if (this.currentRoomId !== roomId) this.reconnectAttempts = 0;
     this.currentRoomId = roomId;
     this.currentToken = token || null;
     this.intentionalClose = false;
@@ -115,15 +118,18 @@ export class GameSocketService {
   }
 
   private attemptReconnect(): void {
-    if (!this.currentRoomId) return;
+    if (!this.currentRoomId || this.intentionalClose) return;
+    this.cancelReconnect();
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      setTimeout(() => {
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        if (this.intentionalClose || !this.currentRoomId) return;
         clientLogger.info("Attempting to reconnect", {
           attempt: this.reconnectAttempts,
           maxAttempts: this.maxReconnectAttempts,
         });
-        this.connect(this.currentRoomId!, this.currentToken || undefined).catch(
+        this.connect(this.currentRoomId, this.currentToken || undefined).catch(
           (error) => {
             clientLogger.error("Reconnect attempt failed", {
               error: error instanceof Error ? error.message : String(error),
@@ -134,14 +140,21 @@ export class GameSocketService {
     }
   }
 
-  send(type: string, payload: unknown): void {
+  private cancelReconnect(): void {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+  }
+
+  send(type: string, payload: unknown): boolean {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
       clientLogger.info("Sending message", { type, payload });
+      return true;
     } else {
       clientLogger.warn(
         "WebSocket send skipped because socket is not connected",
       );
+      return false;
     }
   }
 
@@ -161,8 +174,12 @@ export class GameSocketService {
   }
 
   disconnect(): void {
+    this.intentionalClose = true;
+    this.cancelReconnect();
+    this.currentRoomId = null;
+    this.currentToken = null;
+    this.reconnectAttempts = 0;
     if (this.ws) {
-      this.intentionalClose = true;
       this.ws.close();
       this.ws = null;
     }

@@ -281,17 +281,23 @@ class GameConsumerTests(TransactionTestCase):
 
         event = await self._receive_until(comm_black, lambda e: e.get("type") == "state_update" and not e.get("initial"))
         self.assertEqual(event["type"], "state_update")
+        self.assertEqual(event["action"], "move")
         self.assertEqual(event["payload"]["version"], 1)
         self.assertEqual(event["payload"]["phase"], "moving")
         self.assertEqual(event["payload"]["remaining"], [5])
 
-        result = await database_sync_to_async(
-            lambda: (
-                (ge := GameEvent.objects.filter(room=self.room, sequence=1).first()),
-                ge.event_type if ge else None,
-                ge.player.color if ge and ge.player else None,
-            )
-        )()
+        result = None
+        for _ in range(50):
+            result = await database_sync_to_async(
+                lambda: (
+                    (ge := GameEvent.objects.filter(room=self.room, sequence=1).first()),
+                    ge.event_type if ge else None,
+                    ge.player.color if ge and ge.player else None,
+                )
+            )()
+            if result[0] is not None:
+                break
+            await asyncio.sleep(0.01)
         ge, event_type, player_color = result
         self.assertIsNotNone(ge)
         self.assertEqual(event_type, "move")
@@ -567,6 +573,44 @@ class GameConsumerTests(TransactionTestCase):
         self.assertEqual(event['payload']['turn'], 'white')
         self.assertEqual(event['payload']['dice'], [5, 2])
         self.assertEqual(event['payload']['remaining'], [5, 2])
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_move_broadcast_does_not_wait_for_event_history(self):
+        stored = BackgammonEngine.get_initial_state()
+        stored.update({
+            'phase': 'moving',
+            'turn': 'white',
+            'dice': [3, 5],
+            'remaining': [3, 5],
+            'version': 0,
+        })
+        gs = await get_game_state(self.room)
+        gs.state_data = stored
+        await save_game_state(gs)
+        comm_white, comm_black = await self._connect_both()
+        persistence_started = asyncio.Event()
+        release_persistence = asyncio.Event()
+
+        async def blocked_persistence(*_args, **_kwargs):
+            persistence_started.set()
+            await release_persistence.wait()
+
+        with patch('game.consumers.record_event', side_effect=blocked_persistence):
+            await comm_white.send_json_to({
+                'type': 'state_update',
+                'payload': {'action': 'move', 'from': 12, 'to': 9},
+            })
+            event = await self._receive_until(
+                comm_white,
+                lambda item: item.get('type') == 'state_update'
+                and item.get('action') == 'move',
+            )
+            await asyncio.wait_for(persistence_started.wait(), timeout=1)
+            self.assertEqual(event['payload']['remaining'], [5])
+            release_persistence.set()
+            await asyncio.sleep(0)
+
         await comm_white.disconnect()
         await comm_black.disconnect()
 
@@ -1981,7 +2025,7 @@ class BackgammonEngineTests(TestCase):
     def test_roll_dice_rolls_locally_when_no_dice_given(self):
         engine = self._engine()
         engine.state["phase"] = "rolling"
-        with patch("game.engine.BackgammonEngine._roll_dice", return_value=[2, 4]):
+        with patch("game.engine.BackgammonEngine._roll_die", side_effect=[2, 4]):
             result = engine.roll_dice()
         self.assertEqual(result["dice"], [4, 2])
         self.assertEqual(engine.state["remaining"], [4, 2])
@@ -1996,8 +2040,9 @@ class BackgammonEngineTests(TestCase):
     def test_reorder_dice_changes_which_die_is_used_for_same_destination(self):
         state = BackgammonEngine.get_initial_state()
         state["points"] = [0] * 24
-        state["points"][5] = 1
-        state["points"][3] = 1
+        state["points"][2] = 1
+        state["points"][1] = 1
+        state["home"]["white"] = 13
         state["turn"] = "white"
         state["phase"] = "moving"
         state["dice"] = [5, 3]
@@ -2008,11 +2053,13 @@ class BackgammonEngineTests(TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(engine.state["remaining"], [3, 5])
 
-        move = engine.make_move(5, 0, "white")
+        # Both 3 and 5 can bear off the highest checker; the reordered 3 wins.
+        move = engine.make_move(2, "off", "white")
 
         self.assertTrue(move["success"])
         self.assertEqual(engine.state["remaining"], [5])
-        self.assertEqual(engine.state["points"][3], 1)
+        self.assertEqual(engine.state["points"][1], 1)
+        self.assertEqual(engine.state["home"]["white"], 14)
 
     def test_roll_dice_no_legal_moves_switches_turn(self):
         state = BackgammonEngine.get_initial_state()
