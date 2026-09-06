@@ -22,7 +22,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
       {isLegalTarget && (
         <div className={styles.highlight} />
       )}
-      <div className={styles.section}>
+      <div className={styles.section} data-testid="bear-off-top">
         <div className={styles.label}>
           <span>{t("common.black")}</span>
           <span className={styles.count}>{state.home.black}</span>
@@ -36,7 +36,7 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
           />
         ))}
       </div>
-      <div className={styles.sectionReverse}>
+      <div className={styles.sectionReverse} data-testid="bear-off-bottom">
         <div className={styles.label}>
           <span>{t("common.white")}</span>
           <span className={styles.count}>{state.home.white}</span>

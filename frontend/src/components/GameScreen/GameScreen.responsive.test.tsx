@@ -175,3 +175,33 @@ for (const [theme, expectedAccent] of [
     expect(rollColor).toBe(expectedAccent);
   });
 }
+
+test("hamburger is centered with both bear-off trays", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 474, height: 330 });
+  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
+  const component = await mount(
+    <div className={styles.container}>
+      <MockGameWrapper playerColor="white" state={state}>
+        <GameBoard
+          state={state}
+          playerColor="white"
+          makeMove={() => {}}
+          needsToRoll
+          onRoll={() => {}}
+          offerDouble={() => {}}
+          onLeave={() => {}}
+        />
+      </MockGameWrapper>
+    </div>,
+  );
+
+  const menu = await component.getByRole("button", { name: "Match control" }).boundingBox();
+  const top = await component.getByTestId("bear-off-top").boundingBox();
+  const bottom = await component.getByTestId("bear-off-bottom").boundingBox();
+  expect(menu).not.toBeNull();
+  expect(top).not.toBeNull();
+  expect(bottom).not.toBeNull();
+  const centerX = (box: NonNullable<typeof menu>) => box.x + box.width / 2;
+  expect(Math.abs(centerX(menu!) - centerX(top!))).toBeLessThanOrEqual(1);
+  expect(Math.abs(centerX(menu!) - centerX(bottom!))).toBeLessThanOrEqual(1);
+});
