@@ -233,8 +233,17 @@ test("confirming give up sends a give_up message", async ({ mount, page }) => {
       <GameScreen />
     </GameProvider>,
   );
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const ws = (window as unknown as Record<string, { onmessage?: unknown }>).__fakeWs;
+        return typeof ws?.onmessage === "function";
+      }),
+    )
+    .toBe(true);
   await emitInitialState(page, { ...midGameState(), version: 1 });
 
+  await component.getByRole("button", { name: "Match control" }).click();
   await component.getByRole("button", { name: "Give up" }).click();
   await component.getByRole("button", { name: "Yes", exact: true }).click();
 

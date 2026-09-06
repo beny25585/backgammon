@@ -83,18 +83,12 @@ export function Board({
       | { kind: "undo"; historyLen: number };
   } | null>(null);
 
-  const [undoLanding, setUndoLanding] = useState<Source | null>(null);
-
   const knownLastMoveRef = useRef<
     { from: Source | Target; to: Target }[] | null
   >(null);
   const humanMoveRef = useRef<{ from: Source | Target; to: Target } | null>(
     null,
   );
-
-  useEffect(() => {
-    setUndoLanding(null);
-  }, [state.points]);
 
   useEffect(() => {
     if (!flyChecker?.committed) return;
@@ -214,6 +208,8 @@ export function Board({
       myColor,
       onMove,
       state.points,
+      state.bar,
+      state.moveHistory?.length,
       displayTopPoints,
       computeSlotY,
     ],
@@ -397,11 +393,12 @@ export function Board({
       committed: false,
       pending: { kind: "undo", historyLen: state.moveHistory?.length ?? 0 },
     });
-    setUndoLanding(last.from);
   }, [
     myColor,
     onUndo,
     state.points,
+    state.bar,
+    state.moveHistory?.length,
     displayTopPoints,
     computeSlotY,
     lastMoveLast,
@@ -417,7 +414,7 @@ export function Board({
     );
   }
 
-  function handleClick(idx: Source) {
+  const handleClick = useCallback((idx: Source) => {
     if (flyChecker) return;
     if (typeof idx === "number" && legalTargets.includes(idx)) {
       if (selected !== null) {
@@ -446,7 +443,27 @@ export function Board({
         onSelect(idx);
       }
     }
-  }
+  }, [
+    flyChecker,
+    legalTargets,
+    selected,
+    triggerFly,
+    onMove,
+    legalFromPoints,
+    myColor,
+    state,
+    onSelect,
+  ]);
+
+  // Point cells are memoized. Keep the callback passed to all 24 cells stable,
+  // while still invoking the newest interaction logic after every state change.
+  const handleClickRef = useRef(handleClick);
+  useEffect(() => {
+    handleClickRef.current = handleClick;
+  }, [handleClick]);
+  const handlePointClick = useCallback((idx: number) => {
+    handleClickRef.current(idx);
+  }, []);
 
   const canUndo =
     Boolean(onUndo) &&
@@ -490,14 +507,11 @@ export function Board({
                   key={idx}
                   index={idx}
                   top
-                  state={state}
+                  pointValue={state.points[idx] ?? 0}
                   selected={selected === idx}
                   isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
-                  onClick={() => handleClick(idx)}
-                  lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null}
-                  instantTarget={undoLanding}
+                  onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
               ))}
@@ -507,14 +521,11 @@ export function Board({
                 <PointCell
                   key={idx}
                   index={idx}
-                  state={state}
+                  pointValue={state.points[idx] ?? 0}
                   selected={selected === idx}
                   isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
-                  onClick={() => handleClick(idx)}
-                  lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null}
-                  instantTarget={undoLanding}
+                  onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
               ))}
@@ -552,14 +563,11 @@ export function Board({
                   key={idx}
                   index={idx}
                   top
-                  state={state}
+                  pointValue={state.points[idx] ?? 0}
                   selected={selected === idx}
                   isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
-                  onClick={() => handleClick(idx)}
-                  lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null}
-                  instantTarget={undoLanding}
+                  onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
               ))}
@@ -569,14 +577,11 @@ export function Board({
                 <PointCell
                   key={idx}
                   index={idx}
-                  state={state}
+                  pointValue={state.points[idx] ?? 0}
                   selected={selected === idx}
                   isLegalTarget={legalTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
-                  onClick={() => handleClick(idx)}
-                  lastMoveFrom={lastMoveLast?.from ?? null}
-                  lastMoveTo={lastMoveLast?.to ?? null}
-                  instantTarget={undoLanding}
+                  onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
               ))}

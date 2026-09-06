@@ -121,6 +121,14 @@
   overflow: visible;
 }
 
+.bottomCheckers {
+  position: absolute;
+  left: 50%;
+  bottom: 34%;
+  flex-direction: column-reverse;
+  transform: translateX(-50%);
+}
+
 @keyframes pulseGlow {
   0% {
     opacity: 0.6;

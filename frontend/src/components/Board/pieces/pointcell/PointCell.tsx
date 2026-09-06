@@ -1,57 +1,46 @@
-import { motion } from "motion/react";
-import type { GameState, Source, Target } from "@/lib/backgammon/engine";
+import { memo } from "react";
 import Checker from "../checker/Checker";
 import styles from "./PointCell.module.css";
 
 interface PointCellProps {
   index: number;
   top?: boolean;
-  state: GameState;
+  pointValue: number;
   selected: boolean;
   isLegalTarget: boolean;
   isLegalFrom: boolean;
-  lastMoveFrom: Source | null;
-  lastMoveTo: Target | null;
-  instantTarget?: Source | null;
   hideTopChecker?: boolean;
-  onClick: () => void;
+  onClick: (index: number) => void;
 }
 
-export default function PointCell({
+function PointCell({
   index,
   top,
-  state,
+  pointValue,
   selected,
   isLegalTarget,
   isLegalFrom,
-  lastMoveTo,
-  instantTarget,
   hideTopChecker,
   onClick,
 }: PointCellProps) {
   const isLight = index % 2 === 0;
 
-  const count = Math.abs(state.points[index]);
+  const count = Math.abs(pointValue);
 
   const color: "white" | "black" | null =
-    state.points[index] > 0
+    pointValue > 0
       ? "white"
-      : state.points[index] < 0
+      : pointValue < 0
         ? "black"
         : null;
-
-  const isMoveTarget = lastMoveTo === index || instantTarget === index;
 
   const displayedCount = Math.min(count, 5);
 
   const renderCount = hideTopChecker ? Math.max(displayedCount - 1, 0) : displayedCount;
 
-  const newCheckerIndex = isMoveTarget ? renderCount - 1 : -1;
-
   return (
-    <motion.button
-      whileHover={isLegalFrom || isLegalTarget ? { y: -2 } : undefined}
-      onClick={onClick}
+    <button
+      onClick={() => onClick(index)}
       className={styles.point}
       style={{
         direction: "ltr",
@@ -71,9 +60,7 @@ export default function PointCell({
       />
 
       {(selected || isLegalTarget || isLegalFrom) && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
+        <div
           className={`${styles.highlight} ${isLegalTarget ? styles.pulse : ""}`}
           style={{
 
@@ -91,11 +78,12 @@ export default function PointCell({
           <Checker
             key={i}
             color={color!}
-            instant={i === newCheckerIndex}
             label={i === 4 && count > 5 ? String(count) : undefined}
           />
         ))}
       </div>
-    </motion.button>
+    </button>
   );
 }
+
+export default memo(PointCell);

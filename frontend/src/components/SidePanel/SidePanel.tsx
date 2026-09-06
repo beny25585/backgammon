@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import styles from "./SidePanel.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
@@ -21,7 +21,7 @@ interface SidePanelProps {
   onBoardThemeChange?: (theme: BoardTheme) => void;
 }
 
-export default function SidePanel({
+function SidePanel({
   state,
   playerColor,
   onLeave,
@@ -176,3 +176,5 @@ export default function SidePanel({
     </div>
   );
 }
+
+export default memo(SidePanel);

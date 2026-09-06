@@ -260,7 +260,7 @@ test("double action appears where undo sits at the start of a turn", async ({ mo
 
   const doubleBtn = component.getByTitle("Offer double to opponent").first();
   await expect(doubleBtn).toBeVisible();
-  await expect(doubleBtn).toHaveText("Double x2");
+  await expect(doubleBtn).toHaveText("Double");
   await doubleBtn.click();
   expect(doubled).toBe(1);
 });

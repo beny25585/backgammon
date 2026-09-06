@@ -6,8 +6,6 @@ import GuidanceBanner from "../GuidanceBanner";
 import { DiceRow } from "../Dice";
 import {
   allLegalMoves,
-  legalMovesFrom,
-  getForcedMove,
   BAR,
   type Source,
   type Target,
@@ -46,6 +44,8 @@ const themeClassByTheme: Record<BoardTheme, string> = {
   ivoryGold: styles.themeIvoryGold,
 };
 
+const FORCED_MOVE_DELAY_MS = 180;
+
 export default function GameBoard({
   state,
   playerColor,
@@ -76,21 +76,32 @@ export default function GameBoard({
     if (!isMyTurn) setSelected(null);
   }, [isMyTurn]);
 
-  const legalFromPoints = useMemo(() => {
+  const legalMoves = useMemo(() => {
     if (!isMyTurn || !state || !state.points) return [];
-    const moves = allLegalMoves(state, playerColor);
-    const unique = new Set<Source>();
-    for (const m of moves) unique.add(m.from);
-    return Array.from(unique);
+    return allLegalMoves(state, playerColor);
   }, [state, playerColor, isMyTurn]);
 
-  const legalTargets = useMemo(() => {
-    if (!isMyTurn || !state || !state.points || selected === null) return [];
-    const moves = legalMovesFrom(state, selected, playerColor);
-    const unique = new Set<Target>();
-    for (const m of moves) unique.add(m.to);
+  const legalFromPoints = useMemo(() => {
+    const unique = new Set<Source>();
+    for (const move of legalMoves) unique.add(move.from);
     return Array.from(unique);
-  }, [state, selected, playerColor, isMyTurn]);
+  }, [legalMoves]);
+
+  const legalTargets = useMemo(() => {
+    if (selected === null) return [];
+    const unique = new Set<Target>();
+    for (const move of legalMoves) {
+      if (move.from === selected) unique.add(move.to);
+    }
+    return Array.from(unique);
+  }, [legalMoves, selected]);
+
+  const forcedMove = useMemo(() => {
+    const placements = new Set(
+      legalMoves.map((move) => `${move.from}->${move.to}`),
+    );
+    return placements.size === 1 ? legalMoves[0] : null;
+  }, [legalMoves]);
 
   useEffect(() => {
     if (
@@ -103,11 +114,15 @@ export default function GameBoard({
   }, [legalFromPoints, selected]);
 
   useEffect(() => {
-    if (!isMyTurn || state.remaining.length === 0) {
+    if (
+      !isMyTurn ||
+      state.remaining.length === 0 ||
+      (state.moveHistory?.length ?? 0) > 0
+    ) {
       setAutoMove(null);
       return;
     }
-    const forced = getForcedMove(state, playerColor);
+    const forced = forcedMove;
     if (!forced) {
       setAutoMove(null);
       return;
@@ -118,9 +133,9 @@ export default function GameBoard({
         if (prev && `${prev.from}->${prev.to}` === key) return prev;
         return forced;
       });
-    }, 800);
+    }, FORCED_MOVE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [state, playerColor, isMyTurn]);
+  }, [state.remaining.length, state.moveHistory?.length, isMyTurn, forcedMove]);
 
   function handleSelect(from: Source | null) {
     setSelected(from);

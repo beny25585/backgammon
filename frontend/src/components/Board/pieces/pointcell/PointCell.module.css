@@ -183,3 +183,49 @@
 .pulse {
   animation: pulseGlow 1.5s infinite;
 }
+
+@media (width < 900px), (max-height: 430px) {
+  .background {
+    filter: none;
+    box-shadow: none;
+  }
+
+  .background::before,
+  .background::after {
+    display: none;
+  }
+
+  .triangleLightTop,
+  .triangleDarkTop,
+  .triangleLightBottom,
+  .triangleDarkBottom {
+    background-image: linear-gradient(
+      var(--mobile-point-direction, 180deg),
+      var(--mobile-point-a),
+      var(--mobile-point-b)
+    );
+  }
+
+  .triangleLightTop,
+  .triangleLightBottom {
+    --mobile-point-a: var(--lux-point-light-a, #f4e4bd);
+    --mobile-point-b: var(--lux-point-light-b, #d0a960);
+  }
+
+  .triangleDarkTop,
+  .triangleDarkBottom {
+    --mobile-point-a: var(--lux-point-dark-a, #23675b);
+    --mobile-point-b: var(--lux-point-dark-b, #082f2c);
+  }
+
+  .triangleLightBottom,
+  .triangleDarkBottom {
+    --mobile-point-direction: 0deg;
+  }
+
+  .glowLegal,
+  .glowSelected,
+  .glowFrom {
+    background: rgba(233, 194, 113, 0.24);
+  }
+}
