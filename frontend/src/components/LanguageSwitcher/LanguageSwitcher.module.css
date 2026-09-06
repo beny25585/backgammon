@@ -1,8 +1,8 @@
 .button {
-  border: 1px solid rgba(238, 198, 111, 0.35);
+  border: 1px solid var(--ui-accent-border, rgba(238, 198, 111, 0.35));
   border-radius: 8px;
   background: rgba(12, 18, 28, 0.72);
-  color: #f8df9a;
+  color: var(--ui-accent, #f8df9a);
   cursor: pointer;
   font: inherit;
   font-size: 0.8rem;
@@ -11,5 +11,5 @@
 }
 
 .button:hover {
-  background: rgba(238, 198, 111, 0.12);
+  background: var(--ui-accent-faint, rgba(238, 198, 111, 0.12));
 }

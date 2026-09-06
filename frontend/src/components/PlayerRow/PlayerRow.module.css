@@ -17,15 +17,15 @@
 }
 
 .activeSelf {
-  background: rgba(229, 180, 77, 0.14);
-  border-color: rgba(229, 180, 77, 0.62);
-  box-shadow: inset -3px 0 0 #e5b44d;
+  background: var(--ui-accent-faint, rgba(229, 180, 77, 0.14));
+  border-color: var(--ui-accent-border, rgba(229, 180, 77, 0.62));
+  box-shadow: inset -3px 0 0 var(--ui-accent, #e5b44d);
 }
 
 .activeOpponent {
-  background: rgba(227, 190, 97, 0.12);
-  border-color: rgba(227, 190, 97, 0.6);
-  box-shadow: inset -3px 0 0 #e3be61;
+  background: var(--ui-accent-faint, rgba(227, 190, 97, 0.12));
+  border-color: var(--ui-accent-border, rgba(227, 190, 97, 0.6));
+  box-shadow: inset -3px 0 0 var(--ui-accent, #e3be61);
 }
 
 .avatar {
@@ -33,7 +33,7 @@
   height: clamp(22px, 8cqw, 30px);
   border-radius: 50%;
   flex-shrink: 0;
-  border: 1px solid rgba(229, 180, 77, 0.42);
+  border: 1px solid var(--ui-accent-border, rgba(229, 180, 77, 0.42));
   box-shadow:
     inset 0 1px 2px rgba(255, 255, 255, 0.24),
     inset 0 -3px 5px rgba(0, 0, 0, 0.35),
@@ -94,7 +94,7 @@
 }
 
 .meta span {
-  color: rgba(231, 189, 114, 0.6);
+  color: var(--ui-accent, rgba(231, 189, 114, 0.6));
 }
 
 .scoreWrap {
@@ -107,12 +107,12 @@
 .score {
   font-size: 20px;
   font-weight: 900;
-  color: #e3be61;
+  color: var(--ui-accent, #e3be61);
   letter-spacing: 0;
 }
 
 .activeSelf .score {
-  color: #f5d28c;
+  color: var(--ui-accent, #f5d28c);
 }
 
 .idle .score {
@@ -123,12 +123,12 @@
   font-size: 9px;
   font-weight: 800;
   letter-spacing: 0;
-  color: #9edeb1;
+  color: var(--ui-accent, #9edeb1);
   white-space: nowrap;
 }
 
 .activeOpponent .turnBadge {
-  color: #e3be61;
+  color: var(--ui-accent, #e3be61);
 }
 
 @media (max-height: 360px) {
@@ -200,7 +200,7 @@
   .activeSelf .avatar,
   .activeOpponent .avatar {
     box-shadow:
-      0 0 0 3px rgba(55, 118, 255, 0.34),
+      0 0 0 3px var(--ui-accent-soft, rgba(55, 118, 255, 0.34)),
       inset 0 1px 2px rgba(255, 255, 255, 0.24),
       inset 0 -3px 5px rgba(0, 0, 0, 0.35);
   }

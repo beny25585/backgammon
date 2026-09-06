@@ -89,6 +89,18 @@
   --lux-die-dark-low: #3d090f;
   --lux-die-pip-light: #f8f0d8;
   --lux-die-pip-dark: #22150c;
+  --ui-accent: #8f2633;
+  --ui-accent-hover: #a93643;
+  --ui-accent-soft: rgba(143, 38, 51, 0.24);
+  --ui-accent-faint: rgba(143, 38, 51, 0.14);
+  --ui-accent-border: rgba(215, 105, 113, 0.68);
+  --ui-accent-glow: rgba(143, 38, 51, 0.32);
+  --ui-on-accent: #fff6ec;
+  --ui-secondary-bg: rgba(14, 82, 70, 0.94);
+  --ui-secondary-border: rgba(86, 168, 146, 0.56);
+  --ui-bar-overlay: linear-gradient(180deg, rgba(18, 82, 68, 0.5), rgba(42, 9, 14, 0.58));
+  --ui-cube-bg: linear-gradient(180deg, #a93643, #6f1722);
+  --ui-menu-bg: linear-gradient(180deg, rgba(31, 11, 14, 0.98), rgba(10, 7, 8, 0.99));
   position: relative;
   display: grid;
   grid-template-columns: clamp(96px, 14vw, 150px) minmax(0, 1fr);
@@ -144,6 +156,18 @@
 }
 
 .themeBlueIvory {
+  --ui-accent: #2448ff;
+  --ui-accent-hover: #3156ff;
+  --ui-accent-soft: rgba(36, 72, 255, 0.24);
+  --ui-accent-faint: rgba(36, 72, 255, 0.14);
+  --ui-accent-border: rgba(137, 170, 255, 0.72);
+  --ui-accent-glow: rgba(49, 86, 255, 0.3);
+  --ui-on-accent: #f5f8ff;
+  --ui-secondary-bg: rgba(10, 49, 88, 0.94);
+  --ui-secondary-border: rgba(102, 159, 198, 0.55);
+  --ui-bar-overlay: linear-gradient(180deg, rgba(10, 49, 88, 0.72), rgba(4, 17, 35, 0.82));
+  --ui-cube-bg: linear-gradient(180deg, #3d6cff, #2439d6);
+  --ui-menu-bg: linear-gradient(180deg, rgba(8, 15, 35, 0.98), rgba(2, 6, 17, 0.99));
   --lux-material-texture: url("../../assets/6b-material-blue-marble.png");
   --lux-material-layer-blend: soft-light;
   --lux-photo-texture-opacity: 0.06;
@@ -220,6 +244,18 @@
 }
 
 .themeIvoryGold {
+  --ui-accent: #c79535;
+  --ui-accent-hover: #ddaF4b;
+  --ui-accent-soft: rgba(199, 149, 53, 0.24);
+  --ui-accent-faint: rgba(199, 149, 53, 0.14);
+  --ui-accent-border: rgba(232, 194, 112, 0.76);
+  --ui-accent-glow: rgba(199, 149, 53, 0.3);
+  --ui-on-accent: #201607;
+  --ui-secondary-bg: rgba(81, 65, 32, 0.94);
+  --ui-secondary-border: rgba(199, 162, 84, 0.58);
+  --ui-bar-overlay: linear-gradient(180deg, rgba(232, 218, 179, 0.42), rgba(154, 112, 41, 0.5));
+  --ui-cube-bg: linear-gradient(180deg, #e0bb68, #a87927);
+  --ui-menu-bg: linear-gradient(180deg, rgba(35, 29, 18, 0.98), rgba(12, 11, 8, 0.99));
   --lux-material-texture: url("../../assets/6b-material-ivory-silver-gold.png");
   --lux-material-layer-blend: soft-light;
   --lux-case-bg:
@@ -517,14 +553,14 @@
 
 .boardTurnButton:hover {
   transform: scale(1.08);
-  border-color: #e7bd72;
+  border-color: var(--ui-accent-border);
   box-shadow:
     0 4px 24px rgba(0, 0, 0, 0.8),
-    0 0 30px rgba(201, 169, 97, 0.4);
+    0 0 30px var(--ui-accent-glow);
 }
 
 .boardTurnButton:focus-visible {
-  border-color: #e7bd72;
+  border-color: var(--ui-accent-border);
 }
 
 .boardTurnButton:disabled {
@@ -539,14 +575,14 @@
 }
 
 .boardTurnButtonPrimary {
-  border: 1px solid rgba(217, 182, 93, 0.7);
-  background: #d9b65d;
-  color: #17251d;
+  border: 1px solid var(--ui-accent-border);
+  background: var(--ui-accent);
+  color: var(--ui-on-accent);
 }
 
 .boardTurnButtonSecondary {
-  border: 1px solid rgba(247, 241, 227, 0.25);
-  background: rgba(15, 29, 21, 0.92);
+  border: 1px solid var(--ui-secondary-border);
+  background: var(--ui-secondary-bg);
   color: rgba(247, 241, 227, 0.92);
   backdrop-filter: blur(4px);
 }
@@ -580,10 +616,10 @@
   align-items: center;
   gap: var(--dice-overlay-gap);
   padding: clamp(8px, 1vw, 12px) clamp(12px, 2vw, 20px);
-  color: #ffe7a3;
+  color: var(--ui-on-accent, #ffe7a3);
   font-weight: 800;
-  background: rgba(40, 24, 10, 0.94);
-  border: 1px solid rgba(255, 204, 102, 0.62);
+  background: var(--ui-secondary-bg, rgba(40, 24, 10, 0.94));
+  border: 1px solid var(--ui-accent-border, rgba(255, 204, 102, 0.62));
   border-radius: 6px;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
   transform: translate(-50%, -50%);
@@ -851,9 +887,9 @@
   }
 
   .boardTurnButtonPrimary {
-    border: 1px solid rgba(120, 140, 255, 0.55);
-    background: #3420a4;
-    color: #f5f4ff;
+    border: 1px solid var(--ui-accent-border);
+    background: var(--ui-accent);
+    color: var(--ui-on-accent);
   }
 
   .boardDoubleAction {

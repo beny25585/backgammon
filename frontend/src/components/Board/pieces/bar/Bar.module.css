@@ -12,14 +12,14 @@
   width: var(--bar-w);
 
   background:
-    linear-gradient(180deg, rgba(10, 16, 54, 0.92), rgba(3, 6, 34, 0.98)),
+    var(--ui-bar-overlay, linear-gradient(180deg, rgba(10, 16, 54, 0.92), rgba(3, 6, 34, 0.98))),
     var(--lux-bar-bg, #071034);
 
   box-shadow:
-    inset 2px 0 0 rgba(51, 88, 255, 0.2),
+    inset 2px 0 0 var(--ui-accent-faint, rgba(51, 88, 255, 0.2)),
     inset -2px 0 0 rgba(0, 0, 0, 0.72),
     inset 0 0 18px rgba(0, 0, 0, 0.7),
-    0 0 0 1px rgba(36, 72, 255, 0.22);
+    0 0 0 1px var(--ui-accent-faint, rgba(36, 72, 255, 0.22));
 
   border: none;
   cursor: pointer;
@@ -62,9 +62,9 @@
   width: clamp(28px, 4.2cqw, 42px) !important;
   height: clamp(28px, 4.2cqw, 42px) !important;
   border-radius: 4px;
-  background: linear-gradient(180deg, #3d6cff, #2439d6);
-  border-color: rgba(137, 170, 255, 0.8);
-  color: #f4f8ff !important;
+  background: var(--ui-cube-bg, linear-gradient(180deg, #3d6cff, #2439d6));
+  border-color: var(--ui-accent-border, rgba(137, 170, 255, 0.8));
+  color: var(--ui-on-accent, #f4f8ff) !important;
   font-size: clamp(14px, 2.2cqw, 20px);
   box-shadow:
     0 8px 16px rgba(0, 0, 0, 0.48),

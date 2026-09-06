@@ -5,6 +5,7 @@ import { newGame } from "@/lib/backgammon/engine";
 import styles from "./GameScreen.module.css";
 import { assertNoHorizontalOverflow } from "../../test-utils/viewportChecks";
 import type { GameState } from "@/lib/backgammon/engine";
+import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
 
 const VIEWPORTS = [
   { name: "mobile-portrait", width: 375, height: 812 },
@@ -136,5 +137,41 @@ for (const vp of PANEL_IN_VIEW) {
       box!.y + box!.height,
       `panel bottom should stay within the viewport (${vp.name}, panel bottom ${Math.round(box!.y + box!.height)} vs viewport ${vh})`,
     ).toBeLessThanOrEqual(vh + 1);
+  });
+}
+
+for (const [theme, expectedAccent] of [
+  ["redGreen", "rgb(143, 38, 51)"],
+  ["blueIvory", "rgb(36, 72, 255)"],
+  ["ivoryGold", "rgb(199, 149, 53)"],
+] as const satisfies ReadonlyArray<readonly [BoardTheme, string]>) {
+  test(`game controls use the ${theme} accent`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 474, height: 330 });
+    const state = movingState({ phase: "rolling", dice: [], remaining: [] });
+    const component = await mount(
+      <div className={styles.container}>
+        <MockGameWrapper playerColor="white" state={state}>
+          <GameBoard
+            state={state}
+            playerColor="white"
+            makeMove={() => {}}
+            needsToRoll
+            onRoll={() => {}}
+            offerDouble={() => {}}
+            onLeave={() => {}}
+            boardTheme={theme}
+          />
+        </MockGameWrapper>
+      </div>,
+    );
+
+    const menuColor = await component
+      .getByRole("button", { name: "Match control" })
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    const rollColor = await component
+      .getByTitle("Tap to roll")
+      .evaluate((element) => getComputedStyle(element).backgroundColor);
+    expect(menuColor).toBe(expectedAccent);
+    expect(rollColor).toBe(expectedAccent);
   });
 }
