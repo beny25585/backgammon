@@ -71,9 +71,9 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
 
   return (
     <div className={styles.strip}>
-      <div className={myCls} data-testid="clock-my">
-        <span className={styles.label}>{myLabel}</span>
-        <span className={styles.time}>{formatClock(myValue)}</span>
+      <div className={oppCls} data-testid="clock-opp">
+        <span className={styles.label}>{oppLabel}</span>
+        <span className={styles.time}>{formatClock(oppValue)}</span>
       </div>
       {showDelay && (
         <div className={styles.delay} data-testid="clock-delay">
@@ -81,9 +81,9 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
           <span className={styles.seconds}>{formatSeconds(delayMsLeft)}</span>
         </div>
       )}
-      <div className={oppCls} data-testid="clock-opp">
-        <span className={styles.label}>{oppLabel}</span>
-        <span className={styles.time}>{formatClock(oppValue)}</span>
+      <div className={myCls} data-testid="clock-my">
+        <span className={styles.label}>{myLabel}</span>
+        <span className={styles.time}>{formatClock(myValue)}</span>
       </div>
     </div>
   );

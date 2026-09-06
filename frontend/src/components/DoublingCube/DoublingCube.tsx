@@ -54,7 +54,8 @@ export default function DoublingCube({ value, owner, showOwner = true }: Doublin
         : game
           ? game.blackName || t("common.black")
           : t("common.opponent");
-  const color = CUBE_COLORS[value] ?? "#d4941a";
+  const displayValue = owner === "center" && value === 1 ? 64 : value;
+  const color = CUBE_COLORS[displayValue] ?? "#d4941a";
 
   return (
     <div className={styles.cubeContainer}>
@@ -73,10 +74,10 @@ export default function DoublingCube({ value, owner, showOwner = true }: Doublin
         <div
           className={styles.cubeFace}
           data-testid="doubling-cube"
-          title={t("common.cubeTitle", { value, owner: ownerLabel })}
+          title={t("common.cubeTitle", { value: displayValue, owner: ownerLabel })}
           style={{ color, width: SIZES.width, height: SIZES.height }}
         >
-          {value}
+          {displayValue}
         </div>
       )}
       {showOwner && <span className={styles.ownerLabel}>{ownerLabel}</span>}

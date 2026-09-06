@@ -273,7 +273,7 @@ test("doubling cube sits on the bar and follows its owner from my perspective", 
 
   const cubeSlot = component.getByTestId("bar-doubling-cube");
   await expect(cubeSlot).toHaveAttribute("data-cube-position", "center");
-  await expect(cubeSlot.getByTestId("doubling-cube")).toHaveText("1");
+  await expect(cubeSlot.getByTestId("doubling-cube")).toHaveText("64");
 
   await component.update(
     <MockGameWrapper

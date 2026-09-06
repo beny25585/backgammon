@@ -14,7 +14,7 @@
   /* Sizes scale with the board's own width (.wrapper is the cqw container) */
   --checker: max(22px, 4.25cqw);
   --bar-w: max(22px, 3.2cqw);
-  --bearoff-w: max(22px, 3.2cqw);
+  --bearoff-w: clamp(28px, 5.5cqw, 40px);
 }
 
 /* === Board + Side Panel outer frame === */
@@ -91,7 +91,7 @@
   --lux-die-pip-dark: #22150c;
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 380px);
+  grid-template-columns: clamp(96px, 14vw, 150px) minmax(0, 1fr);
   direction: ltr;
   overflow: hidden;
   isolation: isolate;
@@ -328,6 +328,8 @@
 .boardArea {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-column: 2;
+  grid-row: 1;
   direction: ltr;
   width: 100%;
   height: 100%;
@@ -523,6 +525,17 @@
 
 .boardTurnButton:focus-visible {
   border-color: #e7bd72;
+}
+
+.boardTurnButton:disabled {
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.boardTurnButton:disabled:hover {
+  transform: none;
+  border-color: rgba(247, 241, 227, 0.25);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
 }
 
 .boardTurnButtonPrimary {
@@ -776,11 +789,11 @@
     /* Sizes scale with the board's own width (.wrapper is the cqw container) */
     --checker: max(18px, 4.25cqw);
     --bar-w: max(18px, 3.2cqw);
-    --bearoff-w: max(18px, 3.2cqw);
+    --bearoff-w: clamp(28px, 5.5cqw, 36px);
   }
 
   .gameFrame {
-    grid-template-columns: clamp(86px, 19dvw, 116px) minmax(0, 1fr);
+    grid-template-columns: clamp(92px, 21dvw, 116px) minmax(0, 1fr);
     width: 100dvw;
     height: var(--app-height, 100dvh);
     border-width: 0;
@@ -804,11 +817,11 @@
   .container {
     --checker: max(15px, 4.55cqw);
     --bar-w: max(13px, 2.7cqw);
-    --bearoff-w: max(13px, 2.7cqw);
+    --bearoff-w: clamp(28px, 5.5cqw, 34px);
   }
 
   .gameFrame {
-    grid-template-columns: clamp(76px, 18dvw, 104px) minmax(0, 1fr);
+    grid-template-columns: clamp(88px, 21dvw, 108px) minmax(0, 1fr);
   }
 
   .frame {
@@ -880,6 +893,10 @@
   .sidePanel {
     border-left: 1px solid rgba(229, 180, 77, 0.26);
     border-top: none;
+  }
+
+  .boardArea {
+    grid-column: 1;
   }
 
   .container::after {

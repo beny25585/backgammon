@@ -9,7 +9,7 @@ test("shows the cube value with the owner label", async ({ mount }) => {
 
 test("shows Center for a cube in the center", async ({ mount }) => {
   const cube = await mount(<DoublingCube value={1} owner="center" />);
-  await expect(cube.getByTestId("doubling-cube")).toHaveText("1");
+  await expect(cube.getByTestId("doubling-cube")).toHaveText("64");
   await expect(cube.getByText("Center")).toBeVisible();
 });
 

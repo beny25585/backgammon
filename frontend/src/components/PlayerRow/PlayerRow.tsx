@@ -25,7 +25,7 @@ export default function PlayerRow({
 
   return (
     <div
-      className={`${styles.row} ${active ? (self ? styles.activeSelf : styles.activeOpponent) : styles.idle}`}
+      className={`${styles.row} ${self ? styles.self : styles.opponent} ${active ? (self ? styles.activeSelf : styles.activeOpponent) : styles.idle}`}
     >
       <span className={`${styles.avatar} ${styles[color]}`} />
       <div className={styles.info}>

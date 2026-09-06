@@ -8,6 +8,7 @@ import { activePlayerOf, type TimeControl } from "../../lib/clock";
 import { useI18n } from "../../i18n/I18nProvider";
 import BoardThemeSelector from "../BoardThemeSelector/BoardThemeSelector";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
+import { LanguageSwitcher } from "../LanguageSwitcher/LanguageSwitcher";
 
 interface SidePanelProps {
   state: GameState;
@@ -105,6 +106,10 @@ export default function SidePanel({
             <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>
               {activeColor === playerColor ? t("common.yourTurn") : t("common.opponentTurn")}
             </span>
+          </div>
+
+          <div className={`${styles.section} ${styles.languageSection}`}>
+            <LanguageSwitcher />
           </div>
 
           {boardTheme && onBoardThemeChange && (

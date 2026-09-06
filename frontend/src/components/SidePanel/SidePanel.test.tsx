@@ -62,3 +62,15 @@ test("shows the live match score from context in both player rows", async ({ mou
   await expect(component.getByTestId("player-score-white")).toHaveText("4");
   await expect(component.getByTestId("player-score-black")).toHaveText("2");
 });
+
+test("keeps the language switcher inside the hamburger menu", async ({ mount }) => {
+  const component = await mount(
+    <MockGameWrapper playerColor="white">
+      <SidePanel state={makeState()} playerColor="white" onLeave={() => {}} />
+    </MockGameWrapper>,
+  );
+
+  await expect(component.getByRole("button", { name: "Language" })).toHaveCount(0);
+  await component.getByRole("button", { name: "Match control" }).click();
+  await expect(component.getByRole("button", { name: "Language" })).toBeVisible();
+});

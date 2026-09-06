@@ -603,12 +603,13 @@ export function Board({
             <ConfirmButton onClick={onConfirm} />
           </div>
         )}
-        {canRoll && canDouble && (
+        {canRoll && (
           <div className={styles.boardDoubleAction}>
             <button
               type="button"
               className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
               onClick={onOfferDouble}
+              disabled={!canDouble}
               title={t("common.offerDouble")}
               aria-label={t("common.offerDouble")}
             >

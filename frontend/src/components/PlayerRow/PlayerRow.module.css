@@ -1,5 +1,6 @@
 .row {
   display: flex;
+  direction: ltr;
   align-items: center;
   gap: clamp(6px, 2.5cqw, 10px);
   padding: clamp(6px, 2.5cqw, 10px) clamp(8px, 3cqw, 12px);
@@ -155,13 +156,10 @@
   }
 }
 
-@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+@container (max-width: 190px) {
   .row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) clamp(26px, 6.4dvh, 34px);
-    grid-template-areas:
-      "avatar score"
-      "info score";
     justify-items: center;
     align-content: center;
     gap: 3px 4px;
@@ -171,6 +169,18 @@
     border: 0;
     background: transparent;
     box-shadow: none;
+  }
+
+  .opponent {
+    grid-template-areas:
+      "info score"
+      "avatar score";
+  }
+
+  .self {
+    grid-template-areas:
+      "avatar score"
+      "info score";
   }
 
   .activeSelf,

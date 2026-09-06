@@ -121,11 +121,11 @@
   }
 }
 
-@media (width < 800px) and (orientation: landscape) and (max-height: 430px) {
+@container (max-width: 190px) {
   .strip {
     display: grid;
     grid-template-columns: 1fr;
-    width: clamp(46px, 10dvw, 64px);
+    width: clamp(46px, 72cqw, 68px);
     margin: 0 auto;
     border-color: rgba(42, 91, 255, 0.45);
     border-radius: 4px;
@@ -138,7 +138,7 @@
   }
 
   .label {
-    font-size: clamp(7px, 2dvh, 9px);
+    display: none;
   }
 
   .time {
@@ -161,7 +161,6 @@
   }
 
   .delay {
-    order: 2;
     min-height: clamp(22px, 7.5dvh, 32px);
     padding: 2px 4px;
     border-block: 1px solid rgba(255, 255, 255, 0.18);

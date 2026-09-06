@@ -3,6 +3,7 @@
   flex-direction: column;
   align-items: center;
   gap: 3px;
+  pointer-events: none;
 }
 
 .cubeFace {
@@ -20,10 +21,6 @@
     0 10px 20px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.78);
   transition: transform 0.18s;
-}
-
-.cubeFace:hover {
-  transform: translateY(-1px);
 }
 
 .ownerLabel {

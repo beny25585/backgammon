@@ -8,6 +8,7 @@ import type { GameState } from "@/lib/backgammon/engine";
 
 const VIEWPORTS = [
   { name: "mobile-portrait", width: 375, height: 812 },
+  { name: "compact-landscape", width: 474, height: 330 },
   { name: "mobile-landscape", width: 844, height: 390 },
   { name: "tablet-portrait", width: 768, height: 1024 },
   { name: "tablet-landscape", width: 1024, height: 768 },

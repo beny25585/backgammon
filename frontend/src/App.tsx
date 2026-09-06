@@ -2,9 +2,13 @@ import Router from "./router";
 import { LanguageSwitcher } from "./components/LanguageSwitcher/LanguageSwitcher";
 import { useI18n } from "./i18n/I18nProvider";
 import { useEffect } from "react";
+import { useLocation } from "react-router-dom";
 
 export default function App() {
   const { direction } = useI18n();
+  const location = useLocation();
+  const isGameRoute =
+    location.pathname === "/local" || location.pathname.startsWith("/game/");
 
   useEffect(() => {
     function syncViewportHeight() {
@@ -26,9 +30,11 @@ export default function App() {
 
   return (
     <div dir={direction}>
-      <div style={{ position: "fixed", top: 12, insetInlineEnd: 12, zIndex: 1000 }}>
-        <LanguageSwitcher />
-      </div>
+      {!isGameRoute && (
+        <div style={{ position: "fixed", top: 12, insetInlineEnd: 12, zIndex: 1000 }}>
+          <LanguageSwitcher />
+        </div>
+      )}
       <Router />
     </div>
   );
