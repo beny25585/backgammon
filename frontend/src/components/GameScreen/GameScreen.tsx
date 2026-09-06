@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
@@ -59,6 +59,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   } = useGame();
 
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
+  const automaticOpeningRollRef = useRef<string | null>(null);
 
   const handleRoll = useCallback(() => {
     rollDice();
@@ -68,12 +69,29 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
   }, [boardTheme]);
 
+  const automaticOpeningRollKey =
+    state?.phase === "opening_roll" &&
+    state.turn === playerColor &&
+    state.openingRoll[playerColor] === null
+      ? `${state.turn}:${state.openingRoll.white ?? "-"}:${state.openingRoll.black ?? "-"}`
+      : null;
+
+  useEffect(() => {
+    if (!automaticOpeningRollKey) {
+      automaticOpeningRollRef.current = null;
+      return;
+    }
+    if (automaticOpeningRollRef.current === automaticOpeningRollKey) return;
+    automaticOpeningRollRef.current = automaticOpeningRollKey;
+    rollDice();
+  }, [automaticOpeningRollKey, rollDice]);
+
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
     !noMovesMessage &&
-    (state?.phase === "opening_roll" || state?.phase === "rolling") &&
-      state?.remaining.length === 0 &&
-      state?.turn === playerColor;
+    state?.phase === "rolling" &&
+    state.remaining.length === 0 &&
+    state.turn === playerColor;
 
   if (isLoading) {
     return <div className={styles.loading}>{t("game.connecting")}</div>;

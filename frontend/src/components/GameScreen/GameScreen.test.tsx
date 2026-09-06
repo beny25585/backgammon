@@ -40,10 +40,10 @@ test("opening result shows both dice and uses the selected theme", async ({ moun
   expect(accent).toBe("#2448ff");
 });
 
-test("opening roll action appears for the player whose turn it is", async ({
-  mount, page,
+test("opening roll starts automatically without showing a roll action", async ({
+  mount,
 }) => {
-  await page.evaluate(() => localStorage.setItem("bg_auto_roll", "false"));
+  let rolls = 0;
   const component = await mount(
     <MockGameWrapper
       playerColor="white"
@@ -52,12 +52,14 @@ test("opening roll action appears for the player whose turn it is", async ({
         turn: "white",
         openingRoll: { white: null, black: null },
       })}
+      context={{ rollDice: () => rolls++ }}
     >
       <GameScreen />
     </MockGameWrapper>,
   );
   await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
-  await expect(component.getByTitle("Tap to roll")).toBeVisible();
+  await expect(component.getByTitle("Tap to roll")).toHaveCount(0);
+  await expect.poll(() => rolls).toBe(1);
 });
 
 test("roll action remains available after a server auto-pass with stale dice", async ({
