@@ -5,7 +5,7 @@ import {
 } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
 import { GameProvider } from "./gameContext";
-import { GameProbe } from "../test-utils/probes";
+import { GameProbe, MatchScoreProbe } from "../test-utils/probes";
 import GameScreen from "../components/GameScreen/GameScreen";
 import type { GameState } from "../lib/backgammon/engine";
 import { newGame } from "../lib/backgammon/engine";
@@ -43,8 +43,8 @@ function rollingState(): GameState {
   return { ...midGameState(), phase: "rolling", dice: [], remaining: [] };
 }
 
-async function seedFakeSocket(page: Page) {
-  await page.evaluate(() => {
+async function seedFakeSocket(page: Page, emitFinalOnOpen = false) {
+  await page.evaluate(({ shouldEmitFinal }) => {
     localStorage.setItem("bg_access_token", "test-token");
     const w = window as unknown as Record<string, unknown>;
     class FakeWebSocket {
@@ -56,7 +56,30 @@ async function seedFakeSocket(page: Page) {
       sent: string[] = [];
       constructor(_url: string) {
         w.__fakeWs = this;
-        setTimeout(() => this.onopen?.(), 0);
+        setTimeout(() => {
+          this.onopen?.();
+          if (!shouldEmitFinal) return;
+          this.emit({
+            type: "state_update",
+            payload: { phase: "game_over", winner: "white", version: 9 },
+            playerColor: "white",
+            initial: true,
+            matchScore: { white: 5, black: 4 },
+          });
+          this.emit({
+            type: "game_ended",
+            payload: {
+              winner: "white",
+              winType: "single",
+              points: 1,
+              cube: 1,
+              whiteScore: 5,
+              blackScore: 4,
+              targetPoints: 5,
+              matchOver: true,
+            },
+          });
+        }, 0);
       }
       send(data: string) {
         this.sent.push(data);
@@ -76,7 +99,7 @@ async function seedFakeSocket(page: Page) {
       CLOSED: 3,
     });
     w.WebSocket = FakeWebSocket;
-  });
+  }, { shouldEmitFinal: emitFinalOnOpen });
 }
 
 async function sentMessages(page: Page): Promise<WsMessage[]> {
@@ -294,6 +317,25 @@ test("opening result broadcast populates the opening result", async ({
 
   await expect(component.getByTestId("opening-result")).toHaveText(
     '{"myDie":5,"opponentDie":3,"winner":"white"}',
+  );
+});
+
+test("captures a final result replayed immediately when the socket opens", async ({
+  mount,
+  page,
+}) => {
+  await seedFakeSocket(page, true);
+  const component = await mount(
+    <GameProvider roomId="finished-room" playerColor="white">
+      <MatchScoreProbe />
+    </GameProvider>,
+  );
+
+  await expect(component.getByTestId("score")).toHaveText(
+    '{"white":5,"black":4}',
+  );
+  await expect(component.getByTestId("game-result")).toHaveText(
+    '{"winner":"white"}',
   );
 });
 

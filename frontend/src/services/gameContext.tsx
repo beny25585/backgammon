@@ -94,9 +94,10 @@ export function GameProvider({
           setIsLoading(false);
           return;
         }
-        await socket.connect(roomId, token);
-        setIsLoading(false);
-
+        // Register every handler before opening the socket. The server sends
+        // the initial snapshot and may immediately replay `game_ended` for a
+        // completed room, so subscribing after `connect()` can lose the final
+        // score and leave this client on the previous board.
         socket.on("state_update", (message) => {
           const msg = message as Record<string, unknown>;
           const raw = msg.payload as Record<string, unknown>;
@@ -321,6 +322,9 @@ export function GameProvider({
             prev ? { ...prev, phase: "game_over", winner } : prev,
           );
         });
+
+        await socket.connect(roomId, token);
+        setIsLoading(false);
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Failed to connect";
         clientLogger.error("Game connect failed", {
