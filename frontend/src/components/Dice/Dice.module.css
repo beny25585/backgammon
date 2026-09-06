@@ -55,7 +55,7 @@
 }
 
 .diceButton:focus-visible {
-  outline: 2px solid #e5b44d;
+  outline: 2px solid var(--ui-accent, #e5b44d);
   outline-offset: 6px;
   border-radius: 8px;
 }
@@ -87,8 +87,8 @@
   align-items: center;
   gap: clamp(10px, 2vw, 14px);
   cursor: pointer;
-  background: rgba(8, 23, 27, 0.92);
-  border: 1px solid rgba(229, 180, 77, 0.5);
+  background: var(--ui-menu-bg, rgba(8, 23, 27, 0.92));
+  border: 1px solid var(--ui-accent-border, rgba(229, 180, 77, 0.5));
   border-radius: 8px;
   padding: clamp(18px, 3vw, 26px) clamp(28px, 5vw, 42px);
   box-shadow: 0 16px 32px rgba(2, 5, 18, 0.42);
@@ -96,8 +96,8 @@
 }
 
 .rollBtn:hover {
-  background: rgba(13, 34, 38, 0.95);
-  border-color: #e5b44d;
+  background: var(--ui-secondary-bg, rgba(13, 34, 38, 0.95));
+  border-color: var(--ui-accent-border, #e5b44d);
 }
 
 .rollBtn:focus {
@@ -108,7 +108,7 @@
   position: absolute;
   inset: -4px;
   border-radius: inherit;
-  border: 1px solid rgba(229, 180, 77, 0.54);
+  border: 1px solid var(--ui-accent-border, rgba(229, 180, 77, 0.54));
   animation: ringPulse 2.4s ease-out infinite;
   pointer-events: none;
 }
@@ -132,7 +132,7 @@
 .tapIcon {
   width: clamp(24px, 4.5vw, 34px);
   height: clamp(24px, 4.5vw, 34px);
-  color: #e5b44d;
+  color: var(--ui-accent, #e5b44d);
   filter: none;
   animation: tapPulse 2.2s ease-in-out infinite;
   pointer-events: none;

@@ -3,8 +3,14 @@ import GameScreen from "./GameScreen";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { makeGameState } from "../../test-utils/gameState";
 import { ErrorCardHarness } from "../../test-utils/probes";
+import { DEFAULT_BOARD_THEME } from "../BoardThemeSelector/boardThemes";
 
-test("opening result shows both dice and the winner", async ({ mount }) => {
+test("blue and ivory is the default board theme", () => {
+  expect(DEFAULT_BOARD_THEME).toBe("blueIvory");
+});
+
+test("opening result shows both dice and uses the selected theme", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.removeItem("6b-board-theme"));
   const component = await mount(
     <MockGameWrapper
       playerColor="white"
@@ -28,6 +34,10 @@ test("opening result shows both dice and the winner", async ({ mount }) => {
   await expect(
     component.getByTestId("opening-result-overlay").locator("[data-testid='die']"),
   ).toHaveCount(2);
+  const accent = await component
+    .getByTestId("opening-result-overlay")
+    .evaluate((element) => getComputedStyle(element).getPropertyValue("--ui-accent").trim());
+  expect(accent).toBe("#2448ff");
 });
 
 test("opening roll action appears for the player whose turn it is", async ({
@@ -47,7 +57,7 @@ test("opening roll action appears for the player whose turn it is", async ({
     </MockGameWrapper>,
   );
   await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
-  await expect(component.getByTestId("roll-prompt-btn")).toBeVisible();
+  await expect(component.getByTitle("Tap to roll")).toBeVisible();
 });
 
 test("roll action remains available after a server auto-pass with stale dice", async ({

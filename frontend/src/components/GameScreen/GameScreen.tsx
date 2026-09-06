@@ -13,6 +13,12 @@ import {
 
 const BOARD_THEME_STORAGE_KEY = "6b-board-theme";
 
+const themeClassByTheme: Record<BoardTheme, string> = {
+  redGreen: styles.themeRedGreen,
+  blueIvory: styles.themeBlueIvory,
+  ivoryGold: styles.themeIvoryGold,
+};
+
 function initialBoardTheme(): BoardTheme {
   const saved = window.localStorage.getItem(BOARD_THEME_STORAGE_KEY);
   return isBoardTheme(saved) ? saved : DEFAULT_BOARD_THEME;
@@ -81,7 +87,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   }
 
   return (
-    <div className={styles.container}>
+    <div className={`${styles.container} ${themeClassByTheme[boardTheme]}`}>
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
           <span>{t("game.errorPrefix")}: {error}</span>

@@ -123,6 +123,16 @@
 }
 
 .themeRedGreen {
+  --ui-accent: #8f2633;
+  --ui-accent-hover: #a93643;
+  --ui-accent-soft: rgba(143, 38, 51, 0.24);
+  --ui-accent-faint: rgba(143, 38, 51, 0.14);
+  --ui-accent-border: rgba(215, 105, 113, 0.68);
+  --ui-accent-glow: rgba(143, 38, 51, 0.32);
+  --ui-on-accent: #fff6ec;
+  --ui-secondary-bg: rgba(14, 82, 70, 0.94);
+  --ui-secondary-border: rgba(86, 168, 146, 0.56);
+  --ui-menu-bg: linear-gradient(180deg, rgba(31, 11, 14, 0.98), rgba(10, 7, 8, 0.99));
   --lux-material-texture: url("../../assets/6b-material-mahogany.png");
   --lux-material-layer-blend: multiply;
   --lux-photo-texture-opacity: 0.68;
@@ -703,23 +713,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 10, 10, 0.4);
+  background: rgba(4, 8, 18, 0.48);
   backdrop-filter: blur(2px);
 }
 
 .overlayCard {
-  background: rgba(8, 23, 27, 0.96);
+  background: var(--ui-menu-bg, rgba(8, 23, 27, 0.96));
   backdrop-filter: blur(12px);
   border-radius: 8px;
   padding: clamp(18px, 3vw, 32px);
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.42);
-  border: 1px solid rgba(229, 180, 77, 0.34);
+  box-shadow:
+    0 25px 50px rgba(0, 0, 0, 0.5),
+    0 0 28px var(--ui-accent-faint, rgba(229, 180, 77, 0.12));
+  border: 1px solid var(--ui-accent-border, rgba(229, 180, 77, 0.34));
   text-align: center;
   min-width: 16rem;
 }
 
 .winnerText {
-  color: #f5d28c;
+  color: var(--ui-accent, #f5d28c);
   font-size: 1rem;
   font-weight: 700;
 }
