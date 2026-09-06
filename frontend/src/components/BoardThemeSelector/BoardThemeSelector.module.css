@@ -149,3 +149,40 @@
     width: 36px;
   }
 }
+
+/* The match controls share the short edge of the board on phones. Keep the
+   complete selector visible instead of turning the drawer into a scroll box. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .selector {
+    gap: 4px;
+    padding: 5px;
+  }
+
+  .header {
+    font-size: 9px;
+  }
+
+  .options {
+    gap: 3px;
+  }
+
+  .option {
+    grid-template-columns: 30px minmax(0, 1fr);
+    gap: 6px;
+    min-height: 32px;
+    padding: 3px 5px;
+  }
+
+  .swatch {
+    width: 30px;
+    height: 23px;
+  }
+
+  .copy strong {
+    font-size: 10px;
+  }
+
+  .copy small {
+    display: none;
+  }
+}

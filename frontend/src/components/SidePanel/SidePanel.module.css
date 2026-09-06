@@ -267,49 +267,77 @@
     top: 50%;
     width: min(280px, calc(100dvw - 64px));
     max-height: calc(100dvh - 12px);
-    padding: 10px;
-    gap: 9px;
-  }
-
-  .themeSection :global(.selector) {
+    padding: 8px;
     gap: 6px;
-    max-height: none;
-    padding: 7px;
-    overflow: visible;
+    overflow-y: hidden;
   }
 
-  .themeSection :global(.options) {
-    gap: 5px;
-  }
-
-  .themeSection :global(.option) {
-    grid-template-columns: 34px minmax(0, 1fr);
-    min-height: 38px;
-    padding: 5px;
-    gap: 7px;
-  }
-
-  .themeSection :global(.swatch) {
-    width: 34px;
-    height: 26px;
-  }
-
-  .themeSection :global(.copy strong) {
-    font-size: 11px;
-  }
-
-  .themeSection :global(.copy small) {
-    display: none;
+  .languageSection > :global(button) {
+    min-height: 32px;
   }
 
   .actions {
-    gap: 6px;
-    padding-top: 8px;
+    gap: 4px;
+    padding-top: 6px;
   }
 
   .resignBtn,
   .leaveBtn {
-    min-height: 38px;
-    font-size: 13px;
+    min-height: 32px;
+    font-size: 12px;
+  }
+
+  .resignConfirm {
+    gap: 4px;
+    padding: 5px 7px;
+  }
+
+  .resignText {
+    font-size: 11px;
+  }
+
+  .confirmYes,
+  .confirmNo {
+    min-height: 28px;
+    font-size: 12px;
+  }
+}
+
+@media (min-width: 800px) and (max-height: 500px) {
+  .menuDrawer {
+    max-height: calc(100dvh - 12px);
+    padding: 8px;
+    gap: 6px;
+    overflow-y: hidden;
+  }
+
+  .languageSection > :global(button) {
+    min-height: 32px;
+  }
+
+  .actions {
+    gap: 4px;
+    padding-top: 6px;
+  }
+
+  .resignBtn,
+  .leaveBtn {
+    min-height: 32px;
+    font-size: 12px;
+  }
+
+  .resignConfirm {
+    gap: 4px;
+    padding: 5px 7px;
+  }
+
+  .resignText {
+    font-size: 11px;
+  }
+
+  .confirmYes,
+  .confirmNo {
+    min-height: 28px;
+    font-size: 12px;
   }
 }

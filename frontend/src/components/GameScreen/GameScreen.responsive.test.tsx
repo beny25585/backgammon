@@ -208,3 +208,45 @@ test("hamburger is centered with both bear-off trays", async ({ mount, page }) =
   expect(Math.abs(menu!.width - bottom!.width)).toBeLessThanOrEqual(1);
   expect(menu!.width).toBeGreaterThanOrEqual(32);
 });
+
+for (const viewport of [
+  { name: "short-phone", width: 474, height: 330 },
+  { name: "short-tablet", width: 844, height: 390 },
+]) {
+  test(`match controls fit without scrolling (${viewport.name})`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    const state = movingState();
+    const component = await mount(
+      <div className={styles.container}>
+        <MockGameWrapper playerColor="white" state={state}>
+          <GameBoard
+            state={state}
+            playerColor="white"
+            makeMove={() => {}}
+            onLeave={() => {}}
+            boardTheme="blueIvory"
+            onBoardThemeChange={() => {}}
+          />
+        </MockGameWrapper>
+      </div>,
+    );
+
+    await component.getByRole("button", { name: "Match control" }).click();
+    const drawer = component.getByTestId("match-control-drawer");
+    await expect(drawer).toBeVisible();
+    await expect(component.getByRole("button", { name: "Leave" })).toBeVisible();
+
+    const fit = await drawer.evaluate((element: HTMLElement) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+      };
+    });
+    expect(fit.top).toBeGreaterThanOrEqual(0);
+    expect(fit.bottom).toBeLessThanOrEqual(viewport.height);
+    expect(fit.scrollHeight).toBeLessThanOrEqual(fit.clientHeight);
+  });
+}
