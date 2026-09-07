@@ -164,6 +164,20 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
   expect(clock!.x + clock!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
 });
 
+test("mobile browser slightly insets the whole game", async ({ mount, page }) => {
+  const viewport = { width: 844, height: 390 };
+  await page.setViewportSize(viewport);
+
+  const component = await mountBoard(mount, movingState());
+  const gameFrame = await component.getByTestId("board-frame").boundingBox();
+
+  expect(gameFrame).not.toBeNull();
+  expect(gameFrame!.x).toBeGreaterThanOrEqual(7);
+  expect(gameFrame!.y).toBeGreaterThanOrEqual(5);
+  expect(gameFrame!.x + gameFrame!.width).toBeLessThanOrEqual(viewport.width - 7);
+  expect(gameFrame!.y + gameFrame!.height).toBeLessThanOrEqual(viewport.height - 5);
+});
+
 for (const [theme, expectedAccent] of [
   ["redGreen", "rgb(143, 38, 51)"],
   ["blueIvory", "rgb(36, 72, 255)"],

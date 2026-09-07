@@ -25,7 +25,7 @@ from django.contrib import admin as django_admin
 from django.contrib.auth.models import User
 from django.core import signing
 from django.core.exceptions import ImproperlyConfigured
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.core.signing import b64_decode, b64_encode
 from django.db import transaction
 from django.test import TestCase, override_settings
@@ -1294,6 +1294,48 @@ class PurgeRedeemedTicketsTests(TestCase):
 
         self.assertIn("Purged 1 redeemed tickets", out.getvalue())
         self.assertEqual(RedeemedTicket.objects.count(), 0)
+
+
+class CancelLinkedRoomsCommandTests(TestCase):
+    def setUp(self):
+        self.room = GameRoom.objects.create(
+            code="BAD123", status="waiting", state=BackgammonEngine.get_initial_state())
+        self.link = TournamentLink.objects.create(
+            issuer="tournaments", tournament_id=14, fixture_id=13, room=self.room)
+        user = User.objects.create_user(username="split-room-player")
+        RoomPlayer.objects.create(room=self.room, player=Player.objects.create(user=user), color="white")
+
+    def test_dry_run_preserves_the_room_and_link(self):
+        out = StringIO()
+
+        call_command("cancel_linked_rooms", tournament_id=14, stdout=out)
+
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, "waiting")
+        self.assertTrue(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertIn("Dry run", out.getvalue())
+
+    def test_execute_cancels_and_detaches_the_one_seat_room(self):
+        out = StringIO()
+
+        call_command("cancel_linked_rooms", tournament_id=14, execute=True, stdout=out)
+
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, "cancelled")
+        self.assertFalse(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertIn("Cancelled and detached 1", out.getvalue())
+
+    def test_a_full_room_is_never_selected_for_cleanup(self):
+        other = User.objects.create_user(username="real-opponent")
+        RoomPlayer.objects.create(
+            room=self.room, player=Player.objects.create(user=other), color="black")
+
+        with self.assertRaisesMessage(CommandError, "No one-seat active linked rooms"):
+            call_command("cancel_linked_rooms", tournament_id=14, execute=True)
+
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, "waiting")
+        self.assertTrue(TournamentLink.objects.filter(pk=self.link.pk).exists())
 
 
 class TaskDeadLetterAdminTests(TestCase):

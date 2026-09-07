@@ -1,4 +1,8 @@
 :root {
+  /* Keep browser-provided controls in the same dark scheme as the application and
+     signal that no automatic color conversion is needed. */
+  color-scheme: dark;
+
   /* 6B brand */
   --font-body: "Assistant", "Heebo", Arial, sans-serif;
   --font-display: "Assistant", "Heebo", Arial, sans-serif;
