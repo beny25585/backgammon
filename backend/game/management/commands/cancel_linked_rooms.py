@@ -13,7 +13,14 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser):
-        parser.add_argument("--tournament-id", type=int, required=True)
+        scope = parser.add_mutually_exclusive_group(required=True)
+        scope.add_argument("--tournament-id", type=int)
+        scope.add_argument(
+            "--room-code",
+            action="append",
+            dest="room_codes",
+            help="Cancel this exact room code; repeat for multiple split rooms",
+        )
         parser.add_argument(
             "--fixture-id",
             type=int,
@@ -35,9 +42,13 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         links = TournamentLink.objects.select_related("room").filter(
             issuer=options["issuer"],
-            tournament_id=options["tournament_id"],
             room__status__in=("waiting", "playing"),
         )
+        if options.get("tournament_id") is not None:
+            links = links.filter(tournament_id=options["tournament_id"])
+        else:
+            room_codes = [code.strip().upper() for code in options["room_codes"] if code.strip()]
+            links = links.filter(room__code__in=room_codes)
         fixture_ids = options.get("fixture_ids") or []
         if fixture_ids:
             links = links.filter(fixture_id__in=fixture_ids)
@@ -50,7 +61,7 @@ class Command(BaseCommand):
 
         for link in links:
             self.stdout.write(
-                f"fixture={link.fixture_id} room={link.room.code} "
+                f"tournament={link.tournament_id} fixture={link.fixture_id} room={link.room.code} "
                 f"status={link.room.status} seats={link.seat_count}"
             )
 

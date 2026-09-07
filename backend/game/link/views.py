@@ -82,13 +82,9 @@ def enter_link(request):
             link, room = _link_for_fixture(issuer, ticket)
             color = link.color_for_seat(seat)
 
-            elsewhere = GameRoom.objects.filter(
-                players__player=player,
-                status__in=['waiting', 'playing'],
-            ).exclude(pk=room.pk).first()
-            if elsewhere is not None:
-                raise _BusyElsewhere(elsewhere)
-
+            # Tournament rooms are independent. A player may have a live fixture in several
+            # tournaments and use the tournaments UI to choose which one to enter, so membership
+            # in another active room must neither block this ticket nor cancel that other match.
             # A well-behaved issuer never mints two tickets for the same seat of one fixture, so
             # reaching this means the issuer is confused or forged. Refuse it cleanly: without the
             # check the unique constraint on (room, colour) turns it into a 500.
@@ -113,13 +109,6 @@ def enter_link(request):
         return Response(
             {'error': 'That seat has already been taken by another player.'},
             status=status.HTTP_409_CONFLICT)
-    except _BusyElsewhere as busy:
-        logger.info(f"link enter refused: user busy in room={busy.room.code}")
-        return Response(
-            {'error': 'Finish or cancel your current game before starting this one.',
-             'activeRoom': busy.room.code},
-            status=status.HTTP_409_CONFLICT)
-
     if started:
         # The room starts when the second seat is filled, not when that player's socket opens,
         # which is what wakes the first player out of the waiting room.
@@ -251,11 +240,3 @@ class _SeatTaken(Exception):
     def __init__(self, color):
         super().__init__(color)
         self.color = color
-
-
-class _BusyElsewhere(Exception):
-    """Raised inside the transaction: the player is mid-game in a room that is not this one."""
-
-    def __init__(self, room):
-        super().__init__(room.code)
-        self.room = room

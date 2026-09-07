@@ -258,22 +258,22 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(RedeemedTicket.objects.count(), 1)
         self.assertEqual(RoomPlayer.objects.count(), 1)
 
-    def test_a_player_already_in_another_game_is_told_to_finish_it(self):
+    def test_a_player_may_enter_matches_in_multiple_tournaments(self):
         subject = str(uuid.uuid4())
-        self.enter(make_ticket(sub=subject, fix=1, seat="p1"))
+        first = self.enter(make_ticket(sub=subject, trn=11, fix=1, seat="p1"))
 
-        response = self.enter(make_ticket(sub=subject, fix=2, seat="p1"))
+        second = self.enter(make_ticket(sub=subject, trn=12, fix=2, seat="p1"))
 
-        self.assertEqual(response.status_code, 409)
-        self.assertIn("Finish or cancel", response.data["error"])
-
-        # The refusal rolls the whole transaction back, so the second fixture leaves no orphan
-        # room behind *and* its ticket is not spent — the player can use the same link again once
-        # they have finished the game they are in.
-        self.assertEqual(GameRoom.objects.count(), 1)
-        self.assertEqual(TournamentLink.objects.count(), 1)
-        self.assertEqual(RoomPlayer.objects.count(), 1)
-        self.assertEqual(RedeemedTicket.objects.count(), 1)
+        self.assertEqual(first.status_code, 302)
+        self.assertEqual(second.status_code, 302)
+        self.assertEqual(GameRoom.objects.count(), 2)
+        self.assertEqual(TournamentLink.objects.count(), 2)
+        self.assertEqual(RoomPlayer.objects.count(), 2)
+        self.assertEqual(RedeemedTicket.objects.count(), 2)
+        self.assertEqual(
+            set(TournamentLink.objects.values_list("tournament_id", "fixture_id")),
+            {(11, 1), (12, 2)},
+        )
 
     def test_a_seat_claimed_by_two_different_players_is_refused(self):
         # A well-behaved issuer never mints this, so it means a confused or forged issuer. It must
@@ -1324,6 +1324,16 @@ class CancelLinkedRoomsCommandTests(TestCase):
         self.assertEqual(self.room.status, "cancelled")
         self.assertFalse(TournamentLink.objects.filter(pk=self.link.pk).exists())
         self.assertIn("Cancelled and detached 1", out.getvalue())
+
+    def test_an_exact_room_code_can_be_used_instead_of_a_tournament(self):
+        out = StringIO()
+
+        call_command("cancel_linked_rooms", room_codes=["bad123"], execute=True, stdout=out)
+
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, "cancelled")
+        self.assertFalse(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertIn("tournament=14 fixture=13 room=BAD123", out.getvalue())
 
     def test_a_full_room_is_never_selected_for_cleanup(self):
         other = User.objects.create_user(username="real-opponent")
