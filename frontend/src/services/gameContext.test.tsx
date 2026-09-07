@@ -414,6 +414,29 @@ test("server auto-pass after a roll shows the no-moves overlay", async ({
   await expect(component.getByTestId("phase")).toHaveText("rolling");
 });
 
+test("server no-moves notice after a partial turn reaches the UI", async ({
+  mount,
+  page,
+}) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...midGameState(), dice: [4, 2], remaining: [2], version: 1 });
+
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({
+      type: "turn_notice",
+      payload: {
+        kind: "no_moves",
+        dice: [4, 2],
+        remaining: [2],
+        color: "white",
+      },
+    });
+  });
+
+  await expect(component.getByTestId("no-moves")).toHaveText("true");
+});
+
 test("opening result broadcast populates the opening result", async ({
   mount,
   page,

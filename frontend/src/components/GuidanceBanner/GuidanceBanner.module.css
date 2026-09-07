@@ -19,6 +19,12 @@
   transform: none;
 }
 
+.inline {
+  position: relative;
+  z-index: 45;
+  width: 100%;
+}
+
 .decision .banner {
   position: relative;
   width: 100%;

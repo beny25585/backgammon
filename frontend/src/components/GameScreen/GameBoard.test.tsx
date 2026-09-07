@@ -3,6 +3,7 @@ import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { applyMove, newGame } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
+import type { NoMovesMessage } from "../../types/context";
 
 function simpleWhiteState(): GameState {
   const points = new Array(24).fill(0);
@@ -36,7 +37,7 @@ interface MountProps {
   needsToRoll?: boolean;
   onRoll?: () => void;
   respondToDouble?: (accept: boolean) => void;
-  noMovesMessage?: { dice: number[] } | null;
+  noMovesMessage?: NoMovesMessage | null;
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
@@ -107,6 +108,46 @@ test("auto-moves with the larger die when a checker has multiple legal targets",
   expect(moveCalls[0]).toEqual([23, 19]);
 });
 
+test("shows a forced-move message at the undo position before auto-moving", async ({
+  mount,
+  page,
+}) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const moveCalls: [Source, Target][] = [];
+  const component = await mountBoard(mount, {
+    state: simpleWhiteState(),
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+
+  await expect(component.getByTestId("forced-move-notice")).toContainText(
+    "Forced move — playing automatically",
+  );
+  await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(1);
+  const readBox = (testId: string) =>
+    component.getByTestId(testId).evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, width: box.width };
+    });
+  const boardBox = await component.evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { x: box.x, width: box.width };
+  });
+  const noticeBox = await readBox("forced-move-notice");
+  const diceBox = await readBox("dice-overlay");
+  const boardMiddle = boardBox.x + boardBox.width / 2;
+  expect(noticeBox.x + noticeBox.width / 2).toBeLessThan(boardMiddle);
+  expect(diceBox.x + diceBox.width / 2).toBeGreaterThan(boardMiddle);
+  expect(moveCalls).toHaveLength(0);
+
+  await page.clock.runFor(1499);
+  expect(moveCalls).toHaveLength(0);
+  await page.clock.runFor(1);
+  await expect.poll(() => moveCalls.length).toBe(1);
+  expect(moveCalls[0]).toEqual([23, 19]);
+});
+
 test("auto-moves with the smaller die after dice are reordered", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const state = movingState({ dice: [4, 3], remaining: [3, 4] });
@@ -125,8 +166,10 @@ test("auto-moves with the smaller die after dice are reordered", async ({ mount 
 test("source checker stays hidden during flight and reappears after", async ({ mount, page }) => {
   await page.clock.install();
   await page.clock.pauseAt(new Date());
+  const state = simpleWhiteState();
+  state.points[12] = 1;
   const component = await mountBoard(mount, {
-    state: simpleWhiteState(),
+    state,
     playerColor: "white",
   });
 
@@ -151,6 +194,7 @@ test("releases the board as soon as an authoritative move is applied", async ({
   await page.clock.install();
   await page.clock.pauseAt(new Date());
   const initialState = simpleWhiteState();
+  initialState.points[12] = 1;
   const moveCalls: [Source, Target][] = [];
   const component = await mountBoard(mount, {
     state: initialState,
@@ -362,12 +406,18 @@ test("no-moves overlay shows the rolled dice and message", async ({ mount }) => 
   const component = await mountBoard(mount, {
     state,
     playerColor: "black",
-    noMovesMessage: { dice: [2, 4] },
+    noMovesMessage: {
+      dice: [2, 4],
+      remaining: [2, 4],
+      color: "white",
+    },
   });
 
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
-  await expect(component.getByTestId("no-moves-overlay")).toContainText("No legal moves available");
-  await expect(component.getByTestId("no-moves-overlay").getByTestId("die")).toHaveCount(2);
+  await expect(component.getByTestId("no-moves-overlay")).toContainText(
+    "No moves available — turn passes",
+  );
+  await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(2);
 });
 
 test("dice overlay is visible to the opponent when it's their turn", async ({ mount }) => {
@@ -470,6 +520,7 @@ test("undo button appears after a move and clicking calls undoMove", async ({ mo
   const state = movingState({
     moveHistory: [{ ...simpleWhiteState() }],
   });
+  state.points[12] = 1;
   const component = await mountBoard(mount, {
     state,
     playerColor: "white",

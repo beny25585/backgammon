@@ -12,11 +12,11 @@ import {
   type Move,
 } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
+import type { NoMovesMessage } from "../../types/context";
 import {
   DEFAULT_BOARD_THEME,
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
-import { useI18n } from "../../i18n/I18nProvider";
 
 interface GameBoardProps {
   state: GameState;
@@ -35,7 +35,7 @@ interface GameBoardProps {
   timeControl?: import("../../lib/clock").TimeControl | null;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
-  noMovesMessage?: { dice: number[] } | null;
+  noMovesMessage?: NoMovesMessage | null;
 }
 
 const themeClassByTheme: Record<BoardTheme, string> = {
@@ -44,7 +44,7 @@ const themeClassByTheme: Record<BoardTheme, string> = {
   ivoryGold: styles.themeIvoryGold,
 };
 
-const FORCED_MOVE_DELAY_MS = 180;
+const FORCED_MOVE_DELAY_MS = 1500;
 
 export default function GameBoard({
   state,
@@ -65,7 +65,6 @@ export default function GameBoard({
   onBoardThemeChange,
   noMovesMessage,
 }: GameBoardProps) {
-  const { t } = useI18n();
   const [selected, setSelected] = useState<Source | null>(null);
   const [autoMove, setAutoMove] = useState<Move | null>(null);
 
@@ -117,7 +116,7 @@ export default function GameBoard({
     if (
       !isMyTurn ||
       state.remaining.length === 0 ||
-      (state.moveHistory?.length ?? 0) > 0
+      noMovesMessage
     ) {
       setAutoMove(null);
       return;
@@ -127,15 +126,31 @@ export default function GameBoard({
       setAutoMove(null);
       return;
     }
-    const key = `${forced.from}->${forced.to}`;
+    setAutoMove(null);
     const t = setTimeout(() => {
-      setAutoMove((prev) => {
-        if (prev && `${prev.from}->${prev.to}` === key) return prev;
-        return forced;
-      });
+      setAutoMove(forced);
     }, FORCED_MOVE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [state.remaining.length, state.moveHistory?.length, isMyTurn, forcedMove]);
+  }, [state.remaining.length, isMyTurn, forcedMove, noMovesMessage]);
+
+  const turnNotice = noMovesMessage
+    ? {
+        variant: "no-moves" as const,
+        text: "No moves available — turn passes",
+      }
+    : isMyTurn && state.remaining.length > 0 && forcedMove
+      ? {
+          variant: "forced" as const,
+          text: "Forced move — playing automatically",
+        }
+      : null;
+  const displayedDice = noMovesMessage?.dice ?? state.dice;
+  const displayedRemaining = noMovesMessage?.remaining ?? state.remaining;
+  const displayedDiceColor = noMovesMessage?.color ?? state.turn;
+  const showDice = Boolean(noMovesMessage) ||
+    (state.phase !== "opening_roll" &&
+      state.phase === "moving" &&
+      state.remaining.length > 0);
 
   function handleSelect(from: Source | null) {
     setSelected(from);
@@ -168,29 +183,18 @@ export default function GameBoard({
           onRoll={needsToRoll ? onRoll : undefined}
           onOfferDouble={offerDouble}
           autoMove={autoMove}
+          inputDisabled={Boolean(turnNotice)}
+          turnNotice={turnNotice}
         />
-        {state.phase !== "opening_roll" &&
-          state.phase === "moving" &&
-          state.remaining.length > 0 && (
+        {showDice && (
             <div className={styles.boardOverlay} data-testid="dice-overlay">
               <DiceRow
-                dice={state.dice}
-                remaining={state.remaining}
-                color={state.turn}
-                onReorder={isMyTurn ? reorderDice : undefined}
+                dice={displayedDice}
+                remaining={displayedRemaining}
+                color={displayedDiceColor}
+                onReorder={isMyTurn && !turnNotice ? reorderDice : undefined}
               />
             </div>
-          )}
-        {noMovesMessage && (
-          <div className={styles.noMovesOverlay} data-testid="no-moves-overlay">
-            <DiceRow
-              dice={noMovesMessage.dice}
-              remaining={[]}
-              color={state.turn === "white" ? "black" : "white"}
-              forceActive
-            />
-            <span>{t("game.noMovesAvailable")}</span>
-          </div>
         )}
         <GuidanceBanner
           state={state}

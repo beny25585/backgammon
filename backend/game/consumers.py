@@ -523,6 +523,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             copy.deepcopy(state),
             sequence,
         ))
+        turn_notice = result.get('turn_notice')
+        if turn_notice:
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'game_message',
+                    'event_type': 'turn_notice',
+                    'payload': turn_notice,
+                    'playerColor': self.player_color,
+                }
+            )
         await self.channel_layer.group_send(
             self.room_group_name,
             {

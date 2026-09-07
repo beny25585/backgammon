@@ -2078,6 +2078,37 @@ class BackgammonEngineTests(TestCase):
         self.assertEqual(engine.state["turn"], "black")
         self.assertEqual(engine.state["phase"], "rolling")
         self.assertEqual(engine.state["message"], "No legal moves")
+        self.assertEqual(result["turn_notice"], {
+            "kind": "no_moves",
+            "dice": [2, 1],
+            "remaining": [2, 1],
+            "color": "white",
+        })
+
+    def test_partial_turn_without_another_move_returns_notice(self):
+        state = BackgammonEngine.get_initial_state()
+        state["points"] = [0] * 24
+        state["points"][23] = -2
+        state["bar"] = {"white": 2, "black": 0}
+        state["home"] = {"white": 13, "black": 13}
+        state["turn"] = "white"
+        state["phase"] = "moving"
+        state["dice"] = [2, 1]
+        state["remaining"] = [2, 1]
+        state["lastMove"] = []
+        state["moveHistory"] = []
+        engine = BackgammonEngine(state)
+
+        result = engine.make_move("bar", 22, "white")
+
+        self.assertTrue(result["success"])
+        self.assertEqual(engine.state["turn"], "black")
+        self.assertEqual(result["turn_notice"], {
+            "kind": "no_moves",
+            "dice": [2, 1],
+            "remaining": [1],
+            "color": "white",
+        })
 
     def test_roll_opening_die_white_rolls_first_stays_in_opening(self):
         engine = self._engine()

@@ -522,7 +522,8 @@
 .boardUndoAction,
 .boardConfirmAction,
 .boardDoubleAction,
-.boardRollAction {
+.boardRollAction,
+.boardTurnNotice {
   position: absolute;
   top: 50%;
   z-index: 40;
@@ -533,6 +534,12 @@
 
 .boardUndoAction {
   left: 25%;
+}
+
+.boardTurnNotice {
+  left: 25%;
+  width: min(19cqw, 9rem);
+  pointer-events: none;
 }
 
 .boardConfirmAction {
@@ -622,29 +629,6 @@
   --die-size: clamp(17px, 3.25cqw, 28px);
   --die-radius: 3px;
   --pip-size: clamp(2px, 0.52cqw, 4px);
-}
-
-.noMovesOverlay {
-  position: absolute;
-  top: calc(50% - clamp(72px, 11cqw, 124px));
-  left: 50%;
-  z-index: 46;
-  display: inline-flex;
-  align-items: center;
-  gap: var(--dice-overlay-gap);
-  padding: clamp(8px, 1vw, 12px) clamp(12px, 2vw, 20px);
-  color: var(--ui-on-accent, #ffe7a3);
-  font-weight: 800;
-  background: var(--ui-secondary-bg, rgba(40, 24, 10, 0.94));
-  border: 1px solid var(--ui-accent-border, rgba(255, 204, 102, 0.62));
-  border-radius: 6px;
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.noMovesOverlay [data-testid="die"] {
-  opacity: 1;
 }
 
 /* === Side panel === */

@@ -19,6 +19,12 @@ export interface GameResult {
   reason?: string;
 }
 
+export interface NoMovesMessage {
+  dice: number[];
+  remaining: number[];
+  color: Color;
+}
+
 export interface GameContextType {
   state: GameState | null;
   playerColor: Color;
@@ -49,5 +55,5 @@ export interface GameContextType {
   undoMove: () => void;
   giveUp: () => void;
   leaveGame: () => void;
-  noMovesMessage: { dice: number[] } | null;
+  noMovesMessage: NoMovesMessage | null;
 }

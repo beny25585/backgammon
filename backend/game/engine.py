@@ -186,7 +186,15 @@ class BackgammonEngine:
         self.state['lastMove'] = []
         self.state['moveHistory'] = []
 
+        turn_notice = None
         if len(self.all_legal_moves(self.state['turn'])) == 0:
+            blocked_color = self.state['turn']
+            turn_notice = {
+                'kind': 'no_moves',
+                'dice': list(self.state['dice']),
+                'remaining': list(self.state['remaining']),
+                'color': blocked_color,
+            }
             self.state['remaining'] = []
             self.state['turn'] = 'black' if self.state['turn'] == 'white' else 'white'
             self.state['phase'] = 'rolling'
@@ -196,11 +204,14 @@ class BackgammonEngine:
             self.state['message'] = f"{turn_name}'s turn"
 
         self.state['version'] = self.state.get('version', 0) + 1
-        return {
+        result = {
             'success': True,
             'dice': self.state['dice'],
             'remaining': self.state['remaining'],
         }
+        if turn_notice:
+            result['turn_notice'] = turn_notice
+        return result
 
     def roll_opening_die(self, color=None, die=None):
         """Record one opening die for `color`.
@@ -316,9 +327,27 @@ class BackgammonEngine:
             return {'success': False, 'message': 'Invalid move'}
 
         move = matching[0]
+        dice_before_move = list(self.state.get('dice') or [])
+        remaining_after_move = list(self.state.get('remaining') or [])
+        try:
+            remaining_after_move.remove(move['die'])
+        except ValueError:
+            pass
         self._apply_move(move, player_color)
         self.state['version'] = self.state.get('version', 0) + 1
-        return {'success': True, 'message': 'Move executed', 'state': self.state}
+        result = {'success': True, 'message': 'Move executed', 'state': self.state}
+        if (
+            self.state.get('phase') == 'rolling'
+            and self.state.get('turn') != player_color
+            and remaining_after_move
+        ):
+            result['turn_notice'] = {
+                'kind': 'no_moves',
+                'dice': dice_before_move,
+                'remaining': remaining_after_move,
+                'color': player_color,
+            }
+        return result
 
     def reorder_dice(self, player_color):
         if self.state['turn'] != player_color:

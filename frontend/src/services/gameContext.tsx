@@ -12,6 +12,7 @@ import {
 import type {
   GameContextType,
   GameResult,
+  NoMovesMessage,
   OpeningRollResult,
 } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
@@ -78,9 +79,8 @@ export function GameProvider({
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] = useState<{
-    dice: number[];
-  } | null>(null);
+  const [noMovesMessage, setNoMovesMessage] =
+    useState<NoMovesMessage | null>(null);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
@@ -276,7 +276,16 @@ export function GameProvider({
             (next.remaining?.length ?? 0) === 0 &&
             next.message === "No legal moves"
           ) {
-            setNoMovesMessage({ dice: next.dice });
+            const rolledBy = prev.turn;
+            const rolledRemaining =
+              next.dice[0] === next.dice[1]
+                ? [next.dice[0], next.dice[0], next.dice[0], next.dice[0]]
+                : [...next.dice];
+            setNoMovesMessage({
+              dice: next.dice,
+              remaining: rolledRemaining,
+              color: rolledBy,
+            });
             setTimeout(() => setNoMovesMessage(null), 1500);
           }
 
@@ -419,6 +428,30 @@ export function GameProvider({
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
           );
+        });
+
+        socket.on("turn_notice", (message) => {
+          const payload = (message as Record<string, unknown>).payload as
+            | Record<string, unknown>
+            | undefined;
+          if (payload?.kind !== "no_moves") return;
+          const dice = Array.isArray(payload.dice)
+            ? payload.dice.filter((die): die is number => typeof die === "number")
+            : [];
+          const remaining = Array.isArray(payload.remaining)
+            ? payload.remaining.filter(
+                (die): die is number => typeof die === "number",
+              )
+            : [];
+          const color = payload.color;
+          if (
+            dice.length === 0 ||
+            (color !== "white" && color !== "black")
+          ) {
+            return;
+          }
+          setNoMovesMessage({ dice, remaining, color });
+          setTimeout(() => setNoMovesMessage(null), 1500);
         });
 
         await socket.connect(roomId, token);

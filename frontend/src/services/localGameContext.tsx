@@ -6,7 +6,11 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { GameResult, OpeningRollResult } from "../types/context";
+import type {
+  GameResult,
+  NoMovesMessage,
+  OpeningRollResult,
+} from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import { saveMatch, fetchDice } from "../services/api";
 import {
@@ -84,9 +88,8 @@ export function LocalGameProvider({
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] = useState<{
-    dice: number[];
-  } | null>(null);
+  const [noMovesMessage, setNoMovesMessage] =
+    useState<NoMovesMessage | null>(null);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
@@ -425,7 +428,11 @@ export function LocalGameProvider({
                 lastMove: null,
                 moveHistory: null,
               };
-              setNoMovesMessage({ dice: rolled.dice });
+              setNoMovesMessage({
+                dice: rolled.dice,
+                remaining: rolled.remaining,
+                color: rolled.turn,
+              });
               setTimeout(() => {
                 setNoMovesMessage(null);
                 setState((cur) => {
@@ -474,6 +481,21 @@ export function LocalGameProvider({
             .find((move): move is Move => Boolean(move)) ?? matchingMoves[0];
         if (!match) return prev;
         const next = applyMove(prev, match, prev.turn);
+        if (
+          next.phase === "rolling" &&
+          next.turn !== prev.turn &&
+          prev.remaining.length > 1
+        ) {
+          const remaining = [...prev.remaining];
+          const usedDieIndex = remaining.indexOf(match.die);
+          if (usedDieIndex >= 0) remaining.splice(usedDieIndex, 1);
+          setNoMovesMessage({
+            dice: prev.dice,
+            remaining,
+            color: prev.turn,
+          });
+          setTimeout(() => setNoMovesMessage(null), 1500);
+        }
         setTurnColor(next.turn);
         return next;
       });

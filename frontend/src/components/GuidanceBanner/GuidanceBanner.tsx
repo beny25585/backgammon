@@ -6,10 +6,17 @@ import { getGuidance } from "./guidance";
 import type { GuidanceVariant } from "./guidance";
 import { useI18n } from "../../i18n/I18nProvider";
 
+export interface GuidanceMessage {
+  variant: GuidanceVariant;
+  text: string;
+}
+
 interface GuidanceBannerProps {
-  state: GameState;
-  playerColor: Color;
-  respondToDouble: (accept: boolean) => void;
+  state?: GameState;
+  playerColor?: Color;
+  respondToDouble?: (accept: boolean) => void;
+  message?: GuidanceMessage | null;
+  inline?: boolean;
 }
 
 function variantClass(variant: GuidanceVariant): string {
@@ -47,11 +54,17 @@ export default function GuidanceBanner({
   state,
   playerColor,
   respondToDouble,
+  message,
+  inline = false,
 }: GuidanceBannerProps) {
   const { t, locale } = useI18n();
   const [responding, setResponding] = useState(false);
 
-  const guidance = getGuidance(state, playerColor);
+  const guidance = message
+    ? { ...message, interactive: null }
+    : state && playerColor
+      ? getGuidance(state, playerColor)
+      : null;
   const isDecision = guidance?.interactive === "double";
 
   useEffect(() => {
@@ -60,12 +73,12 @@ export default function GuidanceBanner({
 
   if (!guidance) return null;
 
-  if (!isDecision) return null;
+  if (!message && !isDecision) return null;
 
   const respond = (accept: boolean) => {
     if (responding) return;
     setResponding(true);
-    respondToDouble(accept);
+    respondToDouble?.(accept);
   };
 
   const text =
@@ -74,7 +87,13 @@ export default function GuidanceBanner({
       : guidance.text;
 
   return (
-    <div className={`${styles.wrapper} ${isDecision ? styles.decision : styles.toast}`}>
+    <div
+      className={
+        inline
+          ? styles.inline
+          : `${styles.wrapper} ${isDecision ? styles.decision : styles.toast}`
+      }
+    >
       <motion.div
         className={`${styles.banner} ${variantClass(guidance.variant)}`}
         data-testid="guidance-banner"

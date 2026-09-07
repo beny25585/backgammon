@@ -21,6 +21,8 @@ import Bar from "./pieces/bar/Bar";
 import BearOff from "./pieces/bearoff/BearOff";
 import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
 import DoublingCube from "../DoublingCube";
+import GuidanceBanner from "../GuidanceBanner";
+import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
 import styles from "../GameScreen/GameScreen.module.css";
 import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -38,6 +40,8 @@ interface BoardProps {
   onRoll?: () => void;
   onOfferDouble?: () => void;
   autoMove?: Move | null;
+  inputDisabled?: boolean;
+  turnNotice?: GuidanceMessage | null;
 }
 
 function getCheckerSize(board: HTMLElement): number {
@@ -79,6 +83,8 @@ export function Board({
   onRoll,
   onOfferDouble,
   autoMove,
+  inputDisabled = false,
+  turnNotice,
 }: BoardProps) {
   const { t } = useI18n();
   const boardRef = useRef<HTMLDivElement>(null);
@@ -116,7 +122,7 @@ export function Board({
   // Once the move is reflected on the board (including optimistic online
   // updates), further input is safe. The visual animation must not swallow it.
   const interactionBlocked = Boolean(
-    flyChecker && (flyChecker.external || !flyMoveApplied),
+    inputDisabled || (flyChecker && (flyChecker.external || !flyMoveApplied)),
   );
 
   useEffect(() => {
@@ -622,7 +628,20 @@ export function Board({
           />
         </div>
 
-        {canUndo && (
+        {turnNotice && (
+          <div
+            className={styles.boardTurnNotice}
+            data-testid={
+              turnNotice.variant === "no-moves"
+                ? "no-moves-overlay"
+                : "forced-move-notice"
+            }
+            role="status"
+          >
+            <GuidanceBanner message={turnNotice} inline />
+          </div>
+        )}
+        {canUndo && !turnNotice && (
           <div className={styles.boardUndoAction}>
             <UndoButton onClick={handleUndo} />
           </div>

@@ -82,6 +82,22 @@ test("hides no-moves guidance because the board owns transient status", async ({
   await expect(c.getByTestId("guidance-banner")).toHaveCount(0);
 });
 
+test("renders a supplied board message", async ({ mount }) => {
+  const c = await mount(
+    <GuidanceBanner
+      message={{
+        variant: "forced",
+        text: "Forced move — playing automatically",
+      }}
+      inline
+    />,
+  );
+
+  await expect(c.getByTestId("guidance-banner")).toContainText(
+    "Forced move — playing automatically",
+  );
+});
+
 test("double offer accepts once and disables both actions", async ({ mount }) => {
   let accepted: boolean | null = null;
   const state = makeGameState({
