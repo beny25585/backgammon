@@ -129,6 +129,42 @@
   transform: translateX(-50%);
 }
 
+@media (orientation: landscape) and (max-height: 430px) {
+  .pipCount {
+    font-size: clamp(11px, 1.4cqw, 14px);
+  }
+
+  .topPip,
+  .bottomPip {
+    bottom: auto;
+    transform: translate(-50%, -50%);
+  }
+
+  .topPip {
+    top: 18%;
+  }
+
+  .bottomPip {
+    top: 82%;
+  }
+
+  .topCheckers,
+  .bottomCheckers {
+    position: absolute;
+    left: 50%;
+    max-height: 32%;
+    transform: translate(-50%, -50%);
+  }
+
+  .topCheckers {
+    top: 38%;
+  }
+
+  .bottomCheckers {
+    top: 62%;
+  }
+}
+
 @keyframes pulseGlow {
   0% {
     opacity: 0.6;

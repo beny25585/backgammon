@@ -872,7 +872,7 @@
 @media (orientation: landscape) and (max-height: 430px) {
   .container {
     --checker: max(15px, 4.55cqw);
-    --bar-w: max(13px, 2.7cqw);
+    --bar-w: max(18px, 3.3cqw);
     --bearoff-w: clamp(40px, 8cqw, 46px);
   }
 

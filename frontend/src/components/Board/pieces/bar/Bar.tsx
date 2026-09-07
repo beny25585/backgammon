@@ -28,7 +28,10 @@ export default function Bar({
     <button type="button" onClick={onClick} className={styles.bar} data-point-idx="bar">
       {(selected || isLegalFrom) && <div className={styles.highlight} />}
 
-      <span className={`${styles.pipCount} ${styles.topPip}`}>
+      <span
+        className={`${styles.pipCount} ${styles.topPip}`}
+        data-testid="bar-pip-black"
+      >
         {pipCount(state, "black")}
       </span>
 
@@ -42,7 +45,10 @@ export default function Bar({
         </div>
       )}
 
-      <div className={`${styles.checkers} ${styles.topCheckers}`}>
+      <div
+        className={`${styles.checkers} ${styles.topCheckers}`}
+        data-testid="bar-checkers-black"
+      >
         {Array.from({
           length: Math.max(state.bar.black - (hideChecker === "black" ? 1 : 0), 0),
         }).map((_, i) => (
@@ -50,7 +56,10 @@ export default function Bar({
         ))}
       </div>
 
-      <div className={`${styles.checkers} ${styles.bottomCheckers}`}>
+      <div
+        className={`${styles.checkers} ${styles.bottomCheckers}`}
+        data-testid="bar-checkers-white"
+      >
         {Array.from({
           length: Math.max(state.bar.white - (hideChecker === "white" ? 1 : 0), 0),
         }).map((_, i) => (
@@ -58,7 +67,10 @@ export default function Bar({
         ))}
       </div>
 
-      <span className={`${styles.pipCount} ${styles.bottomPip}`}>
+      <span
+        className={`${styles.pipCount} ${styles.bottomPip}`}
+        data-testid="bar-pip-white"
+      >
         {pipCount(state, "white")}
       </span>
     </button>

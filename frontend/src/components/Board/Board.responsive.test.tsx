@@ -121,3 +121,31 @@ for (const vp of VIEWPORTS) {
     await assertNoHorizontalOverflow(component.locator('[class*="wrapper"]'));
   });
 }
+
+test("short landscape keeps bar checkers clear of the larger pip counts", async ({ mount, page }) => {
+  const viewport = { width: 844, height: 390 };
+  await page.setViewportSize(viewport);
+  const component = await mountBoard(mount, busyState());
+
+  const bar = component.locator('[data-point-idx="bar"]');
+  const whitePip = component.getByTestId("bar-pip-white");
+  const whiteChecker = component.getByTestId("bar-checkers-white").locator("[data-checker]").first();
+  const barBox = await bar.boundingBox();
+  const pipBox = await whitePip.boundingBox();
+  const checkerBox = await whiteChecker.boundingBox();
+  const pipFontSize = await whitePip.evaluate((element: HTMLElement) =>
+    parseFloat(getComputedStyle(element).fontSize),
+  );
+
+  expect(barBox).not.toBeNull();
+  expect(pipBox).not.toBeNull();
+  expect(checkerBox).not.toBeNull();
+  expect(barBox!.width).toBeGreaterThanOrEqual(26);
+  expect(pipFontSize).toBeGreaterThanOrEqual(11);
+  expect(checkerBox!.y + checkerBox!.height).toBeLessThan(pipBox!.y);
+
+  const pipCenter = pipBox!.y + pipBox!.height / 2;
+  const checkerCenter = checkerBox!.y + checkerBox!.height / 2;
+  expect((pipCenter - barBox!.y) / barBox!.height).toBeCloseTo(0.82, 1);
+  expect((checkerCenter - barBox!.y) / barBox!.height).toBeCloseTo(0.62, 1);
+});
