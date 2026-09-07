@@ -140,6 +140,30 @@ for (const vp of PANEL_IN_VIEW) {
   });
 }
 
+test("landscape iPhone safe areas keep the clock and board out of the notch", async ({
+  mount,
+  page,
+}) => {
+  const viewport = { width: 844, height: 390 };
+  const safeLeft = 47;
+  const safeRight = 21;
+  await page.setViewportSize(viewport);
+  await page.addStyleTag({
+    content: `:root { --game-safe-left: ${safeLeft}px; --game-safe-right: ${safeRight}px; }`,
+  });
+
+  const component = await mountBoard(mount, movingState());
+  const frame = await component.getByTestId("board-frame").boundingBox();
+  const clock = await component.locator('[class*="clockSlot"]').boundingBox();
+
+  expect(frame).not.toBeNull();
+  expect(clock).not.toBeNull();
+  expect(frame!.x).toBeGreaterThanOrEqual(safeLeft);
+  expect(frame!.x + frame!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
+  expect(clock!.x).toBeGreaterThanOrEqual(safeLeft);
+  expect(clock!.x + clock!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
+});
+
 for (const [theme, expectedAccent] of [
   ["redGreen", "rgb(143, 38, 51)"],
   ["blueIvory", "rgb(36, 72, 255)"],

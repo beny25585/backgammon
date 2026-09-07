@@ -10,6 +10,10 @@
     linear-gradient(135deg, rgba(5, 16, 17, 0.97), rgba(2, 7, 9, 0.99) 62%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 42px);
   padding: 0;
+  /* viewport-fit=cover exposes these insets on notched iPhones. Keeping them
+     overridable also lets the responsive test emulate iOS safe areas. */
+  padding-left: var(--game-safe-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--game-safe-right, env(safe-area-inset-right, 0px));
   overflow: hidden;
   /* Sizes scale with the board's own width (.wrapper is the cqw container) */
   --checker: max(22px, 4.25cqw);
@@ -846,7 +850,7 @@
   .gameFrame {
     --bearoff-control-right: calc(clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px);
     grid-template-columns: clamp(92px, 21dvw, 116px) minmax(0, 1fr);
-    width: 100dvw;
+    width: 100%;
     height: var(--app-height, 100dvh);
     border-width: 0;
     background: #000;
