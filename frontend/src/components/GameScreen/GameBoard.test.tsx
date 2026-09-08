@@ -141,11 +141,16 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   expect(diceBox.x + diceBox.width / 2).toBeGreaterThan(boardMiddle);
   expect(moveCalls).toHaveLength(0);
 
-  await page.clock.runFor(1499);
+  await page.clock.runFor(349);
   expect(moveCalls).toHaveLength(0);
   await page.clock.runFor(1);
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([23, 19]);
+
+  await page.clock.runFor(2649);
+  await expect(component.getByTestId("forced-move-notice")).toBeVisible();
+  await page.clock.runFor(1);
+  await expect(component.getByTestId("forced-move-notice")).toHaveCount(0);
 });
 
 test("auto-moves with the smaller die after dice are reordered", async ({ mount }) => {

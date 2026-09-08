@@ -445,7 +445,7 @@ export function LocalGameProvider({
                   return passed;
                 });
                 setTurnColor(passed.turn);
-              }, 1500);
+              }, 350);
             }
             return rolled;
           });
@@ -494,7 +494,7 @@ export function LocalGameProvider({
             remaining,
             color: prev.turn,
           });
-          setTimeout(() => setNoMovesMessage(null), 1500);
+          setTimeout(() => setNoMovesMessage(null), 350);
         }
         setTurnColor(next.turn);
         return next;

@@ -1,8 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
 import GuidanceBanner from "../GuidanceBanner";
+import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
 import { DiceRow } from "../Dice";
 import {
   allLegalMoves,
@@ -44,7 +45,8 @@ const themeClassByTheme: Record<BoardTheme, string> = {
   ivoryGold: styles.themeIvoryGold,
 };
 
-const FORCED_MOVE_DELAY_MS = 1500;
+const FORCED_MOVE_DELAY_MS = 350;
+const TURN_NOTICE_DURATION_MS = 3000;
 
 export default function GameBoard({
   state,
@@ -67,6 +69,9 @@ export default function GameBoard({
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
   const [autoMove, setAutoMove] = useState<Move | null>(null);
+  const [visibleTurnNotice, setVisibleTurnNotice] =
+    useState<GuidanceMessage | null>(null);
+  const turnNoticeTimerRef = useRef<number | null>(null);
 
   const isMyTurn = state.turn === playerColor && state.phase === "moving";
   const selectedBoardTheme = boardTheme ?? DEFAULT_BOARD_THEME;
@@ -115,8 +120,7 @@ export default function GameBoard({
   useEffect(() => {
     if (
       !isMyTurn ||
-      state.remaining.length === 0 ||
-      noMovesMessage
+      state.remaining.length === 0
     ) {
       setAutoMove(null);
       return;
@@ -131,19 +135,42 @@ export default function GameBoard({
       setAutoMove(forced);
     }, FORCED_MOVE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [state.remaining.length, isMyTurn, forcedMove, noMovesMessage]);
+  }, [state.remaining.length, isMyTurn, forcedMove]);
 
-  const turnNotice = noMovesMessage
-    ? {
-        variant: "no-moves" as const,
+  useEffect(() => {
+    let notice: GuidanceMessage | null = null;
+    if (noMovesMessage) {
+      notice = {
+        variant: "no-moves",
         text: "No moves available — turn passes",
+      };
+    } else if (isMyTurn && state.remaining.length > 0 && forcedMove) {
+      notice = {
+        variant: "forced",
+        text: "Forced move — playing automatically",
+      };
+    }
+    if (!notice) return;
+
+    setVisibleTurnNotice(notice);
+    if (turnNoticeTimerRef.current !== null) {
+      window.clearTimeout(turnNoticeTimerRef.current);
+    }
+    turnNoticeTimerRef.current = window.setTimeout(() => {
+      setVisibleTurnNotice(null);
+      turnNoticeTimerRef.current = null;
+    }, TURN_NOTICE_DURATION_MS);
+  }, [noMovesMessage, isMyTurn, state.remaining.length, forcedMove]);
+
+  useEffect(
+    () => () => {
+      if (turnNoticeTimerRef.current !== null) {
+        window.clearTimeout(turnNoticeTimerRef.current);
       }
-    : isMyTurn && state.remaining.length > 0 && forcedMove
-      ? {
-          variant: "forced" as const,
-          text: "Forced move — playing automatically",
-        }
-      : null;
+    },
+    [],
+  );
+
   const displayedDice = noMovesMessage?.dice ?? state.dice;
   const displayedRemaining = noMovesMessage?.remaining ?? state.remaining;
   const displayedDiceColor = noMovesMessage?.color ?? state.turn;
@@ -183,8 +210,7 @@ export default function GameBoard({
           onRoll={needsToRoll ? onRoll : undefined}
           onOfferDouble={offerDouble}
           autoMove={autoMove}
-          inputDisabled={Boolean(turnNotice)}
-          turnNotice={turnNotice}
+          turnNotice={visibleTurnNotice}
         />
         {showDice && (
             <div className={styles.boardOverlay} data-testid="dice-overlay">
@@ -192,7 +218,7 @@ export default function GameBoard({
                 dice={displayedDice}
                 remaining={displayedRemaining}
                 color={displayedDiceColor}
-                onReorder={isMyTurn && !turnNotice ? reorderDice : undefined}
+                onReorder={isMyTurn ? reorderDice : undefined}
               />
             </div>
         )}

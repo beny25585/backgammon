@@ -1,0 +1,173 @@
+.helpTrigger {
+  position: fixed;
+  left: 50%;
+  bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 216, 111, 0.72);
+  border-radius: 999px;
+  background: #7a3b09;
+  color: #fff4cf;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.48);
+  font: 800 12px var(--font-body);
+  cursor: pointer;
+  touch-action: manipulation;
+  transform: translateX(-50%);
+}
+
+.helpTrigger:hover {
+  background: #9a4b0b;
+}
+
+.helpTrigger span {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2100;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 2, 8, 0.82);
+}
+
+.dialog {
+  position: relative;
+  width: min(500px, 100%);
+  max-height: calc(100dvh - 24px);
+  padding: 26px 24px 22px;
+  overflow-y: auto;
+  border: 1px solid rgba(255, 216, 111, 0.56);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #101b34, #030814);
+  color: #fff8e6;
+  text-align: center;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.72);
+  color-scheme: dark;
+}
+
+.dialogIcon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  background: #9a4b0b;
+  color: #fff4cf;
+  font-size: 24px;
+}
+
+.dialog h2 {
+  margin: 0;
+  font: 800 22px var(--font-display);
+}
+
+.dialog p {
+  margin: 9px 0 0;
+  color: rgba(255, 248, 230, 0.78);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.steps {
+  margin-top: 14px;
+  padding: 11px 13px;
+  border: 1px solid rgba(255, 216, 111, 0.28);
+  border-radius: 7px;
+  background: #17130d;
+  color: #fff4cf;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.chromeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid rgba(126, 160, 255, 0.7);
+  border-radius: 6px;
+  background: #2448ff;
+  color: #fff;
+  font: 800 12px var(--font-body);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.closeButton {
+  position: absolute;
+  top: 7px;
+  inset-inline-end: 9px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 248, 230, 0.76);
+  font-size: 26px;
+  cursor: pointer;
+}
+
+@media (orientation: landscape) and (max-height: 430px) {
+  .helpTrigger {
+    bottom: max(5px, env(safe-area-inset-bottom, 0px));
+    min-height: 28px;
+    padding-inline: 9px;
+    font-size: 10px;
+  }
+
+  .dialog {
+    width: min(620px, 92dvw);
+    padding: 14px 42px 13px;
+  }
+
+  .dialogIcon {
+    width: 30px;
+    height: 30px;
+    margin-bottom: 4px;
+    font-size: 18px;
+  }
+
+  .dialog h2 {
+    font-size: 17px;
+  }
+
+  .dialog p,
+  .steps {
+    font-size: 12px;
+  }
+
+  .dialog p {
+    margin-top: 4px;
+  }
+
+  .steps {
+    margin-top: 7px;
+    padding: 6px 9px;
+  }
+
+  .actions {
+    margin-top: 8px;
+  }
+}

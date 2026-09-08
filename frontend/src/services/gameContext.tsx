@@ -286,7 +286,7 @@ export function GameProvider({
               remaining: rolledRemaining,
               color: rolledBy,
             });
-            setTimeout(() => setNoMovesMessage(null), 1500);
+            setTimeout(() => setNoMovesMessage(null), 350);
           }
 
           stateRef.current = displayedState;
@@ -451,7 +451,7 @@ export function GameProvider({
             return;
           }
           setNoMovesMessage({ dice, remaining, color });
-          setTimeout(() => setNoMovesMessage(null), 1500);
+          setTimeout(() => setNoMovesMessage(null), 350);
         });
 
         await socket.connect(roomId, token);

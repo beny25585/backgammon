@@ -3,6 +3,7 @@ import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
 import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
+import SamsungDarkModeHelp from "../SamsungDarkModeHelp/SamsungDarkModeHelp";
 import { DiceRow } from "../Dice";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color, GameState } from "../../lib/backgammon/engine";
@@ -116,7 +117,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
-    !noMovesMessage &&
     state?.phase === "rolling" &&
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
@@ -135,6 +135,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
   return (
     <div className={`${styles.container} ${themeClassByTheme[boardTheme]}`}>
+      <SamsungDarkModeHelp />
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
           <span>{t("game.errorPrefix")}: {error}</span>

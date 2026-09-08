@@ -79,9 +79,29 @@
 html,
 body,
 #root {
+  color-scheme: dark;
   height: 100%;
   min-height: var(--app-height, 100dvh);
   overflow: hidden;
+  background-color: #03090a;
+}
+
+/* Samsung Internet can apply an automatic second darkening pass. Reasserting the
+   app-owned dark scheme on the document and app root is a best-effort opt-out. */
+html[data-samsung-internet="true"],
+html[data-samsung-internet="true"] body,
+html[data-samsung-internet="true"] #root {
+  color-scheme: dark !important;
+  background-color: #03090a !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root,
+  html,
+  body,
+  #root {
+    color-scheme: dark;
+  }
 }
 
 body {

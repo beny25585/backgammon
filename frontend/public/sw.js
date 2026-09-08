@@ -1,4 +1,4 @@
-const CACHE_NAME = "backgammon-app-v1";
+const CACHE_NAME = "backgammon-app-v2";
 const APP_SHELL = [
   "/backgammon/",
   "/backgammon/manifest.webmanifest",
