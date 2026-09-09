@@ -1,7 +1,6 @@
-const CACHE_NAME = "backgammon-app-v2";
+const CACHE_NAME = "backgammon-app-v3";
 const APP_SHELL = [
   "/backgammon/",
-  "/backgammon/manifest.webmanifest",
   "/backgammon/pwa-icon-192.png",
   "/backgammon/pwa-icon-512.png",
 ];
@@ -36,6 +35,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Chrome must see the current shared installation scope, not an old app-shell copy.
+  if (url.pathname === "/backgammon/manifest.webmanifest") return;
   if (
     url.pathname.startsWith("/backgammon/api/") ||
     url.pathname.startsWith("/backgammon/ws/")
