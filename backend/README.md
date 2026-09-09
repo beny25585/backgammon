@@ -170,14 +170,28 @@ is not `https://`. Run it with `python manage.py check`.
 row is written inside the transaction that records the `Match`, and `transaction.on_commit` makes
 one immediate best-effort attempt. That attempt swallows its own failure by design, so if the
 tournaments server is down for thirty seconds and nothing runs `run_tasks`, the match result is
-lost permanently and silently. With it scheduled, a refused delivery is retried about five minutes
-after the first failure and about ten after the second; the third failure marks the task `failed`
-and nothing touches it again.
+left undelivered. With it scheduled, network errors, HTTP 408/429 and 5xx retry with exponential
+backoff from 30 seconds up to 30 minutes, without an attempt limit. Other HTTP refusals (including
+409 conflicts) mark the task `blocked` and stop automatic retries. Previously failed result tasks
+are still recovered; a repeated permanent refusal moves them to `blocked` too.
 
-**Nothing alerts on a `failed` task.** The admin's `Task` list is the dead-letter view — filter it
-to `status = failed` and read the `error` column, which carries the exception that stopped the
-delivery. Everything there is read-only: a queue row records what the server tried to do, and
-editing one would either forge that record or re-arm a delivery by hand.
+The admin's `Task` list is the delivery error view — filter to `status = blocked` and read the
+full `error` column for the fixture, HTTP status, reason and required action in Hebrew. The frozen
+result stays queued and is never marked delivered on a refusal. Authenticated result conflicts
+include stable reason codes from the tournaments backend; older receivers get a fallback message
+pointing to the tournaments log for that fixture. No email or push alert is sent.
+
+After correcting the reported conflict or configuration, explicitly requeue a blocked delivery:
+
+```bash
+python manage.py retry_result <task-uuid>
+python manage.py run_tasks
+```
+
+This preserves the result body, attempt count and last error until the next attempt. Do not replay
+a stale result over an administrator's ruling; review the authoritative tournament result first.
+Deploy both backends for detailed reasons, run `python manage.py migrate` on the game backend,
+and restart the game web process and task worker. Deploying only the sender still stops 409 loops.
 
 `purge_redeemed_tickets` deletes spent-ticket rows that are past their own expiry. That is safe
 precisely because an expired ticket is refused by the verifier — twice, by the signature age and by

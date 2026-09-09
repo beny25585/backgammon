@@ -13,6 +13,10 @@ RESULT_TASK = 'game.link.outbox.deliver_result'
 LEASE_SECONDS = 120
 
 
+class NonRetryableTaskError(RuntimeError):
+    """The saved request needs operator attention before it can be sent again."""
+
+
 def runnable(now):
     return (
         Q(status='pending') & (Q(run_at__lte=now) | Q(run_at__isnull=True))
@@ -34,9 +38,10 @@ def run_task(task_id):
         module, _, name = task.name.rpartition('.')
         result = getattr(import_module(module), name)(*task.args, **task.kwargs)
     except Exception as exc:
-        retry = task.name == RESULT_TASK or task.attempts < task.max_attempts
+        blocked = isinstance(exc, NonRetryableTaskError)
+        retry = not blocked and (task.name == RESULT_TASK or task.attempts < task.max_attempts)
         lease.update(
-            status='pending' if retry else 'failed',
+            status='blocked' if blocked else ('pending' if retry else 'failed'),
             run_at=timezone.now() + timedelta(seconds=min(30 * 2 ** min(task.attempts - 1, 6), 1800)),
             last_error=str(exc)[:2000], updated_at=timezone.now(),
         )

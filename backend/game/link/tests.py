@@ -584,6 +584,9 @@ class FakeResponse:
         self.status_code = status_code
         self.text = text
 
+    def json(self):
+        return json.loads(self.text)
+
 
 @link_settings
 class ResultSignatureContractTests(TestCase):
@@ -1060,6 +1063,70 @@ class DeliveryRetryTests(ResultTestBase):
 
     def run_tasks(self):
         call_command("run_tasks", stdout=StringIO())
+
+    def test_conflict_blocks_even_an_old_failed_task_without_losing_the_result(self):
+        self.seat_both()
+        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        self.link.refresh_from_db()
+        original_body = self.link.result_body
+        Task.objects.update(status='failed', attempts=7)
+        response = FakeResponse(409, '{"error":"conflict","code":"fixture_admin_resolved"}')
+        with patch('game.link.outbox.httpx.post', return_value=response) as post:
+            self.run_tasks()
+            self.run_tasks()
+        post.assert_called_once()
+        task = Task.objects.get()
+        self.assertEqual(task.status, 'blocked')
+        self.assertEqual(task.attempts, 8)
+        self.assertIn('fixture_admin_resolved', task.last_error)
+        self.assertIn('המשחק כבר הוכרע בידי מנהל', task.last_error)
+        self.assertEqual(TaskAdmin(Task, django_admin.site).error(task), task.last_error)
+        self.link.refresh_from_db()
+        self.assertEqual(self.link.result_body, original_body)
+        self.assertEqual(self.link.result_status, 'queued')
+        self.assertIsNone(self.link.delivered_at)
+
+        call_command('retry_result', str(task.pk), stdout=StringIO())
+        with patch('game.link.outbox.httpx.post', return_value=FakeResponse()) as post:
+            self.run_tasks()
+        self.assertEqual(json.loads(post.call_args.kwargs['content']), original_body)
+        task.refresh_from_db()
+        self.assertEqual(task.status, 'done')
+        self.assertEqual(task.attempts, 9)
+        self.assertIsNone(task.last_error)
+
+    def test_unstructured_or_unknown_conflicts_have_a_safe_actionable_message(self):
+        self.seat_both()
+        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        for body in ('{"error":"conflict"}', '<html>SECRET</html>',
+                     '{"code":"SECRET"}', '{"code":["SECRET"]}', '[]'):
+            with self.subTest(body=body):
+                Task.objects.update(status='pending', run_at=timezone.now())
+                with patch('game.link.outbox.httpx.post', return_value=FakeResponse(409, body)):
+                    self.run_tasks()
+                task = Task.objects.get()
+                self.assertEqual(task.status, 'blocked')
+                self.assertIn('לוג שרת הטורנירים', task.last_error)
+                self.assertNotIn('SECRET', task.last_error)
+
+    def test_only_transient_http_failures_retry(self):
+        self.seat_both()
+        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        for status in (400, 401, 403, 404, 413, 408, 429, 500, 502, 503, 504):
+            with self.subTest(status=status):
+                Task.objects.update(status='pending', run_at=timezone.now())
+                with patch('game.link.outbox.httpx.post', return_value=FakeResponse(status)):
+                    self.run_tasks()
+                self.assertEqual(Task.objects.get().status,
+                                 'pending' if status in (408, 429) or status >= 500 else 'blocked')
+
+    def test_retry_command_cannot_rearm_a_running_or_completed_task(self):
+        for status in ('pending', 'running', 'done', 'failed'):
+            task = Task.objects.create(name='game.link.outbox.deliver_result', status=status)
+            with self.assertRaises(CommandError):
+                call_command('retry_result', str(task.pk))
+            task.refresh_from_db()
+            self.assertEqual(task.status, status)
 
     def test_a_refused_delivery_stays_pending_with_a_pushed_out_run_at(self):
         self.seat_both()

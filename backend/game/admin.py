@@ -55,10 +55,8 @@ class TaskAdmin(ReadOnlyModelAdmin):
     """
     Dead-letter view for the background queue.
 
-    `run_tasks` gives a task three attempts on a 5/10/15-minute backoff and then marks it `failed`
-    and stops. Nothing alerts on that, so this list is the only place a result that never reached
-    the tournaments server becomes visible. Filter to `status = failed` for the dead letters; the
-    `error` column carries the first line of the traceback that stopped it.
+    Transient result failures retry with backoff; permanent refusals are `blocked` for review.
+    Filter by that status and read the error for the reason and the required action.
     """
 
     list_display  = ('id', 'name', 'status', 'attempt_count', 'run_at', 'updated_at', 'error')
@@ -69,6 +67,8 @@ class TaskAdmin(ReadOnlyModelAdmin):
 
     @admin.display(description = 'attempts')
     def attempt_count(self, task):
+        if task.name == 'game.link.outbox.deliver_result':
+            return str(task.attempts)
         return f'{task.attempts}/{task.max_attempts}'
 
     @admin.display(description = 'error')
@@ -77,4 +77,6 @@ class TaskAdmin(ReadOnlyModelAdmin):
             return ''
         # The last line of a traceback is the exception; that is the part worth showing in a list.
         last_line = task.last_error.strip().splitlines()[-1]
+        if task.status == 'blocked':
+            return last_line
         return last_line if len(last_line) <= 120 else last_line[:117] + '...'

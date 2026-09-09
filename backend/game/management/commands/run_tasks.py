@@ -5,7 +5,7 @@ from game.task_runner import runnable, run_task
 
 
 class Command(BaseCommand):
-    help = 'Run due tasks and recover abandoned leases; results retry until acknowledged.'
+    help = 'Run due tasks and recover abandoned leases; transient result failures retry, refusals block for review.'
 
     def handle(self, *args, **options):
         ids = list(Task.objects.filter(runnable(timezone.now())).order_by('run_at', 'created_at')

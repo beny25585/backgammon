@@ -40,6 +40,38 @@ DELIVERY_TIMEOUT_SECONDS = 10.0
 
 TASK_NAME = 'game.link.outbox.deliver_result'
 
+# Only known codes become log text; never copy arbitrary response bodies into logs.
+REJECTION_MESSAGES = {
+    'fixture_admin_resolved': 'המשחק כבר הוכרע בידי מנהל. יש לבדוק את ההכרעה לפני ניסיון נוסף.',
+    'link_cancelled': 'הקישור למשחק בוטל ולכן אינו מקבל תוצאת סיום. יש לבדוק את מצב הקישור.',
+    'link_not_open': 'הקישור למשחק אינו במצב שמאפשר קבלת תוצאה. יש לבדוק את מצב הקישור.',
+    'tournament_mismatch': 'מזהה הטורניר בתוצאה אינו תואם למשחק. יש לתקן את שיוך המשחק.',
+    'room_mismatch': 'התוצאה נשלחה מחדר שונה מהחדר המשויך למשחק. יש לבדוק את שיוך החדר.',
+    'invalid_score': 'הניקוד שנשלח אינו תקין עבור המשחק. יש לבדוק את התוצאה וכללי הטורניר.',
+    'fixture_not_found': 'המשחק או הקישור אליו לא נמצאו בשרת הטורנירים. יש לבדוק את השיוך.',
+}
+
+
+def _refusal_message(response, fixture_id):
+    try:
+        payload = response.json()
+    except (ValueError, AttributeError):
+        payload = None
+    code = payload.get('code') if isinstance(payload, dict) else None
+    if not isinstance(code, str) or code not in REJECTION_MESSAGES:
+        code = None
+    message = REJECTION_MESSAGES.get(code) or {
+        400: 'נתוני התוצאה אינם תקינים. יש לבדוק את גוף התוצאה השמור.',
+        401: 'אימות המסירה נכשל. יש לבדוק את מפתחות החתימה ואת שעוני השרתים.',
+        403: 'שרת הטורנירים אינו מתיר מסירת תוצאות. יש לבדוק את הגדרות הגישה.',
+        404: 'כתובת מסירת התוצאות או המשחק לא נמצאו. יש לבדוק כתובת, הגדרות ושיוך.',
+        409: 'התוצאה מתנגשת במצב המשחק. הסיבה המדויקת מופיעה בלוג שרת הטורנירים עבור משחק זה.',
+        413: 'גוף התוצאה גדול מהמותר. יש לבדוק את מגבלת גודל ההודעה.',
+    }.get(response.status_code, 'שרת הטורנירים דחה את התוצאה. יש לבדוק את הגדרות החיבור.')
+    return (f'result delivery for fixture {fixture_id} refused with HTTP {response.status_code}'
+            f' [{code or "delivery_rejected"}]: {message} '
+            'התוצאה נשמרה; הניסיונות האוטומטיים נעצרו ונדרש טיפול.')
+
 # Statuses a fixture's outcome can be reported as. `cancelled` releases the fixture back to manual
 # scoring; `completed` carries a score and advances the tournament.
 STATUS_COMPLETED = 'completed'
@@ -170,8 +202,8 @@ def deliver_result(link_id):
     """
     Sign and POST the frozen result for `link_id`.
 
-    Raises on anything that is not a 2xx, which is what makes `run_tasks` retry: the exception is
-    the retry signal. A link that is already `delivered` returns without sending, so a duplicated
+    Network failures, 408, 429 and 5xx are retried. Other refusals block the task for review.
+    A link that is already `delivered` returns without sending, so a duplicated
     `Task` row costs one database read.
     """
     # Imported here rather than at module scope: `game.models` re-exports the link models at the
@@ -213,6 +245,9 @@ def deliver_result(link_id):
     response = httpx.post(url, content=raw, headers=headers, timeout=DELIVERY_TIMEOUT_SECONDS)
 
     if response.status_code < 200 or response.status_code >= 300:
+        if response.status_code < 500 and response.status_code not in (408, 429):
+            from game.task_runner import NonRetryableTaskError
+            raise NonRetryableTaskError(_refusal_message(response, link.fixture_id))
         # No response body in the log: it is a remote server's text and this line is not the place
         # to find out what it says.
         raise RuntimeError(

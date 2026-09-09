@@ -132,6 +132,7 @@ class Task(models.Model):
         ("running", "Running"),
         ("done", "Done"),
         ("failed", "Failed"),
+        ("blocked", "Blocked — needs attention"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
