@@ -52,6 +52,7 @@ class BackgammonEngine:
     def _clone_state(state):
         """Deep-copy a game state dict."""
         return {
+            'gameId': state.get('gameId', 'initial'),
             'points': list(state['points']),
             'bar': dict(state['bar']),
             'home': dict(state['home']),

@@ -651,8 +651,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         state['phase'] = 'game_over'
         state['winner'] = winner
         state['winType'] = 'single'
-        game_state.state_data = state
-        await save_game_state(game_state)
 
         await self._finalize_and_broadcast(state, winner, 'single', 'give_up')
 
@@ -677,8 +675,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         state['winner'] = winner
         state['winType'] = 'single'
         state['gameEndReason'] = 'leave'
-        game_state.state_data = state
-        await save_game_state(game_state)
 
         await self._finalize_and_broadcast(state, winner, 'single', 'leave', force_close=True)
 
@@ -703,8 +699,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['phase'] = 'game_over'
             state['winner'] = winner
             state['winType'] = win_type
-            game_state.state_data = state
-            await save_game_state(game_state)
             await self._finalize_and_broadcast(state, winner, win_type, reason)
         else:
             logger.warning(f"WS game_ended without winner: room={self.room_id} payload={payload}")
@@ -727,6 +721,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             return {'success': False, 'message': 'No active game'}
         doubling_enabled = state.get('doublingEnabled', True)
         engine.state = BackgammonEngine.get_initial_state()
+        engine.state['gameId'] = str(uuid.uuid4())
         engine.state['doublingEnabled'] = doubling_enabled
         engine.state['message'] = 'New game started'
         return {'success': True}
@@ -759,11 +754,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             if result is None:
                 return
             match_over = result['match_over']
-        stored = dict(stored)
-        stored['matchScored'] = True
-        stored['gameEndReason'] = reason
-        gs.state_data = stored
-        await save_game_state(gs)
+        # The scoring service saves matchScored in the same transaction as
+        # the score; never overwrite it here with this connection's snapshot.
         await database_sync_to_async(room.refresh_from_db)()
         payload = game_ended_payload(state, winner, win_type, reason, room)
         payload['matchOver'] = match_over
@@ -952,8 +944,6 @@ class GameConsumer(AsyncWebsocketConsumer):
         stored['winner'] = winner
         stored['winType'] = 'single'
         stored['message'] = f'{loser} ran out of time'
-        gs.state_data = stored
-        await save_game_state(gs)
         logger.info(f"WS timeout forfeit: loser={loser} winner={winner} room={self.room_id}")
         await self._finalize_and_broadcast(stored, winner, 'single', 'time')
 

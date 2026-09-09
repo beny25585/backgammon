@@ -15,7 +15,7 @@ from django.db import transaction
 
 from .link.models import TournamentLink
 from .link.outbox import enqueue_result
-from .models import GameEvent, GameRoom, Match, RoomPlayer
+from .models import GameEvent, GameRoom, GameState, Match, RoomPlayer
 
 # Multiplier applied per win type before the doubling cube value.
 POINTS_MULTIPLIER = {'single': 1, 'gammon': 2, 'backgammon': 3}
@@ -160,6 +160,8 @@ def _game_entry(state, winner, win_type, points, game_number, transcript):
     """Build one game entry, enriching it with end-of-game board stats."""
     entry = {
         'game_number': game_number,
+        # Older rooms have no gameId until their next game starts.
+        'game_id': state.get('gameId', 'initial'),
         'winner': winner,
         'win_type': win_type,
         'points_awarded': points,
@@ -184,6 +186,20 @@ def _report_to_tournament(room, match, winner):
     enqueue_result(link, match, room, 'completed', winner_color=winner)
 
 
+def _game_already_scored(room, state):
+    game_id = state.get('gameId', 'initial')
+    games = (room.state or {}).get('match', {}).get('games', [])
+    return any(game.get('game_id') == game_id for game in games)
+
+
+def _save_scored_state(room, state, winner, win_type, reason):
+    """Called inside the room's scoring transaction, never after it commits."""
+    stored = dict(state)
+    stored.update(phase='game_over', winner=winner, winType=win_type,
+                  matchScored=True, gameEndReason=reason)
+    GameState.objects.update_or_create(room=room, defaults={'state_data': stored})
+
+
 def finalize_room(room, state, winner, win_type, reason):
     """Score the finished game, save a Match, and close the room.
 
@@ -195,6 +211,9 @@ def finalize_room(room, state, winner, win_type, reason):
         if locked.status in ('completed', 'cancelled'):
             return None
 
+        if _game_already_scored(locked, state):
+            return None
+
         points = _points_for(state, win_type)
         if winner == 'white':
             locked.white_score += points
@@ -203,6 +222,7 @@ def finalize_room(room, state, winner, win_type, reason):
         locked.status = 'completed'
         locked.save()
 
+        _save_scored_state(locked, state, winner, win_type, reason)
         metadata, transcript = _match_metadata(locked, state, reason)
         games_data = [_game_entry(state, winner, win_type, points, 1, transcript)]
         white_player, black_player = _room_players(locked)
@@ -231,14 +251,19 @@ def record_game_end(room, state, winner, win_type, reason):
     target, the room is completed and a Match is persisted. Otherwise the room
     stays 'playing' so the players can start the next game.
 
-    Idempotent: once the room is completed/cancelled, later calls are no-ops.
-    Returns a dict with `match_over`, `points`, scores and target, or None if
-    the room was already finalized.
+    Idempotent per game: the recorded game ID and score are committed under
+    the same room lock. Duplicate or delayed endings cannot score it again,
+    even if another connection has overwritten GameState with a stale snapshot.
+    Returns None if this game was already scored or the room was finalized.
     """
     with transaction.atomic():
         locked = GameRoom.objects.select_for_update().get(pk=room.pk)
         if locked.status in ('completed', 'cancelled'):
             return None
+
+        if _game_already_scored(locked, state):
+            return None
+        _save_scored_state(locked, state, winner, win_type, reason)
 
         points = _points_for(state, win_type)
         if winner == 'white':

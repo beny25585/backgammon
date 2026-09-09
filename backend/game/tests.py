@@ -15,7 +15,7 @@ from game.consumers import GameConsumer, get_game_state, save_game_state, get_us
 from game.engine import BackgammonEngine
 from game.game_service import finalize_room, record_game_end
 from game.models import GameRoom, GameState, GameEvent, Match, Player, RoomPlayer
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from .dice import DiceServiceError, fetch_dice, fetch_opening_dice, fetch_turn_dice
 
@@ -954,7 +954,7 @@ class MatchContinuationTests(TestCase):
 
     def test_record_game_end_accumulates_games_in_room_state(self):
         record_game_end(self.room, self._state(), 'white', 'single', 'bear_off')
-        record_game_end(self.room, self._state(winner='black'), 'black', 'single', 'bear_off')
+        record_game_end(self.room, self._state(winner='black', gameId='second-game'), 'black', 'single', 'bear_off')
 
         self.room.refresh_from_db()
         games = self.room.state['match']['games']
@@ -964,6 +964,50 @@ class MatchContinuationTests(TestCase):
         self.assertEqual(games[0]['points_awarded'], 1)
         self.assertEqual(self.room.white_score, 1)
         self.assertEqual(self.room.black_score, 1)
+
+    def test_duplicate_timeout_is_scored_once_even_with_stale_state(self):
+        state = self._state(phase='game_over')
+        first = record_game_end(self.room, state, 'white', 'single', 'time')
+        # A second connection can hold a snapshot from before matchScored was set.
+        GameState.objects.update_or_create(room=self.room, defaults={'state_data': state})
+        duplicate = record_game_end(self.room, dict(state), 'white', 'single', 'time')
+        self.assertEqual(first['points'], 1)
+        self.assertIsNone(duplicate)
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.white_score, 1)
+        self.assertEqual(len(self.room.state['match']['games']), 1)
+
+    def test_old_timeout_after_next_game_does_not_add_points(self):
+        first = self._state(phase='game_over')
+        second = self._state(phase='game_over', gameId='second-game')
+        record_game_end(self.room, first, 'white', 'single', 'time')
+        record_game_end(self.room, second, 'white', 'single', 'time')
+        self.assertIsNone(record_game_end(self.room, first, 'white', 'single', 'time'))
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.white_score, 2)
+        self.assertEqual(len(self.room.state['match']['games']), 2)
+
+    def test_scoring_marker_rolls_back_with_failed_score(self):
+        state = self._state(phase='game_over')
+        with patch('game.game_service._game_entry', side_effect=RuntimeError('failed')):
+            with self.assertRaises(RuntimeError):
+                record_game_end(self.room, state, 'white', 'single', 'time')
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.white_score, 0)
+        result = record_game_end(self.room, state, 'white', 'single', 'time')
+        self.assertEqual(result['white_score'], 1)
+        self.assertTrue(GameState.objects.get(room=self.room).state_data['matchScored'])
+
+    def test_undo_keeps_next_games_scoring_identity(self):
+        record_game_end(self.room, self._state(), 'white', 'single', 'time')
+        state = self._state(gameId='second-game', phase='moving', winner=None,
+                            dice=[3, 5], remaining=[3, 5])
+        engine = BackgammonEngine(state)
+        self.assertTrue(engine.make_move(12, 9, 'white')['success'])
+        self.assertTrue(engine.undo_move()['success'])
+        self.assertEqual(engine.state['gameId'], 'second-game')
+        result = record_game_end(self.room, engine.state, 'white', 'single', 'time')
+        self.assertEqual(result['white_score'], 2)
 
     def test_record_game_end_closes_room_when_target_reached(self):
         self.room.white_score = 4
@@ -1529,7 +1573,8 @@ class GameEndConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_next_game_intent_starts_fresh_opening_roll(self):
+    @patch('game.consumers.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 1))
+    async def test_next_game_intent_starts_fresh_opening_roll(self, opening_dice):
         await self._set_target(5)
         comm_white, comm_black = await self._connect_both()
 
@@ -1554,8 +1599,9 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertEqual(event["payload"]["bar"], {"white": 0, "black": 0})
         self.assertIsNone(event["payload"].get("winner"))
         self.assertIsNone(event["payload"].get("openingDice"))
+        self.assertTrue(event["payload"].get("gameId"))
 
-        # The fresh game's opening roll works against the real dice service.
+        # Exercise the fresh opening without depending on the external dice server.
         await comm_white.send_json_to({"type": "state_update", "payload": {"action": "roll"}})
         event = await self._receive_until(
             comm_white,
@@ -1563,6 +1609,7 @@ class GameEndConsumerTests(TransactionTestCase):
             and e.get("payload", {}).get("openingRoll", {}).get("white") is not None,
         )
         self.assertTrue(1 <= event["payload"]["openingRoll"]["white"] <= 6)
+        opening_dice.assert_awaited_once()
 
         await database_sync_to_async(self.room.refresh_from_db)()
         self.assertEqual(self.room.status, "playing")
@@ -1600,6 +1647,60 @@ class GameEndConsumerTests(TransactionTestCase):
 
         await comm_white.disconnect()
         await comm_black.disconnect()
+
+    async def test_two_timeout_handlers_score_first_game_once(self):
+        consumers = [GameConsumer(), GameConsumer()]
+        channel_layer = AsyncMock()
+        for consumer in consumers:
+            consumer.room_id = self.room_id
+            consumer.room_group_name = f'game_{self.room_id}'
+            consumer.channel_layer = channel_layer
+
+        # Force both handlers to read the same unscored state, including the
+        # precheck in _finalize_and_broadcast, before either can record a score.
+        barriers = [asyncio.Event(), asyncio.Event()]
+        reads = 0
+
+        async def synchronized_read(room):
+            nonlocal reads
+            snapshot = await get_game_state(room)
+            index = reads
+            reads += 1
+            if index < 4:
+                barrier = barriers[index // 2]
+                if index % 2:
+                    barrier.set()
+                await barrier.wait()
+            return snapshot
+
+        with patch('game.consumers.get_game_state', side_effect=synchronized_read), \
+                patch.object(GameConsumer, '_arm_auto_next_game', new_callable=AsyncMock):
+            await asyncio.wait_for(asyncio.gather(*[
+                consumer._forfeit_on_time('white', 'black') for consumer in consumers
+            ]), timeout=5)
+
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.white_score, 1)
+        self.assertEqual(len(self.room.state['match']['games']), 1)
+        channel_layer.group_send.assert_awaited_once()
+        payload = channel_layer.group_send.call_args.args[1]['payload']
+        self.assertEqual(payload['points'], 1)
+        self.assertEqual(payload['whiteScore'], 1)
+        self.assertEqual(payload['reason'], 'time')
+
+        # Starting the actual next game must create a new scoring identity.
+        scored = await get_game_state(self.room)
+        engine = BackgammonEngine(scored.state_data)
+        result = await consumers[0]._handle_next_game(engine)
+        self.assertTrue(result['success'])
+        self.assertTrue(engine.state['gameId'])
+        scored.state_data = engine.state
+        await save_game_state(scored)
+        with patch.object(GameConsumer, '_arm_auto_next_game', new_callable=AsyncMock):
+            await consumers[0]._forfeit_on_time('white', 'black')
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.white_score, 2)
+        self.assertEqual(len(self.room.state['match']['games']), 2)
 
     async def test_timeout_mid_match_keeps_room_open(self):
         stored = BackgammonEngine.get_initial_state()
