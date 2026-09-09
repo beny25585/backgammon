@@ -46,7 +46,8 @@ const themeClassByTheme: Record<BoardTheme, string> = {
 };
 
 const FORCED_MOVE_DELAY_MS = 350;
-const TURN_NOTICE_DURATION_MS = 3000;
+// Visual lifetime only; automatic moves and turn transitions keep their own timers.
+const TURN_NOTICE_DURATION_MS = 6000;
 
 export default function GameBoard({
   state,

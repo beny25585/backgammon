@@ -147,11 +147,44 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([23, 19]);
 
-  await page.clock.runFor(2649);
+  await page.clock.runFor(5649);
   await expect(component.getByTestId("forced-move-notice")).toBeVisible();
   await page.clock.runFor(1);
   await expect(component.getByTestId("forced-move-notice")).toHaveCount(0);
 });
+
+for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }, { width: 1280, height: 800 }]) {
+  test(`notice keeps its anchor and undo stays usable (${viewport.width}px)`, async ({ mount, page }) => {
+    await page.setViewportSize(viewport);
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    let undoCalls = 0;
+    const component = await mountBoard(mount, {
+      state: movingState({ moveHistory: [{ ...simpleWhiteState() }] }),
+      playerColor: "white",
+      undoMove: () => undoCalls++,
+    });
+    const notice = component.getByTestId("forced-move-notice");
+    await expect(notice).toBeVisible();
+    const geometry = await notice.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      const parent = (element as HTMLElement).offsetParent!.getBoundingClientRect();
+      return { x: box.x + box.width / 2 - parent.x, y: box.y + box.height / 2 - parent.y,
+        targetX: parent.width / 4, targetY: parent.height / 2 };
+    });
+    expect(geometry.x).toBeCloseTo(geometry.targetX, 0);
+    expect(geometry.y).toBeCloseTo(geometry.targetY, 0);
+    await expect(notice.locator("span").first()).toHaveCSS("pointer-events", "none");
+    expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    const undo = component.getByTitle("Undo last move");
+    const noticeBox = await notice.boundingBox();
+    const undoBox = await undo.boundingBox();
+    expect(undoBox!.y).toBeGreaterThanOrEqual(noticeBox!.y + noticeBox!.height);
+    await undo.click();
+    await expect.poll(() => undoCalls).toBe(1);
+    await expect(notice).toBeVisible();
+  });
+}
 
 test("auto-moves with the smaller die after dice are reordered", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
@@ -423,6 +456,38 @@ test("no-moves overlay shows the rolled dice and message", async ({ mount }) => 
     "No moves available — turn passes",
   );
   await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(2);
+});
+
+test("no-moves notice outlives the dice snapshot without delaying roll or double", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
+  let rolls = 0;
+  let doubles = 0;
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    needsToRoll: true,
+    onRoll: () => rolls++,
+    offerDouble: () => doubles++,
+    noMovesMessage: { dice: [2, 4], remaining: [2, 4], color: "black" },
+  });
+  await page.clock.runFor(350);
+  await component.update(
+    <MockGameWrapper state={state} playerColor="white">
+      <GameBoard state={state} playerColor="white" makeMove={() => {}}
+        needsToRoll onRoll={() => rolls++} offerDouble={() => doubles++} />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("dice-overlay")).toHaveCount(0);
+  await component.getByTitle("Tap to roll").click();
+  await component.getByTitle("Offer double to opponent").first().click();
+  await expect.poll(() => rolls).toBe(1);
+  await expect.poll(() => doubles).toBe(1);
+  await page.clock.runFor(5649);
+  await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
+  await page.clock.runFor(1);
+  await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
 });
 
 test("dice overlay is visible to the opponent when it's their turn", async ({ mount }) => {

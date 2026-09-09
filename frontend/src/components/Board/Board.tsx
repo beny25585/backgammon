@@ -628,41 +628,36 @@ export function Board({
           />
         </div>
 
-        {turnNotice && (
+        {(turnNotice || canUndo || canRoll) && (
           <div
-            className={styles.boardTurnNotice}
+            className={turnNotice ? styles.boardTurnNotice : styles.boardUndoAction}
             data-testid={
-              turnNotice.variant === "no-moves"
+              !turnNotice ? undefined : turnNotice.variant === "no-moves"
                 ? "no-moves-overlay"
                 : "forced-move-notice"
             }
-            role="status"
           >
-            <GuidanceBanner message={turnNotice} inline />
-          </div>
-        )}
-        {canUndo && !turnNotice && (
-          <div className={styles.boardUndoAction}>
-            <UndoButton onClick={handleUndo} />
+            {turnNotice && <GuidanceBanner message={turnNotice} inline />}
+            <div className={turnNotice ? styles.boardNoticeActions : undefined}>
+              {canUndo && <UndoButton onClick={handleUndo} />}
+              {canRoll && (
+                <button
+                  type="button"
+                  className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
+                  onClick={onOfferDouble}
+                  disabled={!canDouble}
+                  title={t("common.offerDouble")}
+                  aria-label={t("common.offerDouble")}
+                >
+                  {t("common.offerDoubleShort")}
+                </button>
+              )}
+            </div>
           </div>
         )}
         {canConfirm && (
           <div className={styles.boardConfirmAction}>
             <ConfirmButton onClick={onConfirm} />
-          </div>
-        )}
-        {canRoll && (
-          <div className={styles.boardDoubleAction}>
-            <button
-              type="button"
-              className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
-              onClick={onOfferDouble}
-              disabled={!canDouble}
-              title={t("common.offerDouble")}
-              aria-label={t("common.offerDouble")}
-            >
-              {t("common.offerDoubleShort")}
-            </button>
           </div>
         )}
         {canRoll && (

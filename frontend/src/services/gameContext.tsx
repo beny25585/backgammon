@@ -177,7 +177,7 @@ export function GameProvider({
             lastVersionRef.current = v;
             if (hasReceivedState) {
               setReconnected(true);
-              setTimeout(() => setReconnected(false), 3000);
+              setTimeout(() => setReconnected(false), 6000);
             }
             hasReceivedState = true;
             const initialState = raw as unknown as GameState;

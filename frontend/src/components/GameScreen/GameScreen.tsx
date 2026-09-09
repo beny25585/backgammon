@@ -178,9 +178,9 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
       {!gameResult && (
         <>
-          {reconnected && <div className={styles.reconnected}>{t("game.reconnected")}</div>}
+          {reconnected && <div className={styles.reconnected} role="status">{t("game.reconnected")}</div>}
           {!opponentConnected && !reconnected && (
-            <div className={styles.disconnected}>
+            <div className={styles.disconnected} role="status">
               {t("game.opponentDisconnected")}
             </div>
           )}
