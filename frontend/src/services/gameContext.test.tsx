@@ -5,7 +5,7 @@ import {
 } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
 import { GameProvider } from "./gameContext";
-import { GameProbe, MatchScoreProbe } from "../test-utils/probes";
+import { GameProbe, MatchScoreProbe, OnlineClockProbe } from "../test-utils/probes";
 import GameScreen from "../components/GameScreen/GameScreen";
 import type { GameState } from "../lib/backgammon/engine";
 import { newGame } from "../lib/backgammon/engine";
@@ -155,6 +155,59 @@ async function mountProbe(
   await expect(component.getByTestId("loading")).toHaveText("false");
   return component;
 }
+
+test("initial snapshot scales the online preset and keeps the authoritative bank", async ({
+  mount,
+  page,
+}) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <OnlineClockProbe />
+    </GameProvider>,
+  );
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({
+      type: "state_update",
+      payload: {
+        ...{
+          points: new Array(24).fill(0),
+          bar: { white: 0, black: 0 },
+          home: { white: 0, black: 0 },
+          turn: "white",
+          dice: [3, 2],
+          remaining: [3, 2],
+          phase: "moving",
+          cube: 1,
+          cubeOwner: "center",
+          doubleOfferedBy: null,
+          winner: null,
+          winType: null,
+          openingRoll: { white: null, black: null },
+          lastMove: [],
+          moveHistory: [],
+          message: "White's turn",
+          version: 1,
+        },
+        clock: { white: 275_000, black: 250_000 },
+        turnStartedAt: 12_345,
+      },
+      playerColor: "white",
+      initial: true,
+      timeControl: "normal",
+      targetPoints: 5,
+    });
+  });
+
+  await expect(component.getByTestId("online-time-control")).toHaveText(
+    '{"base":300000,"delay":10000}',
+  );
+  await expect(component.getByTestId("online-clock")).toHaveText(
+    '{"white":275000,"black":250000}',
+  );
+  await expect(component.getByTestId("online-started")).toHaveText("12345");
+});
 
 test("roll sends a roll intent without shipping game state", async ({
   mount,
@@ -397,6 +450,8 @@ test("server auto-pass after a roll shows the no-moves overlay", async ({
   page,
 }) => {
   const component = await mountProbe(mount, page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await emitInitialState(page, { ...rollingState(), version: 1 });
 
   // Server rolled (2, 4), found no legal moves, auto-passed to black.
@@ -411,6 +466,11 @@ test("server auto-pass after a roll shows the no-moves overlay", async ({
   });
 
   await expect(component.getByTestId("no-moves")).toHaveText("true");
+  await expect(component.getByTestId("no-moves-visible")).toHaveText("false");
+  await page.clock.runFor(300);
+  await expect(component.getByTestId("no-moves-visible")).toHaveText("false");
+  await page.clock.runFor(50);
+  await expect(component.getByTestId("no-moves-visible")).toHaveText("true");
   await expect(component.getByTestId("phase")).toHaveText("rolling");
 });
 

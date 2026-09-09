@@ -8,21 +8,32 @@ export interface TimeControl {
 export interface TimeControlPreset {
   id: string;
   label: string;
-  base: number;
+  secondsPerPoint: number;
   delay: number;
 }
 
 export const TIME_CONTROL_PRESETS: TimeControlPreset[] = [
-  { id: "none", label: "No limit", base: 0, delay: 0 },
-  { id: "fast", label: "Fast", base: 60_000, delay: 5_000 },
-  { id: "normal", label: "Normal", base: 120_000, delay: 12_000 },
-  { id: "slow", label: "Slow", base: 300_000, delay: 12_000 },
+  { id: "none", label: "No limit", secondsPerPoint: 0, delay: 0 },
+  { id: "fast", label: "Fast", secondsPerPoint: 30, delay: 10_000 },
+  { id: "normal", label: "Normal", secondsPerPoint: 60, delay: 10_000 },
+  { id: "slow", label: "Slow", secondsPerPoint: 120, delay: 10_000 },
 ];
 
-export function parseTimeControl(id: string | null | undefined): TimeControl | null {
+export function parseTimeControl(
+  id: string | null | undefined,
+  targetPoints = 1,
+): TimeControl | null {
   if (!id || id === "none") return null;
   const preset = TIME_CONTROL_PRESETS.find((p) => p.id === id);
-  if (preset) return { base: preset.base, delay: preset.delay };
+  if (preset) {
+    const target = Number.isFinite(targetPoints)
+      ? Math.max(1, Math.trunc(targetPoints))
+      : 1;
+    return {
+      base: preset.secondsPerPoint * target * 1_000,
+      delay: preset.delay,
+    };
+  }
   // Legacy "M+S" ids from previously stored rooms still parse.
   const [minutes, delaySec] = id.split("+").map((n) => parseInt(n, 10));
   if (!Number.isFinite(minutes) || !Number.isFinite(delaySec)) return null;

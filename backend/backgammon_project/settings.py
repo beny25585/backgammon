@@ -137,6 +137,8 @@ GAMELINK_FRONTEND_URL = config('GAMELINK_FRONTEND_URL', default='')
 # Verifier takes a list and signer uses the first, so secrets rotate without downtime.
 GAMELINK_TICKET_SECRETS = [s for s in config('GAMELINK_TICKET_SECRETS', default='').split(',') if s]
 GAMELINK_RESULT_SECRET = config('GAMELINK_RESULT_SECRET', default='')
+GAMELINK_COMMAND_SECRETS = [s for s in config('GAMELINK_COMMAND_SECRETS', default='').split(',') if s]
+GAMELINK_COMMAND_CLOCK_SKEW = 300
 # Must match the issuer's GAMELINK_TICKET_TTL; a ticket older than this is refused.
 GAMELINK_TICKET_TTL = 120
 # Deliberately not the 24 h SIMPLE_JWT default: a linked session is scoped to the match.

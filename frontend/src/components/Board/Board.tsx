@@ -26,6 +26,9 @@ import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
 import styles from "../GameScreen/GameScreen.module.css";
 import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
 import { useI18n } from "../../i18n/I18nProvider";
+import Checker from "./pieces/checker/Checker";
+import { useCheckerDrag } from "./useCheckerDrag";
+import dragStyles from "./CheckerDrag.module.css";
 
 interface BoardProps {
   state: GameState;
@@ -169,7 +172,7 @@ export function Board({
   );
 
   const triggerFly = useCallback(
-    (from: Source, to: Target) => {
+    (from: Source, to: Target, origin?: { x: number; y: number }) => {
       humanMoveRef.current = { from, to };
       const board = boardRef.current;
       if (!board) {
@@ -229,8 +232,8 @@ export function Board({
 
       setFlyChecker({
         id: ++flightIdRef.current,
-        fromX,
-        fromY,
+        fromX: origin ? origin.x - bRect.left - checkerPx / 2 : fromX,
+        fromY: origin ? origin.y - bRect.top - checkerPx / 2 : fromY,
         toX,
         toY,
         from,
@@ -253,6 +256,12 @@ export function Board({
       computeSlotY,
     ],
   );
+
+  const { drag, targets: dragTargets, handlers: dragHandlers } = useCheckerDrag({
+    state, myColor, blocked: interactionBlocked, legalFromPoints, boardRef, wrapperRef,
+    onDrop: triggerFly,
+  });
+  const displayedTargets = drag ? dragTargets : legalTargets;
 
   const animateExternalMove = useCallback(
     (from: Source | Target, to: Target, mover: Color) => {
@@ -435,6 +444,7 @@ export function Board({
   ]);
 
   function hideTopCheckerAt(idx: number) {
+    if (drag?.from === idx) return true;
     if (!flyChecker) return false;
     if (flyChecker.external) return flyChecker.to === idx;
     const stateApplied =
@@ -523,7 +533,8 @@ export function Board({
     <div ref={wrapperRef} className={styles.wrapper} dir="ltr">
       <div
         ref={boardRef}
-        className={styles.frame}
+        className={`${styles.frame} ${drag ? dragStyles.dragging : ""}`}
+        {...dragHandlers}
         dir="ltr"
         style={{ touchAction: "none" }}
       >
@@ -536,8 +547,8 @@ export function Board({
                   index={idx}
                   top
                   pointValue={state.points[idx] ?? 0}
-                  selected={selected === idx}
-                  isLegalTarget={legalTargets.includes(idx)}
+                  selected={(drag?.from ?? selected) === idx}
+                  isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
@@ -550,8 +561,8 @@ export function Board({
                   key={idx}
                   index={idx}
                   pointValue={state.points[idx] ?? 0}
-                  selected={selected === idx}
-                  isLegalTarget={legalTargets.includes(idx)}
+                  selected={(drag?.from ?? selected) === idx}
+                  isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
@@ -563,11 +574,11 @@ export function Board({
           <Bar
             state={state}
             myColor={myColor}
-            selected={selected === BAR}
+            selected={(drag?.from ?? selected) === BAR}
             isLegalFrom={legalFromPoints.includes(BAR)}
             onClick={() => handleClick(BAR)}
             hideChecker={
-              flyChecker &&
+              drag?.from === BAR ? drag.color : flyChecker &&
               flyChecker.from === BAR &&
               Math.abs(state.bar[flyChecker.color] ?? 0) ===
                 flyChecker.fromCount
@@ -592,8 +603,8 @@ export function Board({
                   index={idx}
                   top
                   pointValue={state.points[idx] ?? 0}
-                  selected={selected === idx}
-                  isLegalTarget={legalTargets.includes(idx)}
+                  selected={(drag?.from ?? selected) === idx}
+                  isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
@@ -606,8 +617,8 @@ export function Board({
                   key={idx}
                   index={idx}
                   pointValue={state.points[idx] ?? 0}
-                  selected={selected === idx}
-                  isLegalTarget={legalTargets.includes(idx)}
+                  selected={(drag?.from ?? selected) === idx}
+                  isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
@@ -619,7 +630,7 @@ export function Board({
           <BearOff
             state={state}
             myColor={myColor}
-            isLegalTarget={legalTargets.includes(OFF)}
+            isLegalTarget={displayedTargets.includes(OFF)}
             onClick={() =>
               !interactionBlocked &&
               legalTargets.includes(OFF) &&
@@ -674,6 +685,22 @@ export function Board({
         )}
       </div>
 
+      {drag && (
+        <div
+          aria-hidden="true"
+          data-testid="dragging-checker"
+          className={dragStyles.ghost}
+          style={{
+            left: drag.x - drag.boardLeft - drag.size / 2,
+            top: drag.y - drag.boardTop - drag.size / 2,
+            width: drag.size,
+            height: drag.size,
+            "--checker": `${drag.size}px`,
+          } as React.CSSProperties}
+        >
+          <Checker color={drag.color} />
+        </div>
+      )}
       {flyChecker && (
         <FlyingChecker
           key={flyChecker.id}

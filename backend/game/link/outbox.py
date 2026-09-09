@@ -235,30 +235,11 @@ def try_deliver_now(task_id):
     surface as an error on a request whose work has already been committed successfully — and the
     `Task` row is still there to be retried. The failure is logged and nothing else happens.
     """
+    from game.task_runner import run_task
     try:
-        task = Task.objects.get(pk=task_id)
-    except Task.DoesNotExist:
-        return
-
-    if task.status != 'pending':
-        return
-
-    task.attempts += 1
-    task.status = 'running'
-    task.save(update_fields=['attempts', 'status', 'updated_at'])
-
-    try:
-        result = deliver_result(**task.kwargs)
-    except Exception as exc:
-        task.status = 'pending'
-        task.last_error = f'immediate attempt failed: {exc}'
-        task.save(update_fields=['status', 'last_error', 'updated_at'])
-        logger.warning(f"immediate result delivery failed, leaving it to run_tasks: {exc}")
-        return
-
-    task.status = 'done'
-    task.result = result
-    task.save(update_fields=['status', 'result', 'updated_at'])
+        run_task(task_id)
+    except Exception:
+        logger.exception('immediate result attempt interrupted; worker will recover task=%s', task_id)
 
 
 def enqueue_forfeit(link, room, winner_color):

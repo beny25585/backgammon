@@ -162,6 +162,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
           matchTarget={gameResult.targetPoints}
           matchOver={gameResult.matchOver}
           reason={gameResult.reason}
+          adminReason={gameResult.adminReason}
           whiteName={whiteName}
           blackName={blackName}
           onNext={handleNextGame}

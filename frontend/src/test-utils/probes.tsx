@@ -12,6 +12,51 @@ export function ClockProbe() {
   return <div>{`clock:${JSON.stringify(clock)},started:${turnStartedAt}`}</div>;
 }
 
+export function OnlineClockProbe() {
+  const { timeControl, clock, turnStartedAt } = useGame();
+  return (
+    <div>
+      <div data-testid="online-time-control">{JSON.stringify(timeControl)}</div>
+      <div data-testid="online-clock">{JSON.stringify(clock)}</div>
+      <div data-testid="online-started">{String(turnStartedAt)}</div>
+    </div>
+  );
+}
+
+export function ClockMatchLifecycleProbe() {
+  const { state, updateState, clock, turnStartedAt } = useGame();
+  return (
+    <div>
+      <div data-testid="match-clock">{JSON.stringify(clock)}</div>
+      <div data-testid="match-started">{String(turnStartedAt)}</div>
+      <div data-testid="match-phase">{state?.phase}</div>
+      <button
+        data-testid="start-timed-game"
+        onClick={() => updateState({
+          ...newGame(),
+          phase: "moving",
+          turn: "white",
+          dice: [3, 2],
+          remaining: [3, 2],
+        })}
+      >
+        start
+      </button>
+      <button
+        data-testid="finish-game"
+        onClick={() => state && updateState({
+          ...state,
+          phase: "game_over",
+          winner: "white",
+          winType: "single",
+        })}
+      >
+        finish
+      </button>
+    </div>
+  );
+}
+
 export function StartMidGame() {
   const { updateState } = useGame();
   useEffect(() => {
@@ -60,6 +105,9 @@ export function GameProbe({ from, to }: { from: number; to: number }) {
       <div data-testid="point-19">{String(state?.points?.[19] ?? "")}</div>
       <div data-testid="opening-result">{JSON.stringify(openingRollResult)}</div>
       <div data-testid="no-moves">{String(Boolean(noMovesMessage))}</div>
+      <div data-testid="no-moves-visible">
+        {String(noMovesMessage?.noticeVisible !== false && Boolean(noMovesMessage))}
+      </div>
       <div data-testid="error">{error ?? ""}</div>
       <div data-testid="game-result">
         {JSON.stringify(gameResult ? { winner: gameResult.winner } : null)}
@@ -86,6 +134,31 @@ export function GameOverProbe() {
     updateState(gameOverFixture);
   }, [updateState]);
   return null;
+}
+
+export function LocalGiveUpProbe() {
+  const { state, updateState, giveUp, gameResult, matchScore } = useGame();
+  return (
+    <div>
+      <button
+        data-testid="seed-resignation"
+        onClick={() => updateState({
+          ...newGame(),
+          phase: "moving",
+          turn: "white",
+          cube: 2,
+          home: { white: 0, black: 0 },
+        })}
+      >
+        seed
+      </button>
+      <button data-testid="local-give-up" onClick={giveUp}>give up</button>
+      <div data-testid="local-phase">{state?.phase}</div>
+      <div data-testid="local-cube">{state?.cube}</div>
+      <div data-testid="local-result">{JSON.stringify(gameResult)}</div>
+      <div data-testid="local-score">{JSON.stringify(matchScore)}</div>
+    </div>
+  );
 }
 
 export function MatchScoreProbe() {

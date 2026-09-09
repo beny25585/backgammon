@@ -5,6 +5,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
+import { useMemo } from "react";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
 import WaitingRoom from "./components/WaitingRoom";
@@ -99,12 +100,19 @@ function LocalRoute() {
   const timeParam = params.get("time");
   const botColor: Color | undefined =
     botParam === "white" || botParam === "black" ? botParam : undefined;
-  const matchTarget = targetParam ? parseInt(targetParam, 10) : undefined;
+  const parsedTarget = targetParam ? parseInt(targetParam, 10) : 7;
+  const matchTarget = Number.isFinite(parsedTarget) && parsedTarget > 0
+    ? parsedTarget
+    : 7;
+  const timeControl = useMemo(
+    () => parseTimeControl(timeParam, matchTarget),
+    [timeParam, matchTarget],
+  );
   return (
     <LocalGameProvider
       botColor={botColor}
       matchTarget={matchTarget}
-      timeControl={parseTimeControl(timeParam)}
+      timeControl={timeControl}
       onQuitMatch={() => window.location.assign(TOURNAMENTS_URL)}
     >
       <GameScreen onLeave={() => window.location.assign(TOURNAMENTS_URL)} />

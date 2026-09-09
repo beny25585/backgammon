@@ -164,6 +164,25 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
   expect(clock!.x + clock!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
 });
 
+test("desktop dice are larger while mobile dice keep their compact size", async ({ mount, page }) => {
+  const state = movingState();
+  await page.setViewportSize({ width: 1280, height: 800 });
+  let component = await mountBoard(mount, state);
+  const desktopWidth = await component.getByTestId("dice-overlay").getByTestId("die").first().evaluate(
+    (element: HTMLElement) => parseFloat(getComputedStyle(element).width),
+  );
+  expect(desktopWidth).toBeGreaterThanOrEqual(34);
+
+  await component.unmount();
+  await page.setViewportSize({ width: 375, height: 812 });
+  component = await mountBoard(mount, state);
+  const mobileWidth = await component.getByTestId("dice-overlay").getByTestId("die").first().evaluate(
+    (element: HTMLElement) => parseFloat(getComputedStyle(element).width),
+  );
+  expect(mobileWidth).toBeLessThanOrEqual(28);
+  expect(desktopWidth).toBeGreaterThan(mobileWidth);
+});
+
 test("mobile browser slightly insets the whole game", async ({ mount, page }) => {
   const viewport = { width: 844, height: 390 };
   await page.setViewportSize(viewport);

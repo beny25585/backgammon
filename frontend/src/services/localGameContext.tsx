@@ -90,6 +90,7 @@ export function LocalGameProvider({
     useState<OpeningRollResult | null>(null);
   const [noMovesMessage, setNoMovesMessage] =
     useState<NoMovesMessage | null>(null);
+  const noMovesNoticeIdRef = useRef(0);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
@@ -105,6 +106,22 @@ export function LocalGameProvider({
 
   const openingDiceRef = useRef<[number, number] | null>(null);
   const rollingRef = useRef(false);
+
+  const revealNoMoves = useCallback(
+    (message: Omit<NoMovesMessage, "noticeVisible">) => {
+      const noticeId = ++noMovesNoticeIdRef.current;
+      setNoMovesMessage({ ...message, noticeVisible: false });
+      setTimeout(() => {
+        if (noMovesNoticeIdRef.current !== noticeId) return;
+        setNoMovesMessage({ ...message, noticeVisible: true });
+      }, 350);
+      setTimeout(() => {
+        if (noMovesNoticeIdRef.current !== noticeId) return;
+        setNoMovesMessage(null);
+      }, 700);
+    },
+    [],
+  );
 
   const getOpeningDie = useCallback(
     async (color: Color): Promise<number | null> => {
@@ -428,24 +445,13 @@ export function LocalGameProvider({
                 lastMove: null,
                 moveHistory: null,
               };
-              setNoMovesMessage({
+              revealNoMoves({
                 dice: rolled.dice,
                 remaining: rolled.remaining,
                 color: rolled.turn,
               });
-              setTimeout(() => {
-                setNoMovesMessage(null);
-                setState((cur) => {
-                  if (
-                    !cur ||
-                    cur.phase !== "moving" ||
-                    cur.turn !== rolled.turn
-                  )
-                    return cur;
-                  return passed;
-                });
-                setTurnColor(passed.turn);
-              }, 350);
+              setTurnColor(passed.turn);
+              return passed;
             }
             return rolled;
           });
@@ -454,7 +460,7 @@ export function LocalGameProvider({
         rollingRef.current = false;
       }
     })();
-  }, [getOpeningDie, getTurnDice, setTurnColor, advanceToOpeningMove]);
+  }, [getOpeningDie, getTurnDice, setTurnColor, advanceToOpeningMove, revealNoMoves]);
 
   const reorderDice = useCallback(() => {
     setState((prev) => {
@@ -489,18 +495,17 @@ export function LocalGameProvider({
           const remaining = [...prev.remaining];
           const usedDieIndex = remaining.indexOf(match.die);
           if (usedDieIndex >= 0) remaining.splice(usedDieIndex, 1);
-          setNoMovesMessage({
+          revealNoMoves({
             dice: prev.dice,
             remaining,
             color: prev.turn,
           });
-          setTimeout(() => setNoMovesMessage(null), 350);
         }
         setTurnColor(next.turn);
         return next;
       });
     },
-    [setTurnColor],
+    [setTurnColor, revealNoMoves],
   );
 
   const offerDoubleAction = useCallback(() => {
@@ -549,18 +554,64 @@ export function LocalGameProvider({
   const clearError = useCallback(() => setError(null), []);
 
   const handleTimeout = useCallback((color: Color) => {
-    setState((prev) => {
-      if (!prev || prev.phase === "game_over") return prev;
-      const winner: Color = color === "white" ? "black" : "white";
-      return {
-        ...prev,
-        phase: "game_over",
-        winner,
-        winType: "single",
-        message: `${color} ran out of time`,
-      };
+    const current = stateRef.current;
+    if (!current || current.phase === "game_over") return;
+    const winner: Color = color === "white" ? "black" : "white";
+    const points = current.cube || 1;
+    const nextScore = {
+      ...matchScore,
+      [winner]: matchScore[winner] + points,
+    };
+    setMatchScore(nextScore);
+    setMatchWinner(winner);
+    setGameResult({
+      winner,
+      winType: "single",
+      points,
+      cube: current.cube || 1,
+      matchScore: nextScore,
+      targetPoints: MATCH_TARGET,
+      matchOver: true,
+      reason: "time",
     });
-  }, []);
+    setState({
+      ...current,
+      phase: "game_over",
+      winner,
+      winType: "single",
+      message: `${color} ran out of time`,
+    });
+  }, [matchScore, MATCH_TARGET]);
+
+  const handleGiveUp = useCallback(() => {
+    const current = stateRef.current;
+    if (!current || current.phase === "game_over") return;
+    const loser = playerColorRef.current;
+    const winner: Color = loser === "white" ? "black" : "white";
+    const winType = current.home[loser] === 0 ? "gammon" : "single";
+    const points = (winType === "gammon" ? 2 : 1) * (current.cube || 1);
+    const nextScore = { ...matchScore, [winner]: matchScore[winner] + points };
+    const matchOver = nextScore[winner] >= MATCH_TARGET;
+    setMatchScore(nextScore);
+    if (matchOver) setMatchWinner(winner);
+    setGameResult({
+      winner,
+      winType,
+      points,
+      cube: current.cube || 1,
+      matchScore: nextScore,
+      targetPoints: MATCH_TARGET,
+      matchOver,
+      reason: "give_up",
+    });
+    setState({
+      ...current,
+      phase: "game_over",
+      winner,
+      winType,
+      message: `${loser} gave up`,
+    });
+  }, [matchScore, MATCH_TARGET]);
 
   const localClock = useLocalClock(state, timeControl ?? null, handleTimeout);
 
@@ -595,7 +646,7 @@ export function LocalGameProvider({
         respondToDouble,
         endTurn,
         undoMove,
-        giveUp: () => {},
+        giveUp: handleGiveUp,
         leaveGame: () => {},
       }}
     >
@@ -610,6 +661,10 @@ export function LocalGameProvider({
           cube={gameResult.cube}
           matchScore={matchScore}
           matchTarget={MATCH_TARGET}
+          matchWinner={matchWinner}
+          matchOver={gameResult.matchOver}
+          reason={gameResult.reason}
+          adminReason={gameResult.adminReason}
           whiteName={botColor === "white" ? "Bot" : null}
           blackName={botColor === "black" ? "Bot" : null}
           countdown={nextGameCountdown}

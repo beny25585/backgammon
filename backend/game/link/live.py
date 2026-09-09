@@ -17,7 +17,7 @@ LIVE_PATH = '/api/gamelink/live/'
 TIMEOUT_SECONDS = 2.0
 
 
-def publish_snapshot(room_id, state):
+def publish_snapshot(room_id, state, *, raise_on_error=False):
     """Send an admin-safe state summary for a linked room, if it has one."""
     if not settings.GAMELINK_ENABLED:
         return
@@ -27,6 +27,7 @@ def publish_snapshot(room_id, state):
         return
 
     room = link.room
+    presence = dict((room.state or {}).get('presence') or {})
     body = {
         'v': 1,
         'tournament_id': link.tournament_id,
@@ -42,6 +43,10 @@ def publish_snapshot(room_id, state):
             'cubeOwner': state.get('cubeOwner'),
             'doubleOfferedBy': state.get('doubleOfferedBy'),
             'clock': state.get('clock'),
+            'presence': {
+                'needsAdminAdjudication': bool(presence.get('needsAdminAdjudication')),
+                'absentSince': dict(presence.get('absentSince') or {}),
+            },
         },
         'match_score': {'white': room.white_score, 'black': room.black_score},
     }
@@ -64,3 +69,5 @@ def publish_snapshot(room_id, state):
         ).raise_for_status()
     except httpx.HTTPError as error:
         logger.warning('live snapshot delivery failed for fixture %s: %s', link.fixture_id, error)
+        if raise_on_error:
+            raise

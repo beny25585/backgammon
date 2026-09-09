@@ -17,12 +17,14 @@ export interface GameResult {
   targetPoints: number;
   matchOver?: boolean;
   reason?: string;
+  adminReason?: string;
 }
 
 export interface NoMovesMessage {
   dice: number[];
   remaining: number[];
   color: Color;
+  noticeVisible?: boolean;
 }
 
 export interface GameContextType {

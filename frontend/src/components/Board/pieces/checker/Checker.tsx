@@ -10,6 +10,7 @@ function Checker({ color, label }: CheckerProps) {
   return (
     <div
       data-checker
+      data-checker-color={color}
       className={`${styles.checker} ${
         color === "white" ? styles.white : styles.black
       }`}

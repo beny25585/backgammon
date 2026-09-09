@@ -42,7 +42,13 @@ def room_players_data(room):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health(request):
-    return Response({'status': 'ok', 'message': 'Backgammon server is running'})
+    from .operations import delivery_health
+    try:
+        state = delivery_health()
+        return Response({'status': state['status']}, status=200 if state['status'] == 'ok' else 503)
+    except Exception:
+        logger.exception('game_readiness_failed')
+        return Response({'status': 'unavailable'}, status=503)
 
 
 @api_view(['POST'])

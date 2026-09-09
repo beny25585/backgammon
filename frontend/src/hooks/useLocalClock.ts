@@ -22,7 +22,6 @@ export function useLocalClock(
   const activeRef = useRef<Color | null>(null);
   const turnStartedAtRef = useRef<number | null>(null);
   const clockRef = useRef(clock);
-  const prevPhaseRef = useRef<string | null>(null);
   const timedOutRef = useRef<Color | null>(null);
   const onTimeoutRef = useRef(onTimeout);
 
@@ -51,18 +50,6 @@ export function useLocalClock(
     );
     setTurnStartedAt(null);
   }, [timeControl]);
-
-  // New game (game over -> opening roll) -> restart both clocks.
-  useEffect(() => {
-    if (!timeControl) return;
-    if (prevPhaseRef.current === "game_over" && state.phase === "opening_roll") {
-      setClock({ white: timeControl.base, black: timeControl.base });
-      setTurnStartedAt(null);
-      turnStartedAtRef.current = null;
-      timedOutRef.current = null;
-    }
-    prevPhaseRef.current = state.phase;
-  }, [state.phase, timeControl]);
 
   // Active player changed -> charge the outgoing player beyond their delay.
   useEffect(() => {
@@ -101,6 +88,7 @@ export function useLocalClock(
       const reserve = c[active] - Math.max(0, elapsed - timeControl.delay);
       if (reserve <= 0 && timedOutRef.current === null) {
         timedOutRef.current = active;
+        setClock({ ...c, [active]: 0 });
         onTimeoutRef.current(active);
       }
     }, TICK_MS);

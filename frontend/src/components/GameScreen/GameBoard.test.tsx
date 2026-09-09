@@ -458,6 +458,40 @@ test("no-moves overlay shows the rolled dice and message", async ({ mount }) => 
   await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(2);
 });
 
+test("rolled dice render before the no-moves notice", async ({ mount }) => {
+  const state = movingState({ phase: "rolling", turn: "black", dice: [], remaining: [] });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "black",
+    noMovesMessage: {
+      dice: [2, 4],
+      remaining: [2, 4],
+      color: "white",
+      noticeVisible: false,
+    },
+  });
+
+  await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(2);
+  await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
+
+  await component.update(
+    <MockGameWrapper state={state} playerColor="black">
+      <GameBoard
+        state={state}
+        playerColor="black"
+        makeMove={() => {}}
+        noMovesMessage={{
+          dice: [2, 4],
+          remaining: [2, 4],
+          color: "white",
+          noticeVisible: true,
+        }}
+      />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
+});
+
 test("no-moves notice outlives the dice snapshot without delaying roll or double", async ({ mount, page }) => {
   await page.clock.install();
   await page.clock.pauseAt(new Date());

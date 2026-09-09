@@ -140,7 +140,7 @@ export default function GameBoard({
 
   useEffect(() => {
     let notice: GuidanceMessage | null = null;
-    if (noMovesMessage) {
+    if (noMovesMessage && noMovesMessage.noticeVisible !== false) {
       notice = {
         variant: "no-moves",
         text: "No moves available — turn passes",

@@ -1,6 +1,14 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import { LocalGameProvider } from "./localGameContext";
-import { ClockProbe, StartMidGame, GameProbe, SeedRolling, SeedRollingBot } from "../test-utils/probes";
+import {
+  ClockMatchLifecycleProbe,
+  ClockProbe,
+  StartMidGame,
+  GameProbe,
+  SeedRolling,
+  SeedRollingBot,
+  LocalGiveUpProbe,
+} from "../test-utils/probes";
 
 test("clock does not run during the opening roll", async ({ mount, page }) => {
   await page.clock.install();
@@ -13,15 +21,60 @@ test("clock does not run during the opening roll", async ({ mount, page }) => {
   await expect(component.getByText(`clock:{"white":300,"black":300},started:null`)).toBeVisible();
 });
 
-test("human times out and the bot wins", async ({ mount, page }) => {
+test("timeout ends a local match even when the target is above one", async ({ mount, page }) => {
   await page.clock.install();
   const component = await mount(
-    <LocalGameProvider matchTarget={1} timeControl={{ base: 300, delay: 0 }}>
+    <LocalGameProvider matchTarget={5} timeControl={{ base: 300, delay: 0 }}>
       <StartMidGame />
+      <ClockProbe />
     </LocalGameProvider>,
   );
   await page.clock.fastForward(2000);
   await expect(component.getByText("Match Lost")).toBeVisible();
+  await expect(component.getByText(/clock:\{"white":0,/)).toBeVisible();
+  await page.clock.fastForward(2000);
+  await expect(component.getByText("Match Lost")).toBeVisible();
+});
+
+test("local match keeps spent bank when the next game starts", async ({ mount, page }) => {
+  await page.clock.install();
+  const component = await mount(
+    <LocalGameProvider
+      matchTarget={5}
+      timeControl={{ base: 300_000, delay: 10_000 }}
+    >
+      <ClockMatchLifecycleProbe />
+    </LocalGameProvider>,
+  );
+
+  await component.getByTestId("start-timed-game").click();
+  await page.clock.fastForward(15_000);
+  await component.getByTestId("finish-game").click();
+  const spentClock = await component.getByTestId("match-clock").textContent();
+  const parsed = JSON.parse(spentClock || "{}") as { white: number; black: number };
+  expect(parsed.white).toBeGreaterThanOrEqual(294_900);
+  expect(parsed.white).toBeLessThanOrEqual(295_000);
+  expect(parsed.black).toBe(300_000);
+
+  await page.clock.fastForward(1_500);
+  await expect(component.getByTestId("match-phase")).toHaveText("opening_roll");
+  await expect(component.getByTestId("match-clock")).toHaveText(spentClock || "");
+  await expect(component.getByTestId("match-started")).toHaveText("null");
+});
+
+test("local give up with no borne-off checker awards gammon times cube", async ({ mount }) => {
+  const component = await mount(
+    <LocalGameProvider matchTarget={5}>
+      <LocalGiveUpProbe />
+    </LocalGameProvider>,
+  );
+  await component.getByTestId("seed-resignation").click();
+  await expect(component.getByTestId("local-phase")).toHaveText("moving");
+  await expect(component.getByTestId("local-cube")).toHaveText("2");
+  await component.getByTestId("local-give-up").click();
+  await expect(component.getByTestId("local-result")).toContainText('"winType":"gammon"');
+  await expect(component.getByTestId("local-result")).toContainText('"points":4');
+  await expect(component.getByTestId("local-score")).toHaveText('{"white":0,"black":4}');
 });
 
 test("opening roll fetches a dice pair from the Django server", async ({ mount, page }) => {

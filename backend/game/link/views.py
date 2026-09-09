@@ -9,7 +9,10 @@ Everything happens in one transaction: if any part of it fails, the ticket is *n
 player can click through again.
 """
 
+import json
 import logging
+import time
+import uuid
 from datetime import datetime
 from datetime import timezone as dt_timezone
 from urllib.parse import urlencode
@@ -30,7 +33,7 @@ from game.models import GameRoom, GameState, RoomPlayer, generate_room_code
 
 from .identity import resolve_user
 from .models import RedeemedTicket, TournamentLink
-from .signing import TicketError, redact, verify_ticket
+from .signing import TicketError, redact, verify_command_signature, verify_ticket
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +83,8 @@ def enter_link(request):
             player = user.player
 
             link, room = _link_for_fixture(issuer, ticket)
+            if room.status in ('completed', 'cancelled'):
+                raise _RoomClosed()
             color = link.color_for_seat(seat)
 
             # Tournament rooms are independent. A player may have a live fixture in several
@@ -109,6 +114,11 @@ def enter_link(request):
         return Response(
             {'error': 'That seat has already been taken by another player.'},
             status=status.HTTP_409_CONFLICT)
+    except _RoomClosed:
+        logger.info(f"link enter rejected: fixture {ticket['fix']} is already closed")
+        return Response(
+            {'error': 'This match has already ended.'},
+            status=status.HTTP_409_CONFLICT)
     if started:
         # The room starts when the second seat is filled, not when that player's socket opens,
         # which is what wakes the first player out of the waiting room.
@@ -123,6 +133,99 @@ def enter_link(request):
     return _handoff(user, room, seated.color, frontend_url)
 
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def admin_command(request):
+    """Apply an authenticated, idempotent organizer score or finish command."""
+    if not settings.GAMELINK_ENABLED:
+        return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
+    raw = request.body
+    timestamp = request.headers.get('X-Gamelink-Timestamp', '')
+    issuer = request.headers.get('X-Gamelink-Issuer', '')
+    try:
+        sent_at = int(timestamp)
+    except (TypeError, ValueError):
+        return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    if (issuer not in settings.GAMELINK_ACCEPTED_ISSUERS
+            or abs(int(time.time()) - sent_at) > settings.GAMELINK_COMMAND_CLOCK_SKEW
+            or not verify_command_signature(raw, timestamp, request.headers.get('X-Gamelink-Signature'))):
+        return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
+    try:
+        body = json.loads(raw)
+        command_id = str(uuid.UUID(body['command_id']))
+        room_id = str(uuid.UUID(body['room_id']))
+        fixture_id = int(body['fixture_id'])
+        command_revision = body['command_revision']
+        action = body['action']
+        score = body.get('score')
+        winner_seat = body.get('winner_seat')
+        reason = body.get('reason', '')
+        if (body.get('v') != 1 or type(command_revision) is not int or command_revision < 1
+                or action not in ('score_update', 'finish')):
+            raise ValueError()
+        if score is not None and (not isinstance(score, list) or len(score) != 2
+                                  or any(value is not None and (type(value) is not int or value < 0)
+                                         for value in score)):
+            raise ValueError()
+        if action == 'finish' and (winner_seat not in ('p1', 'p2') or not isinstance(reason, str)
+                                   or not reason.strip() or len(reason) > 1000):
+            raise ValueError()
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return Response({'error': 'Invalid command'}, status=status.HTTP_400_BAD_REQUEST)
+
+    event = None
+    with transaction.atomic():
+        link = (TournamentLink.objects.select_for_update().select_related('room')
+                .filter(issuer=issuer, fixture_id=fixture_id, room_id=room_id).first())
+        if link is None:
+            return Response({'error': 'Linked room not found'}, status=status.HTTP_404_NOT_FOUND)
+        room = link.room
+        game_state, _ = GameState.objects.select_for_update().get_or_create(room=room)
+        state = dict(game_state.state_data or {})
+        if state.get('adminCommandId') == command_id:
+            return Response({'status': 'already_applied'})
+        if int(state.get('adminCommandRevision') or 0) >= command_revision:
+            return Response({'status': 'already_applied'})
+        if room.status in ('completed', 'cancelled'):
+            return Response({'error': 'Room already closed'}, status=status.HTTP_409_CONFLICT)
+
+        if score and score[0] is not None and score[1] is not None:
+            if link.seat_p1_color == 'white':
+                room.white_score, room.black_score = score
+            else:
+                room.black_score, room.white_score = score
+        room.last_sequence += 1
+        update_fields = ['white_score', 'black_score', 'last_sequence', 'updated_at']
+        state['version'] = room.last_sequence
+        state['adminCommandId'] = command_id
+        state['adminCommandRevision'] = command_revision
+        event_type = 'admin_score_updated'
+        event = {
+            'commandId': command_id, 'fixtureId': fixture_id,
+            'whiteScore': room.white_score, 'blackScore': room.black_score,
+            'targetPoints': room.target_points,
+        }
+        if action == 'finish':
+            winner = link.color_for_seat(winner_seat)
+            room.status = 'completed'
+            update_fields.append('status')
+            state.update(
+                phase='game_over', winner=winner, winType='single', matchScored=True,
+                gameEndReason='admin', adminEndReason=reason.strip(),
+            )
+            event_type = 'admin_match_ended'
+            event.update(reason='admin', adminReason=reason.strip(), winner=winner,
+                         matchOver=True, nextGame=False)
+        room.save(update_fields=update_fields)
+        game_state.state_data = state
+        game_state.save(update_fields=['state_data', 'updated_at'])
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            transaction.on_commit(lambda: async_to_sync(channel_layer.group_send)(
+                f'game_{room.id}', {'type': event_type, 'payload': event}))
+    return Response({'status': 'applied'})
+
+
 def _link_for_fixture(issuer, ticket):
     """
     Return `(link, room)` for this fixture, creating both on the first redemption.
@@ -132,8 +235,9 @@ def _link_for_fixture(issuer, ticket):
     """
     link = TournamentLink.objects.filter(issuer=issuer, fixture_id=ticket['fix']).first()
     if link is not None:
-        _sync_waiting_room_from_ticket(link.room, ticket)
-        return link, link.room
+        room = GameRoom.objects.select_for_update().get(pk=link.room_id)
+        _sync_waiting_room_from_ticket(room, ticket)
+        return link, room
 
     initial = BackgammonEngine.get_initial_state()
     initial['doublingEnabled'] = bool(ticket.get('dbl', True))
@@ -155,7 +259,7 @@ def _link_for_fixture(issuer, ticket):
             )
     except IntegrityError:
         link = TournamentLink.objects.get(issuer=issuer, fixture_id=ticket['fix'])
-        return link, link.room
+        return link, GameRoom.objects.select_for_update().get(pk=link.room_id)
 
     logger.info(f"link room provisioned: issuer={issuer} fixture={ticket['fix']} room={room.code}")
     return link, room
@@ -240,3 +344,7 @@ class _SeatTaken(Exception):
     def __init__(self, color):
         super().__init__(color)
         self.color = color
+
+
+class _RoomClosed(Exception):
+    """Raised so a fresh ticket cannot reopen or enter a terminal linked room."""

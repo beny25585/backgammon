@@ -15,6 +15,7 @@ interface GameResultOverlayProps {
   matchWinner?: Color | null;
   matchOver?: boolean;
   reason?: string;
+  adminReason?: string;
   whiteName?: string | null;
   blackName?: string | null;
   countdown?: number | null;
@@ -38,6 +39,7 @@ export default function GameResultOverlay({
   matchWinner = null,
   matchOver,
   reason,
+  adminReason,
   whiteName = null,
   blackName = null,
   countdown,
@@ -186,6 +188,13 @@ export default function GameResultOverlay({
         {reason === "leave" && (
           <p className={styles.subtitle} data-testid="opponent-left-note">
             {loser === playerColor ? t("game.youLeft") : t("game.opponentLeft")}
+          </p>
+        )}
+
+        {reason === "admin" && adminReason && (
+          <p className={styles.subtitle} data-testid="admin-end-reason">
+            {locale === "he" ? "החלטת מנהל: " : "Organizer decision: "}
+            {adminReason}
           </p>
         )}
 

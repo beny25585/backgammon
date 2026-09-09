@@ -8,14 +8,15 @@ reserve is only charged for the time they spend beyond the delay on a turn.
 from game import clock
 
 
-NAMED_PRESETS = {
-    'fast': (60_000, 5_000),
-    'normal': (120_000, 12_000),
-    'slow': (300_000, 12_000),
+NAMED_PRESET_SECONDS_PER_POINT = {
+    'fast': 30,
+    'normal': 60,
+    'slow': 120,
 }
+TURN_DELAY_MS = 10_000
 
 
-def parse_time_control(preset_id):
+def parse_time_control(preset_id, target_points=1):
     """Return (base_ms, delay_ms) for a preset id like 'normal', else None.
 
     'none', missing, or malformed ids mean no time limit. Legacy 'M+S' ids
@@ -23,8 +24,15 @@ def parse_time_control(preset_id):
     """
     if not preset_id or preset_id == 'none':
         return None
-    if preset_id in NAMED_PRESETS:
-        return NAMED_PRESETS[preset_id]
+    if preset_id in NAMED_PRESET_SECONDS_PER_POINT:
+        try:
+            target = max(1, int(target_points))
+        except (TypeError, ValueError):
+            target = 1
+        return (
+            NAMED_PRESET_SECONDS_PER_POINT[preset_id] * target * 1_000,
+            TURN_DELAY_MS,
+        )
     try:
         minutes, delay_sec = preset_id.split('+')
         return (int(minutes) * 60_000, int(delay_sec) * 1_000)
@@ -63,7 +71,7 @@ def apply_transition(clock, prev_active, new_active, elapsed_ms, delay_ms):
     return result
 
 
-def compute_clock(stored, incoming, now_ms, preset_id):
+def compute_clock(stored, incoming, now_ms, preset_id, target_points=1):
     """Server-owned clock computation (simple delay).
 
     Returns (clock, turn_started_at, active, timed_out, deadline_ms). When
@@ -71,7 +79,7 @@ def compute_clock(stored, incoming, now_ms, preset_id):
     is the previously saved state; `incoming` is the state the client just
     sent. Client-provided clock values are never trusted.
     """
-    tc = parse_time_control(preset_id)
+    tc = parse_time_control(preset_id, target_points)
     if tc is None:
         return None, None, None, False, None
     base_ms, delay_ms = tc
@@ -81,17 +89,21 @@ def compute_clock(stored, incoming, now_ms, preset_id):
     new_active = active_player(incoming)
     timed_out = False
 
+    stored_active = active_player(stored)
+    if stored_active and turn_started_at is not None:
+        elapsed = max(0, now_ms - turn_started_at)
+        charged = max(0, elapsed - delay_ms)
+        if charged >= clock.get(stored_active, 0):
+            clock[stored_active] = 0
+            return clock, turn_started_at, stored_active, True, None
+
     if turn_started_at is None:
-        # First action of the game: seed both clocks. The clock only starts
-        # once there is an active player, i.e. after the opening roll.
-        clock = {'white': base_ms, 'black': base_ms}
-        turn_started_at = now_ms if new_active else None
-    elif stored.get('phase') == 'game_over' and incoming.get('phase') != 'game_over':
-        # New game after a finished one: restart both clocks.
-        clock = {'white': base_ms, 'black': base_ms}
+        # Seed the bank only at match start. An existing bank is deliberately
+        # preserved while the clock is stopped between games.
+        if not stored.get('clock'):
+            clock = {'white': base_ms, 'black': base_ms}
         turn_started_at = now_ms if new_active else None
     else:
-        stored_active = active_player(stored)
         if stored_active and new_active and stored_active != new_active:
             elapsed = max(0, now_ms - turn_started_at)
             clock = apply_transition(clock, stored_active, new_active, elapsed, delay_ms)
@@ -99,6 +111,10 @@ def compute_clock(stored, incoming, now_ms, preset_id):
         elif stored_active and not new_active:
             elapsed = max(0, now_ms - turn_started_at)
             clock = apply_transition(clock, stored_active, None, elapsed, delay_ms)
+            turn_started_at = None
+        elif not stored_active and new_active:
+            turn_started_at = now_ms
+        elif not new_active:
             turn_started_at = None
 
     deadline_ms = None
@@ -118,13 +134,13 @@ def compute_clock(stored, incoming, now_ms, preset_id):
     return clock, turn_started_at, new_active, timed_out, deadline_ms
 
 
-def deadline_for(state, preset_id):
+def deadline_for(state, preset_id, target_points=1):
     """Epoch ms when the active player's reserve would hit zero, or None.
 
     With simple delay the reserve only drains after the per-turn delay, so the
     deadline is turnStartedAt + delay + reserve.
     """
-    tc = parse_time_control(preset_id)
+    tc = parse_time_control(preset_id, target_points)
     if tc is None:
         return None
     _, delay_ms = tc

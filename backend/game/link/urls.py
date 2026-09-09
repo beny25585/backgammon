@@ -10,4 +10,5 @@ from . import views
 
 urlpatterns = [
     path('enter/', views.enter_link, name='link_enter'),
+    path('admin-command/', views.admin_command, name='link_admin_command'),
 ]

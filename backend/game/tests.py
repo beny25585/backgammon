@@ -347,6 +347,56 @@ class GameConsumerTests(TransactionTestCase):
                 break
         return comm_white, comm_black
 
+    async def test_admin_review_reconnect_does_not_expire_clock_or_accept_actions(self):
+        expired = BackgammonEngine.get_initial_state()
+        expired.update({
+            'phase': 'rolling', 'turn': 'white',
+            'clock': {'white': 1, 'black': 300_000},
+            'turnStartedAt': int(time_module.time() * 1000) - 60_000,
+        })
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(
+            state_data=expired
+        )
+        self.room.time_control = 'fast'
+        self.room.target_points = 5
+        self.room.state = {'presence': {
+            'everBothConnected': True,
+            'needsAdminAdjudication': True,
+            'connections': {},
+            'absentSince': {'white': 1000, 'black': 1001},
+        }}
+        await database_sync_to_async(self.room.save)()
+
+        communicator = self._make_communicator(self.white_user)
+        connected, _ = await communicator.connect(timeout=10)
+        self.assertTrue(connected)
+        initial = await communicator.receive_json_from()
+        self.assertEqual(initial['type'], 'state_update')
+        self.assertEqual(initial['payload']['clock']['white'], 1)
+        review = await self._receive_until(
+            communicator, lambda event: event.get('type') == 'admin_review_required'
+        )
+        self.assertIn('organizer', review['payload']['message'])
+
+        await communicator.send_json_to({
+            'type': 'state_update', 'payload': {'action': 'roll'}
+        })
+        blocked = await self._receive_until(
+            communicator, lambda event: event.get('type') == 'admin_review_required'
+        )
+        self.assertIn('paused', blocked['payload']['message'])
+        self.assertEqual(
+            await database_sync_to_async(lambda: Match.objects.filter(room=self.room).count())(),
+            0,
+        )
+        await database_sync_to_async(self.room.refresh_from_db)()
+        self.assertEqual(self.room.status, 'playing')
+        stored = await database_sync_to_async(
+            lambda: GameState.objects.get(room=self.room).state_data
+        )()
+        self.assertEqual(stored['clock']['white'], 1)
+        await communicator.disconnect()
+
     async def test_initial_state_update_includes_time_control(self):
         communicator = self._make_communicator(self.white_user)
         connected, _ = await communicator.connect(timeout=10)
@@ -354,6 +404,7 @@ class GameConsumerTests(TransactionTestCase):
         response = await communicator.receive_json_from()
         self.assertEqual(response['type'], 'state_update')
         self.assertEqual(response['timeControl'], self.room.time_control)
+        self.assertEqual(response['targetPoints'], self.room.target_points)
         await communicator.disconnect()
 
     async def test_initial_state_update_computes_clock_and_turn_started_at(self):
@@ -372,39 +423,43 @@ class GameConsumerTests(TransactionTestCase):
 
         response = await communicator.receive_json_from()
         self.assertEqual(response['type'], 'state_update')
-        self.assertEqual(response['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        self.assertEqual(response['payload']['clock'], {'white': 420_000, 'black': 420_000})
         self.assertIsInstance(response['payload']['turnStartedAt'], int)
         await communicator.disconnect()
 
-    async def test_clock_not_started_during_opening_roll(self):
+    @patch('game.consumers.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 1))
+    async def test_clock_not_started_during_opening_roll(self, opening_dice):
         # Both players tap their opening die; during opening_result nobody is
         # on the clock: reserves are seeded but the clock is not started
         # (turnStartedAt stays null).
         comm_white, comm_black = await self._connect_both()
         result = await self._resolve_opening(comm_white, comm_black)
         event = result['event']
-        self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+        self.assertEqual(event['payload']['clock'], {'white': 420_000, 'black': 420_000})
         self.assertIsNone(event['payload'].get('turnStartedAt'))
+        opening_dice.assert_awaited_once()
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_clock_starts_when_opening_dice_become_playable(self):
+    @patch('game.consumers.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 1))
+    async def test_clock_starts_when_opening_dice_become_playable(self, opening_dice):
         GameConsumer.OPENING_RESULT_DELAY = 0.1
         try:
             comm_white, comm_black = await self._connect_both()
             # Opening roll: no active player, clock not started.
             result = await self._resolve_opening(comm_white, comm_black)
             event = result['event']
-            self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+            self.assertEqual(event['payload']['clock'], {'white': 420_000, 'black': 420_000})
             self.assertIsNone(event['payload'].get('turnStartedAt'))
             winner = event['payload']['turn']  # whoever rolled higher
 
             # Once the result banner ends, the opening dice become playable and
             # only then does the winner's clock start.
             event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'moving')
-            self.assertEqual(event['payload']['clock'], {'white': 120_000, 'black': 120_000})
+            self.assertEqual(event['payload']['clock'], {'white': 420_000, 'black': 420_000})
             self.assertIsInstance(event['payload'].get('turnStartedAt'), int)
             self.assertEqual(event['payload']['turn'], winner)
+            opening_dice.assert_awaited_once()
         finally:
             GameConsumer.OPENING_RESULT_DELAY = 3.0
             await comm_white.disconnect()
@@ -443,7 +498,7 @@ class GameConsumerTests(TransactionTestCase):
             'dice': [3, 5],
             'remaining': [3, 5],
             'clock': {'white': 120_000, 'black': 120_000},
-            # White has been thinking 15s; delay is 12s, so 3s should be charged.
+            # White has been thinking 15s; the 10s delay leaves a 5s charge.
             'turnStartedAt': int(time_module.time() * 1000) - 15_000,
         }
         gs = await get_game_state(self.room)
@@ -459,7 +514,7 @@ class GameConsumerTests(TransactionTestCase):
         event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
         clock = event['payload']['clock']
         self.assertEqual(clock['black'], 120_000)  # frozen while white acted
-        self.assertTrue(116_000 <= clock['white'] <= 117_000)  # 120s - (15s - 12s)
+        self.assertTrue(114_000 <= clock['white'] <= 115_000)
         await comm_white.disconnect()
         await comm_black.disconnect()
 
@@ -495,9 +550,9 @@ class GameConsumerTests(TransactionTestCase):
             'dice': [3, 5],
             'remaining': [3, 5],
             'clock': {'white': 100, 'black': 120_000},
-            # White's deadline is 12s delay + 100ms reserve after turnStartedAt;
+            # White's deadline is 10s delay + 100ms reserve after turnStartedAt;
             # put turnStartedAt in the past so the deadline is effectively now.
-            'turnStartedAt': int(time_module.time() * 1000) - 12_100,
+            'turnStartedAt': int(time_module.time() * 1000) - 10_100,
         }
         gs = await get_game_state(self.room)
         gs.state_data = stored
@@ -545,6 +600,63 @@ class GameConsumerTests(TransactionTestCase):
         else:
             self.assertEqual(len(remaining), 2)
         self.assertEqual(event['payload']['version'], 1)
+
+    async def test_no_moves_dice_state_precedes_notice_and_opponent_can_act(self):
+        await database_sync_to_async(GameRoom.objects.filter(id=self.room.id).update)(
+            time_control='normal', target_points=1
+        )
+        await self._seed_state(
+            phase='rolling',
+            turn='white',
+            dice=[],
+            remaining=[],
+            points=[0] * 22 + [-5, -5],
+            bar={'white': 15, 'black': 0},
+            home={'white': 0, 'black': 5},
+        )
+        comm_white, comm_black = await self._connect_both()
+
+        with patch(
+            'game.consumers.fetch_turn_dice',
+            new_callable=AsyncMock,
+            side_effect=[(1, 2), (3, 4)],
+        ):
+            await comm_white.send_json_to({
+                'type': 'state_update',
+                'payload': {'action': 'roll'},
+            })
+            first = await self._receive_until(
+                comm_black,
+                lambda event: event.get('type') in ('state_update', 'turn_notice'),
+            )
+            second = await self._receive_until(
+                comm_black,
+                lambda event: event.get('type') in ('state_update', 'turn_notice'),
+            )
+
+            self.assertEqual(first['type'], 'state_update')
+            self.assertEqual(first['payload']['turn'], 'black')
+            preserved_bank = first['payload']['clock']['black']
+            self.assertEqual(preserved_bank, 120_000)
+            self.assertEqual(second['type'], 'turn_notice')
+            self.assertEqual(second['payload']['dice'], [2, 1])
+            self.assertEqual(second['payload']['revealAfterMs'], 350)
+
+            # The notice is display-only: it does not hold the opponent's turn
+            # or consume reserve inside the normal 10-second delay.
+            await comm_black.send_json_to({
+                'type': 'state_update',
+                'payload': {'action': 'roll'},
+            })
+            reply = await self._receive_until(
+                comm_black,
+                lambda event: event.get('type') == 'state_update'
+                and event.get('action') == 'roll',
+            )
+            self.assertEqual(reply['payload']['clock']['black'], preserved_bank)
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
 
     async def test_roll_intent_recovers_discarded_opening_dice_without_rerolling(self):
         await self._seed_state(
@@ -1290,6 +1402,12 @@ class GameEndConsumerTests(TransactionTestCase):
 
     async def test_auto_starts_next_game_after_countdown(self):
         await self._set_target(5)
+        game_state = await get_game_state(self.room)
+        seeded = dict(game_state.state_data)
+        seeded['clock'] = {'white': 275_000, 'black': 250_000}
+        seeded['turnStartedAt'] = None
+        game_state.state_data = seeded
+        await save_game_state(game_state)
         comm_white, comm_black = await self._connect_both()
 
         with patch.object(GameConsumer, "NEXT_GAME_DELAY", 0.2):
@@ -1312,8 +1430,11 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertEqual(fresh["payload"]["openingRoll"], {"white": None, "black": None})
         self.assertEqual(fresh["payload"]["turn"], "white")
         self.assertIsNone(fresh["payload"].get("winner"))
-        # Clocks reset for the new game.
-        self.assertEqual(fresh["payload"]["clock"], {"white": 120_000, "black": 120_000})
+        self.assertEqual(
+            fresh["payload"]["clock"],
+            {"white": 275_000, "black": 250_000},
+        )
+        self.assertIsNone(fresh["payload"]["turnStartedAt"])
 
         await database_sync_to_async(self.room.refresh_from_db)()
         self.assertEqual(self.room.status, "playing")
@@ -1321,6 +1442,17 @@ class GameEndConsumerTests(TransactionTestCase):
 
         await comm_white.disconnect()
         await comm_black.disconnect()
+
+        reconnect = self._make_communicator(self.white_user)
+        connected, _ = await reconnect.connect(timeout=10)
+        self.assertTrue(connected)
+        snapshot = await reconnect.receive_json_from()
+        self.assertEqual(
+            snapshot["payload"]["clock"],
+            {"white": 275_000, "black": 250_000},
+        )
+        self.assertIsNone(snapshot["payload"]["turnStartedAt"])
+        await reconnect.disconnect()
 
     async def test_reconnect_mid_match_replays_result_with_remaining_countdown(self):
         await self._set_target(5)
@@ -1395,8 +1527,14 @@ class GameEndConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_give_up_awards_one_point_and_keeps_match_open(self):
+    async def test_give_up_without_borne_off_checkers_awards_gammon_times_cube(self):
         await self._set_target(5)
+        gs = await get_game_state(self.room)
+        state = dict(gs.state_data)
+        state['home'] = {'white': 0, 'black': 0}
+        state['cube'] = 2
+        gs.state_data = state
+        await save_game_state(gs)
         comm_white, comm_black = await self._connect_both()
 
         await comm_white.send_json_to({"type": "give_up", "payload": {}})
@@ -1404,15 +1542,34 @@ class GameEndConsumerTests(TransactionTestCase):
         event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
         self.assertEqual(event["payload"]["winner"], "black")
         self.assertEqual(event["payload"]["reason"], "give_up")
-        self.assertEqual(event["payload"]["points"], 1)
-        self.assertEqual(event["payload"]["blackScore"], 1)
+        self.assertEqual(event["payload"]["winType"], "gammon")
+        self.assertEqual(event["payload"]["points"], 4)
+        self.assertEqual(event["payload"]["blackScore"], 4)
         self.assertEqual(event["payload"]["whiteScore"], 0)
         self.assertEqual(event["payload"]["matchOver"], False)
         self.assertEqual(event["payload"]["nextGame"], True)
 
         await database_sync_to_async(self.room.refresh_from_db)()
         self.assertEqual(self.room.status, "playing")
-        self.assertEqual(self.room.black_score, 1)
+        self.assertEqual(self.room.black_score, 4)
+
+        await comm_white.disconnect()
+        await comm_black.disconnect()
+
+    async def test_give_up_after_bearing_off_a_checker_is_single(self):
+        await self._set_target(5)
+        gs = await get_game_state(self.room)
+        state = dict(gs.state_data)
+        state['home'] = {'white': 1, 'black': 0}
+        state['cube'] = 2
+        gs.state_data = state
+        await save_game_state(gs)
+        comm_white, comm_black = await self._connect_both()
+
+        await comm_white.send_json_to({"type": "give_up", "payload": {}})
+        event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+        self.assertEqual(event["payload"]["winType"], "single")
+        self.assertEqual(event["payload"]["points"], 2)
 
         await comm_white.disconnect()
         await comm_black.disconnect()
@@ -1576,6 +1733,12 @@ class GameEndConsumerTests(TransactionTestCase):
     @patch('game.consumers.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 1))
     async def test_next_game_intent_starts_fresh_opening_roll(self, opening_dice):
         await self._set_target(5)
+        game_state = await get_game_state(self.room)
+        seeded = dict(game_state.state_data)
+        seeded['clock'] = {'white': 275_000, 'black': 250_000}
+        seeded['turnStartedAt'] = None
+        game_state.state_data = seeded
+        await save_game_state(game_state)
         comm_white, comm_black = await self._connect_both()
 
         await comm_white.send_json_to({
@@ -1600,6 +1763,11 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertIsNone(event["payload"].get("winner"))
         self.assertIsNone(event["payload"].get("openingDice"))
         self.assertTrue(event["payload"].get("gameId"))
+        self.assertEqual(
+            event["payload"]["clock"],
+            {"white": 275_000, "black": 250_000},
+        )
+        self.assertIsNone(event["payload"]["turnStartedAt"])
 
         # Exercise the fresh opening without depending on the external dice server.
         await comm_white.send_json_to({"type": "state_update", "payload": {"action": "roll"}})
@@ -1681,42 +1849,55 @@ class GameEndConsumerTests(TransactionTestCase):
 
         await database_sync_to_async(self.room.refresh_from_db)()
         self.assertEqual(self.room.white_score, 1)
-        self.assertEqual(len(self.room.state['match']['games']), 1)
+        self.assertEqual(self.room.status, 'completed')
+        self.assertEqual(
+            await database_sync_to_async(lambda: Match.objects.filter(room=self.room).count())(),
+            1,
+        )
         channel_layer.group_send.assert_awaited_once()
         payload = channel_layer.group_send.call_args.args[1]['payload']
         self.assertEqual(payload['points'], 1)
         self.assertEqual(payload['whiteScore'], 1)
         self.assertEqual(payload['reason'], 'time')
 
-        # Starting the actual next game must create a new scoring identity.
+        # A terminal timeout cannot start or score another game.
         scored = await get_game_state(self.room)
         engine = BackgammonEngine(scored.state_data)
         result = await consumers[0]._handle_next_game(engine)
-        self.assertTrue(result['success'])
-        self.assertTrue(engine.state['gameId'])
-        scored.state_data = engine.state
-        await save_game_state(scored)
+        self.assertFalse(result['success'])
         with patch.object(GameConsumer, '_arm_auto_next_game', new_callable=AsyncMock):
             await consumers[0]._forfeit_on_time('white', 'black')
         await database_sync_to_async(self.room.refresh_from_db)()
-        self.assertEqual(self.room.white_score, 2)
-        self.assertEqual(len(self.room.state['match']['games']), 2)
+        self.assertEqual(self.room.white_score, 1)
+        self.assertEqual(
+            await database_sync_to_async(lambda: Match.objects.filter(room=self.room).count())(),
+            1,
+        )
 
-    async def test_timeout_mid_match_keeps_room_open(self):
+    async def test_timeout_with_target_above_one_ends_the_match(self):
         stored = BackgammonEngine.get_initial_state()
         stored.update({
             'phase': 'moving',
             'turn': 'white',
             'dice': [3, 5],
             'remaining': [3, 5],
-            'clock': {'white': 0, 'black': 180_000},
-            'turnStartedAt': int(time_module.time() * 1000) - 5_000,
+            'clock': {'white': 180_000, 'black': 180_000},
+            'turnStartedAt': int(time_module.time() * 1000),
         })
         gs = await get_game_state(self.room)
         gs.state_data = stored
         await save_game_state(gs)
 
         comm_white, comm_black = await self._connect_both()
+
+        # The incoming intent must still forfeit a player whose persisted bank
+        # expired after the sockets connected and before the move arrived.
+        gs = await get_game_state(self.room)
+        expired = dict(gs.state_data)
+        expired['clock'] = {'white': 0, 'black': 180_000}
+        expired['turnStartedAt'] = int(time_module.time() * 1000) - 5_000
+        gs.state_data = expired
+        await save_game_state(gs)
         await comm_white.send_json_to({
             'type': 'state_update',
             'payload': {'action': 'move', 'from': 12, 'to': 9},
@@ -1725,18 +1906,31 @@ class GameEndConsumerTests(TransactionTestCase):
         event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
         self.assertEqual(event['payload']['winner'], 'black')
         self.assertEqual(event['payload']['reason'], 'time')
-        self.assertEqual(event['payload']['matchOver'], False)
+        self.assertEqual(event['payload']['matchOver'], True)
+        self.assertEqual(event['payload']['nextGame'], False)
 
         await database_sync_to_async(self.room.refresh_from_db)()
-        self.assertEqual(self.room.status, 'playing')
+        self.assertEqual(self.room.status, 'completed')
         self.assertEqual(self.room.black_score, 1)
         match_count = await database_sync_to_async(
             lambda: Match.objects.filter(room=self.room).count()
         )()
-        self.assertEqual(match_count, 0)
+        self.assertEqual(match_count, 1)
 
         await comm_white.disconnect()
         await comm_black.disconnect()
+
+        reconnect = self._make_communicator(self.white_user)
+        connected, _ = await reconnect.connect(timeout=10)
+        self.assertTrue(connected)
+        snapshot = await reconnect.receive_json_from()
+        self.assertEqual(snapshot['payload']['phase'], 'game_over')
+        replay = await self._receive_until(
+            reconnect, lambda message: message.get('type') == 'game_ended'
+        )
+        self.assertEqual(replay['payload']['reason'], 'time')
+        self.assertEqual(replay['payload']['matchOver'], True)
+        await reconnect.disconnect()
 
     async def test_timeout_reaching_target_closes_room(self):
         await self._set_target(1)
@@ -1753,13 +1947,14 @@ class GameEndConsumerTests(TransactionTestCase):
         gs.state_data = stored
         await save_game_state(gs)
 
-        comm_white, comm_black = await self._connect_both()
-        await comm_white.send_json_to({
-            'type': 'state_update',
-            'payload': {'action': 'move', 'from': 12, 'to': 9},
-        })
-
-        event = await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
+        # An overdue reconnect computes the expired bank immediately, then
+        # finalizes the match after delivering its authoritative snapshot.
+        comm_white = self._make_communicator(self.white_user)
+        connected, _ = await comm_white.connect(timeout=10)
+        self.assertTrue(connected)
+        snapshot = await comm_white.receive_json_from()
+        self.assertEqual(snapshot['payload']['clock']['white'], 0)
+        event = await self._receive_until(comm_white, lambda e: e.get("type") == "game_ended")
         self.assertEqual(event['payload']['winner'], 'black')
         self.assertEqual(event['payload']['reason'], 'time')
         self.assertEqual(event['payload']['matchOver'], True)
@@ -1772,7 +1967,6 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertEqual(match_count, 1)
 
         await comm_white.disconnect()
-        await comm_black.disconnect()
 
     async def test_connect_to_finished_game_auto_finalizes(self):
         game_state = await database_sync_to_async(GameState.objects.get)(room=self.room)
@@ -1847,17 +2041,17 @@ class CreateRoomGuardTests(TestCase):
 class ClockHelperTests(TestCase):
     def test_parse_time_control(self):
         from game.clock import parse_time_control
-        self.assertEqual(parse_time_control('fast'), (60_000, 5_000))
-        self.assertEqual(parse_time_control('normal'), (120_000, 12_000))
-        self.assertEqual(parse_time_control('slow'), (300_000, 12_000))
+        self.assertEqual(parse_time_control('fast', 1), (30_000, 10_000))
+        self.assertEqual(parse_time_control('normal', 5), (300_000, 10_000))
+        self.assertEqual(parse_time_control('slow', 7), (840_000, 10_000))
         self.assertIsNone(parse_time_control('none'))
         self.assertIsNone(parse_time_control(None))
         self.assertIsNone(parse_time_control('bogus'))
 
     def test_parse_time_control_accepts_legacy_ids(self):
         from game.clock import parse_time_control
-        self.assertEqual(parse_time_control('2+12'), (120_000, 12_000))
-        self.assertEqual(parse_time_control('1+5'), (60_000, 5_000))
+        self.assertEqual(parse_time_control('2+12', 7), (120_000, 12_000))
+        self.assertEqual(parse_time_control('1+5', 5), (60_000, 5_000))
 
     def test_active_player_is_turn_normally(self):
         from game.clock import active_player
@@ -1889,13 +2083,13 @@ class ClockHelperTests(TestCase):
         }
 
         clock, turn_started_at, active, timed_out, deadline = compute_clock(
-            stored, incoming, 9_000, 'normal')
+            stored, incoming, 9_000, 'normal', 2)
 
         self.assertEqual(clock, {'white': 120_000, 'black': 120_000})
         self.assertEqual(turn_started_at, 9_000)
         self.assertEqual(active, 'white')
         self.assertFalse(timed_out)
-        self.assertEqual(deadline, 9_000 + 12_000 + 120_000)
+        self.assertEqual(deadline, 9_000 + 10_000 + 120_000)
 
     def test_clock_starts_when_dice_are_rolled_and_player_can_move(self):
         from game.clock import compute_clock
@@ -1913,13 +2107,13 @@ class ClockHelperTests(TestCase):
         }
 
         clock, turn_started_at, active, timed_out, deadline = compute_clock(
-            stored, incoming, 9_000, 'normal')
+            stored, incoming, 9_000, 'normal', 2)
 
         self.assertEqual(clock, {'white': 120_000, 'black': 120_000})
         self.assertEqual(turn_started_at, 9_000)
         self.assertEqual(active, 'white')
         self.assertFalse(timed_out)
-        self.assertEqual(deadline, 9_000 + 12_000 + 120_000)
+        self.assertEqual(deadline, 9_000 + 10_000 + 120_000)
 
     def test_active_player_responder_pays_during_doubling(self):
         from game.clock import active_player
@@ -1959,6 +2153,65 @@ class ClockHelperTests(TestCase):
         clock = {'white': 180_000, 'black': 180_000}
         self.assertEqual(apply_transition(clock, 'white', 'white', 5_000, 10_000), clock)
 
+    def test_existing_bank_survives_between_games(self):
+        from game.clock import compute_clock
+        stored = {
+            'phase': 'game_over',
+            'winner': 'white',
+            'clock': {'white': 275_000, 'black': 250_000},
+            'turnStartedAt': None,
+        }
+        incoming = {'phase': 'opening_roll', 'turn': 'white'}
+
+        clock, started, active, timed_out, deadline = compute_clock(
+            stored, incoming, 50_000, 'normal', 5
+        )
+
+        self.assertEqual(clock, stored['clock'])
+        self.assertIsNone(started)
+        self.assertIsNone(active)
+        self.assertFalse(timed_out)
+        self.assertIsNone(deadline)
+
+    def test_reconnect_starts_missing_timestamp_without_resetting_bank(self):
+        from game.clock import compute_clock
+        stored = {
+            'phase': 'moving',
+            'turn': 'black',
+            'clock': {'white': 275_000, 'black': 250_000},
+            'turnStartedAt': None,
+        }
+
+        clock, started, active, timed_out, deadline = compute_clock(
+            stored, stored, 50_000, 'normal', 5
+        )
+
+        self.assertEqual(clock, stored['clock'])
+        self.assertEqual(started, 50_000)
+        self.assertEqual(active, 'black')
+        self.assertFalse(timed_out)
+        self.assertEqual(deadline, 50_000 + 10_000 + 250_000)
+
+    def test_action_at_zero_bank_times_out_the_player_who_was_active(self):
+        from game.clock import compute_clock
+        stored = {
+            'phase': 'moving',
+            'turn': 'white',
+            'clock': {'white': 5_000, 'black': 60_000},
+            'turnStartedAt': 1_000,
+        }
+        incoming = {'phase': 'rolling', 'turn': 'black'}
+
+        clock, started, active, timed_out, deadline = compute_clock(
+            stored, incoming, 16_000, 'fast', 2
+        )
+
+        self.assertEqual(clock['white'], 0)
+        self.assertEqual(started, 1_000)
+        self.assertEqual(active, 'white')
+        self.assertTrue(timed_out)
+        self.assertIsNone(deadline)
+
     def test_deadline_includes_delay(self):
         from game.clock import deadline_for
         state = {
@@ -1967,7 +2220,7 @@ class ClockHelperTests(TestCase):
             'clock': {'white': 60_000, 'black': 60_000},
             'turnStartedAt': 1_000,
         }
-        self.assertEqual(deadline_for(state, 'fast'), 1_000 + 5_000 + 60_000)
+        self.assertEqual(deadline_for(state, 'fast', 2), 1_000 + 10_000 + 60_000)
 
     def test_deadline_none_for_no_limit(self):
         from game.clock import deadline_for

@@ -32,6 +32,8 @@ TICKET_SALT = 'gamelink.ticket.v1'
 # The outbound half. Tournaments verifies what this signs, so the two constructions have to agree
 # byte for byte; `tests.ResultSignatureContractTests` pins the shared vector that says they do.
 RESULT_SIGNATURE_VERSION = 'v1'
+COMMAND_SIGNATURE_VERSION = 'v1'
+_SIGNATURE_HEADER_PATTERN = re.compile(r'\Av1=([0-9a-fA-F]{64})\Z')
 
 SEATS = ('p1', 'p2')
 TIME_CONTROLS = ('none', 'fast', 'normal', 'slow')
@@ -173,6 +175,28 @@ def sign_result_body(raw_body, timestamp, nonce):
         raise ImproperlyConfigured('GAMELINK_RESULT_SECRET is not configured')
     signature = hmac.new(secret.encode(), result_signature_base(raw_body, timestamp, nonce), hashlib.sha256)
     return f'{RESULT_SIGNATURE_VERSION}={signature.hexdigest()}'
+
+
+def command_signature_base(raw_body, timestamp):
+    digest = hashlib.sha256(_as_bytes(raw_body)).hexdigest()
+    return f'{COMMAND_SIGNATURE_VERSION}:{timestamp}:{digest}'.encode()
+
+
+def verify_command_signature(raw_body, timestamp, header):
+    """Verify a tournaments-to-game command against every rotation secret."""
+    try:
+        match = _SIGNATURE_HEADER_PATTERN.match((header or '').strip())
+        if match is None:
+            return False
+        offered = match.group(1).lower()
+        base = command_signature_base(raw_body, timestamp)
+    except (AttributeError, TypeError, ValueError):
+        return False
+    verified = False
+    for secret in getattr(settings, 'GAMELINK_COMMAND_SECRETS', []):
+        expected = hmac.new(secret.encode(), base, hashlib.sha256).hexdigest()
+        verified |= hmac.compare_digest(expected, offered)
+    return verified
 
 
 def _as_bytes(value):

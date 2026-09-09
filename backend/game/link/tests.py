@@ -12,6 +12,8 @@ a signature the real tournaments verifier accepted. Both are pinned identically 
 leaving both green while the link quietly stops working.
 """
 
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -41,11 +43,13 @@ from game.tasks import expire_waiting_rooms
 
 from .housekeeping import purge_redeemed_tickets
 from .identity import resolve_user
+from .live import publish_snapshot
 from .models import LinkedIdentity, RedeemedTicket, TournamentLink
 from .outbox import build_result_body, deliver_result, enqueue_result
 from .signing import (
     TICKET_SALT,
     TicketError,
+    command_signature_base,
     redact,
     result_signature_base,
     sign_result_body,
@@ -57,6 +61,7 @@ TICKET_SECRET = "test-ticket-secret-not-a-real-one-0123456789"
 ROTATED_SECRET = "test-rotated-secret-not-a-real-one-9876543210"
 WRONG_SECRET = "test-wrong-secret-not-a-real-one-5555555555"
 RESULT_SECRET = "test-result-secret-not-a-real-one-0123456789"
+COMMAND_SECRET = "test-command-secret-not-a-real-one-0123456789"
 
 FRONTEND_URL = "https://play.example"
 TOURNAMENTS_FRONTEND_URL = "https://tournaments-ui.example"
@@ -66,6 +71,7 @@ link_settings = override_settings(
     GAMELINK_ENABLED=True,
     GAMELINK_TICKET_SECRETS=[TICKET_SECRET],
     GAMELINK_RESULT_SECRET=RESULT_SECRET,
+    GAMELINK_COMMAND_SECRETS=[COMMAND_SECRET],
     GAMELINK_TOURNAMENTS_URL="https://tournaments.example",
     GAMELINK_TOURNAMENTS_FRONTEND_URL=TOURNAMENTS_FRONTEND_URL,
     GAMELINK_FRONTEND_URL=FRONTEND_URL,
@@ -477,6 +483,7 @@ class ConfigurationCheckTests(TestCase):
         GAMELINK_ENABLED=True,
         GAMELINK_TICKET_SECRETS=[TICKET_SECRET],
         GAMELINK_RESULT_SECRET=RESULT_SECRET,
+        GAMELINK_COMMAND_SECRETS=[COMMAND_SECRET],
         GAMELINK_TOURNAMENTS_URL="https://tournaments.example",
         GAMELINK_FRONTEND_URL=FRONTEND_URL,
     )
@@ -522,10 +529,11 @@ class ConfigurationCheckTests(TestCase):
         errors = self.run_checks(
             GAMELINK_TICKET_SECRETS=[],
             GAMELINK_RESULT_SECRET="",
+            GAMELINK_COMMAND_SECRETS=[],
             GAMELINK_TOURNAMENTS_URL="",
             GAMELINK_FRONTEND_URL="")
         self.assertEqual(
-            errors, ["gamelink.E001", "gamelink.E002", "gamelink.E005", "gamelink.E006"])
+            errors, ["gamelink.E001", "gamelink.E002", "gamelink.E007", "gamelink.E005", "gamelink.E006"])
 
 
 class SettingsTests(TestCase):
@@ -536,6 +544,7 @@ class SettingsTests(TestCase):
         self.assertFalse(settings.GAMELINK_ENABLED)
         self.assertEqual(settings.GAMELINK_TICKET_SECRETS, [])
         self.assertEqual(settings.GAMELINK_RESULT_SECRET, "")
+        self.assertEqual(settings.GAMELINK_COMMAND_SECRETS, [])
         self.assertEqual(settings.GAMELINK_TOURNAMENTS_URL, "")
         self.assertEqual(settings.GAMELINK_FRONTEND_URL, "")
 
@@ -1066,7 +1075,7 @@ class DeliveryRetryTests(ResultTestBase):
         self.assertGreater(task.run_at, before)
         self.assertIn("HTTP 500", task.last_error)
 
-    def test_a_delivery_that_keeps_failing_eventually_gives_up(self):
+    def test_a_delivery_that_keeps_failing_remains_retryable(self):
         self.seat_both()
         record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
 
@@ -1076,7 +1085,7 @@ class DeliveryRetryTests(ResultTestBase):
                 self.run_tasks()
 
         task = Task.objects.get()
-        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.status, "pending")
         self.assertEqual(task.attempts, 3)
         self.link.refresh_from_db()
         self.assertEqual(self.link.result_status, "queued")
@@ -1401,3 +1410,129 @@ class TaskDeadLetterAdminTests(TestCase):
             name="x", status="failed", attempts=3, max_attempts=3, run_at=timezone.now())
 
         self.assertEqual(self.admin_for(Task).attempt_count(task), "3/3")
+
+
+@link_settings
+class LivePresenceSnapshotTests(TestCase):
+    def test_snapshot_exposes_only_the_adjudication_presence_summary(self):
+        room = GameRoom.objects.create(
+            code='PRS001', status='playing', state={'presence': {
+                'connections': {'private-channel': {'color': 'white', 'lastSeen': 12}},
+                'absentSince': {'white': 10, 'black': 11},
+                'needsAdminAdjudication': True,
+            }})
+        TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=7, fixture_id=42, room=room)
+
+        with patch('game.link.live.httpx.post') as post:
+            post.return_value.raise_for_status.return_value = None
+            publish_snapshot(room.id, {'phase': 'moving'})
+
+        sent = json.loads(post.call_args.kwargs['content'])
+        self.assertEqual(sent['state']['presence'], {
+            'needsAdminAdjudication': True,
+            'absentSince': {'white': 10, 'black': 11},
+        })
+        self.assertNotIn('connections', sent['state']['presence'])
+
+
+@link_settings
+class AdminCommandTests(TestCase):
+    url = '/api/link/admin-command/'
+
+    def setUp(self):
+        self.room = GameRoom.objects.create(
+            code='ADM001', status='playing', target_points=5, white_score=1, black_score=0)
+        GameState.objects.create(room=self.room, state_data={'phase': 'moving', 'version': 0})
+        self.link = TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=7, fixture_id=42, room=self.room,
+            seat_p1_color='white')
+
+    def post_command(self, body, *, signed=True):
+        raw = json.dumps(body, separators=(',', ':'), sort_keys=True).encode()
+        timestamp = str(int(time.time()))
+        headers = {
+            'HTTP_X_GAMELINK_TIMESTAMP': timestamp,
+            'HTTP_X_GAMELINK_ISSUER': 'tournaments',
+        }
+        if signed:
+            digest = hmac.new(COMMAND_SECRET.encode(), command_signature_base(raw, timestamp), hashlib.sha256)
+            headers['HTTP_X_GAMELINK_SIGNATURE'] = f'v1={digest.hexdigest()}'
+        return self.client.post(self.url, data=raw, content_type='application/json', **headers)
+
+    def payload(self, action='score_update', **overrides):
+        data = {
+            'v': 1, 'command_id': str(uuid.uuid4()), 'room_id': str(self.room.pk),
+            'fixture_id': 42, 'command_revision': 1, 'action': action, 'score': [2, 1],
+            'winner_seat': None, 'reason': '',
+        }
+        data.update(overrides)
+        return data
+
+    def test_interim_score_updates_authoritative_match_score_without_closing_room(self):
+        response = self.post_command(self.payload())
+        self.assertEqual(response.status_code, 200, response.content)
+        self.room.refresh_from_db()
+        state = GameState.objects.get(room=self.room).state_data
+        self.assertEqual((self.room.white_score, self.room.black_score), (2, 1))
+        self.assertEqual(self.room.status, 'playing')
+        self.assertNotEqual(state.get('phase'), 'game_over')
+
+    def test_finish_closes_room_persists_reason_and_is_idempotent(self):
+        body = self.payload(
+            action='finish', winner_seat='p1', reason='Organizer stopped the match')
+        first = self.post_command(body)
+        second = self.post_command(body)
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual(second.status_code, 200, second.content)
+        self.room.refresh_from_db()
+        state = GameState.objects.get(room=self.room).state_data
+        self.assertEqual(self.room.status, 'completed')
+        self.assertEqual(state['phase'], 'game_over')
+        self.assertEqual(state['winner'], 'white')
+        self.assertEqual(state['adminEndReason'], 'Organizer stopped the match')
+        conflict = self.post_command(self.payload(
+            action='finish', command_revision=2, winner_seat='p2', reason='Conflicting ruling'))
+        self.assertEqual(conflict.status_code, 409)
+
+    def test_an_older_retry_cannot_overwrite_a_newer_score(self):
+        older = self.payload(score=[2, 1], command_revision=1)
+        newer = self.payload(score=[3, 2], command_revision=2)
+        self.assertEqual(self.post_command(older).status_code, 200)
+        self.assertEqual(self.post_command(newer).status_code, 200)
+
+        retry = self.post_command(older)
+
+        self.assertEqual(retry.status_code, 200)
+        self.room.refresh_from_db()
+        self.assertEqual((self.room.white_score, self.room.black_score), (3, 2))
+
+    def test_interim_score_is_allowed_between_games_while_room_is_playing(self):
+        game_state = GameState.objects.get(room=self.room)
+        game_state.state_data = {'phase': 'game_over', 'version': 0}
+        game_state.save(update_fields=['state_data'])
+
+        response = self.post_command(self.payload(score=[2, 2]))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, 'playing')
+        self.assertEqual((self.room.white_score, self.room.black_score), (2, 2))
+
+    def test_a_fresh_ticket_cannot_reenter_a_room_closed_by_the_admin(self):
+        self.post_command(self.payload(
+            action='finish', winner_seat='p1', reason='Organizer stopped the match'))
+
+        response = self.client.get('/api/link/enter/', {
+            'ticket': make_ticket(
+                sub=str(uuid.uuid4()), seat='p1', fix=42, trn=7),
+        })
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['error'], 'This match has already ended.')
+
+    def test_unsigned_command_is_rejected_without_mutating_room(self):
+        response = self.post_command(self.payload(), signed=False)
+        self.assertEqual(response.status_code, 401)
+        self.room.refresh_from_db()
+        self.assertEqual((self.room.white_score, self.room.black_score), (1, 0))

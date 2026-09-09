@@ -30,7 +30,6 @@ export class GameSocketService {
   private url: string;
   private handlers: Map<string, Set<MessageHandler>> = new Map();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
   private reconnectDelay = 2000;
   private currentToken: string | null = null;
   private currentRoomId: string | null = null;
@@ -109,7 +108,7 @@ export class GameSocketService {
             handleSessionExpired();
             return;
           }
-          this.attemptReconnect();
+          if (event.code !== 4003 && event.code !== 4004) this.attemptReconnect();
         };
       } catch (error) {
         reject(error);
@@ -120,14 +119,13 @@ export class GameSocketService {
   private attemptReconnect(): void {
     if (!this.currentRoomId || this.intentionalClose) return;
     this.cancelReconnect();
-    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+    {
       this.reconnectAttempts++;
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
         if (this.intentionalClose || !this.currentRoomId) return;
         clientLogger.info("Attempting to reconnect", {
           attempt: this.reconnectAttempts,
-          maxAttempts: this.maxReconnectAttempts,
         });
         this.connect(this.currentRoomId, this.currentToken || undefined).catch(
           (error) => {
@@ -136,7 +134,7 @@ export class GameSocketService {
             });
           },
         );
-      }, this.reconnectDelay);
+      }, Math.min(this.reconnectDelay * 2 ** Math.min(this.reconnectAttempts - 1, 4), 30000));
     }
   }
 

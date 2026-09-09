@@ -23,6 +23,7 @@ def check_gamelink_configuration(app_configs, **kwargs):
     errors = []
     ticket_secrets = [secret for secret in settings.GAMELINK_TICKET_SECRETS if secret]
     result_secret = settings.GAMELINK_RESULT_SECRET
+    command_secrets = [secret for secret in settings.GAMELINK_COMMAND_SECRETS if secret]
 
     if not ticket_secrets or not all(_strong(secret) for secret in ticket_secrets):
         errors.append(Error(
@@ -49,7 +50,22 @@ def check_gamelink_configuration(app_configs, **kwargs):
             id='gamelink.E003',
         ))
 
-    if settings.SECRET_KEY in ticket_secrets or settings.SECRET_KEY == result_secret:
+    if not command_secrets or not all(_strong(secret) for secret in command_secrets):
+        errors.append(Error(
+            'GAMELINK_COMMAND_SECRETS is empty or contains a secret that is too short.',
+            hint=f'Every entry must be at least {MINIMUM_SECRET_LENGTH} characters.',
+            id='gamelink.E007',
+        ))
+
+    if any(secret in ticket_secrets or secret == result_secret for secret in command_secrets):
+        errors.append(Error(
+            'A GAMELINK_COMMAND_SECRETS entry is reused by another channel.',
+            hint='Administrative commands require an independent secret.',
+            id='gamelink.E008',
+        ))
+
+    if (settings.SECRET_KEY in ticket_secrets or settings.SECRET_KEY == result_secret
+            or settings.SECRET_KEY in command_secrets):
         errors.append(Error(
             'A gamelink secret is the same as SECRET_KEY.',
             hint='SECRET_KEY signs sessions and password resets. Generate separate values with '

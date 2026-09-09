@@ -640,6 +640,15 @@
   --pip-size: clamp(2px, 0.52cqw, 4px);
 }
 
+@container (min-width: 500px) {
+  .boardOverlay {
+    --dice-gap: clamp(7px, 0.85cqw, 10px);
+    --die-size: clamp(34px, 4.25cqw, 42px);
+    --die-radius: 5px;
+    --pip-size: clamp(4px, 0.62cqw, 6px);
+  }
+}
+
 /* === Side panel === */
 .sidePanel {
   display: flex;
@@ -898,6 +907,10 @@
 
   .boardOverlay {
     padding: 3px 7px;
+    --dice-gap: clamp(3px, 0.65cqw, 7px);
+    --die-size: clamp(17px, 3.25cqw, 28px);
+    --die-radius: 3px;
+    --pip-size: clamp(2px, 0.52cqw, 4px);
   }
 
   .boardTurnButton {

@@ -81,6 +81,7 @@ export function GameProvider({
     useState<OpeningRollResult | null>(null);
   const [noMovesMessage, setNoMovesMessage] =
     useState<NoMovesMessage | null>(null);
+  const noMovesNoticeIdRef = useRef(0);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
@@ -133,6 +134,22 @@ export function GameProvider({
         // the initial snapshot and may immediately replay `game_ended` for a
         // completed room, so subscribing after `connect()` can lose the final
         // score and leave this client on the previous board.
+        const revealNoMoves = (
+          message: Omit<NoMovesMessage, "noticeVisible">,
+          revealAfterMs = 350,
+        ) => {
+          const noticeId = ++noMovesNoticeIdRef.current;
+          setNoMovesMessage({ ...message, noticeVisible: false });
+          setTimeout(() => {
+            if (noMovesNoticeIdRef.current !== noticeId) return;
+            setNoMovesMessage({ ...message, noticeVisible: true });
+          }, revealAfterMs);
+          setTimeout(() => {
+            if (noMovesNoticeIdRef.current !== noticeId) return;
+            setNoMovesMessage(null);
+          }, revealAfterMs + 350);
+        };
+
         socket.on("state_update", (message) => {
           const msg = message as Record<string, unknown>;
           const raw = msg.payload as Record<string, unknown>;
@@ -195,7 +212,15 @@ export function GameProvider({
             }
 
             const tc = (msg as Record<string, unknown>).timeControl;
-            if (typeof tc === "string") setTimeControl(parseTimeControl(tc));
+            const targetPoints = (msg as Record<string, unknown>).targetPoints;
+            if (typeof tc === "string") {
+              setTimeControl(
+                parseTimeControl(
+                  tc,
+                  typeof targetPoints === "number" ? targetPoints : 1,
+                ),
+              );
+            }
 
             const score = (msg as Record<string, unknown>).matchScore as
               | { white?: unknown; black?: unknown }
@@ -281,12 +306,11 @@ export function GameProvider({
               next.dice[0] === next.dice[1]
                 ? [next.dice[0], next.dice[0], next.dice[0], next.dice[0]]
                 : [...next.dice];
-            setNoMovesMessage({
+            revealNoMoves({
               dice: next.dice,
               remaining: rolledRemaining,
               color: rolledBy,
             });
-            setTimeout(() => setNoMovesMessage(null), 350);
           }
 
           stateRef.current = displayedState;
@@ -392,6 +416,7 @@ export function GameProvider({
             targetPoints?: number;
             nextGameIn?: number;
             matchOver?: boolean;
+            adminReason?: string;
           };
           const winner = payload?.winner;
           const match = {
@@ -416,6 +441,10 @@ export function GameProvider({
             targetPoints,
             matchOver,
             reason: payload.reason,
+            adminReason:
+              typeof payload.adminReason === "string"
+                ? payload.adminReason
+                : undefined,
           });
           const nextGameIn =
             typeof payload.nextGameIn === "number" ? payload.nextGameIn : null;
@@ -427,6 +456,17 @@ export function GameProvider({
           if (matchOver) clearRoom();
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
+          );
+        });
+
+        socket.on("admin_review_required", (message) => {
+          const payload = (message as Record<string, unknown>).payload as
+            | Record<string, unknown>
+            | undefined;
+          setError(
+            typeof payload?.message === "string"
+              ? payload.message
+              : "Match paused pending organizer decision",
           );
         });
 
@@ -450,8 +490,26 @@ export function GameProvider({
           ) {
             return;
           }
-          setNoMovesMessage({ dice, remaining, color });
-          setTimeout(() => setNoMovesMessage(null), 350);
+          const revealAfterMs =
+            typeof payload.revealAfterMs === "number"
+              ? Math.max(0, payload.revealAfterMs)
+              : 350;
+          revealNoMoves({ dice, remaining, color }, revealAfterMs);
+        });
+
+        socket.on("admin_score_updated", (message) => {
+          const payload = (message as Record<string, unknown>).payload as
+            | Record<string, unknown>
+            | undefined;
+          if (
+            typeof payload?.whiteScore === "number" &&
+            typeof payload?.blackScore === "number"
+          ) {
+            setMatchScore({
+              white: payload.whiteScore,
+              black: payload.blackScore,
+            });
+          }
         });
 
         await socket.connect(roomId, token);

@@ -10,18 +10,18 @@ import {
 } from "./clock";
 import { newGame } from "./backgammon/engine";
 
-test("parseTimeControl parses presets and rejects no-limit", () => {
-  expect(parseTimeControl("fast")).toEqual({ base: 60_000, delay: 5_000 });
-  expect(parseTimeControl("normal")).toEqual({ base: 120_000, delay: 12_000 });
-  expect(parseTimeControl("slow")).toEqual({ base: 300_000, delay: 12_000 });
+test("parseTimeControl scales named presets by match target with a 10s delay", () => {
+  expect(parseTimeControl("fast", 1)).toEqual({ base: 30_000, delay: 10_000 });
+  expect(parseTimeControl("normal", 5)).toEqual({ base: 300_000, delay: 10_000 });
+  expect(parseTimeControl("slow", 7)).toEqual({ base: 840_000, delay: 10_000 });
   expect(parseTimeControl("none")).toBeNull();
   expect(parseTimeControl(null)).toBeNull();
   expect(parseTimeControl("bogus")).toBeNull();
 });
 
 test("parseTimeControl still parses legacy M+S ids", () => {
-  expect(parseTimeControl("2+12")).toEqual({ base: 120_000, delay: 12_000 });
-  expect(parseTimeControl("1+5")).toEqual({ base: 60_000, delay: 5_000 });
+  expect(parseTimeControl("2+12", 7)).toEqual({ base: 120_000, delay: 12_000 });
+  expect(parseTimeControl("1+5", 5)).toEqual({ base: 60_000, delay: 5_000 });
 });
 
 test("activePlayerOf is null during the opening roll, and the turn once play starts", () => {
@@ -42,17 +42,17 @@ test("activePlayerOf charges the player while choosing roll or double", () => {
 
 test("applyClockTransition charges only time beyond the delay", () => {
   const clock = { white: 120_000, black: 120_000 };
-  // Moved in 5s, delay 12s: nothing charged, no bonus banked.
-  const next = applyClockTransition(clock, "white", "black", 5_000, 12_000);
+  // Moved in 5s, within the 10s delay: nothing charged or accumulated.
+  const next = applyClockTransition(clock, "white", "black", 5_000, 10_000);
   expect(next.white).toBe(120_000);
   expect(next.black).toBe(120_000);
 });
 
 test("applyClockTransition charges past the delay", () => {
   const clock = { white: 120_000, black: 120_000 };
-  // Took 15s, delay 12s: 3s charged from reserve.
-  const next = applyClockTransition(clock, "white", "black", 15_000, 12_000);
-  expect(next.white).toBe(117_000);
+  // Took 15s: the 10s delay is free and 5s is charged from reserve.
+  const next = applyClockTransition(clock, "white", "black", 15_000, 10_000);
+  expect(next.white).toBe(115_000);
   expect(next.black).toBe(120_000);
 });
 
