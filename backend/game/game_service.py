@@ -39,6 +39,8 @@ def _room_players(room):
 
 
 def _points_for(state, win_type):
+    if state.get('gameFormat') == 'money' and state.get('jacoby') and state.get('cube', 1) == 1:
+        return 1
     return POINTS_MULTIPLIER.get(win_type, 1) * int(state.get('cube', 1) or 1)
 
 
@@ -325,7 +327,7 @@ def game_ended_payload(state, winner, win_type, reason, room):
         'loser': 'black' if winner == 'white' else 'white',
         'winType': win_type,
         'reason': reason,
-        'points': POINTS_MULTIPLIER.get(win_type, 1) * cube,
+        'points': _points_for(state, win_type),
         'cube': cube,
         'whiteScore': room.white_score,
         'blackScore': room.black_score,

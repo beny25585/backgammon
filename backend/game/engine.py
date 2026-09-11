@@ -51,7 +51,9 @@ class BackgammonEngine:
     @staticmethod
     def _clone_state(state):
         """Deep-copy a game state dict."""
+        from .formats import CONTRACT_KEYS
         return {
+            **{key: state[key] for key in CONTRACT_KEYS if key in state},
             'gameId': state.get('gameId', 'initial'),
             'points': list(state['points']),
             'bar': dict(state['bar']),
@@ -430,7 +432,9 @@ class BackgammonEngine:
             return {'success': False, 'message': 'Cannot double'}
         if self.state['phase'] != 'rolling':
             return {'success': False, 'message': 'Can only double before rolling'}
-        if self.state['cube'] >= 64:
+        if self.state.get('turn') != player_color:
+            return {'success': False, 'message': 'Not your turn'}
+        if self.state['cube'] >= self.state.get('maxCube', 64):
             return {'success': False, 'message': 'Cube at maximum'}
 
         self.state['phase'] = 'doubling_offered'
@@ -448,6 +452,8 @@ class BackgammonEngine:
             return {'success': False, 'message': 'No double to respond to'}
 
         if accept:
+            if self.state['cube'] * 2 > self.state.get('maxCube', 64):
+                return {'success': False, 'message': 'Cube at maximum'}
             self.state['cube'] *= 2
             self.state['cubeOwner'] = opponent
             self.state['phase'] = 'rolling' if len(self.state['dice']) == 0 else 'moving'

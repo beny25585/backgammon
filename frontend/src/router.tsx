@@ -1,13 +1,17 @@
 import {
   Routes,
   Route,
+  Navigate,
   useParams,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useMemo } from "react";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
+import AuthScreen from "./components/AuthScreen";
+import HomeScreen from "./components/HomeScreen";
 import WaitingRoom from "./components/WaitingRoom";
 import GameScreen from "./components/GameScreen";
 import LinkEntry from "./components/LinkEntry";
@@ -37,24 +41,30 @@ function safeTournamentReturnUrl(value: string | null): URL | null {
   }
 }
 
-function ReturnToTournaments() {
-  window.location.replace(TOURNAMENTS_URL);
-  return null;
-}
-
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = getAccessToken();
   if (token && isTokenExpired(token)) {
     clearTokens();
-    return <ReturnToTournaments />;
+    return <Navigate to="/?expired=1" replace />;
   }
-  if (!token) return <ReturnToTournaments />;
+  if (!token) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
+  const token = getAccessToken();
+  if (token && isTokenExpired(token)) {
+    clearTokens();
+    return <>{children}</>;
+  }
+  if (token) return <Navigate to="/home" replace />;
   return <>{children}</>;
 }
 
 function GameRoute() {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
+  const navigate = useNavigate();
   const playerColor =
     (new URLSearchParams(location.search).get("color") as Color) || "white";
   const params = new URLSearchParams(location.search);
@@ -70,7 +80,7 @@ function GameRoute() {
       window.location.assign(next.toString());
       return;
     }
-    window.location.assign(TOURNAMENTS_URL);
+    navigate("/home", { replace: true });
   }
 
   return (
@@ -95,6 +105,7 @@ function GameRoute() {
 
 function LocalRoute() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const botParam = params.get("bot");
   const targetParam = params.get("target");
   const timeParam = params.get("time");
@@ -113,9 +124,9 @@ function LocalRoute() {
       botColor={botColor}
       matchTarget={matchTarget}
       timeControl={timeControl}
-      onQuitMatch={() => window.location.assign(TOURNAMENTS_URL)}
+      onQuitMatch={() => navigate("/home", { replace: true })}
     >
-      <GameScreen onLeave={() => window.location.assign(TOURNAMENTS_URL)} />
+      <GameScreen onLeave={() => navigate("/home", { replace: true })} />
     </LocalGameProvider>
   );
 }
@@ -123,8 +134,22 @@ function LocalRoute() {
 export default function Router() {
   return (
     <Routes>
-      <Route path="/" element={<ReturnToTournaments />} />
-      <Route path="/home" element={<ReturnToTournaments />} />
+      <Route
+        path="/"
+        element={
+          <RedirectIfAuthed>
+            <AuthScreen />
+          </RedirectIfAuthed>
+        }
+      />
+      <Route
+        path="/home"
+        element={
+          <RequireAuth>
+            <HomeScreen />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/waiting/:roomId"
         element={
@@ -163,7 +188,7 @@ export default function Router() {
       />
       <Route
         path="*"
-        element={<ReturnToTournaments />}
+        element={<Navigate to={getAccessToken() ? "/home" : "/"} replace />}
       />
     </Routes>
   );

@@ -56,6 +56,12 @@ export interface GameState {
   cube: number; // doubling cube value (1, 2, 4, 8...)
   cubeOwner: Color | "center";
   doublingEnabled?: boolean;
+  gameFormat?: 'match' | 'money';
+  maxCube?: number;
+  jacoby?: boolean;
+  stake?: string;
+  lossLimit?: string;
+  crawfordGame?: boolean;
   doubleOfferedBy: Color | null;
   winner: Color | null;
   winType: "single" | "gammon" | "backgammon" | null;
@@ -622,7 +628,7 @@ export function canOfferDouble(state: GameState, color: Color): boolean {
     state.turn === color &&
     state.doublingEnabled !== false &&
     (state.cubeOwner === "center" || state.cubeOwner === color) &&
-    state.cube < CUBE_MAX
+    state.cube < (state.maxCube ?? CUBE_MAX)
   );
 }
 

@@ -130,6 +130,23 @@ def _validate_claims(payload):
         raise TicketError('unknown time control')
     payload['tc'] = time_control
 
+    if 'format' in payload:
+        from decimal import Decimal, InvalidOperation
+        if payload['format'] not in ('match', 'money'):
+            raise TicketError('unknown game format')
+        if type(payload.get('cube_max')) is not int or payload['cube_max'] not in (2, 4, 8, 16, 32, 64):
+            raise TicketError('invalid cube limit')
+        if type(payload.get('jacoby')) is not bool or type(payload.get('dbl')) is not bool:
+            raise TicketError('invalid format rules')
+        if (payload['format'] == 'money' and payload['tp'] != 1) or (payload['format'] == 'match' and payload['jacoby']):
+            raise TicketError('incompatible format rules')
+        try:
+            stake, limit = Decimal(payload['stake']), Decimal(payload['loss_limit'])
+            if not stake.is_finite() or not limit.is_finite() or not 0 < stake <= limit <= Decimal('99999999'):
+                raise ValueError()
+        except (KeyError, TypeError, InvalidOperation, ValueError):
+            raise TicketError('invalid financial limits') from None
+
     try:
         # Normalised here so that everything downstream can treat `sub` as a well-formed id.
         payload['sub'] = str(uuid.UUID(payload['sub']))

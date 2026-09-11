@@ -526,22 +526,18 @@ class GameConsumerTests(TransactionTestCase):
             'dice': [3, 5],
             'remaining': [3, 5],
             'clock': {'white': 0, 'black': 180_000},
-            'turnStartedAt': int(time_module.time() * 1000) - 5_000,
+            'turnStartedAt': int(time_module.time() * 1000) - 15_000,
         })
         gs = await get_game_state(self.room)
         gs.state_data = stored
         await save_game_state(gs)
 
-        comm_white, comm_black = await self._connect_both()
-        await comm_white.send_json_to({
-            'type': 'state_update',
-            'payload': {'action': 'move', 'from': 12, 'to': 9},
-        })
-        event = await self._receive_until(comm_black, lambda e: e.get('type') == 'game_ended')
+        comm_white = self._make_communicator(self.white_user)
+        await comm_white.connect(timeout=10)
+        event = await self._receive_until(comm_white, lambda e: e.get('type') == 'game_ended')
         self.assertEqual(event['payload']['winner'], 'black')
         self.assertEqual(event['payload']['reason'], 'time')
         await comm_white.disconnect()
-        await comm_black.disconnect()
 
     async def test_deadline_task_forfeits_when_player_never_acts(self):
         stored = {
@@ -783,8 +779,8 @@ class GameConsumerTests(TransactionTestCase):
         comm2 = self._make_communicator(self.white_user)
         await comm2.connect(timeout=10)
         await comm2.receive_json_from()  # state_update (initial)
-        event = await comm2.receive_json_from()  # player_joined (own)
-        self.assertEqual(event['type'], 'player_joined')
+        event = await self._receive_until(comm2, lambda item: item.get('type') == 'admin_review_required')
+        self.assertIn('organizer', event['payload']['message'])
 
         await database_sync_to_async(self.room.refresh_from_db)()
         self.assertEqual(self.room.last_sequence, 2)
@@ -796,7 +792,7 @@ class GameConsumerTests(TransactionTestCase):
             comm_white, comm_black = await self._connect_both()
             result = await self._resolve_opening(comm_white, comm_black)
             winner = result['event']['payload']['turn']
-            opening_dice = [result['white_die'], result['black_die']]
+            opening_dice = sorted([result['white_die'], result['black_die']], reverse=True)
             event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'moving')
             self.assertEqual(event['payload']['phase'], 'moving')
             self.assertEqual(event['payload']['dice'], opening_dice)
@@ -1464,9 +1460,6 @@ class GameEndConsumerTests(TransactionTestCase):
         })
         await self._receive_until(comm_white, lambda e: e.get("type") == "game_ended")
 
-        await comm_white.disconnect()
-        await comm_black.disconnect()
-
         comm_re = self._make_communicator(self.white_user)
         await comm_re.connect(timeout=10)
         await comm_re.receive_json_from()  # state_update (initial)
@@ -1477,6 +1470,8 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertGreater(event["payload"]["nextGameIn"], 0)
         self.assertLessEqual(event["payload"]["nextGameIn"], int(GameConsumer.NEXT_GAME_DELAY))
 
+        await comm_white.disconnect()
+        await comm_black.disconnect()
         await comm_re.disconnect()
 
     async def test_game_ended_message_is_idempotent(self):

@@ -155,7 +155,16 @@ def build_result_body(link, room, match=None, *, status=STATUS_COMPLETED,
     else:
         winner_seat = None
 
+    from game.models import GameState
+    saved = GameState.objects.filter(room=room).values_list('state_data', flat=True).first() or room.state or {}
+    financial = {}
+    if saved.get('gameFormat') in ('match', 'money'):
+        financial['financial_result'] = {
+            'format': saved['gameFormat'], 'cube': saved.get('cube', 1),
+            'win_type': saved.get('winType') or 'single',
+        }
     return {
+        **financial,
         'v': RESULT_VERSION,
         'tournament_id': link.tournament_id,
         'fixture_id': link.fixture_id,

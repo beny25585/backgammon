@@ -710,6 +710,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         state = dict(game_state.state_data or {})
         loser_home = (state.get('home') or {}).get(self.player_color, 0)
         win_type = 'gammon' if loser_home == 0 else 'single'
+        from .formats import forfeit_win_type
+        win_type = forfeit_win_type(state, self.player_color, win_type)
         state['phase'] = 'game_over'
         state['winner'] = winner
         state['winType'] = win_type
@@ -735,10 +737,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         state = dict(game_state.state_data or {})
         state['phase'] = 'game_over'
         state['winner'] = winner
-        state['winType'] = 'single'
+        from .formats import forfeit_win_type
+        state['winType'] = forfeit_win_type(state, self.player_color)
         state['gameEndReason'] = 'leave'
 
-        await self._finalize_and_broadcast(state, winner, 'single', 'leave', force_close=True)
+        await self._finalize_and_broadcast(state, winner, state['winType'], 'leave', force_close=True)
 
     async def _handle_game_ended(self, payload):
         """Receive a client game_ended signal and finalize the room."""
@@ -749,6 +752,9 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         game_state = await get_game_state(room)
         state = dict(game_state.state_data or {})
+        if state.get('gameFormat') in ('match', 'money'):
+            # Paid contracts are settled only by server intents and clock outcomes.
+            return await self._send_error('Results are determined by the server')
         winner = payload.get('winner') or state.get('winner')
         win_type = payload.get('winType', 'single') or state.get('winType', 'single')
         reason = payload.get('reason', 'game_ended')
@@ -789,6 +795,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         engine.state = BackgammonEngine.get_initial_state()
         engine.state['gameId'] = str(uuid.uuid4())
         engine.state['doublingEnabled'] = doubling_enabled
+        from .formats import carry_contract
+        carry_contract(state, engine.state, room)
         engine.state['message'] = 'New game started'
         return {'success': True}
 
@@ -1042,7 +1050,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
         stored['phase'] = 'game_over'
         stored['winner'] = winner
-        stored['winType'] = 'single'
+        from .formats import forfeit_win_type
+        stored['winType'] = forfeit_win_type(stored, 'black' if winner == 'white' else 'white')
         clock = dict(stored.get('clock') or {})
         if clock:
             clock[loser] = 0
@@ -1051,7 +1060,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         stored['message'] = f'{loser} ran out of time'
         logger.info(f"WS timeout forfeit: loser={loser} winner={winner} room={self.room_id}")
         await self._finalize_and_broadcast(
-            stored, winner, 'single', 'time', force_close=True
+            stored, winner, stored['winType'], 'time', force_close=True
         )
 
     async def _send_error(self, message, action=None):
