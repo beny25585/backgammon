@@ -92,6 +92,27 @@ export function Board({
   const { t } = useI18n();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const board = boardRef.current;
+    const point = board?.querySelector<HTMLElement>("[data-point-idx]");
+    if (!board || !point) return;
+
+    const fitCheckers = () => {
+      const stack = point.lastElementChild;
+      if (!(stack instanceof HTMLElement)) return;
+      const style = getComputedStyle(stack);
+      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const gaps = 4 * (parseFloat(style.rowGap) || 0);
+      // All points have the same height. Reserve space for five full circles,
+      // stack padding and four gaps, even on a short landscape viewport.
+      const size = Math.max(0, (point.clientHeight - padding - gaps) / 5);
+      board.style.setProperty("--checker-height-limit", `${size}px`);
+    };
+    fitCheckers();
+    const observer = new ResizeObserver(fitCheckers);
+    observer.observe(point);
+    return () => observer.disconnect();
+  }, []);
   const flightIdRef = useRef(0);
   const [flyChecker, setFlyChecker] = useState<{
     id: number;

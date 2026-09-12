@@ -9,6 +9,7 @@ import type { GameState } from "@/lib/backgammon/engine";
 const VIEWPORTS = [
   { name: "mobile-portrait", width: 375, height: 812 },
   { name: "mobile-landscape", width: 844, height: 390 },
+  { name: "mobile-landscape-browser-bars", width: 915, height: 350 },
   { name: "tablet-portrait", width: 768, height: 1024 },
   { name: "tablet-landscape", width: 1024, height: 768 },
   { name: "desktop", width: 1280, height: 800 },
@@ -119,6 +120,24 @@ for (const vp of VIEWPORTS) {
 
     await assertNoHorizontalOverflow(page.locator("body"));
     await assertNoHorizontalOverflow(component.locator('[class*="wrapper"]'));
+  });
+
+  test(`five-checker stacks fit inside their points (${vp.name})`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    const component = await mountBoard(mount, busyState());
+    for (const index of [23, 0]) {
+      const point = component.locator(`[data-point-idx="${index}"]`);
+      await expect(point.locator("[data-checker]")).toHaveCount(5);
+      const fits = await point.evaluate((element: HTMLElement) => {
+        const bounds = element.getBoundingClientRect();
+        return [...element.querySelectorAll("[data-checker]")].every((checker) => {
+          const rect = checker.getBoundingClientRect();
+          return rect.top >= bounds.top && rect.bottom <= bounds.bottom
+            && Math.abs(rect.width - rect.height) < 1;
+        });
+      });
+      expect(fits, `all five checkers on point ${index} must be fully visible`).toBe(true);
+    }
   });
 }
 

@@ -9,8 +9,8 @@
   font-size: 0.75rem;
   font-weight: 800;
   flex-shrink: 0;
-  width: var(--checker);
-  height: var(--checker);
+  width: min(var(--checker), var(--checker-height-limit, 100vmax));
+  height: min(var(--checker), var(--checker-height-limit, 100vmax));
   flex-shrink: 0;
   transform: translateZ(0);
 }
