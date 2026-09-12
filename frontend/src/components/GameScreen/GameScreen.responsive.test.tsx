@@ -147,9 +147,16 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
   const viewport = { width: 844, height: 390 };
   const safeLeft = 47;
   const safeRight = 21;
+  const safeTop = 7;
+  const safeBottom = 12;
   await page.setViewportSize(viewport);
   await page.addStyleTag({
-    content: `:root { --game-safe-left: ${safeLeft}px; --game-safe-right: ${safeRight}px; }`,
+    content: `:root {
+      --game-safe-left: ${safeLeft}px;
+      --game-safe-right: ${safeRight}px;
+      --game-safe-top: ${safeTop}px;
+      --game-safe-bottom: ${safeBottom}px;
+    }`,
   });
 
   const component = await mountBoard(mount, movingState());
@@ -160,6 +167,8 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
   expect(clock).not.toBeNull();
   expect(frame!.x).toBeGreaterThanOrEqual(safeLeft);
   expect(frame!.x + frame!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
+  expect(frame!.y).toBeGreaterThanOrEqual(safeTop);
+  expect(frame!.y + frame!.height).toBeLessThanOrEqual(viewport.height - safeBottom + 1);
   expect(clock!.x).toBeGreaterThanOrEqual(safeLeft);
   expect(clock!.x + clock!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
 });

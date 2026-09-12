@@ -80,6 +80,9 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   } = useGame();
 
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
+  const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(
+    null,
+  );
   const automaticOpeningRollRef = useRef<string | null>(null);
 
   const handleRoll = useCallback(() => {
@@ -89,6 +92,23 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   useEffect(() => {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
   }, [boardTheme]);
+
+  // The server decides the forfeit. This countdown only makes its 40-second
+  // reconnect grace period visible to the player who remains in the room.
+  useEffect(() => {
+    if (opponentConnected || reconnected || gameResult) {
+      setDisconnectCountdown(null);
+      return;
+    }
+
+    const deadline = Date.now() + 40_000;
+    const updateCountdown = () => {
+      setDisconnectCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+    };
+    updateCountdown();
+    const interval = window.setInterval(updateCountdown, 250);
+    return () => window.clearInterval(interval);
+  }, [gameResult, opponentConnected, reconnected]);
 
   const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
   const interruptedOpeningMoveKey =
@@ -182,7 +202,9 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
           {reconnected && <div className={styles.reconnected} role="status">{t("game.reconnected")}</div>}
           {!opponentConnected && !reconnected && (
             <div className={styles.disconnected} role="status">
-              {t("game.opponentDisconnected")}
+              {t("game.opponentDisconnected", {
+                seconds: disconnectCountdown ?? 40,
+              })}
             </div>
           )}
 

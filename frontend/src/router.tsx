@@ -4,7 +4,6 @@ import {
   Navigate,
   useParams,
   useLocation,
-  useNavigate,
 } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
 import { useMemo } from "react";
@@ -41,13 +40,15 @@ function safeTournamentReturnUrl(value: string | null): URL | null {
   }
 }
 
-function tournamentLobbyUrl(tournamentId: string | null): URL | null {
-  // A tournament ticket normally carries a `return` URL.  Keep the tournament
-  // context as a fallback, though: older/partially migrated links may carry
-  // only the tournament id.  Those players must never be sent to the game's
-  // own home screen after the match ends.
-  if (!tournamentId || tournamentId === "0") return null;
+function tournamentLobbyUrl(): URL {
+  // Every exit from a game belongs in the tournaments app.  A ticket normally
+  // carries a return URL, but older links (and the special tournament=0 links)
+  // do not always do so.  They must not fall back to the game's own home page.
   return new URL(TOURNAMENTS_URL, window.location.origin);
+}
+
+function returnToTournament() {
+  window.location.assign(tournamentLobbyUrl().toString());
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -73,25 +74,18 @@ function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
 function GameRoute() {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
-  const navigate = useNavigate();
   const playerColor =
     (new URLSearchParams(location.search).get("color") as Color) || "white";
   const params = new URLSearchParams(location.search);
   const tournamentId = params.get("tournament");
-  const returnUrl =
-    safeTournamentReturnUrl(params.get("return")) ??
-    tournamentLobbyUrl(tournamentId);
+  const returnUrl = safeTournamentReturnUrl(params.get("return")) ?? tournamentLobbyUrl();
 
   function handleLeave(outcome?: "won" | "lost") {
     clearRoom();
-    if (returnUrl) {
-      const next = new URL(returnUrl);
-      if (outcome) next.searchParams.set("matchResult", outcome);
-      if (tournamentId) next.searchParams.set("tournament", tournamentId);
-      window.location.assign(next.toString());
-      return;
-    }
-    navigate("/home", { replace: true });
+    const next = new URL(returnUrl);
+    if (outcome) next.searchParams.set("matchResult", outcome);
+    if (tournamentId) next.searchParams.set("tournament", tournamentId);
+    window.location.assign(next.toString());
   }
 
   return (
@@ -108,7 +102,7 @@ function GameRoute() {
     >
       <GameScreen
         onLeave={handleLeave}
-        homeLabel={returnUrl ? "Back to Tournament" : undefined}
+        homeLabel="Back to Tournament"
       />
     </GameProvider>
   );
@@ -116,7 +110,6 @@ function GameRoute() {
 
 function LocalRoute() {
   const [params] = useSearchParams();
-  const navigate = useNavigate();
   const botParam = params.get("bot");
   const targetParam = params.get("target");
   const timeParam = params.get("time");
@@ -135,9 +128,9 @@ function LocalRoute() {
       botColor={botColor}
       matchTarget={matchTarget}
       timeControl={timeControl}
-      onQuitMatch={() => navigate("/home", { replace: true })}
+      onQuitMatch={returnToTournament}
     >
-      <GameScreen onLeave={() => navigate("/home", { replace: true })} />
+      <GameScreen onLeave={returnToTournament} homeLabel="Back to Tournament" />
     </LocalGameProvider>
   );
 }

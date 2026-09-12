@@ -17,10 +17,22 @@ export default function App() {
       // address/navigation bars are showing, which leaves the bottom of the
       // board behind browser chrome. Prefer the visual viewport when it is
       // available so the complete game stays in view.
-      const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
+      const visualViewport = window.visualViewport;
+      // Keep the game inside the smallest viewport the browser reports. This
+      // also handles Android's system/navigation bars while a PWA is open.
+      const visibleHeight = visualViewport
+        ? Math.min(visualViewport.height, window.innerHeight)
+        : window.innerHeight;
+      const visibleWidth = visualViewport
+        ? Math.min(visualViewport.width, window.innerWidth)
+        : window.innerWidth;
       document.documentElement.style.setProperty(
         "--app-height",
-        `${Math.round(visibleHeight)}px`,
+        `${Math.floor(visibleHeight)}px`,
+      );
+      document.documentElement.style.setProperty(
+        "--app-width",
+        `${Math.floor(visibleWidth)}px`,
       );
     }
 

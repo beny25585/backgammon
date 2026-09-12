@@ -194,6 +194,16 @@ class EnterLinkTests(LinkTestBase):
         token = AccessToken(fragment["access"])
         self.assertLessEqual(token["exp"] - token["iat"], 2 * 60 * 60)
 
+    def test_the_zero_tournament_link_also_returns_to_the_tournament_lobby(self):
+        response = self.enter(make_ticket(trn=0))
+
+        fragment_text = response["Location"].split("#", 1)[1]
+
+        self.assertEqual(
+            parse_qs(fragment_text)["return"],
+            [f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"],
+        )
+
     def test_the_ticket_is_not_echoed_into_the_redirect(self):
         token = make_ticket()
         response = self.enter(token)

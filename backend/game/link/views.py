@@ -326,11 +326,10 @@ def _handoff(user, room, color, frontend_url):
     if link:
         fragment_data.update({
             'tournament': str(link.tournament_id),
-            'return': (
-                f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/play"
-                if link.tournament_id == 0
-                else f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/tournaments/"
-            ),
+            # All completed games return to the tournament lobby.  In
+            # particular, tournament_id=0 used to lead to /play, which is the
+            # game's landing page rather than the tournament experience.
+            'return': f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/tournaments/",
         })
     fragment = urlencode(fragment_data)
     response = HttpResponseRedirect(f"{frontend_url}/link#{fragment}")
