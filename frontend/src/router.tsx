@@ -41,6 +41,15 @@ function safeTournamentReturnUrl(value: string | null): URL | null {
   }
 }
 
+function tournamentLobbyUrl(tournamentId: string | null): URL | null {
+  // A tournament ticket normally carries a `return` URL.  Keep the tournament
+  // context as a fallback, though: older/partially migrated links may carry
+  // only the tournament id.  Those players must never be sent to the game's
+  // own home screen after the match ends.
+  if (!tournamentId || tournamentId === "0") return null;
+  return new URL(TOURNAMENTS_URL, window.location.origin);
+}
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const token = getAccessToken();
   if (token && isTokenExpired(token)) {
@@ -68,8 +77,10 @@ function GameRoute() {
   const playerColor =
     (new URLSearchParams(location.search).get("color") as Color) || "white";
   const params = new URLSearchParams(location.search);
-  const returnUrl = safeTournamentReturnUrl(params.get("return"));
   const tournamentId = params.get("tournament");
+  const returnUrl =
+    safeTournamentReturnUrl(params.get("return")) ??
+    tournamentLobbyUrl(tournamentId);
 
   function handleLeave(outcome?: "won" | "lost") {
     clearRoom();

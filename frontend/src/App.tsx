@@ -12,19 +12,27 @@ export default function App() {
 
   useEffect(() => {
     function syncViewportHeight() {
+      // `innerHeight` is the layout viewport on mobile browsers. It can be
+      // taller than the part of the page that is actually visible while the
+      // address/navigation bars are showing, which leaves the bottom of the
+      // board behind browser chrome. Prefer the visual viewport when it is
+      // available so the complete game stays in view.
+      const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
       document.documentElement.style.setProperty(
         "--app-height",
-        `${window.innerHeight}px`,
+        `${Math.round(visibleHeight)}px`,
       );
     }
 
     syncViewportHeight();
     window.addEventListener("resize", syncViewportHeight);
     window.visualViewport?.addEventListener("resize", syncViewportHeight);
+    window.visualViewport?.addEventListener("scroll", syncViewportHeight);
 
     return () => {
       window.removeEventListener("resize", syncViewportHeight);
       window.visualViewport?.removeEventListener("resize", syncViewportHeight);
+      window.visualViewport?.removeEventListener("scroll", syncViewportHeight);
     };
   }, []);
 
