@@ -17,6 +17,7 @@ HEARTBEAT_SECONDS = 10
 STALE_SECONDS = 25
 WATCH_SECONDS = 10
 WATCH_TASK = 'game.presence.check_room_presence'
+ACTIVE_GAME_PHASES = {'rolling', 'moving', 'doubling_offered'}
 
 
 def _presence(room):
@@ -143,6 +144,10 @@ def check_room_presence(room_id, now=None):
         state, presence = _presence(room)
         if not presence.get('everBothConnected'):
             return {'status': 'not_started'}
+        game_state = GameState.objects.select_for_update().filter(room=room).first()
+        game_started = bool(
+            game_state and (game_state.state_data or {}).get('phase') in ACTIVE_GAME_PHASES
+        )
         previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
 
         for connection_id, entry in list(presence['connections'].items()):
@@ -163,6 +168,11 @@ def check_room_presence(room_id, now=None):
             presence['needsAdminAdjudication'] = False
             color = next(iter(missing))
             absent_since = presence['absentSince'].setdefault(color, now)
+            if not game_started:
+                state['presence'] = presence
+                room.state = state
+                room.save(update_fields=['state', 'updated_at'])
+                return {'status': 'waiting_to_start', 'missing': sorted(missing)}
             if now - float(absent_since) >= ABSENCE_SECONDS:
                 loser = color
             else:
@@ -187,7 +197,6 @@ def check_room_presence(room_id, now=None):
 
         # Keep the eligibility decision and finalization under the same room
         # lock so a reconnect cannot race between them.
-        game_state = GameState.objects.select_for_update().get(room=room)
         state_data = dict(game_state.state_data or {})
         winner = 'black' if loser == 'white' else 'white'
         state_data.update(

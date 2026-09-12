@@ -21,6 +21,7 @@ class PresenceForfeitTests(TestCase):
         RoomPlayer.objects.create(room=self.room, player=white, color='white')
         RoomPlayer.objects.create(room=self.room, player=black, color='black')
         initial = BackgammonEngine.get_initial_state()
+        initial.update(phase='moving', dice=[3, 2], remaining=[3, 2])
         initial['clock'] = {'white': 30000, 'black': 30000}
         GameState.objects.create(room=self.room, state_data=initial)
 
@@ -56,6 +57,25 @@ class PresenceForfeitTests(TestCase):
         self.assertEqual(check_room_presence(self.room.id, 1045)['status'], 'waiting')
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
+
+    def test_disconnect_before_opening_roll_does_not_start_a_forfeit(self):
+        self.connect_both()
+        game_state = GameState.objects.get(room=self.room)
+        game_state.state_data.update(
+            phase='opening_roll', dice=[], remaining=[],
+            openingRoll={'white': None, 'black': None},
+        )
+        game_state.save(update_fields=['state_data', 'updated_at'])
+
+        mark_disconnected(self.room.id, 'white-1', 1001)
+        mark_heartbeat(self.room.id, 'black-1', 1100)
+        self.assertEqual(
+            check_room_presence(self.room.id, 1100),
+            {'status': 'waiting_to_start', 'missing': ['white']},
+        )
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, 'playing')
+        self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
 
     def test_two_missing_players_require_admin_adjudication(self):
         self.connect_both()

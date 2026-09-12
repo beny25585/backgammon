@@ -84,6 +84,10 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     null,
   );
   const automaticOpeningRollRef = useRef<string | null>(null);
+  const gameHasStarted =
+    state?.phase === "rolling" ||
+    state?.phase === "moving" ||
+    state?.phase === "doubling_offered";
 
   const handleRoll = useCallback(() => {
     rollDice();
@@ -96,7 +100,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
   // The server decides the forfeit. This countdown only makes its 40-second
   // reconnect grace period visible to the player who remains in the room.
   useEffect(() => {
-    if (opponentConnected || reconnected || gameResult) {
+    if (opponentConnected || reconnected || gameResult || !gameHasStarted) {
       setDisconnectCountdown(null);
       return;
     }
@@ -108,7 +112,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     updateCountdown();
     const interval = window.setInterval(updateCountdown, 250);
     return () => window.clearInterval(interval);
-  }, [gameResult, opponentConnected, reconnected]);
+  }, [gameHasStarted, gameResult, opponentConnected, reconnected]);
 
   const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
   const interruptedOpeningMoveKey =
