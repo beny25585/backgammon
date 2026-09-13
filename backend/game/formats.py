@@ -3,9 +3,21 @@ CONTRACT_KEYS = ('gameFormat', 'maxCube', 'jacoby', 'stake', 'lossLimit',
                  'doublingAllowed', 'crawfordGame', 'crawfordUsed')
 
 
-def forfeit_win_type(state, loser, fallback='single'):
-    """A unilateral money-game exit cannot erase a current gammon/backgammon."""
-    if state.get('gameFormat') != 'money':
+def forfeit_win_type(state, loser, fallback='single', *, reason='leave'):
+    """Classify a forfeit independently of cube/Jacoby scoring and series closure.
+
+    Signed money games use the board for every unilateral exit. In a signed
+    match only giving up the current game uses the board; abandoning the series
+    still closes it with the existing fallback. Unversioned games retain their
+    existing policy. A cube refusal always loses one unit of the old cube.
+    """
+    if reason == 'drop':
+        return 'single'
+    game_format = state.get('gameFormat')
+    board_result = (
+        game_format == 'money' and reason in {'give_up', 'leave', 'time', 'disconnect'}
+    ) or (game_format == 'match' and reason == 'give_up')
+    if not board_result:
         return fallback
     if state.get('home', {}).get(loser, 0) > 0:
         return 'single'

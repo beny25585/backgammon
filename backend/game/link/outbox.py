@@ -165,6 +165,7 @@ def build_result_body(link, room, match=None, *, status=STATUS_COMPLETED,
         }
     return {
         **financial,
+        **({'rating_policy': link.rating_policy} if link.rating_policy else {}),
         'v': RESULT_VERSION,
         'tournament_id': link.tournament_id,
         'fixture_id': link.fixture_id,

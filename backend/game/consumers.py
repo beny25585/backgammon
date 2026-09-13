@@ -42,6 +42,12 @@ def get_room(room_id):
 
 
 @database_sync_to_async
+def is_linked_room(room_id):
+    from .link.models import TournamentLink
+    return TournamentLink.objects.filter(room_id=room_id).exists()
+
+
+@database_sync_to_async
 def get_username(user_id):
     player = Player.objects.select_related('user').filter(user_id=user_id).first()
     if player is not None:
@@ -711,7 +717,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         loser_home = (state.get('home') or {}).get(self.player_color, 0)
         win_type = 'gammon' if loser_home == 0 else 'single'
         from .formats import forfeit_win_type
-        win_type = forfeit_win_type(state, self.player_color, win_type)
+        win_type = forfeit_win_type(state, self.player_color, win_type, reason='give_up')
         state['phase'] = 'game_over'
         state['winner'] = winner
         state['winType'] = win_type
@@ -738,7 +744,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         state['phase'] = 'game_over'
         state['winner'] = winner
         from .formats import forfeit_win_type
-        state['winType'] = forfeit_win_type(state, self.player_color)
+        state['winType'] = forfeit_win_type(state, self.player_color, reason='leave')
         state['gameEndReason'] = 'leave'
 
         await self._finalize_and_broadcast(state, winner, state['winType'], 'leave', force_close=True)
@@ -752,8 +758,8 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         game_state = await get_game_state(room)
         state = dict(game_state.state_data or {})
-        if state.get('gameFormat') in ('match', 'money'):
-            # Paid contracts are settled only by server intents and clock outcomes.
+        if state.get('gameFormat') in ('match', 'money') or await is_linked_room(room.id):
+            # Linked legacy rooms also require server intents and clock outcomes.
             return await self._send_error('Results are determined by the server')
         winner = payload.get('winner') or state.get('winner')
         win_type = payload.get('winType', 'single') or state.get('winType', 'single')
@@ -805,14 +811,16 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         Normal endings route through `record_game_end`, which keeps the room
         open across games until a player reaches `target_points`. `force_close`
-        is used for legacy stale rooms that must be closed immediately.
+        ends the whole series for leaving, timeout, or disconnection.
         """
         room = await get_room(self.room_id)
         if not room:
             return
         gs = await get_game_state(room)
         stored = gs.state_data or {}
-        if stored.get('matchScored'):
+        if stored.get('matchScored') and not (
+            force_close and reason == 'leave' and stored.get('gameFormat') == 'match'
+        ):
             return
         if force_close:
             match_obj = await database_sync_to_async(finalize_room)(
@@ -831,6 +839,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         # The scoring service saves matchScored in the same transaction as
         # the score; never overwrite it here with this connection's snapshot.
         await database_sync_to_async(room.refresh_from_db)()
+        scored = await get_game_state(room)
+        state = dict(scored.state_data or {})
+        winner = state.get('winner', winner)
+        win_type = state.get('winType', win_type)
+        reason = state.get('gameEndReason', reason)
         payload = game_ended_payload(state, winner, win_type, reason, room)
         payload['matchOver'] = match_over
         payload['nextGame'] = not match_over
@@ -1051,7 +1064,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         stored['phase'] = 'game_over'
         stored['winner'] = winner
         from .formats import forfeit_win_type
-        stored['winType'] = forfeit_win_type(stored, 'black' if winner == 'white' else 'white')
+        stored['winType'] = forfeit_win_type(stored, loser, reason='time')
         clock = dict(stored.get('clock') or {})
         if clock:
             clock[loser] = 0

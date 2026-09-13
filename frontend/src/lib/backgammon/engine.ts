@@ -313,7 +313,7 @@ export function reorderDice(state: GameState): GameState {
  * All legal moves from a single source point for `color`.
  * `from` can be a board index (0–23) or BAR for re-entry.
  */
-export function legalMovesFrom(
+function candidateMovesFrom(
   state: GameState,
   from: Source,
   color: Color,
@@ -328,6 +328,7 @@ export function legalMovesFrom(
 
   // --- Re-entry from bar ---
   if (from === BAR) {
+    if (state.bar[color] <= 0) return [];
     for (const die of uniqueDice) {
       const entryPoint = barEntryPoint(die, color);
       if (entryPoint < 0 || entryPoint >= BOARD_SIZE) continue;
@@ -339,7 +340,7 @@ export function legalMovesFrom(
   }
 
   // Rule: can only move your own checkers.
-  if (!isOwnedBy(state, from, color)) return [];
+  if (!Number.isInteger(from) || from < 0 || from >= BOARD_SIZE || !isOwnedBy(state, from, color)) return [];
 
   // --- Normal move or bear-off ---
   for (const die of uniqueDice) {
@@ -374,22 +375,78 @@ export function legalMovesFrom(
 }
 
 /** All legal moves available to `color` in the current state. */
-export function allLegalMoves(state: GameState, color: Color): Move[] {
+function candidateMoves(state: GameState, color: Color): Move[] {
   const allMoves: Move[] = [];
 
   // If on bar, the only legal moves are re-entries.
   if (state.bar[color] > 0) {
-    return legalMovesFrom(state, BAR, color);
+    return candidateMovesFrom(state, BAR, color);
   }
 
   // Collect moves from every owned point.
   for (let point = 0; point < BOARD_SIZE; point++) {
     if (isOwnedBy(state, point, color)) {
-      allMoves.push(...legalMovesFrom(state, point, color));
+      allMoves.push(...candidateMovesFrom(state, point, color));
     }
   }
 
   return allMoves;
+}
+
+/** Apply only the board change while searching; do not change turns or save undo. */
+function positionAfterMove(state: GameState, move: Move, color: Color): GameState {
+  const next = {
+    ...state,
+    points: [...state.points],
+    bar: { ...state.bar },
+    home: { ...state.home },
+    remaining: [...state.remaining],
+  };
+  next.remaining.splice(next.remaining.indexOf(move.die), 1);
+  if (move.from === BAR) next.bar[color] -= 1;
+  else next.points[move.from] += color === "white" ? -1 : 1;
+  if (move.to === OFF) next.home[color] += 1;
+  else {
+    if (isOpponentBlot(next, move.to, color)) {
+      next.points[move.to] = 0;
+      next.bar[opponent(color)] += 1;
+    }
+    next.points[move.to] += color === "white" ? 1 : -1;
+  }
+  return next;
+}
+
+/** First moves of sequences that use the maximum possible number of dice. */
+export function allLegalMoves(state: GameState, color: Color): Move[] {
+  const memo = new Map<string, number>();
+  const maximumMoves = (position: GameState): number => {
+    if (!position.remaining.length || position.home[color] === TOTAL_CHECKERS) return 0;
+    const key = `${position.points.join(",")}|${position.bar[color]}|${position.home[color]}|${[...position.remaining].sort().join(",")}`;
+    const cached = memo.get(key);
+    if (cached !== undefined) return cached;
+    let maximum = 0;
+    for (const move of candidateMoves(position, color)) {
+      maximum = Math.max(maximum, 1 + maximumMoves(positionAfterMove(position, move, color)));
+      if (maximum === position.remaining.length) break;
+    }
+    memo.set(key, maximum);
+    return maximum;
+  };
+  const moves = candidateMoves(state, color);
+  if (!moves.length) return [];
+  const counts = moves.map(move => 1 + maximumMoves(positionAfterMove(state, move, color)));
+  const maximum = Math.max(...counts);
+  let legal = moves.filter((_, index) => counts[index] === maximum);
+  // If only one die can be played, it must be the higher playable die.
+  if (maximum === 1 && state.remaining.length > 1) {
+    const highest = Math.max(...legal.map(move => move.die));
+    legal = legal.filter(move => move.die === highest);
+  }
+  return legal;
+}
+
+export function legalMovesFrom(state: GameState, from: Source, color: Color): Move[] {
+  return allLegalMoves(state, color).filter(move => move.from === from);
 }
 
 /**

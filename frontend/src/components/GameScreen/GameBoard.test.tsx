@@ -78,6 +78,22 @@ test("clicking a checker then a legal target calls makeMove", async ({ mount }) 
   expect(moveCalls[0]).toEqual([23, 19]);
 });
 
+test("tap uses the smaller die when bearing off immediately would waste a playable die", async ({ mount }) => {
+  const state = movingState({ dice: [2, 1], remaining: [2, 1] });
+  state.points = new Array(24).fill(0);
+  state.points[1] = 1;
+  state.home.white = 14;
+  const moveCalls: [Source, Target][] = [];
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+  await component.locator('[data-point-idx="1"]').click();
+  await expect.poll(() => moveCalls.length).toBe(1);
+  expect(moveCalls[0]).toEqual([1, 0]);
+});
+
 test("auto-moves on first tap when a checker has a single legal target", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const state = simpleWhiteState();

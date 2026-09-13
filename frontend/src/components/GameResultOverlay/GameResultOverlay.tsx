@@ -109,6 +109,10 @@ export default function GameResultOverlay({
   }
 
   function pointExplanation() {
+    const multiplier = winType === "single" ? 1 : winType === "gammon" ? 2 : 3;
+    if (points !== multiplier * cube) {
+      return t("game.awardedExplanation", { points });
+    }
     const base = pointExplanations[winType];
     if (locale === "he") {
       return cube > 1 ? `${base} קוביית ההכפלה מעלה את הערך ל-${points} נקודות.` : base;

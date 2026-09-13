@@ -127,6 +127,10 @@ class BackgammonEngine:
         return -1
 
     def legal_moves_from(self, from_pt, color):
+        return [move for move in self.all_legal_moves(color) if move['from'] == from_pt]
+
+    def _candidate_moves_from(self, from_pt, color):
+        """Single-die candidates, before the full-turn obligations are applied."""
         moves = []
         dice = list(dict.fromkeys(self.state['remaining']))
         direc = self._direction(color)
@@ -135,6 +139,8 @@ class BackgammonEngine:
             return []
 
         if from_pt == 'bar':
+            if self.state['bar'][color] == 0:
+                return []
             for d in dice:
                 entry = 24 - d if color == 'white' else d - 1
                 if entry < 0 or entry > 23:
@@ -143,7 +149,7 @@ class BackgammonEngine:
                     moves.append({'from': 'bar', 'to': entry, 'die': d})
             return moves
 
-        if not self._owns_point(from_pt, color):
+        if type(from_pt) is not int or not 0 <= from_pt < 24 or not self._owns_point(from_pt, color):
             return []
 
         for d in dice:
@@ -164,14 +170,72 @@ class BackgammonEngine:
                         moves.append({'from': from_pt, 'to': 'off', 'die': d})
         return moves
 
-    def all_legal_moves(self, color):
+    def _candidate_moves(self, color):
         out = []
         if self.state['bar'][color] > 0:
-            return self.legal_moves_from('bar', color)
+            return self._candidate_moves_from('bar', color)
         for i in range(24):
             if self._owns_point(i, color):
-                out.extend(self.legal_moves_from(i, color))
+                out.extend(self._candidate_moves_from(i, color))
         return out
+
+    def _after_candidate(self, move, color):
+        """Small search-only copy: no history, version or turn transitions."""
+        state = {
+            **self.state,
+            'points': list(self.state['points']),
+            'bar': dict(self.state['bar']),
+            'home': dict(self.state['home']),
+            'remaining': list(self.state['remaining']),
+        }
+        state['remaining'].remove(move['die'])
+        sign = 1 if color == 'white' else -1
+        if move['from'] == 'bar':
+            state['bar'][color] -= 1
+        else:
+            state['points'][move['from']] -= sign
+        if move['to'] == 'off':
+            state['home'][color] += 1
+        else:
+            if state['points'][move['to']] == -sign:
+                state['points'][move['to']] = 0
+                opponent = 'black' if color == 'white' else 'white'
+                state['bar'][opponent] += 1
+            state['points'][move['to']] += sign
+        return BackgammonEngine(state)
+
+    def all_legal_moves(self, color):
+        """First steps of turns that use as many dice as legally possible.
+
+        With only one usable non-double die, the higher die is compulsory
+        whenever it can be played. Memoization merges equivalent move orders;
+        the search has a maximum depth of four (a double).
+        """
+        memo = {}
+
+        def maximum_steps(engine):
+            s = engine.state
+            if not s['remaining'] or s['home'][color] == 15:
+                return 0
+            key = (tuple(s['points']), s['bar'][color], s['home'][color],
+                   tuple(sorted(s['remaining'])))
+            if key not in memo:
+                best = 0
+                for move in engine._candidate_moves(color):
+                    best = max(best, 1 + maximum_steps(engine._after_candidate(move, color)))
+                    if best == len(s['remaining']):
+                        break
+                memo[key] = best
+            return memo[key]
+
+        ranked = [(move, 1 + maximum_steps(self._after_candidate(move, color)))
+                  for move in self._candidate_moves(color)]
+        maximum = max((count for _, count in ranked), default=0)
+        moves = [move for move, count in ranked if count == maximum]
+        if maximum == 1 and moves:
+            highest = max(move['die'] for move in moves)
+            moves = [move for move in moves if move['die'] == highest]
+        return moves
 
     def roll_dice(self, dice=None):
         if self.state['phase'] != 'rolling':
@@ -317,6 +381,8 @@ class BackgammonEngine:
     def make_move(self, from_point, to_point, player_color):
         if self.state['turn'] != player_color:
             return {'success': False, 'message': 'Not your turn'}
+        if self.state.get('phase') != 'moving':
+            return {'success': False, 'message': 'Cannot move now'}
 
         if isinstance(to_point, int) and to_point < 0:
             to_point = 'off'
@@ -468,6 +534,10 @@ class BackgammonEngine:
         return {'success': True}
 
     def end_turn(self):
+        if self.state.get('phase') != 'moving':
+            return {'success': False, 'message': 'Cannot end turn now'}
+        if self._candidate_moves(self.state['turn']):
+            return {'success': False, 'message': 'Legal moves remain'}
         self.state['remaining'] = []
         self.state['turn'] = 'black' if self.state['turn'] == 'white' else 'white'
         self.state['phase'] = 'rolling'

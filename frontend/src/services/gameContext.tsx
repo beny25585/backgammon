@@ -604,6 +604,8 @@ export function GameProvider({
   const endTurn = useCallback(() => {
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
+    if (current.turn !== playerColorRef.current) return;
+    if (allLegalMoves(current, current.turn).length > 0) return;
     sendIntent({ action: "end_turn" });
   }, [sendIntent]);
 
@@ -620,7 +622,9 @@ export function GameProvider({
   }, [socket]);
 
   const leaveGame = useCallback(() => {
-    socket.send("leave", {});
+    if (!socket.send("leave", {})) {
+      setError("Connection lost. Reconnect and try leaving again.");
+    }
   }, [socket]);
 
   const updateState = useCallback((s: GameState) => setState(s), []);

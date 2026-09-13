@@ -198,7 +198,8 @@ def _save_scored_state(room, state, winner, win_type, reason):
     """Called inside the room's scoring transaction, never after it commits."""
     stored = dict(state)
     stored.update(phase='game_over', winner=winner, winType=win_type,
-                  matchScored=True, gameEndReason=reason)
+                  matchScored=True, gameEndReason=reason,
+                  gameEndPoints=state.get('gameEndPoints', _points_for(state, win_type)))
     GameState.objects.update_or_create(room=room, defaults={'state_data': stored})
 
 
@@ -213,20 +214,35 @@ def finalize_room(room, state, winner, win_type, reason):
         if locked.status in ('completed', 'cancelled'):
             return None
 
-        if _game_already_scored(locked, state):
+        # Leaving a series is a room-level intent, including the interval after
+        # a scored game. Use the current persisted board if auto-next-game raced
+        # the request; do not resurrect or score an earlier board a second time.
+        between_games = False
+        if state.get('gameFormat') == 'match' and reason == 'leave':
+            current = GameState.objects.filter(room=locked).values_list('state_data', flat=True).first()
+            if current:
+                state = dict(current)
+            between_games = _game_already_scored(locked, state)
+        elif _game_already_scored(locked, state):
             return None
 
-        points = _points_for(state, win_type)
+        points = 0 if between_games else _points_for(state, win_type)
+        state['gameEndPoints'] = points
         if winner == 'white':
             locked.white_score += points
         elif winner == 'black':
             locked.black_score += points
+        metadata, transcript = _match_metadata(locked, state, reason)
+        meta = dict(locked.state or {})
+        series = meta.get('match') if isinstance(meta.get('match'), dict) else {}
+        games_data = list(series.get('games', []))
+        if not between_games:
+            games_data.append(_game_entry(state, winner, win_type, points, len(games_data) + 1, transcript))
+        meta['match'] = {'active': False, 'games': games_data}
+        locked.state = meta
         locked.status = 'completed'
         locked.save()
-
         _save_scored_state(locked, state, winner, win_type, reason)
-        metadata, transcript = _match_metadata(locked, state, reason)
-        games_data = [_game_entry(state, winner, win_type, points, 1, transcript)]
         white_player, black_player = _room_players(locked)
 
         match = Match.objects.create(
@@ -265,6 +281,8 @@ def record_game_end(room, state, winner, win_type, reason):
 
         if _game_already_scored(locked, state):
             return None
+        state = dict(state)
+        state['gameEndPoints'] = _points_for(state, win_type)
         _save_scored_state(locked, state, winner, win_type, reason)
 
         points = _points_for(state, win_type)
@@ -327,7 +345,7 @@ def game_ended_payload(state, winner, win_type, reason, room):
         'loser': 'black' if winner == 'white' else 'white',
         'winType': win_type,
         'reason': reason,
-        'points': _points_for(state, win_type),
+        'points': state.get('gameEndPoints', _points_for(state, win_type)),
         'cube': cube,
         'whiteScore': room.white_score,
         'blackScore': room.black_score,

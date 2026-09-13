@@ -138,3 +138,11 @@ test("winner's score counts up to the new value", async ({ mount, page }) => {
   await page.clock.fastForward(1000);
   await expect(component.getByTestId("score-white")).toHaveText("4");
 });
+
+test("Jacoby suppressed gammon explains the server's awarded points", async ({ mount }) => {
+  const component = await mount(
+    <GameResultOverlay {...overlayProps({ winType: "gammon", points: 1, cube: 1 })} />,
+  );
+  await expect(component.getByText("Points awarded by the game rules: 1.")).toBeVisible();
+  await expect(component.getByText(/Gammon: 2 points/)).toHaveCount(0);
+});

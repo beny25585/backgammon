@@ -129,7 +129,7 @@ function SidePanel({
               </button>
             ) : (
               <div className={styles.resignConfirm}>
-                <span className={styles.resignText}>{t("game.sure")}</span>
+                <span className={styles.resignText}>{t("game.giveUpCurrentConfirm")}</span>
                 <button
                   className={styles.confirmYes}
                   onClick={() => {
@@ -157,7 +157,7 @@ function SidePanel({
                 }}
                 className={styles.leaveBtn}
               >
-                {t("common.leave")}
+                {state.gameFormat === "money" ? t("game.leaveMoney") : t("game.leaveSeries")}
               </button>
             )}
           </div>

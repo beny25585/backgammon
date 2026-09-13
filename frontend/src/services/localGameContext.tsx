@@ -529,6 +529,8 @@ export function LocalGameProvider({
   const endTurn = useCallback(() => {
     setState((prev) => {
       if (prev.phase !== "moving") return prev;
+      if (prev.turn !== playerColorRef.current) return prev;
+      if (allLegalMoves(prev, prev.turn).length > 0) return prev;
       const next = { ...prev, remaining: [] as number[] };
       next.turn = prev.turn === "white" ? "black" : "white";
       next.phase = "rolling";
@@ -647,7 +649,7 @@ export function LocalGameProvider({
         endTurn,
         undoMove,
         giveUp: handleGiveUp,
-        leaveGame: () => {},
+        leaveGame: handleHome,
       }}
     >
       {children}

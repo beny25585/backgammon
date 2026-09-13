@@ -77,7 +77,26 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     noMovesMessage,
     handleNextGame,
     handleHome,
+    leaveGame,
   } = useGame();
+
+  const leavingRef = useRef(false);
+  const requestLeave = useCallback(() => {
+    if (gameResult?.matchOver) {
+      if (onLeave) onLeave(gameResult.winner === playerColor ? "won" : "lost");
+      else handleHome();
+      return;
+    }
+    leavingRef.current = true;
+    leaveGame();
+  }, [gameResult, onLeave, playerColor, handleHome, leaveGame]);
+
+  useEffect(() => {
+    if (!leavingRef.current || !gameResult?.matchOver) return;
+    leavingRef.current = false;
+    if (onLeave) onLeave(gameResult.winner === playerColor ? "won" : "lost");
+    else handleHome();
+  }, [gameResult, onLeave, playerColor, handleHome]);
 
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
   const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(
@@ -190,13 +209,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
           whiteName={whiteName}
           blackName={blackName}
           onNext={handleNextGame}
-          onHome={() => {
-            if (!onLeave) {
-              handleHome();
-              return;
-            }
-            onLeave(gameResult.winner === playerColor ? "won" : "lost");
-          }}
+          onHome={requestLeave}
           homeLabel={homeLabel}
         />
       )}
@@ -225,7 +238,7 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
             needsToRoll={needsToRoll}
             onRoll={handleRoll}
             respondToDouble={respondToDouble}
-            onLeave={onLeave}
+            onLeave={requestLeave}
             clock={clock}
             turnStartedAt={turnStartedAt}
             timeControl={timeControl}

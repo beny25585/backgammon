@@ -13,6 +13,7 @@ import { newGame } from "../lib/backgammon/engine";
 interface FakeSocket {
   sent: string[];
   emit: (message: unknown) => void;
+  onmessage?: unknown;
 }
 
 interface WsMessage {
@@ -444,6 +445,37 @@ test("confirming give up sends a give_up message", async ({ mount, page }) => {
     )
     .toBe(true);
 });
+
+for (const betweenGames of [false, true]) {
+test(`explicit leave waits for the server's final match result (${betweenGames ? "between games" : "active game"})`, async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  let exitOutcome: string | undefined;
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameScreen onLeave={(outcome) => { exitOutcome = outcome; }} />
+    </GameProvider>,
+  );
+  await expect.poll(() => page.evaluate(() => typeof (window as unknown as Record<string, FakeSocket>).__fakeWs?.onmessage === "function")).toBe(true);
+  await emitInitialState(page, { ...midGameState(), version: 1 });
+  if (betweenGames) {
+    await page.evaluate(() => (window as unknown as Record<string, FakeSocket>).__fakeWs.emit({ type: "game_ended", payload: {
+      winner: "white", winType: "single", points: 1, cube: 1,
+      whiteScore: 1, blackScore: 0, targetPoints: 7, matchOver: false,
+    } }));
+    await component.getByRole("button", { name: "Quit match", exact: true }).last().click();
+  } else {
+    await component.getByRole("button", { name: "Match control" }).click();
+    await component.getByRole("button", { name: "Leave and forfeit match", exact: true }).click();
+  }
+  await expect.poll(async () => (await sentMessages(page)).filter(m => m.type === "leave").length).toBe(1);
+  expect(exitOutcome).toBeUndefined();
+  await page.evaluate(() => (window as unknown as Record<string, FakeSocket>).__fakeWs.emit({ type: "game_ended", payload: {
+    winner: "black", winType: "gammon", points: 2, cube: 1,
+    whiteScore: 0, blackScore: 2, targetPoints: 7, matchOver: true, reason: "leave",
+  } }));
+  await expect.poll(() => exitOutcome).toBe("lost");
+});
+}
 
 test("server auto-pass after a roll shows the no-moves overlay", async ({
   mount,

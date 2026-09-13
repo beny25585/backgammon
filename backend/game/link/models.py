@@ -62,6 +62,8 @@ class TournamentLink(models.Model):
     # retry hours later re-sends what actually happened rather than re-deriving it from state that
     # has moved on. Only the timestamp and nonce are minted fresh per attempt.
     result_status = models.CharField(max_length=16, default='pending')
+    # Only links created after server-authoritative result enforcement are ranked.
+    rating_policy = models.CharField(max_length=20, blank=True, default='')
     result_body = models.JSONField(null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

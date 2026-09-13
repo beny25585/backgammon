@@ -48,8 +48,12 @@ test("local match keeps spent bank when the next game starts", async ({ mount, p
   );
 
   await component.getByTestId("start-timed-game").click();
+  // The clock starts in a React effect after the phase update commits.
+  await expect(component.getByTestId("match-started")).toHaveText(/^\d+$/);
   await page.clock.fastForward(15_000);
   await component.getByTestId("finish-game").click();
+  // Stopping the clock commits the elapsed charge in the same effect.
+  await expect(component.getByTestId("match-started")).toHaveText("null");
   const spentClock = await component.getByTestId("match-clock").textContent();
   const parsed = JSON.parse(spentClock || "{}") as { white: number; black: number };
   expect(parsed.white).toBeGreaterThanOrEqual(294_900);

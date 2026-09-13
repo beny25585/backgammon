@@ -9,6 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .game_service import finalize_room, game_ended_payload
+from .formats import forfeit_win_type
 from .models import GameRoom, GameState, Task
 
 
@@ -199,15 +200,16 @@ def check_room_presence(room_id, now=None):
         # lock so a reconnect cannot race between them.
         state_data = dict(game_state.state_data or {})
         winner = 'black' if loser == 'white' else 'white'
+        win_type = forfeit_win_type(state_data, loser, reason='disconnect')
         state_data.update(
-            phase='game_over', winner=winner, winType='single',
+            phase='game_over', winner=winner, winType=win_type,
             gameEndReason='disconnect', message=f'{loser} disconnected for 40 seconds',
         )
-        match = finalize_room(room, state_data, winner, 'single', 'disconnect')
+        match = finalize_room(room, state_data, winner, win_type, 'disconnect')
         if match is None:
             return {'status': 'closed'}
         room.refresh_from_db()
-        payload = game_ended_payload(state_data, winner, 'single', 'disconnect', room)
+        payload = game_ended_payload(state_data, winner, win_type, 'disconnect', room)
         payload.update(
             matchId=str(match.id), matchOver=True, nextGame=False,
         )

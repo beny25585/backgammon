@@ -492,15 +492,22 @@ class GameConsumerTests(TransactionTestCase):
         await comm_black.disconnect()
 
     async def test_turn_change_charges_only_beyond_delay(self):
-        stored = {
+        stored = BackgammonEngine.get_initial_state()
+        stored.update({
             'phase': 'moving',
             'turn': 'white',
             'dice': [3, 5],
             'remaining': [3, 5],
+        })
+        # Seed a legally completed turn: confirmation may only follow both moves.
+        engine = BackgammonEngine(stored)
+        self.assertTrue(engine.make_move(12, 9, 'white')['success'])
+        self.assertTrue(engine.make_move(9, 4, 'white')['success'])
+        stored.update({
             'clock': {'white': 120_000, 'black': 120_000},
             # White has been thinking 15s; the 10s delay leaves a 5s charge.
             'turnStartedAt': int(time_module.time() * 1000) - 15_000,
-        }
+        })
         gs = await get_game_state(self.room)
         gs.state_data = stored
         await save_game_state(gs)
@@ -745,6 +752,13 @@ class GameConsumerTests(TransactionTestCase):
         self.assertEqual(event['payload']['turn'], 'white')
         self.assertEqual(event['payload']['points'][12], 4)
         self.assertEqual(event['payload']['points'][9], 1)
+
+        await comm_white.send_json_to({'type': 'state_update', 'payload': {'action': 'move', 'from': 9, 'to': 4}})
+        event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('remaining') == [])
+        self.assertEqual(event['payload']['turn'], 'white')
+        self.assertEqual(event['payload']['phase'], 'moving')
+        self.assertEqual(event['payload']['points'][9], 0)
+        self.assertEqual(event['payload']['points'][4], 1)
 
         await comm_white.send_json_to({'type': 'state_update', 'payload': {'action': 'end_turn'}})
         event = await self._receive_until(comm_white, lambda e: e.get('payload', {}).get('phase') == 'rolling' and e.get('payload', {}).get('turn') == 'black')
@@ -1647,6 +1661,12 @@ class GameEndConsumerTests(TransactionTestCase):
 
     async def test_state_update_with_game_over_finalizes_room(self):
         await self._set_target(1)
+        # A linked legacy room must still finish through legitimate server moves.
+        from game.link.models import TournamentLink
+        await database_sync_to_async(TournamentLink.objects.create)(
+            issuer='tournaments', fixture_id=987, tournament_id=1,
+            room=self.room, rating_policy='server-v1',
+        )
         comm_white = self._make_communicator(self.white_user)
         await comm_white.connect(timeout=10)
         await comm_white.receive_json_from()

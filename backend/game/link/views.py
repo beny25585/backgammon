@@ -257,6 +257,7 @@ def _link_for_fixture(issuer, ticket):
                 tournament_id=ticket['trn'],
                 fixture_id=ticket['fix'],
                 room=room,
+                rating_policy='server-v1',
             )
     except IntegrityError:
         link = TournamentLink.objects.get(issuer=issuer, fixture_id=ticket['fix'])

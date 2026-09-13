@@ -1,5 +1,68 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount } from "./engine";
+import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, applyMove, undoLastMove, BAR, OFF, type Color, type GameState } from "./engine";
+
+for (const color of ["white", "black"] as Color[]) {
+  const point = (whitePoint: number) => color === "white" ? whitePoint : 23 - whitePoint;
+  const sign = color === "white" ? 1 : -1;
+  const position = (remaining: number[]): GameState => ({
+    ...newGame(), points: Array<number>(24).fill(0), turn: color,
+    phase: "moving" as const, remaining, dice: remaining.slice(0, 2),
+  });
+
+  test(`${color}: highlights only moves that use both dice before bearing off`, () => {
+    const state = position([2, 1]);
+    state.points[point(1)] = sign;
+    state.home[color] = 14;
+    const expected = [{ from: point(1), to: point(0), die: 1 }];
+    expect(allLegalMoves(state, color)).toEqual(expected);
+    expect(legalMovesFrom(state, point(1), color)).toEqual(expected);
+    const moved = applyMove(state, expected[0], color);
+    expect(allLegalMoves(moved, color)).toEqual([{ from: point(0), to: OFF, die: 2 }]);
+    expect(allLegalMoves(undoLastMove(moved)!, color)).toEqual(expected);
+  });
+
+  test(`${color}: higher die is mandatory when only one entry can be played`, () => {
+    const state = position([1, 2]);
+    state.bar[color] = 1;
+    state.home[color] = 14;
+    state.points[point(21)] = -2 * sign;
+    expect(legalMovesFrom(state, BAR, color)).toEqual([{ from: BAR, to: point(22), die: 2 }]);
+    expect(allLegalMoves(reorderDice(state), color)).toEqual(allLegalMoves(state, color));
+  });
+
+  test(`${color}: lower die remains allowed when higher entry is blocked`, () => {
+    const state = position([2, 1]);
+    state.bar[color] = 1;
+    state.home[color] = 14;
+    state.points[point(22)] = -2 * sign;
+    state.points[point(21)] = -2 * sign;
+    expect(allLegalMoves(state, color)).toEqual([{ from: BAR, to: point(23), die: 1 }]);
+  });
+
+  test(`${color}: doubles use every possible move and undo restores the dice`, () => {
+    let state = position([1, 1, 1, 1]);
+    state.points[point(4)] = sign;
+    state.home[color] = 14;
+    for (let index = 0; index < 4; index += 1) {
+      const before = state;
+      const moves = allLegalMoves(state, color);
+      expect(moves).toEqual([{ from: point(4 - index), to: point(3 - index), die: 1 }]);
+      state = applyMove(state, moves[0], color);
+      expect(undoLastMove(state)?.remaining).toEqual(before.remaining);
+    }
+    expect(state.remaining).toEqual([]);
+    expect(state.turn).toBe(color);
+  });
+
+  test(`${color}: bar cannot be used without a checker and blocked entry has no move`, () => {
+    const state = position([2, 1]);
+    expect(legalMovesFrom(state, BAR, color)).toEqual([]);
+    state.bar[color] = 1;
+    state.points[point(23)] = -2 * sign;
+    state.points[point(22)] = -2 * sign;
+    expect(allLegalMoves(state, color)).toEqual([]);
+  });
+}
 
 test("new game starts in opening roll with 15 checkers per side", async () => {
   const state = newGame();
