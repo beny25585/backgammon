@@ -129,7 +129,8 @@ function GameRoute() {
   const tournamentId = params.get("tournament");
   const backendFormat = params.get("format");
   const gameType = resolveGameType(params, backendFormat);
-  const returnUrl = safeTournamentReturnUrl(params.get("return")) ?? tournamentLobbyUrl();
+  const tournamentReturnUrl = safeTournamentReturnUrl(params.get("return"));
+  const returnUrl = tournamentReturnUrl ?? tournamentLobbyUrl();
 
   function handleLeave(outcome?: "won" | "lost") {
     clearRoom();
@@ -143,6 +144,9 @@ function GameRoute() {
     if (isValidTournamentId(tournamentId)) next.searchParams.set("tournament", tournamentId!);
     window.location.assign(next.toString());
   }
+
+  const isLinkedOneToOne =
+    gameType === "1v1" && tournamentReturnUrl !== null;
 
   return (
     <GameProvider
@@ -159,7 +163,14 @@ function GameRoute() {
     >
       <GameScreen
         onLeave={handleLeave}
-        homeLabel={gameType === "tournament" ? "Back to Tournament" : "Back to Lobby"}
+        homeLabel={
+          gameType === "tournament"
+            ? "Back to Tournament"
+            : isLinkedOneToOne
+              ? "Back to Tournaments"
+              : "Back to Lobby"
+        }
+        showRematch={!isLinkedOneToOne}
         gameType={gameType}
       />
     </GameProvider>

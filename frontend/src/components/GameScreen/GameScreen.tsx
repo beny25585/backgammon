@@ -43,6 +43,7 @@ interface GameScreenProps {
   onLeave?: (outcome?: "won" | "lost") => void;
   homeLabel?: string;
   gameType?: GameType;
+  showRematch?: boolean;
 }
 
 function hasInterruptedOpeningMove(
@@ -77,6 +78,7 @@ export default function GameScreen({
   onLeave,
   homeLabel,
   gameType: propGameType,
+  showRematch = true,
 }: GameScreenProps) {
   const { t } = useI18n();
 
@@ -120,12 +122,6 @@ export default function GameScreen({
 
     gameType: contextGameType,
   } = useGame();
-
-  /*
-   * Keep the prop for API compatibility even though GameScreen
-   * currently does not need the label directly.
-   */
-  void homeLabel;
 
   const leavingRef = useRef(false);
 
@@ -319,12 +315,27 @@ export default function GameScreen({
             propGameType ??
             "1v1") as string;
 
+          const targetPoints = Number(gameResult.targetPoints ?? 0);
+
+          const shouldCapDisplayedScore =
+            gt !== "quick" &&
+            Number.isFinite(targetPoints) &&
+            targetPoints > 0;
+
+          const displayWhiteScore = shouldCapDisplayedScore
+            ? Math.min(gameResult.matchScore.white, targetPoints)
+            : gameResult.matchScore.white;
+
+          const displayBlackScore = shouldCapDisplayedScore
+            ? Math.min(gameResult.matchScore.black, targetPoints)
+            : gameResult.matchScore.black;
+
           const common = {
             winner: gameResult.winner,
 
-            whiteScore: gameResult.matchScore.white,
+            whiteScore: displayWhiteScore,
 
-            blackScore: gameResult.matchScore.black,
+            blackScore: displayBlackScore,
 
             whiteName,
             blackName,
@@ -364,51 +375,48 @@ export default function GameScreen({
             );
           }
 
-          /*
-           * QUICK MATCH RESULT
-           */
-          console.log(
-            "[QUICK RESULT DATA]",
-            JSON.stringify(
-              {
-                winner: gameResult.winner,
-                playerColor,
-
-                whiteName,
-                blackName,
-
-                matchScore: gameResult.matchScore,
-
-                cube: gameResult.cube,
-                stakeAmount: gameResult.stakeAmount,
-
-                ratingBefore: gameResult.ratingBefore,
-                ratingAfter: gameResult.ratingAfter,
-
-                opponentRatingBefore: gameResult.opponentRatingBefore,
-                opponentRatingAfter: gameResult.opponentRatingAfter,
-
-                ratingChange: gameResult.ratingChange,
-                opponentRatingChange: gameResult.opponentRatingChange,
-
-                coinsChange: gameResult.coinsChange,
-                opponentCoinsChange: gameResult.opponentCoinsChange,
-
-                hits: gameResult.hits,
-                doublesOffered: gameResult.doublesOffered,
-                doublesAccepted: gameResult.doublesAccepted,
-
-                openingRoll: gameResult.openingRoll,
-                firstPlayer: gameResult.firstPlayer,
-
-                durationSeconds: gameResult.durationSeconds,
-                clockRemaining: gameResult.clockRemaining,
-              },
-              null,
-              2,
-            ),
-          );
           if (gt === "quick") {
+            console.log(
+              "[QUICK RESULT DATA]",
+              JSON.stringify(
+                {
+                  winner: gameResult.winner,
+                  playerColor,
+
+                  whiteName,
+                  blackName,
+
+                  matchScore: gameResult.matchScore,
+
+                  cube: gameResult.cube,
+                  stakeAmount: gameResult.stakeAmount,
+
+                  ratingBefore: gameResult.ratingBefore,
+                  ratingAfter: gameResult.ratingAfter,
+
+                  opponentRatingBefore: gameResult.opponentRatingBefore,
+                  opponentRatingAfter: gameResult.opponentRatingAfter,
+
+                  ratingChange: gameResult.ratingChange,
+                  opponentRatingChange: gameResult.opponentRatingChange,
+
+                  coinsChange: gameResult.coinsChange,
+                  opponentCoinsChange: gameResult.opponentCoinsChange,
+
+                  hits: gameResult.hits,
+                  doublesOffered: gameResult.doublesOffered,
+                  doublesAccepted: gameResult.doublesAccepted,
+
+                  openingRoll: gameResult.openingRoll,
+                  firstPlayer: gameResult.firstPlayer,
+
+                  durationSeconds: gameResult.durationSeconds,
+                  clockRemaining: gameResult.clockRemaining,
+                },
+                null,
+                2,
+              ),
+            );
             return (
               <QuickGameResult
                 {...common}
@@ -443,14 +451,16 @@ export default function GameScreen({
             <PrivateGameResult
               {...common}
               playerColor={playerColor}
+              showRematch={showRematch}
+              closeLabel={homeLabel}
               cube={gameResult.cube}
               ratingBefore={gameResult.ratingBefore ?? null}
               ratingAfter={gameResult.ratingAfter ?? null}
               opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
               opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
-                ratingChange={gameResult.ratingChange ?? null}
-                opponentRatingChange={gameResult.opponentRatingChange ?? null}
-                doublesOffered={gameResult.doublesOffered ?? null}
+              ratingChange={gameResult.ratingChange ?? null}
+              opponentRatingChange={gameResult.opponentRatingChange ?? null}
+              doublesOffered={gameResult.doublesOffered ?? null}
               doublesAccepted={gameResult.doublesAccepted ?? null}
               openingRoll={gameResult.openingRoll ?? null}
               firstPlayer={gameResult.firstPlayer ?? null}

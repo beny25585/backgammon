@@ -30,6 +30,8 @@ interface Props {
   onRematch: () => void;
   rematchPending?: boolean;
   onCancelRematch?: () => void;
+  showRematch?: boolean;
+  closeLabel?: string;
 }
 
 export default function PrivateGameResult({
@@ -53,6 +55,8 @@ export default function PrivateGameResult({
   onRematch,
   rematchPending,
   onCancelRematch,
+  showRematch = true,
+  closeLabel,
 }: Props) {
   const { t } = useI18n();
   const openingRollText = openingRoll && (openingRoll.white ?? openingRoll.black)
@@ -73,9 +77,12 @@ export default function PrivateGameResult({
       playerColor={playerColor}
       winType={winType}
       reason={reason}
+      closeLabel={closeLabel}
       onClose={onClose}
       actions={
-        rematchPending ? (
+        !showRematch ? (
+          <button type="button" onClick={onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{closeLabel ?? t("common.backHome")}</button>
+        ) : rematchPending ? (
           <>
             <button type="button" onClick={onCancelRematch} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{t("game.cancel")}</button>
             <button type="button" disabled style={{ minWidth: 140, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f" }}>⏳ {t("game.waitingForOpponent")}</button>
@@ -83,7 +90,7 @@ export default function PrivateGameResult({
         ) : (
           <>
             <button type="button" onClick={onRematch} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", border: "1px solid #e7bd72" }}>↻ {t("game.rematch")}</button>
-            <button type="button" onClick={onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{t("common.backHome")}</button>
+            <button type="button" onClick={onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{closeLabel ?? t("common.backHome")}</button>
           </>
         )
       }

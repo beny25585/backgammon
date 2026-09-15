@@ -139,3 +139,103 @@ test("fatal connection error with no game state still blocks the screen", async 
   await expect(component.getByText("Error: Failed to connect")).toBeVisible();
   await expect(component.getByTestId("error-card")).toHaveCount(0);
 });
+
+test("final match score is capped at targetPoints for 1-point 1v1", async ({ mount }) => {
+  const component = await mount(
+    <MockGameWrapper
+      playerColor="white"
+      context={{
+        gameResult: {
+          winner: "black",
+          winType: "single",
+          points: 1,
+          cube: 1,
+          matchScore: { white: 0, black: 3 },
+          targetPoints: 1,
+          matchOver: true,
+          gameType: "1v1",
+        },
+      }}
+      state={makeGameState({ phase: "game_over", winner: "black" })}
+    >
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("score-left")).toHaveText("0");
+  await expect(component.getByTestId("score-right")).toHaveText("1");
+});
+
+test("final match score is capped at targetPoints for 5-point 1v1", async ({ mount }) => {
+  const component = await mount(
+    <MockGameWrapper
+      playerColor="white"
+      context={{
+        gameResult: {
+          winner: "black",
+          winType: "single",
+          points: 1,
+          cube: 1,
+          matchScore: { white: 0, black: 6 },
+          targetPoints: 5,
+          matchOver: true,
+          gameType: "1v1",
+        },
+      }}
+      state={makeGameState({ phase: "game_over", winner: "black" })}
+    >
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("score-left")).toHaveText("0");
+  await expect(component.getByTestId("score-right")).toHaveText("5");
+});
+
+test("final match score below target is not capped", async ({ mount }) => {
+  const component = await mount(
+    <MockGameWrapper
+      playerColor="white"
+      context={{
+        gameResult: {
+          winner: "white",
+          winType: "single",
+          points: 1,
+          cube: 1,
+          matchScore: { white: 3, black: 2 },
+          targetPoints: 5,
+          matchOver: true,
+          gameType: "1v1",
+        },
+      }}
+      state={makeGameState({ phase: "game_over", winner: "white" })}
+    >
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("score-left")).toHaveText("3");
+  await expect(component.getByTestId("score-right")).toHaveText("2");
+});
+
+test("quick game score is not capped at targetPoints", async ({ mount }) => {
+  const component = await mount(
+    <MockGameWrapper
+      playerColor="white"
+      context={{
+        gameResult: {
+          winner: "black",
+          winType: "single",
+          points: 1,
+          cube: 1,
+          matchScore: { white: 0, black: 6 },
+          targetPoints: 5,
+          matchOver: true,
+          gameType: "quick",
+        },
+      }}
+      state={makeGameState({ phase: "game_over", winner: "black" })}
+    >
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  await expect(component.getByTestId("score-left")).toHaveText("0");
+  await expect(component.getByTestId("score-right")).toHaveText("6");
+});

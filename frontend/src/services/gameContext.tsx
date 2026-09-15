@@ -143,6 +143,228 @@ export function GameProvider({
     [socket],
   );
 
+  const fetchFinalizedResult = useCallback(
+    async function fetchFinalizedResultImpl(
+      attempt = 0,
+    ): Promise<void> {
+      if (!roomId) {
+        console.warn("[FINAL RESULT] missing roomId");
+        return;
+      }
+
+      const token = getAccessToken();
+
+      if (!token) {
+        console.warn("[FINAL RESULT] missing access token");
+        return;
+      }
+
+      const url = `/backgammon/api/rooms/${roomId}/result/`;
+
+      console.log("[FINAL RESULT] request", {
+        attempt,
+        roomId,
+        url,
+      });
+
+      try {
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const rawBody = await res.text();
+
+        console.log("[FINAL RESULT] response", {
+          attempt,
+          status: res.status,
+          statusText: res.statusText,
+          body: rawBody,
+        });
+
+        if (res.status === 202) {
+          if (attempt < 8) {
+            const delay = Math.min(500 * 2 ** attempt, 4000);
+
+            console.log(
+              `[FINAL RESULT] still processing, retrying in ${delay}ms`,
+            );
+
+            setTimeout(
+              () => void fetchFinalizedResultImpl(attempt + 1),
+              delay,
+            );
+          } else {
+            console.warn("[FINAL RESULT] processing timeout");
+          }
+
+          return;
+        }
+
+        if (!res.ok) {
+          console.error("[FINAL RESULT] request failed", {
+            status: res.status,
+            body: rawBody,
+          });
+
+          return;
+        }
+
+        let data: Record<string, unknown>;
+
+        try {
+          data = JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          console.error("[FINAL RESULT] invalid JSON", rawBody);
+
+          return;
+        }
+
+        console.log("[FINAL RESULT] parsed data", data);
+
+        const rating = data.rating as
+          | {
+              self: {
+                before: number;
+                after: number;
+                change: number;
+              };
+              opponent: {
+                before: number;
+                after: number;
+                change: number;
+              };
+            }
+          | null
+          | undefined;
+
+        const money = data.money as
+          | {
+              stake?: string;
+              selfChange?: number;
+              opponentChange?: number;
+            }
+          | null
+          | undefined;
+
+        const stats = data.stats as
+          | {
+              hits?: number | null;
+              doublesOffered?: number | null;
+              doublesAccepted?: number | null;
+              openingRoll?: Partial<Record<Color, number>> | null;
+              firstPlayer?: Color | null;
+              durationSeconds?: number | null;
+              clockRemaining?: Partial<Record<Color, number>> | null;
+            }
+          | null
+          | undefined;
+
+        const result = data.result as
+          | {
+              endReason?: string | null;
+            }
+          | null
+          | undefined;
+
+        const finalizedGameType =
+          data.gameType === "quick" ||
+          data.gameType === "1v1" ||
+          data.gameType === "tournament"
+            ? (data.gameType as GameType)
+            : undefined;
+
+        console.log("[FINAL RESULT] extracted", {
+          rating,
+          money,
+          stats,
+          result,
+          finalizedGameType,
+        });
+
+        if (
+          finalizedGameType ||
+          rating ||
+          money ||
+          stats ||
+          result?.endReason
+        ) {
+          setGameResult((prev) => {
+            if (!prev) {
+              console.warn(
+                "[FINAL RESULT] gameResult disappeared before merge",
+              );
+
+              return prev;
+            }
+
+            const next = {
+              ...prev,
+
+              gameType: finalizedGameType ?? prev.gameType,
+
+              reason: result?.endReason ?? prev.reason,
+
+              /*
+               * rating.self already means the current player.
+               * Do not swap it according to white/black.
+               */
+              ratingBefore: rating?.self.before ?? prev.ratingBefore,
+
+              ratingAfter: rating?.self.after ?? prev.ratingAfter,
+
+              opponentRatingBefore:
+                rating?.opponent.before ?? prev.opponentRatingBefore,
+
+              opponentRatingAfter:
+                rating?.opponent.after ?? prev.opponentRatingAfter,
+
+              ratingChange: rating?.self.change ?? prev.ratingChange,
+
+              opponentRatingChange:
+                rating?.opponent.change ?? prev.opponentRatingChange,
+
+              coinsChange: money?.selfChange ?? prev.coinsChange,
+
+              opponentCoinsChange:
+                money?.opponentChange ?? prev.opponentCoinsChange,
+
+              stakeAmount:
+                money?.stake != null ? Number(money.stake) : prev.stakeAmount,
+
+              hits: stats?.hits ?? prev.hits,
+
+              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
+
+              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
+
+              openingRoll: stats?.openingRoll ?? prev.openingRoll,
+
+              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
+
+              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
+
+              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
+            };
+
+            console.log("[FINAL RESULT] merged GameResult", next);
+
+            return next;
+          });
+        } else {
+          console.warn(
+            "[FINAL RESULT] 200 response but no enrichment data",
+            data,
+          );
+        }
+      } catch (error) {
+        console.error("[FINAL RESULT] exception", error);
+      }
+    },
+    [roomId],
+  );
+
   useEffect(() => {
     const token = getAccessToken();
 
@@ -678,223 +900,6 @@ export function GameProvider({
   const updateState = useCallback((s: GameState) => setState(s), []);
 
   const clearError = useCallback(() => setError(null), []);
-
-  const fetchFinalizedResult = useCallback(
-    async (attempt = 0): Promise<void> => {
-      if (!roomId) {
-        console.warn("[FINAL RESULT] missing roomId");
-        return;
-      }
-
-      const token = getAccessToken();
-
-      if (!token) {
-        console.warn("[FINAL RESULT] missing access token");
-        return;
-      }
-
-      const url = `/backgammon/api/rooms/${roomId}/result/`;
-
-      console.log("[FINAL RESULT] request", {
-        attempt,
-        roomId,
-        url,
-      });
-
-      try {
-        const res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const rawBody = await res.text();
-
-        console.log("[FINAL RESULT] response", {
-          attempt,
-          status: res.status,
-          statusText: res.statusText,
-          body: rawBody,
-        });
-
-        if (res.status === 202) {
-          if (attempt < 8) {
-            const delay = Math.min(500 * 2 ** attempt, 4000);
-
-            console.log(
-              `[FINAL RESULT] still processing, retrying in ${delay}ms`,
-            );
-
-            setTimeout(() => void fetchFinalizedResult(attempt + 1), delay);
-          } else {
-            console.warn("[FINAL RESULT] processing timeout");
-          }
-
-          return;
-        }
-
-        if (!res.ok) {
-          console.error("[FINAL RESULT] request failed", {
-            status: res.status,
-            body: rawBody,
-          });
-
-          return;
-        }
-
-        let data: Record<string, unknown>;
-
-        try {
-          data = JSON.parse(rawBody) as Record<string, unknown>;
-        } catch {
-          console.error("[FINAL RESULT] invalid JSON", rawBody);
-
-          return;
-        }
-
-        console.log("[FINAL RESULT] parsed data", data);
-
-        const rating = data.rating as
-          | {
-              self: {
-                before: number;
-                after: number;
-                change: number;
-              };
-              opponent: {
-                before: number;
-                after: number;
-                change: number;
-              };
-            }
-          | null
-          | undefined;
-
-        const money = data.money as
-          | {
-              stake?: string;
-              selfChange?: number;
-              opponentChange?: number;
-            }
-          | null
-          | undefined;
-
-        const stats = data.stats as
-          | {
-              hits?: number | null;
-              doublesOffered?: number | null;
-              doublesAccepted?: number | null;
-              openingRoll?: Partial<Record<Color, number>> | null;
-              firstPlayer?: Color | null;
-              durationSeconds?: number | null;
-              clockRemaining?: Partial<Record<Color, number>> | null;
-            }
-          | null
-          | undefined;
-
-        const result = data.result as
-          | {
-              endReason?: string | null;
-            }
-          | null
-          | undefined;
-
-        const finalizedGameType =
-          data.gameType === "quick" ||
-          data.gameType === "1v1" ||
-          data.gameType === "tournament"
-            ? (data.gameType as GameType)
-            : undefined;
-
-        console.log("[FINAL RESULT] extracted", {
-          rating,
-          money,
-          stats,
-          result,
-          finalizedGameType,
-        });
-
-        if (
-          finalizedGameType ||
-          rating ||
-          money ||
-          stats ||
-          result?.endReason
-        ) {
-          setGameResult((prev) => {
-            if (!prev) {
-              console.warn(
-                "[FINAL RESULT] gameResult disappeared before merge",
-              );
-
-              return prev;
-            }
-
-            const next = {
-              ...prev,
-
-              gameType: finalizedGameType ?? prev.gameType,
-
-              reason: result?.endReason ?? prev.reason,
-
-              /*
-               * rating.self already means the current player.
-               * Do not swap it according to white/black.
-               */
-              ratingBefore: rating?.self.before ?? prev.ratingBefore,
-
-              ratingAfter: rating?.self.after ?? prev.ratingAfter,
-
-              opponentRatingBefore:
-                rating?.opponent.before ?? prev.opponentRatingBefore,
-
-              opponentRatingAfter:
-                rating?.opponent.after ?? prev.opponentRatingAfter,
-
-              ratingChange: rating?.self.change ?? prev.ratingChange,
-
-              opponentRatingChange:
-                rating?.opponent.change ?? prev.opponentRatingChange,
-
-              coinsChange: money?.selfChange ?? prev.coinsChange,
-
-              opponentCoinsChange:
-                money?.opponentChange ?? prev.opponentCoinsChange,
-
-              stakeAmount:
-                money?.stake != null ? Number(money.stake) : prev.stakeAmount,
-
-              hits: stats?.hits ?? prev.hits,
-
-              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
-
-              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
-
-              openingRoll: stats?.openingRoll ?? prev.openingRoll,
-
-              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
-
-              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
-
-              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
-            };
-
-            console.log("[FINAL RESULT] merged GameResult", next);
-
-            return next;
-          });
-        } else {
-          console.warn(
-            "[FINAL RESULT] 200 response but no enrichment data",
-            data,
-          );
-        }
-      } catch (error) {
-        console.error("[FINAL RESULT] exception", error);
-      }
-    },
-    [roomId],
-  );
 
   const handleNextGame = useCallback(() => {
     setGameResult(null);
