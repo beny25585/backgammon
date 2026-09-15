@@ -8,6 +8,7 @@ import {
 } from "react";
 import type {
   GameResult,
+  GameType,
   NoMovesMessage,
   OpeningRollResult,
 } from "../types/context";
@@ -29,7 +30,7 @@ import {
 } from "@/lib/backgammon/engine";
 import { chooseMove } from "@/lib/bot/chooseMove";
 import { GameContext } from "./gameContext";
-import GameResultOverlay from "../components/GameResultOverlay/GameResultOverlay";
+import PrivateGameResult from "../components/GameResult/PrivateGameResult";
 import { useLocalClock } from "../hooks/useLocalClock";
 import type { TimeControl } from "../lib/clock";
 import { clientLogger } from "./logger";
@@ -65,6 +66,7 @@ interface LocalGameProviderProps {
   botColor?: Color;
   matchTarget?: number;
   timeControl?: TimeControl | null;
+  gameType?: GameType;
   onQuitMatch?: () => void;
 }
 
@@ -75,6 +77,7 @@ export function LocalGameProvider({
   botColor,
   matchTarget = 7,
   timeControl,
+  gameType: initialGameType = "local",
   onQuitMatch,
 }: LocalGameProviderProps) {
   const [state, setState] = useState<GameState>(() => newGame());
@@ -175,6 +178,7 @@ export function LocalGameProvider({
   });
   const [matchWinner, setMatchWinner] = useState<Color | null>(null);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
+  const [gameType] = useState<GameType>(initialGameType);
 
   const nextGameCountdown = null;
   const savedMatchRef = useRef(false);
@@ -231,6 +235,7 @@ export function LocalGameProvider({
         matchScore: nextScore,
         targetPoints: MATCH_TARGET,
         matchOver: true,
+        gameType,
       });
       return;
     }
@@ -575,6 +580,7 @@ export function LocalGameProvider({
       targetPoints: MATCH_TARGET,
       matchOver: true,
       reason: "time",
+      gameType,
     });
     setState({
       ...current,
@@ -605,6 +611,7 @@ export function LocalGameProvider({
       targetPoints: MATCH_TARGET,
       matchOver,
       reason: "give_up",
+      gameType,
     });
     setState({
       ...current,
@@ -638,6 +645,7 @@ export function LocalGameProvider({
         gameResult,
         nextGameCountdown,
         matchScore,
+        gameType,
         handleNextGame,
         handleHome,
         updateState,
@@ -654,24 +662,19 @@ export function LocalGameProvider({
     >
       {children}
 
-      {gameResult && (
-        <GameResultOverlay
-          playerColor={playerColor}
+      {gameResult?.matchOver && (
+        <PrivateGameResult
           winner={gameResult.winner}
-          winType={gameResult.winType}
-          points={gameResult.points}
-          cube={gameResult.cube}
-          matchScore={matchScore}
-          matchTarget={MATCH_TARGET}
-          matchWinner={matchWinner}
-          matchOver={gameResult.matchOver}
-          reason={gameResult.reason}
-          adminReason={gameResult.adminReason}
+          whiteScore={matchScore.white}
+          blackScore={matchScore.black}
           whiteName={botColor === "white" ? "Bot" : null}
           blackName={botColor === "black" ? "Bot" : null}
-          countdown={nextGameCountdown}
-          onNext={handleNextGame}
-          onHome={handleHome}
+          winType={gameResult.winType}
+          reason={gameResult.reason}
+          cube={gameResult.cube}
+          onClose={handleHome}
+          onRematch={handleNextGame}
+          playerColor={playerColor}
         />
       )}
     </GameContext.Provider>

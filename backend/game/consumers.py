@@ -803,6 +803,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         engine.state['doublingEnabled'] = doubling_enabled
         from .formats import carry_contract
         carry_contract(state, engine.state, room)
+        # Match-level clock: remaining time survives, turnStartedAt does not (no charge for transition)
+        if 'clock' in state and isinstance(state['clock'], dict):
+            engine.state['clock'] = dict(state['clock'])
+        engine.state['turnStartedAt'] = None
         engine.state['message'] = 'New game started'
         return {'success': True}
 

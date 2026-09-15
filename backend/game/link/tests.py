@@ -46,6 +46,7 @@ from .identity import resolve_user
 from .live import publish_snapshot
 from .models import LinkedIdentity, RedeemedTicket, TournamentLink
 from .outbox import build_result_body, deliver_result, enqueue_result
+from .views import tournaments_frontend_url
 from .signing import (
     TICKET_SALT,
     TicketError,
@@ -107,7 +108,8 @@ def tamper(token, **claims):
     head, rest = token.split(":", 1)
     payload = json.loads(b64_decode(head.encode()).decode())
     payload.update(claims)
-    forged = b64_encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+    forged = b64_encode(json.dumps(
+        payload, separators=(",", ":")).encode()).decode()
     return f"{forged}:{rest}"
 
 
@@ -130,10 +132,12 @@ class LinkTestBase(TestCase):
 class EnterLinkTests(LinkTestBase):
 
     def test_a_valid_ticket_provisions_user_room_and_seat(self):
-        response = self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", tp=5))
+        response = self.enter(make_ticket(
+            sub=str(uuid.uuid4()), seat="p1", tp=5))
 
         self.assertEqual(response.status_code, 302)
-        self.assertTrue(response["Location"].startswith(f"{FRONTEND_URL}/link#"), response["Location"])
+        self.assertTrue(response["Location"].startswith(
+            f"{FRONTEND_URL}/link#"), response["Location"])
         self.assertEqual(response["Referrer-Policy"], "no-referrer")
         self.assertEqual(response["Cache-Control"], "no-store")
 
@@ -141,7 +145,8 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(identity.issuer, "tournaments")
         self.assertTrue(identity.user.username.startswith("t_"))
         self.assertFalse(identity.user.has_usable_password())
-        self.assertEqual(Player.objects.get(user=identity.user).nickname, "alice")
+        self.assertEqual(Player.objects.get(
+            user=identity.user).nickname, "alice")
 
         link = TournamentLink.objects.get()
         self.assertEqual(link.tournament_id, 17)
@@ -160,12 +165,15 @@ class EnterLinkTests(LinkTestBase):
         response = self.enter(make_ticket(sub=str(uuid.uuid4()), tc="fast"))
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(TournamentLink.objects.get().room.time_control, "fast")
+        self.assertEqual(
+            TournamentLink.objects.get().room.time_control, "fast")
 
     def test_a_new_ticket_updates_a_waiting_linked_room_settings(self):
-        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", tc="normal", tp=5, dbl=True))
+        self.enter(make_ticket(sub=str(uuid.uuid4()),
+                   seat="p1", tc="normal", tp=5, dbl=True))
 
-        response = self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", tc="fast", tp=7, dbl=False))
+        response = self.enter(make_ticket(
+            sub=str(uuid.uuid4()), seat="p2", tc="fast", tp=7, dbl=False))
 
         self.assertEqual(response.status_code, 302)
         room = TournamentLink.objects.get().room
@@ -173,19 +181,22 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(room.time_control, "fast")
         self.assertEqual(room.target_points, 7)
         self.assertFalse(room.state["doublingEnabled"])
-        self.assertFalse(GameState.objects.get(room=room).state_data["doublingEnabled"])
+        self.assertFalse(GameState.objects.get(
+            room=room).state_data["doublingEnabled"])
 
     def test_the_fragment_carries_a_usable_session_for_the_right_room(self):
         response = self.enter(make_ticket())
 
         fragment_text = response["Location"].split("#", 1)[1]
-        fragment = dict(pair.split("=", 1) for pair in fragment_text.split("&"))
+        fragment = dict(pair.split("=", 1)
+                        for pair in fragment_text.split("&"))
         room = TournamentLink.objects.get().room
         user = LinkedIdentity.objects.get().user
 
         self.assertEqual(fragment["room"], str(room.id))
         self.assertEqual(fragment["color"], "white")
-        self.assertEqual(parse_qs(fragment_text)["return"], [f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"])
+        self.assertEqual(parse_qs(fragment_text)["return"], [
+                         f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"])
         self.assertEqual(fragment["tournament"], "17")
         self.assertEqual(AccessToken(fragment["access"])["user_id"], user.id)
         self.assertIn("refresh", fragment)
@@ -204,6 +215,16 @@ class EnterLinkTests(LinkTestBase):
             [f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"],
         )
 
+    def test_tournaments_frontend_url_helper_rejects_path_qualified_frontend_config(self):
+        with override_settings(GAMELINK_TOURNAMENTS_FRONTEND_URL=f"{TOURNAMENTS_FRONTEND_URL}/tournaments"):
+            with self.assertRaises(ImproperlyConfigured):
+                tournaments_frontend_url()
+
+    def test_tournaments_frontend_url_helper_rejects_non_tournaments_paths(self):
+        with override_settings(GAMELINK_TOURNAMENTS_FRONTEND_URL=f"{TOURNAMENTS_FRONTEND_URL}/wrong-path"):
+            with self.assertRaises(ImproperlyConfigured):
+                tournaments_frontend_url()
+
     def test_the_ticket_is_not_echoed_into_the_redirect(self):
         token = make_ticket()
         response = self.enter(token)
@@ -211,8 +232,10 @@ class EnterLinkTests(LinkTestBase):
         self.assertNotIn(token, response["Location"])
 
     def test_both_seats_land_in_one_room_with_opposite_colours(self):
-        first = self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", name="alice"))
-        second = self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", name="bob"))
+        first = self.enter(make_ticket(
+            sub=str(uuid.uuid4()), seat="p1", name="alice"))
+        second = self.enter(make_ticket(
+            sub=str(uuid.uuid4()), seat="p2", name="bob"))
 
         self.assertEqual(first.status_code, 302)
         self.assertEqual(second.status_code, 302)
@@ -287,14 +310,16 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(RoomPlayer.objects.count(), 2)
         self.assertEqual(RedeemedTicket.objects.count(), 2)
         self.assertEqual(
-            set(TournamentLink.objects.values_list("tournament_id", "fixture_id")),
+            set(TournamentLink.objects.values_list(
+                "tournament_id", "fixture_id")),
             {(11, 1), (12, 2)},
         )
 
     def test_a_seat_claimed_by_two_different_players_is_refused(self):
         # A well-behaved issuer never mints this, so it means a confused or forged issuer. It must
         # not reach the unique constraint on (room, colour) and turn into a 500.
-        self.assertEqual(self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1")).status_code, 302)
+        self.assertEqual(self.enter(make_ticket(
+            sub=str(uuid.uuid4()), seat="p1")).status_code, 302)
 
         response = self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1"))
 
@@ -389,7 +414,8 @@ class TicketRejectionTests(LinkTestBase):
         head, rest = token.split(":", 1)
         payload = json.loads(b64_decode(head.encode()).decode())
         del payload["tp"]
-        stripped = b64_encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+        stripped = b64_encode(json.dumps(
+            payload, separators=(",", ":")).encode()).decode()
         self.assertRefused(f"{stripped}:{rest}")
 
     def test_a_non_positive_target(self):
@@ -404,8 +430,10 @@ class TicketSecretRotationTests(LinkTestBase):
         GAMELINK_TICKET_SECRETS=[ROTATED_SECRET, TICKET_SECRET],
     )
     def test_the_old_secret_still_verifies_while_the_new_one_is_first(self):
-        self.assertEqual(self.enter(make_ticket(secret=TICKET_SECRET, fix=1)).status_code, 302)
-        self.assertEqual(self.enter(make_ticket(secret=ROTATED_SECRET, fix=2)).status_code, 302)
+        self.assertEqual(self.enter(make_ticket(
+            secret=TICKET_SECRET, fix=1)).status_code, 302)
+        self.assertEqual(self.enter(make_ticket(
+            secret=ROTATED_SECRET, fix=2)).status_code, 302)
 
     @override_settings(
         GAMELINK_ENABLED=True,
@@ -413,7 +441,8 @@ class TicketSecretRotationTests(LinkTestBase):
         GAMELINK_TICKET_SECRETS=[ROTATED_SECRET],
     )
     def test_a_dropped_secret_stops_verifying(self):
-        self.assertEqual(self.enter(make_ticket(secret=TICKET_SECRET)).status_code, 400)
+        self.assertEqual(self.enter(make_ticket(
+            secret=TICKET_SECRET)).status_code, 400)
 
     @override_settings(GAMELINK_ENABLED=True, GAMELINK_TICKET_SECRETS=[])
     def test_no_configured_secret_verifies_nothing(self):
@@ -427,7 +456,8 @@ class IdentityTests(TestCase):
     def test_a_username_collision_does_not_merge_the_accounts(self):
         external_id = str(uuid.uuid4())
         squatted = f"t_{uuid.UUID(external_id).hex[:12]}"
-        local = User.objects.create_user(username=squatted, password="local-password")
+        local = User.objects.create_user(
+            username=squatted, password="local-password")
 
         linked = resolve_user("tournaments", external_id, "alice")
 
@@ -480,7 +510,8 @@ class RedactTests(TestCase):
             "GET /api/link/enter/?ticket=[redacted] failed")
 
     def test_a_signature_header_is_blanked(self):
-        self.assertEqual(redact("X-Gamelink-Signature: v1=deadbeef"), "X-Gamelink-Signature: [redacted]")
+        self.assertEqual(redact("X-Gamelink-Signature: v1=deadbeef"),
+                         "X-Gamelink-Signature: [redacted]")
 
     def test_none_survives(self):
         self.assertIsNone(redact(None))
@@ -508,32 +539,40 @@ class ConfigurationCheckTests(TestCase):
         self.assertEqual(self.run_checks(), [])
 
     def test_the_guard_is_silent_while_the_feature_is_off(self):
-        self.assertEqual(self.run_checks(GAMELINK_ENABLED=False, GAMELINK_TICKET_SECRETS=[]), [])
+        self.assertEqual(self.run_checks(
+            GAMELINK_ENABLED=False, GAMELINK_TICKET_SECRETS=[]), [])
 
     def test_the_guard_is_silent_in_debug(self):
         with override_settings(DEBUG=True):
             self.assertEqual(self.run_checks(GAMELINK_TICKET_SECRETS=[]), [])
 
     def test_a_missing_ticket_secret(self):
-        self.assertIn("gamelink.E001", self.run_checks(GAMELINK_TICKET_SECRETS=[]))
+        self.assertIn("gamelink.E001", self.run_checks(
+            GAMELINK_TICKET_SECRETS=[]))
 
     def test_a_short_ticket_secret(self):
-        self.assertIn("gamelink.E001", self.run_checks(GAMELINK_TICKET_SECRETS=[TICKET_SECRET, "short"]))
+        self.assertIn("gamelink.E001", self.run_checks(
+            GAMELINK_TICKET_SECRETS=[TICKET_SECRET, "short"]))
 
     def test_a_missing_result_secret(self):
-        self.assertIn("gamelink.E002", self.run_checks(GAMELINK_RESULT_SECRET=""))
+        self.assertIn("gamelink.E002", self.run_checks(
+            GAMELINK_RESULT_SECRET=""))
 
     def test_the_two_channels_must_not_share_a_secret(self):
-        self.assertIn("gamelink.E003", self.run_checks(GAMELINK_RESULT_SECRET=TICKET_SECRET))
+        self.assertIn("gamelink.E003", self.run_checks(
+            GAMELINK_RESULT_SECRET=TICKET_SECRET))
 
     def test_a_secret_must_not_be_the_django_secret_key(self):
-        self.assertIn("gamelink.E004", self.run_checks(SECRET_KEY=TICKET_SECRET))
+        self.assertIn("gamelink.E004", self.run_checks(
+            SECRET_KEY=TICKET_SECRET))
 
     def test_a_plain_http_tournaments_url(self):
-        self.assertIn("gamelink.E005", self.run_checks(GAMELINK_TOURNAMENTS_URL="http://tournaments.example"))
+        self.assertIn("gamelink.E005", self.run_checks(
+            GAMELINK_TOURNAMENTS_URL="http://tournaments.example"))
 
     def test_a_plain_http_frontend_url(self):
-        self.assertIn("gamelink.E006", self.run_checks(GAMELINK_FRONTEND_URL="http://play.example"))
+        self.assertIn("gamelink.E006", self.run_checks(
+            GAMELINK_FRONTEND_URL="http://play.example"))
 
     def test_an_unconfigured_feature_reports_everything_at_once(self):
         errors = self.run_checks(
@@ -621,10 +660,12 @@ class ResultSignatureContractTests(TestCase):
 
     def test_the_timestamp_and_nonce_are_both_committed_to(self):
         self.assertNotEqual(
-            sign_result_body(RESULT_VECTOR_BODY, "1756300941", RESULT_VECTOR_NONCE),
+            sign_result_body(RESULT_VECTOR_BODY, "1756300941",
+                             RESULT_VECTOR_NONCE),
             RESULT_VECTOR_SIGNATURE)
         self.assertNotEqual(
-            sign_result_body(RESULT_VECTOR_BODY, RESULT_VECTOR_TIMESTAMP, "0" * 32),
+            sign_result_body(RESULT_VECTOR_BODY,
+                             RESULT_VECTOR_TIMESTAMP, "0" * 32),
             RESULT_VECTOR_SIGNATURE)
 
     def test_a_different_secret_produces_a_different_signature(self):
@@ -701,7 +742,8 @@ class TicketContractTests(TestCase):
         with override_settings(GAMELINK_TICKET_SECRETS=[WRONG_SECRET]):
             with self.assertRaises(TicketError) as refusal:
                 verify_ticket(TICKET_VECTOR_TOKEN)
-        self.assertEqual(str(refusal.exception), "no configured secret verifies this ticket")
+        self.assertEqual(str(refusal.exception),
+                         "no configured secret verifies this ticket")
 
     def test_the_verifier_accepts_the_claim_set_the_issuer_mints(self):
         # The claims are the pinned ones and only `exp` moves, because an unexpired token cannot
@@ -731,6 +773,7 @@ class TicketContractTests(TestCase):
         with self.assertRaises(TicketError):
             verify_ticket(f"{forged}:{timestamp}:{signature}")
 
+
 class ResultTestBase(TestCase):
     """A linked room, ready to produce a result."""
 
@@ -745,7 +788,8 @@ class ResultTestBase(TestCase):
             code=code, status=status, target_points=target_points, state={}, **overrides)
 
     def seat(self, room, color, username):
-        player = Player.objects.create(user=User.objects.create_user(username=username))
+        player = Player.objects.create(
+            user=User.objects.create_user(username=username))
         return RoomPlayer.objects.create(room=room, player=player, color=color)
 
     def seat_both(self, room=None):
@@ -769,7 +813,8 @@ class ResultBodyTests(ResultTestBase):
 
     def test_the_body_carries_every_field_the_wire_format_specifies(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         body = self.body()
         self.assertEqual(set(body), {
@@ -786,12 +831,15 @@ class ResultBodyTests(ResultTestBase):
         self.assertEqual(body["match_details"]["winner"], "white")
         self.assertEqual(body["match_details"]["final_cube"], 1)
         self.assertEqual(body["match_details"]["games"][0]["winner"], "white")
-        self.assertEqual(body["match_details"]["games"][0]["points_awarded"], 1)
-        self.assertRegex(body["finished_at"], r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
+        self.assertEqual(body["match_details"]["games"]
+                         [0]["points_awarded"], 1)
+        self.assertRegex(body["finished_at"],
+                         r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 
     def test_seats_and_score_follow_seat_p1_color(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         body = self.body()
         self.assertEqual(body["seats"], {"p1": "white", "p2": "black"})
@@ -805,7 +853,8 @@ class ResultBodyTests(ResultTestBase):
         self.link.save(update_fields=["seat_p1_color"])
         self.seat_both()
 
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         body = self.body()
         self.assertEqual(body["seats"], {"p1": "black", "p2": "white"})
@@ -822,7 +871,8 @@ class ResultBodyTests(ResultTestBase):
 
     def test_the_match_id_is_the_saved_match(self):
         self.seat_both()
-        result = record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        result = record_game_end(
+            self.room, self.winning_state(), "white", "single", "bear_off")
         self.assertEqual(self.body()["match_id"], str(result["match"].id))
 
 
@@ -831,8 +881,10 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
     """A game entered from a tournament reports only the points that were actually won."""
 
     def test_first_game_in_a_match_to_five_awards_one_point_without_reporting_fixture(self):
-        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", name="alice", tp=5))
-        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", name="bob", tp=5))
+        self.enter(make_ticket(sub=str(uuid.uuid4()),
+                   seat="p1", name="alice", tp=5))
+        self.enter(make_ticket(sub=str(uuid.uuid4()),
+                   seat="p2", name="bob", tp=5))
 
         link = TournamentLink.objects.select_related("room").get()
         room = link.room
@@ -840,7 +892,8 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
         state.update({"winner": "white", "winType": "single", "cube": 1})
 
         with patch("game.link.outbox.httpx.post") as post:
-            result = record_game_end(room, state, "white", "single", "bear_off")
+            result = record_game_end(
+                room, state, "white", "single", "bear_off")
 
         room.refresh_from_db()
         link.refresh_from_db()
@@ -856,8 +909,10 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
         post.assert_not_called()
 
     def test_entering_from_tournaments_and_finishing_sends_a_single_point_score(self):
-        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1", name="alice", tp=1))
-        self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p2", name="bob", tp=1))
+        self.enter(make_ticket(sub=str(uuid.uuid4()),
+                   seat="p1", name="alice", tp=1))
+        self.enter(make_ticket(sub=str(uuid.uuid4()),
+                   seat="p2", name="bob", tp=1))
 
         link = TournamentLink.objects.select_related("room").get()
         room = link.room
@@ -876,7 +931,8 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
         self.assertEqual(sent["seats"], {"p1": "white", "p2": "black"})
         self.assertEqual(sent["score"], {"p1": 1, "p2": 0})
         self.assertEqual(sent["winner_seat"], "p1")
-        self.assertEqual(sent["match_details"]["games"][0]["points_awarded"], 1)
+        self.assertEqual(sent["match_details"]["games"]
+                         [0]["points_awarded"], 1)
 
 
 @link_settings
@@ -885,7 +941,8 @@ class EnqueueResultTests(ResultTestBase):
 
     def test_a_finished_linked_match_enqueues_exactly_one_task(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         task = Task.objects.get()
         self.assertEqual(task.name, "game.link.outbox.deliver_result")
@@ -898,7 +955,8 @@ class EnqueueResultTests(ResultTestBase):
         # `run_tasks` selects on `run_at__lte=now`, which a NULL `run_at` never satisfies. A task
         # queued without a stamp would sit pending forever and nothing would say so.
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         self.assertIsNotNone(Task.objects.get().run_at)
         self.assertTrue(
@@ -908,7 +966,8 @@ class EnqueueResultTests(ResultTestBase):
         room = self.make_room(code="PLAIN1")
         self.seat_both(room)
 
-        record_game_end(room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         self.assertEqual(Task.objects.count(), 0)
 
@@ -918,7 +977,8 @@ class EnqueueResultTests(ResultTestBase):
         self.room.save(update_fields=["target_points"])
         self.seat_both()
 
-        result = record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        result = record_game_end(
+            self.room, self.winning_state(), "white", "single", "bear_off")
 
         self.assertFalse(result["match_over"])
         self.assertEqual(Task.objects.count(), 0)
@@ -928,7 +988,8 @@ class EnqueueResultTests(ResultTestBase):
     def test_a_forced_close_reports_too(self):
         # The `leave` path: a player quits mid-match and the room is closed against them.
         self.seat_both()
-        finalize_room(self.room, self.winning_state("black"), "black", "single", "leave")
+        finalize_room(self.room, self.winning_state(
+            "black"), "black", "single", "leave")
 
         self.assertEqual(Task.objects.count(), 1)
         body = self.body()
@@ -938,19 +999,22 @@ class EnqueueResultTests(ResultTestBase):
 
     def test_a_link_reports_only_once(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         # Anything trying to report the same fixture again is a no-op, whatever route it arrives
         # by: the first outcome is the one the tournament hears about.
         self.link.refresh_from_db()
-        self.assertIsNone(enqueue_result(self.link, None, self.room, "cancelled"))
+        self.assertIsNone(enqueue_result(
+            self.link, None, self.room, "cancelled"))
         self.assertEqual(Task.objects.count(), 1)
 
     def test_an_ending_that_rolls_back_queues_nothing(self):
         self.seat_both()
         with self.assertRaises(RuntimeError):
             with transaction.atomic():
-                record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+                record_game_end(self.room, self.winning_state(),
+                                "white", "single", "bear_off")
                 raise RuntimeError("something later in the request failed")
 
         self.assertEqual(Task.objects.count(), 0)
@@ -964,7 +1028,8 @@ class DeliverResultTests(ResultTestBase):
 
     def queue(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
         return Task.objects.get()
 
     def test_delivery_posts_a_signed_body_to_the_tournaments_server(self):
@@ -976,7 +1041,8 @@ class DeliverResultTests(ResultTestBase):
         raw = post.call_args.kwargs["content"]
         headers = post.call_args.kwargs["headers"]
 
-        self.assertEqual(url, "https://tournaments.example/api/gamelink/result/")
+        self.assertEqual(
+            url, "https://tournaments.example/api/gamelink/result/")
         self.assertEqual(headers["Content-Type"], "application/json")
         self.assertEqual(headers["X-Gamelink-Issuer"], "backgammon")
         self.assertEqual(post.call_args.kwargs["timeout"], 10.0)
@@ -1046,7 +1112,8 @@ class DeliverResultTests(ResultTestBase):
         self.seat_both()
         with patch("game.link.outbox.httpx.post", return_value=FakeResponse()) as post:
             with self.captureOnCommitCallbacks(execute=True):
-                record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+                record_game_end(self.room, self.winning_state(),
+                                "white", "single", "bear_off")
 
         post.assert_called_once()
         self.assertEqual(Task.objects.get().status, "done")
@@ -1059,7 +1126,8 @@ class DeliverResultTests(ResultTestBase):
         self.seat_both()
         with patch("game.link.outbox.httpx.post", side_effect=httpx.ConnectError("refused")):
             with self.captureOnCommitCallbacks(execute=True):
-                record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+                record_game_end(self.room, self.winning_state(),
+                                "white", "single", "bear_off")
 
         task = Task.objects.get()
         self.assertEqual(task.status, "pending")
@@ -1076,11 +1144,13 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_conflict_blocks_even_an_old_failed_task_without_losing_the_result(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
         self.link.refresh_from_db()
         original_body = self.link.result_body
         Task.objects.update(status='failed', attempts=7)
-        response = FakeResponse(409, '{"error":"conflict","code":"fixture_admin_resolved"}')
+        response = FakeResponse(
+            409, '{"error":"conflict","code":"fixture_admin_resolved"}')
         with patch('game.link.outbox.httpx.post', return_value=response) as post:
             self.run_tasks()
             self.run_tasks()
@@ -1090,7 +1160,8 @@ class DeliveryRetryTests(ResultTestBase):
         self.assertEqual(task.attempts, 8)
         self.assertIn('fixture_admin_resolved', task.last_error)
         self.assertIn('המשחק כבר הוכרע בידי מנהל', task.last_error)
-        self.assertEqual(TaskAdmin(Task, django_admin.site).error(task), task.last_error)
+        self.assertEqual(
+            TaskAdmin(Task, django_admin.site).error(task), task.last_error)
         self.link.refresh_from_db()
         self.assertEqual(self.link.result_body, original_body)
         self.assertEqual(self.link.result_status, 'queued')
@@ -1099,7 +1170,8 @@ class DeliveryRetryTests(ResultTestBase):
         call_command('retry_result', str(task.pk), stdout=StringIO())
         with patch('game.link.outbox.httpx.post', return_value=FakeResponse()) as post:
             self.run_tasks()
-        self.assertEqual(json.loads(post.call_args.kwargs['content']), original_body)
+        self.assertEqual(json.loads(
+            post.call_args.kwargs['content']), original_body)
         task.refresh_from_db()
         self.assertEqual(task.status, 'done')
         self.assertEqual(task.attempts, 9)
@@ -1107,7 +1179,8 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_unstructured_or_unknown_conflicts_have_a_safe_actionable_message(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
         for body in ('{"error":"conflict"}', '<html>SECRET</html>',
                      '{"code":"SECRET"}', '{"code":["SECRET"]}', '[]'):
             with self.subTest(body=body):
@@ -1121,7 +1194,8 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_only_transient_http_failures_retry(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
         for status in (400, 401, 403, 404, 413, 408, 429, 500, 502, 503, 504):
             with self.subTest(status=status):
                 Task.objects.update(status='pending', run_at=timezone.now())
@@ -1132,7 +1206,8 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_retry_command_cannot_rearm_a_running_or_completed_task(self):
         for status in ('pending', 'running', 'done', 'failed'):
-            task = Task.objects.create(name='game.link.outbox.deliver_result', status=status)
+            task = Task.objects.create(
+                name='game.link.outbox.deliver_result', status=status)
             with self.assertRaises(CommandError):
                 call_command('retry_result', str(task.pk))
             task.refresh_from_db()
@@ -1140,7 +1215,8 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_a_refused_delivery_stays_pending_with_a_pushed_out_run_at(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
         before = Task.objects.get().run_at
 
         with patch("game.link.outbox.httpx.post", return_value=FakeResponse(500)):
@@ -1154,7 +1230,8 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_a_delivery_that_keeps_failing_remains_retryable(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         with patch("game.link.outbox.httpx.post", return_value=FakeResponse(500)):
             for _ in range(3):
@@ -1169,7 +1246,8 @@ class DeliveryRetryTests(ResultTestBase):
 
     def test_a_retry_succeeds_and_marks_the_link_delivered(self):
         self.seat_both()
-        record_game_end(self.room, self.winning_state(), "white", "single", "bear_off")
+        record_game_end(self.room, self.winning_state(),
+                        "white", "single", "bear_off")
 
         with patch("game.link.outbox.httpx.post", return_value=FakeResponse(503)):
             self.run_tasks()
@@ -1303,7 +1381,8 @@ class CancelledRoomTests(ResultTestBase):
         seat = self.seat(room, "white", "plain-quitter")
         self.client.force_authenticate(user=seat.player.user)
 
-        self.assertEqual(self.client.post("/api/rooms/cancel/").status_code, 200)
+        self.assertEqual(self.client.post(
+            "/api/rooms/cancel/").status_code, 200)
         self.assertEqual(Task.objects.count(), 0)
 
 
@@ -1351,7 +1430,8 @@ class PurgeRedeemedTicketsTests(TestCase):
         kept = self.add(uuid.uuid4(), timedelta(minutes=5))
 
         self.assertEqual(purge_redeemed_tickets(now=self.now), 3)
-        self.assertEqual(list(RedeemedTicket.objects.values_list("jti", flat=True)), [kept.jti])
+        self.assertEqual(
+            list(RedeemedTicket.objects.values_list("jti", flat=True)), [kept.jti])
 
     def test_a_second_run_finds_nothing_left_to_do(self):
         self.add(uuid.uuid4(), -timedelta(seconds=1))
@@ -1366,7 +1446,8 @@ class PurgeRedeemedTicketsTests(TestCase):
             v=1, iss="tournaments", aud="backgammon", jti=str(uuid.uuid4()),
             iat=int(time.time()) - 600, exp=int(time.time()) - 300,
             sub=str(uuid.uuid4()), name="alice", trn=17, fix=482, seat="p1", opp="bob", tp=1)
-        token = signing.dumps(payload, key=TICKET_SECRET, salt=TICKET_SALT, compress=False)
+        token = signing.dumps(payload, key=TICKET_SECRET,
+                              salt=TICKET_SALT, compress=False)
 
         self.assertEqual(RedeemedTicket.objects.count(), 0)
         with self.assertRaises(TicketError):
@@ -1389,7 +1470,8 @@ class CancelLinkedRoomsCommandTests(TestCase):
         self.link = TournamentLink.objects.create(
             issuer="tournaments", tournament_id=14, fixture_id=13, room=self.room)
         user = User.objects.create_user(username="split-room-player")
-        RoomPlayer.objects.create(room=self.room, player=Player.objects.create(user=user), color="white")
+        RoomPlayer.objects.create(
+            room=self.room, player=Player.objects.create(user=user), color="white")
 
     def test_dry_run_preserves_the_room_and_link(self):
         out = StringIO()
@@ -1398,27 +1480,32 @@ class CancelLinkedRoomsCommandTests(TestCase):
 
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, "waiting")
-        self.assertTrue(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertTrue(TournamentLink.objects.filter(
+            pk=self.link.pk).exists())
         self.assertIn("Dry run", out.getvalue())
 
     def test_execute_cancels_and_detaches_the_one_seat_room(self):
         out = StringIO()
 
-        call_command("cancel_linked_rooms", tournament_id=14, execute=True, stdout=out)
+        call_command("cancel_linked_rooms", tournament_id=14,
+                     execute=True, stdout=out)
 
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, "cancelled")
-        self.assertFalse(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertFalse(TournamentLink.objects.filter(
+            pk=self.link.pk).exists())
         self.assertIn("Cancelled and detached 1", out.getvalue())
 
     def test_an_exact_room_code_can_be_used_instead_of_a_tournament(self):
         out = StringIO()
 
-        call_command("cancel_linked_rooms", room_codes=["bad123"], execute=True, stdout=out)
+        call_command("cancel_linked_rooms", room_codes=[
+                     "bad123"], execute=True, stdout=out)
 
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, "cancelled")
-        self.assertFalse(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertFalse(TournamentLink.objects.filter(
+            pk=self.link.pk).exists())
         self.assertIn("tournament=14 fixture=13 room=BAD123", out.getvalue())
 
     def test_a_full_room_is_never_selected_for_cleanup(self):
@@ -1431,7 +1518,8 @@ class CancelLinkedRoomsCommandTests(TestCase):
 
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, "waiting")
-        self.assertTrue(TournamentLink.objects.filter(pk=self.link.pk).exists())
+        self.assertTrue(TournamentLink.objects.filter(
+            pk=self.link.pk).exists())
 
 
 class TaskDeadLetterAdminTests(TestCase):
@@ -1476,7 +1564,8 @@ class TaskDeadLetterAdminTests(TestCase):
         task_admin = self.admin_for(Task)
         long_error = Task.objects.create(
             name="x", status="failed", run_at=timezone.now(), last_error="E" * 500)
-        no_error = Task.objects.create(name="x", status="pending", run_at=timezone.now())
+        no_error = Task.objects.create(
+            name="x", status="pending", run_at=timezone.now())
 
         self.assertEqual(len(task_admin.error(long_error)), 120)
         self.assertTrue(task_admin.error(long_error).endswith("..."))
@@ -1520,7 +1609,8 @@ class AdminCommandTests(TestCase):
     def setUp(self):
         self.room = GameRoom.objects.create(
             code='ADM001', status='playing', target_points=5, white_score=1, black_score=0)
-        GameState.objects.create(room=self.room, state_data={'phase': 'moving', 'version': 0})
+        GameState.objects.create(room=self.room, state_data={
+                                 'phase': 'moving', 'version': 0})
         self.link = TournamentLink.objects.create(
             issuer='tournaments', tournament_id=7, fixture_id=42, room=self.room,
             seat_p1_color='white')
@@ -1533,7 +1623,8 @@ class AdminCommandTests(TestCase):
             'HTTP_X_GAMELINK_ISSUER': 'tournaments',
         }
         if signed:
-            digest = hmac.new(COMMAND_SECRET.encode(), command_signature_base(raw, timestamp), hashlib.sha256)
+            digest = hmac.new(COMMAND_SECRET.encode(), command_signature_base(
+                raw, timestamp), hashlib.sha256)
             headers['HTTP_X_GAMELINK_SIGNATURE'] = f'v1={digest.hexdigest()}'
         return self.client.post(self.url, data=raw, content_type='application/json', **headers)
 
@@ -1551,7 +1642,8 @@ class AdminCommandTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.room.refresh_from_db()
         state = GameState.objects.get(room=self.room).state_data
-        self.assertEqual((self.room.white_score, self.room.black_score), (2, 1))
+        self.assertEqual(
+            (self.room.white_score, self.room.black_score), (2, 1))
         self.assertEqual(self.room.status, 'playing')
         self.assertNotEqual(state.get('phase'), 'game_over')
 
@@ -1567,7 +1659,8 @@ class AdminCommandTests(TestCase):
         self.assertEqual(self.room.status, 'completed')
         self.assertEqual(state['phase'], 'game_over')
         self.assertEqual(state['winner'], 'white')
-        self.assertEqual(state['adminEndReason'], 'Organizer stopped the match')
+        self.assertEqual(state['adminEndReason'],
+                         'Organizer stopped the match')
         conflict = self.post_command(self.payload(
             action='finish', command_revision=2, winner_seat='p2', reason='Conflicting ruling'))
         self.assertEqual(conflict.status_code, 409)
@@ -1582,7 +1675,8 @@ class AdminCommandTests(TestCase):
 
         self.assertEqual(retry.status_code, 200)
         self.room.refresh_from_db()
-        self.assertEqual((self.room.white_score, self.room.black_score), (3, 2))
+        self.assertEqual(
+            (self.room.white_score, self.room.black_score), (3, 2))
 
     def test_interim_score_is_allowed_between_games_while_room_is_playing(self):
         game_state = GameState.objects.get(room=self.room)
@@ -1594,7 +1688,8 @@ class AdminCommandTests(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
-        self.assertEqual((self.room.white_score, self.room.black_score), (2, 2))
+        self.assertEqual(
+            (self.room.white_score, self.room.black_score), (2, 2))
 
     def test_a_fresh_ticket_cannot_reenter_a_room_closed_by_the_admin(self):
         self.post_command(self.payload(
@@ -1606,10 +1701,12 @@ class AdminCommandTests(TestCase):
         })
 
         self.assertEqual(response.status_code, 409)
-        self.assertEqual(response.json()['error'], 'This match has already ended.')
+        self.assertEqual(response.json()['error'],
+                         'This match has already ended.')
 
     def test_unsigned_command_is_rejected_without_mutating_room(self):
         response = self.post_command(self.payload(), signed=False)
         self.assertEqual(response.status_code, 401)
         self.room.refresh_from_db()
-        self.assertEqual((self.room.white_score, self.room.black_score), (1, 0))
+        self.assertEqual(
+            (self.room.white_score, self.room.black_score), (1, 0))

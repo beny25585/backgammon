@@ -23,6 +23,7 @@ from .models import GameRoom, GameState, Match, Player, RoomPlayer
 from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
 from asgiref.sync import async_to_sync
 from .dice import fetch_dice, fetch_opening_dice, fetch_turn_dice, DiceServiceError
+from .link.models import TournamentLink as LinkModel
 
 
 def get_or_create_player(user):
@@ -402,3 +403,157 @@ def dice_health(request):
     except DiceServiceError as exc:
         logger.error(f"dice_health failed: {exc}")
         return Response({'diceService': 'down', 'error': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def room_finalized_result(request, room_id):
+    """Authoritative finalized result for a completed room.
+
+    Returns 202 if the room is not yet finalized or if linked money/tournament
+    settlement (RatingResult/WalletTransaction) is still pending. Frontend should
+    retry with exponential backoff, not arbitrary setTimeout.
+    """
+    try:
+        room_uuid = uuid.UUID(str(room_id))
+    except (ValueError, AttributeError):
+        return Response({'detail': 'Invalid room id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        room = GameRoom.objects.get(id=room_uuid)
+    except GameRoom.DoesNotExist:
+        return Response({'detail': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    # Must be participant
+    player = get_or_create_player(request.user)
+    if not room.players.filter(player=player).exists():
+        # Allow linked rooms where user is not directly in GameRoom but is in tournaments? For now require membership
+        # For head-to-head, the room's players are the two users, so check again via TournamentLink? Keep strict.
+        return Response({'detail': 'Not a participant of this room'}, status=status.HTTP_403_FORBIDDEN)
+
+    # Room must be completed/cancelled or game_over
+    gs = GameState.objects.filter(room=room).first()
+    state = (gs.state_data if gs else {}) or {}
+    is_over = state.get('phase') == 'game_over' and state.get('winner')
+    if room.status not in ('completed', 'cancelled') and not is_over:
+        return Response({'detail': 'Room not yet finalized', 'status': room.status}, status=status.HTTP_202_ACCEPTED)
+
+    # Fetch latest Match for this room (authoritative stats)
+    match = Match.objects.filter(room=room).order_by('-created_at').first()
+    # If no Match yet but room is completed via finalize_room, it should have one
+    # For playing rooms that just reached game_over but not yet match_over, match may be None
+    # In that case we can still return game-level data from state
+
+    # Determine gameType from link or state
+    link = LinkModel.objects.filter(room=room).first()
+    game_type = '1v1'
+    tournament_id = None
+    if link and link.tournament_id and int(link.tournament_id) != 0:
+        game_type = 'tournament'
+        tournament_id = link.tournament_id
+    elif state.get('gameFormat') == 'money':
+        game_type = 'quick'
+    elif state.get('gameFormat') == 'match':
+        game_type = '1v1'
+
+    # Build base result from game backend
+    white_rp = room.players.filter(color='white').first()
+    black_rp = room.players.filter(color='black').first()
+    white_name = str(white_rp.player) if white_rp else None
+    black_name = str(black_rp.player) if black_rp else None
+
+    result = {
+        'roomId': str(room.id),
+        'gameType': game_type,
+        'players': {
+            'white': {'username': white_name},
+            'black': {'username': black_name},
+        },
+        'result': {
+            'winner': state.get('winner'),
+            'winType': state.get('winType'),
+            'whiteScore': room.white_score,
+            'blackScore': room.black_score,
+            'targetPoints': room.target_points,
+            'cube': int(state.get('cube', 1) or 1),
+            'endReason': state.get('gameEndReason') or state.get('winType') and 'bear_off' or 'move',
+            'points': state.get('gameEndPoints'),
+        },
+        'stats': None,
+        'rating': None,
+        'money': None,
+        'tournament': None,
+    }
+
+    # Stats from Match if exists
+    if match:
+        result['stats'] = {
+            'hits': match.hits,
+            'doublesOffered': match.doubles_offered,
+            'doublesAccepted': match.doubles_accepted,
+            'openingRoll': match.opening_roll,
+            'firstPlayer': match.first_player,
+            'durationSeconds': match.duration_seconds,
+            'clockRemaining': match.clock_remaining,
+            'finalCube': match.final_cube,
+        }
+        # Prefer match's end_reason if state doesn't have it
+        if not result['result']['endReason'] or result['result']['endReason'] == 'move':
+            result['result']['endReason'] = match.end_reason
+
+    # For linked rooms (money/tournament), check if settlement is pending
+    # If gameType is quick or tournament and link exists but result_status != delivered,
+    # consider it not yet finalized for rating/money.
+    # We do not block the whole response; we return what we have and let frontend
+    # know rating/money are pending via null.
+    # However if the request expects rating and it's not yet available, return 202
+    # to signal retry — frontend should check if rating is expected but missing.
+    expects_rating = game_type in ('quick', 'tournament')
+    expects_money = game_type == 'quick'
+
+    # If this is a linked money/tournament room and the link's result is still pending/queued,
+    # signal that the finalized data is not yet available.
+    if link and expects_rating:
+        # LinkModel.result_status == 'delivered' means tournaments has processed
+        # For head-to-head money, the settlement is in HeadToHeadTable, not Link, so check Task
+        # For now, if link exists and its result_status is still pending/queued, return 202
+        # to avoid stale rating.
+        if getattr(link, 'result_status', None) not in (None, 'delivered', 'pending'):
+            pass
+        # If the link is still pending for a rated mode, we can return 202 to indicate not ready
+        # But we don't want to block normal 1v1 (which is not rated) — only if expects_rating/money
+        if link.result_status in ('pending', 'queued') and (expects_rating or expects_money):
+            # Check if a Match exists — if not, still pending
+            # Return 202 so frontend retries with backoff
+            return Response({'detail': 'Settlement pending', 'gameType': game_type}, status=status.HTTP_202_ACCEPTED)
+
+    # Tournament details
+    if game_type == 'tournament' and link and tournament_id:
+        # Minimal tournament info from link; frontend can fetch full bracket via tournaments API
+        result['tournament'] = {
+            'tournamentId': tournament_id,
+            'fixtureId': link.fixture_id,
+            'round': None,  # to be enriched via tournaments API if needed
+            'status': 'advanced' if result['result']['winner'] and (
+                (result['result']['winner'] == 'white' and white_rp and white_rp.player.user_id == request.user.id) or
+                (result['result']['winner'] == 'black' and black_rp and black_rp.player.user_id == request.user.id)
+            ) else 'eliminated',
+            'nextOpponent': None,
+        }
+
+    # Money settlement — for quick, try to include stake if available in state
+    if game_type == 'quick':
+        stake = state.get('stake')
+        result['money'] = {
+            'stake': stake,
+            'selfChange': None,  # to be filled via wallet after settlement; null signals pending
+            'opponentChange': None,
+        }
+        # If link is delivered, we could fetch the actual settlement from tournaments via HTTP,
+        # but for now return null to indicate pending — frontend will hide the row per real-data-only.
+
+    # Rating — for quick/tournament, include null to signal pending until tournaments persists
+    if expects_rating:
+        result['rating'] = None  # will be populated once tournaments RatingResult is queried via dedicated endpoint
+
+    return Response(result)

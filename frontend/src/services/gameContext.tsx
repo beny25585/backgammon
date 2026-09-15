@@ -12,6 +12,7 @@ import {
 import type {
   GameContextType,
   GameResult,
+  GameType,
   NoMovesMessage,
   OpeningRollResult,
 } from "../types/context";
@@ -37,6 +38,7 @@ interface GameProviderProps {
   children: ReactNode;
   roomId: string;
   playerColor: Color;
+  gameType?: GameType;
   serverUrl?: string;
 }
 
@@ -69,6 +71,7 @@ export function GameProvider({
   children,
   roomId,
   playerColor: initialColor,
+  gameType: initialGameType = "1v1",
   serverUrl,
 }: GameProviderProps) {
   const [state, setState] = useState<GameState | null>(null);
@@ -79,8 +82,9 @@ export function GameProvider({
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] =
-    useState<NoMovesMessage | null>(null);
+  const [noMovesMessage, setNoMovesMessage] = useState<NoMovesMessage | null>(
+    null,
+  );
   const noMovesNoticeIdRef = useRef(0);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
@@ -93,6 +97,27 @@ export function GameProvider({
     white: 0,
     black: 0,
   });
+  const [gameType, setGameType] = useState<GameType>(initialGameType);
+  const gameTypeRef = useRef(gameType);
+  const autoNextGameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    gameTypeRef.current = gameType;
+  }, [gameType]);
+  useEffect(() => {
+    return () => {
+      if (autoNextGameRef.current) clearTimeout(autoNextGameRef.current);
+    };
+  }, [roomId]);
+
+  // Backend is source of truth for quick vs 1v1 via state.gameFormat.
+  // Tournament stays tournament only when URL had a real id; otherwise correct
+  // a stale ?tournament=0 that was mis-classified.
+  useEffect(() => {
+    const fmt = (state as unknown as { gameFormat?: string } | null)
+      ?.gameFormat;
+    if (fmt === "money" && gameType !== "quick") setGameType("quick");
+    else if (fmt === "match" && gameType === "quick") setGameType("1v1");
+  }, [state, gameType]);
 
   const socket = getSocketService(serverUrl);
   const lastVersionRef = useRef(0);
@@ -417,6 +442,8 @@ export function GameProvider({
             nextGameIn?: number;
             matchOver?: boolean;
             adminReason?: string;
+            gameFormat?: string;
+            format?: string;
           };
           const winner = payload?.winner;
           const match = {
@@ -430,6 +457,31 @@ export function GameProvider({
           const matchOver =
             payload.matchOver === true ||
             (targetPoints > 0 && match[winner] >= targetPoints);
+          const payloadFormat = payload.gameFormat ?? payload.format;
+          const derivedGameType: GameType =
+            payloadFormat === "money"
+              ? "quick"
+              : payloadFormat === "match"
+                ? gameTypeRef.current === "tournament"
+                  ? "tournament"
+                  : "1v1"
+                : gameTypeRef.current;
+          // Continuous match: keep board live when match not over
+          if (!matchOver) {
+            setNextGameCountdown(null);
+            setState((prev) =>
+              prev ? { ...prev, phase: "game_over", winner } : prev,
+            );
+            if (!autoNextGameRef.current) {
+              autoNextGameRef.current = setTimeout(() => {
+                autoNextGameRef.current = null;
+                sendIntent({ action: "next_game" });
+              }, 900);
+            }
+            setTimeout(() => void fetchFinalizedResult(0), 400);
+            return;
+          }
+
           setGameResult({
             winner,
             winType:
@@ -439,21 +491,18 @@ export function GameProvider({
             cube: payload.cube ?? 1,
             matchScore: match,
             targetPoints,
-            matchOver,
+            matchOver: true,
             reason: payload.reason,
             adminReason:
               typeof payload.adminReason === "string"
                 ? payload.adminReason
                 : undefined,
+            gameType: derivedGameType,
           });
-          const nextGameIn =
-            typeof payload.nextGameIn === "number" ? payload.nextGameIn : null;
-          if (matchOver) {
-            setNextGameCountdown(null);
-          } else if (nextGameIn !== null) {
-            setNextGameCountdown(nextGameIn);
-          }
-          if (matchOver) clearRoom();
+          // Fetch authoritative finalized result (rating/money/stats) after settlement
+          setTimeout(() => void fetchFinalizedResult(0), 400);
+          setNextGameCountdown(null);
+          clearRoom();
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
           );
@@ -476,7 +525,9 @@ export function GameProvider({
             | undefined;
           if (payload?.kind !== "no_moves") return;
           const dice = Array.isArray(payload.dice)
-            ? payload.dice.filter((die): die is number => typeof die === "number")
+            ? payload.dice.filter(
+                (die): die is number => typeof die === "number",
+              )
             : [];
           const remaining = Array.isArray(payload.remaining)
             ? payload.remaining.filter(
@@ -484,10 +535,7 @@ export function GameProvider({
               )
             : [];
           const color = payload.color;
-          if (
-            dice.length === 0 ||
-            (color !== "white" && color !== "black")
-          ) {
+          if (dice.length === 0 || (color !== "white" && color !== "black")) {
             return;
           }
           const revealAfterMs =
@@ -631,6 +679,207 @@ export function GameProvider({
 
   const clearError = useCallback(() => setError(null), []);
 
+  const fetchFinalizedResult = useCallback(
+    async (attempt = 0): Promise<void> => {
+      if (!roomId) {
+        console.warn("[FINAL RESULT] missing roomId");
+        return;
+      }
+
+      const token = getAccessToken();
+
+      if (!token) {
+        console.warn("[FINAL RESULT] missing access token");
+        return;
+      }
+
+      const url = `/backgammon/api/rooms/${roomId}/result/`;
+
+      console.log("[FINAL RESULT] request", {
+        attempt,
+        roomId,
+        url,
+      });
+
+      try {
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const rawBody = await res.text();
+
+        console.log("[FINAL RESULT] response", {
+          attempt,
+          status: res.status,
+          statusText: res.statusText,
+          body: rawBody,
+        });
+
+        if (res.status === 202) {
+          if (attempt < 8) {
+            const delay = Math.min(500 * 2 ** attempt, 4000);
+
+            console.log(
+              `[FINAL RESULT] still processing, retrying in ${delay}ms`,
+            );
+
+            setTimeout(() => void fetchFinalizedResult(attempt + 1), delay);
+          } else {
+            console.warn("[FINAL RESULT] processing timeout");
+          }
+
+          return;
+        }
+
+        if (!res.ok) {
+          console.error("[FINAL RESULT] request failed", {
+            status: res.status,
+            body: rawBody,
+          });
+
+          return;
+        }
+
+        let data: Record<string, unknown>;
+
+        try {
+          data = JSON.parse(rawBody) as Record<string, unknown>;
+        } catch {
+          console.error("[FINAL RESULT] invalid JSON", rawBody);
+
+          return;
+        }
+
+        console.log("[FINAL RESULT] parsed data", data);
+
+        const rating = data.rating as
+          | {
+              self: {
+                before: number;
+                after: number;
+                change: number;
+              };
+              opponent: {
+                before: number;
+                after: number;
+                change: number;
+              };
+            }
+          | null
+          | undefined;
+
+        const money = data.money as
+          | {
+              stake?: string;
+              selfChange?: number;
+              opponentChange?: number;
+            }
+          | null
+          | undefined;
+
+        const stats = data.stats as
+          | {
+              hits?: number | null;
+              doublesOffered?: number | null;
+              doublesAccepted?: number | null;
+              openingRoll?: Partial<Record<Color, number>> | null;
+              firstPlayer?: Color | null;
+              durationSeconds?: number | null;
+              clockRemaining?: Partial<Record<Color, number>> | null;
+            }
+          | null
+          | undefined;
+
+        const result = data.result as
+          | {
+              endReason?: string | null;
+            }
+          | null
+          | undefined;
+
+        console.log("[FINAL RESULT] extracted", {
+          rating,
+          money,
+          stats,
+          result,
+        });
+
+        if (rating || money || stats || result?.endReason) {
+          setGameResult((prev) => {
+            if (!prev) {
+              console.warn(
+                "[FINAL RESULT] gameResult disappeared before merge",
+              );
+
+              return prev;
+            }
+
+            const next = {
+              ...prev,
+
+              reason: result?.endReason ?? prev.reason,
+
+              /*
+               * rating.self already means the current player.
+               * Do not swap it according to white/black.
+               */
+              ratingBefore: rating?.self.before ?? prev.ratingBefore,
+
+              ratingAfter: rating?.self.after ?? prev.ratingAfter,
+
+              opponentRatingBefore:
+                rating?.opponent.before ?? prev.opponentRatingBefore,
+
+              opponentRatingAfter:
+                rating?.opponent.after ?? prev.opponentRatingAfter,
+
+              ratingChange: rating?.self.change ?? prev.ratingChange,
+
+              opponentRatingChange:
+                rating?.opponent.change ?? prev.opponentRatingChange,
+
+              coinsChange: money?.selfChange ?? prev.coinsChange,
+
+              opponentCoinsChange:
+                money?.opponentChange ?? prev.opponentCoinsChange,
+
+              stakeAmount:
+                money?.stake != null ? Number(money.stake) : prev.stakeAmount,
+
+              hits: stats?.hits ?? prev.hits,
+
+              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
+
+              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
+
+              openingRoll: stats?.openingRoll ?? prev.openingRoll,
+
+              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
+
+              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
+
+              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
+            };
+
+            console.log("[FINAL RESULT] merged GameResult", next);
+
+            return next;
+          });
+        } else {
+          console.warn(
+            "[FINAL RESULT] 200 response but no enrichment data",
+            data,
+          );
+        }
+      } catch (error) {
+        console.error("[FINAL RESULT] exception", error);
+      }
+    },
+    [roomId],
+  );
+
   const handleNextGame = useCallback(() => {
     setGameResult(null);
     sendIntent({ action: "next_game" });
@@ -661,6 +910,7 @@ export function GameProvider({
         gameResult,
         nextGameCountdown,
         matchScore,
+        gameType,
         handleNextGame,
         handleHome,
         updateState,

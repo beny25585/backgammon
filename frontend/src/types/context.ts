@@ -8,6 +8,16 @@ export interface OpeningRollResult {
   winner: Color | null;
 }
 
+export type GameType = "tournament" | "1v1" | "quick" | "local";
+
+export interface TournamentProgress {
+  roundLabel?: string;
+  roundResult?: string;
+  advancement?: "advanced" | "eliminated" | "pending";
+  nextOpponent?: string | null;
+  nextMatchLabel?: string | null;
+}
+
 export interface GameResult {
   winner: Color;
   winType: "single" | "gammon" | "backgammon";
@@ -18,6 +28,27 @@ export interface GameResult {
   matchOver?: boolean;
   reason?: string;
   adminReason?: string;
+  gameType?: GameType;
+  tournament?: TournamentProgress | null;
+  ratingChange?: number | null;
+  ratingBefore?: number | null;
+  ratingAfter?: number | null;
+  opponentRatingBefore?: number | null;
+  opponentRatingAfter?: number | null;
+  opponentRatingChange?: number | null;
+  hits?: number | null;
+  doublesOffered?: number | null;
+  doublesAccepted?: number | null;
+  openingRoll?: Partial<Record<Color, number>> | null;
+  firstPlayer?: Color | null;
+  durationSeconds?: number | null;
+  clockRemaining?: Partial<Record<Color, number>> | null;
+  coinsReward?: string | null;
+  coinsChange?: number | null;
+  opponentCoinsChange?: number | null;
+  stakeAmount?: number | null;
+  errorRate?: number | null;
+  luckLabel?: string | null;
 }
 
 export interface NoMovesMessage {
@@ -45,6 +76,7 @@ export interface GameContextType {
   gameResult: GameResult | null;
   nextGameCountdown: number | null;
   matchScore: Record<Color, number> | null;
+  gameType: GameType;
   handleNextGame: () => void;
   handleHome: () => void;
   updateState: (newState: GameState) => void;

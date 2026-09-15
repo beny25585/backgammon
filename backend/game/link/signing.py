@@ -134,7 +134,7 @@ def _validate_claims(payload):
         from decimal import Decimal, InvalidOperation
         if payload['format'] not in ('match', 'money'):
             raise TicketError('unknown game format')
-        if type(payload.get('cube_max')) is not int or payload['cube_max'] not in (2, 4, 8, 16, 32, 64):
+        if type(payload.get('cube_max')) is not int or payload['cube_max'] not in (1, 2, 4, 8, 16, 32, 64):
             raise TicketError('invalid cube limit')
         if type(payload.get('jacoby')) is not bool or type(payload.get('dbl')) is not bool:
             raise TicketError('invalid format rules')

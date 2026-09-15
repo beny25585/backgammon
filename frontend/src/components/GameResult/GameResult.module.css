@@ -1,0 +1,692 @@
+/* =========================================================
+   GAME RESULT — GALAXY-LIKE LAYOUT
+   ========================================================= */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 100dvh;
+
+  background:
+    radial-gradient(circle at 50% 58%, rgba(18, 35, 80, 0.16), transparent 34%),
+    #030611;
+
+  overflow: hidden;
+}
+
+.card {
+  position: relative;
+
+  width: min(92vw, 760px);
+  max-height: 100dvh;
+
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+
+  padding: 0;
+
+  border: 0;
+  border-radius: 0;
+
+  background: transparent;
+  box-shadow: none;
+}
+
+/* =========================================================
+   CLOSE BUTTON
+   ========================================================= */
+
+.closeButton {
+  position: fixed;
+
+  top: max(24px, env(safe-area-inset-top));
+  right: max(24px, env(safe-area-inset-right));
+
+  z-index: 20;
+
+  width: 54px;
+  height: 54px;
+
+  display: grid;
+  place-items: center;
+
+  padding: 0;
+
+  border: 0;
+  border-radius: 5px;
+
+  background: #ff2d50;
+  color: white;
+
+  font-size: 42px;
+  font-weight: 300;
+  line-height: 1;
+
+  cursor: pointer;
+
+  box-shadow: 0 6px 18px rgba(255, 45, 80, 0.2);
+
+  transition:
+    transform 0.16s ease,
+    filter 0.16s ease;
+}
+
+.closeButton:hover {
+  filter: brightness(1.08);
+}
+
+.closeButton:active {
+  transform: scale(0.94);
+}
+
+/* =========================================================
+   HERO
+   ========================================================= */
+
+.resultHero {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(180px, 240px) minmax(
+      120px,
+      1fr
+    );
+
+  align-items: end;
+
+  width: 100%;
+
+  gap: 20px;
+
+  margin-bottom: 12px;
+}
+
+/* =========================================================
+   PLAYER
+   ========================================================= */
+
+.playerCard {
+  min-width: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  gap: 8px;
+
+  padding: 0;
+
+  border: 0;
+
+  background: transparent;
+}
+
+.playerRole {
+  color: #f0f2ff;
+
+  font-size: 14px;
+  font-weight: 700;
+
+  line-height: 1;
+}
+
+.playerAvatarWrap {
+  position: relative;
+
+  width: 82px;
+  height: 82px;
+
+  display: grid;
+  place-items: center;
+
+  border-radius: 50%;
+
+  background: radial-gradient(circle, rgba(30, 92, 255, 0.18), transparent 68%);
+}
+
+.winnerHighlight::before {
+  content: "";
+
+  position: absolute;
+  inset: -12px;
+
+  border-radius: 50%;
+
+  background: radial-gradient(
+    circle,
+    rgba(91, 58, 255, 0.34),
+    rgba(41, 32, 123, 0.15) 48%,
+    transparent 72%
+  );
+
+  filter: blur(3px);
+}
+
+.playerAvatar {
+  position: relative;
+  z-index: 1;
+
+  width: 72px;
+  height: 72px;
+
+  display: grid;
+  place-items: center;
+
+  border: 3px solid #3158e6;
+  border-radius: 50%;
+
+  background: radial-gradient(circle at 35% 30%, #24365b, #111827 72%);
+
+  color: white;
+
+  font-size: 30px;
+  font-weight: 800;
+
+  box-shadow: 0 0 0 2px rgba(31, 82, 255, 0.14);
+}
+
+.playerAvatarWinner {
+  box-shadow:
+    0 0 14px rgba(82, 62, 255, 0.85),
+    0 0 32px rgba(82, 62, 255, 0.36);
+}
+
+.playerName {
+  display: flex;
+  align-items: center;
+
+  gap: 7px;
+
+  max-width: 140px;
+
+  color: #f7f7fb;
+
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.playerNameText {
+  min-width: 0;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+
+  flex: 0 0 12px;
+
+  border-radius: 50%;
+
+  background: #f4f4fa;
+}
+
+.dotWinner {
+  background: #4931d4;
+
+  box-shadow: 0 0 8px rgba(92, 67, 255, 0.8);
+}
+
+/* =========================================================
+   SCORE
+   ========================================================= */
+
+.scoreColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  min-width: 0;
+
+  padding-bottom: 0;
+}
+
+.resultTitle {
+  margin: 0 0 14px;
+
+  color: #f5f6ff;
+
+  font-size: clamp(26px, 4vw, 34px);
+  font-weight: 800;
+
+  line-height: 1;
+
+  text-align: center;
+}
+
+.scoreRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 18px;
+}
+
+.scoreBox {
+  width: 58px;
+  height: 58px;
+
+  display: grid;
+  place-items: center;
+
+  background: #eef0ff;
+  color: #050a18;
+
+  border-radius: 1px;
+
+  font-size: 34px;
+  font-weight: 800;
+
+  line-height: 1;
+}
+
+.scoreSeparator {
+  color: #e9eaff;
+
+  font-size: 27px;
+  font-weight: 400;
+}
+
+.subtitle {
+  margin-top: 7px;
+
+  color: #8f96aa;
+
+  font-size: 11px;
+  text-align: center;
+}
+
+/* =========================================================
+   ANALYSIS META
+   ========================================================= */
+
+.heroMeta {
+  width: 100%;
+
+  margin-top: 15px;
+}
+
+.analysisMeta {
+  width: 100%;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  gap: 4px;
+}
+
+.analysisLabel {
+  color: #777e91;
+
+  font-size: 9px;
+  font-weight: 600;
+
+  letter-spacing: 0.02em;
+}
+
+.memberBar {
+  width: min(240px, 100%);
+
+  min-height: 27px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 5px;
+
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(190, 195, 210, 0.2) 18%,
+    rgba(225, 228, 236, 0.34) 50%,
+    rgba(190, 195, 210, 0.2) 82%,
+    transparent 100%
+  );
+
+  color: #d8dae2;
+
+  font-size: 16px;
+  font-weight: 400;
+}
+
+.infoPill {
+  padding: 1px 5px;
+
+  border: 1px solid rgba(235, 237, 244, 0.45);
+  border-radius: 4px;
+
+  background: rgba(255, 255, 255, 0.08);
+
+  color: #dadce4;
+
+  font-size: 10px;
+}
+
+/* =========================================================
+   COMPARISON TABLE
+   ========================================================= */
+
+.resultTable {
+  width: 100%;
+
+  display: flex;
+  flex-direction: column;
+
+  gap: 2px;
+
+  margin-top: 0;
+
+  overflow: hidden;
+
+  border-radius: 3px;
+}
+
+.resultRow {
+  min-height: 31px;
+
+  display: grid;
+  grid-template-columns: 1fr minmax(130px, 0.78fr) 1fr;
+  align-items: center;
+
+  padding: 0 16px;
+
+  background: linear-gradient(
+    90deg,
+    #347de0 0%,
+    #163c76 29%,
+    #091528 50%,
+    #163c76 71%,
+    #347de0 100%
+  );
+
+  color: #f7f8ff;
+
+  font-size: 15px;
+}
+
+.playerValue {
+  text-align: left;
+
+  white-space: nowrap;
+}
+
+.metricLabel {
+  color: #ffffff;
+
+  font-weight: 800;
+  text-align: center;
+
+  white-space: nowrap;
+}
+
+.opponentValue {
+  text-align: right;
+
+  white-space: nowrap;
+}
+
+/* =========================================================
+   RATING
+   ========================================================= */
+
+.ratingChange {
+  display: inline-flex;
+  align-items: center;
+
+  gap: 7px;
+}
+
+.opponentValue .ratingChange {
+  justify-content: flex-end;
+}
+
+.ratingDelta {
+  font-weight: 700;
+}
+
+.ratingTransition {
+  color: #e4e6f1;
+}
+
+/* =========================================================
+   ACTIONS
+   ========================================================= */
+
+.resultActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 10px;
+
+  margin-top: 8px;
+}
+
+.resultActions button {
+  min-width: 118px;
+  min-height: 48px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 7px;
+
+  padding: 0 18px;
+
+  border: 0;
+  border-radius: 999px;
+
+  background: linear-gradient(180deg, #384fff, #2538e8);
+
+  color: white;
+
+  font-size: 15px;
+  font-weight: 800;
+
+  cursor: pointer;
+
+  box-shadow: 0 4px 14px rgba(37, 56, 232, 0.22);
+
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.resultActions button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.resultActions button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.resultActions button:disabled {
+  cursor: default;
+
+  opacity: 0.42;
+}
+
+.rematchButton {
+  background: linear-gradient(180deg, #51eba0, #38dc84) !important;
+
+  color: #06160d !important;
+
+  box-shadow: 0 4px 15px rgba(56, 220, 132, 0.18) !important;
+}
+
+/* =========================================================
+   TEST / ACCESSIBILITY
+   ========================================================= */
+
+.hiddenScoreRows {
+  position: absolute;
+
+  width: 1px;
+  height: 1px;
+
+  overflow: hidden;
+
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 640px) {
+  .card {
+    width: calc(100vw - 32px);
+  }
+
+  .closeButton {
+    top: max(18px, env(safe-area-inset-top));
+    right: 18px;
+
+    width: 48px;
+    height: 48px;
+
+    font-size: 36px;
+  }
+
+  .resultHero {
+    grid-template-columns: minmax(78px, 1fr) minmax(145px, 1.35fr) minmax(
+        78px,
+        1fr
+      );
+
+    gap: 6px;
+
+    margin-bottom: 8px;
+  }
+
+  .playerRole {
+    font-size: 11px;
+  }
+
+  .playerAvatarWrap {
+    width: 66px;
+    height: 66px;
+  }
+
+  .playerAvatar {
+    width: 58px;
+    height: 58px;
+
+    font-size: 24px;
+  }
+
+  .playerName {
+    max-width: 90px;
+
+    gap: 5px;
+
+    font-size: 12px;
+  }
+
+  .dot {
+    width: 9px;
+    height: 9px;
+
+    flex-basis: 9px;
+  }
+
+  .resultTitle {
+    margin-bottom: 10px;
+
+    font-size: 24px;
+  }
+
+  .scoreRow {
+    gap: 12px;
+  }
+
+  .scoreBox {
+    width: 49px;
+    height: 49px;
+
+    font-size: 29px;
+  }
+
+  .memberBar {
+    min-height: 23px;
+
+    font-size: 14px;
+  }
+
+  .resultRow {
+    min-height: 28px;
+
+    grid-template-columns: 1fr 118px 1fr;
+
+    padding: 0 9px;
+
+    font-size: 12px;
+  }
+
+  .metricLabel {
+    font-size: 12px;
+  }
+
+  .resultActions {
+    gap: 7px;
+  }
+
+  .resultActions button {
+    min-width: 0;
+    min-height: 43px;
+
+    flex: 1;
+
+    padding: 0 10px;
+
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 390px) {
+  .resultHero {
+    grid-template-columns: 72px 1fr 72px;
+  }
+
+  .playerAvatarWrap {
+    width: 58px;
+    height: 58px;
+  }
+
+  .playerAvatar {
+    width: 52px;
+    height: 52px;
+  }
+
+  .playerName {
+    max-width: 72px;
+
+    font-size: 11px;
+  }
+
+  .resultRow {
+    grid-template-columns: 1fr 105px 1fr;
+
+    padding-inline: 6px;
+
+    font-size: 11px;
+  }
+
+  .resultActions button {
+    font-size: 11px;
+  }
+}

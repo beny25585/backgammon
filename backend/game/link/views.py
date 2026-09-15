@@ -15,11 +15,12 @@ import time
 import uuid
 from datetime import datetime
 from datetime import timezone as dt_timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect
 from rest_framework import status
@@ -36,6 +37,30 @@ from .models import RedeemedTicket, TournamentLink
 from .signing import TicketError, redact, verify_command_signature, verify_ticket
 
 logger = logging.getLogger(__name__)
+
+
+def tournaments_frontend_url():
+    """Return the canonical tournaments SPA base URL with the app path appended once."""
+    configured = (
+        getattr(settings, 'GAMELINK_TOURNAMENTS_FRONTEND_URL', '') or '').strip()
+    if not configured:
+        raise ImproperlyConfigured(
+            'GAMELINK_TOURNAMENTS_FRONTEND_URL is not configured.')
+
+    parsed = urlparse(configured)
+    if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+        raise ImproperlyConfigured(
+            'GAMELINK_TOURNAMENTS_FRONTEND_URL must be a frontend origin only, '
+            'for example http://127.0.0.1:5174.'
+        )
+
+    if parsed.path not in ('', '/'):
+        raise ImproperlyConfigured(
+            'GAMELINK_TOURNAMENTS_FRONTEND_URL must be an origin only. '
+            'Do not include /tournaments; the backend appends the canonical app path.'
+        )
+
+    return f"{parsed.scheme}://{parsed.netloc}/tournaments/"
 
 
 @api_view(['GET'])
@@ -62,7 +87,8 @@ def enter_link(request):
 
     frontend_url = settings.GAMELINK_FRONTEND_URL.rstrip('/')
     if not frontend_url:
-        logger.error("link enter failed: GAMELINK_FRONTEND_URL is not configured")
+        logger.error(
+            "link enter failed: GAMELINK_FRONTEND_URL is not configured")
         return Response({'error': 'This link is not valid.'}, status=status.HTTP_400_BAD_REQUEST)
 
     issuer = ticket['iss']
@@ -74,7 +100,8 @@ def enter_link(request):
                 RedeemedTicket.objects.create(
                     jti=ticket['jti'],
                     issuer=issuer,
-                    expires_at=datetime.fromtimestamp(ticket['exp'], tz=dt_timezone.utc),
+                    expires_at=datetime.fromtimestamp(
+                        ticket['exp'], tz=dt_timezone.utc),
                 )
             except IntegrityError:
                 raise _AlreadyRedeemed() from None
@@ -84,7 +111,11 @@ def enter_link(request):
 
             link, room = _link_for_fixture(issuer, ticket)
             if room.status in ('completed', 'cancelled'):
-                raise _RoomClosed()
+                # A terminal room is still viewable by its participants so a
+                # fresh ticket (different jti) can re-establish their session
+                # and show the final board. Strangers remain blocked.
+                if not room.players.filter(player=player).exists():
+                    raise _RoomClosed()
             color = link.color_for_seat(seat)
 
             # Tournament rooms are independent. A player may have a live fixture in several
@@ -103,7 +134,8 @@ def enter_link(request):
                 room=room, player=player, defaults={'color': color})
             started = _start_if_full(room)
     except _AlreadyRedeemed:
-        logger.warning(f"link enter rejected: ticket already redeemed jti={ticket['jti']}")
+        logger.warning(
+            f"link enter rejected: ticket already redeemed jti={ticket['jti']}")
         return Response(
             {'error': 'This link has already been used. Return to the tournament and open it again.'},
             status=status.HTTP_409_CONFLICT)
@@ -115,7 +147,8 @@ def enter_link(request):
             {'error': 'That seat has already been taken by another player.'},
             status=status.HTTP_409_CONFLICT)
     except _RoomClosed:
-        logger.info(f"link enter rejected: fixture {ticket['fix']} is already closed")
+        logger.info(
+            f"link enter rejected: fixture {ticket['fix']} is already closed")
         return Response(
             {'error': 'This match has already ended.'},
             status=status.HTTP_409_CONFLICT)
@@ -124,7 +157,8 @@ def enter_link(request):
         # which is what wakes the first player out of the waiting room.
         channel_layer = get_channel_layer()
         if channel_layer:
-            async_to_sync(channel_layer.group_send)(f'game_{room.id}', {'type': 'room_started'})
+            async_to_sync(channel_layer.group_send)(
+                f'game_{room.id}', {'type': 'room_started'})
 
     logger.info(
         f"link enter: issuer={issuer} fixture={ticket['fix']} room={room.code} "
@@ -195,7 +229,8 @@ def admin_command(request):
             else:
                 room.black_score, room.white_score = score
         room.last_sequence += 1
-        update_fields = ['white_score', 'black_score', 'last_sequence', 'updated_at']
+        update_fields = ['white_score', 'black_score',
+                         'last_sequence', 'updated_at']
         state['version'] = room.last_sequence
         state['adminCommandId'] = command_id
         state['adminCommandRevision'] = command_revision
@@ -233,7 +268,8 @@ def _link_for_fixture(issuer, ticket):
     Two players can redeem at the same instant; the unique constraint on `(issuer, fixture_id)`
     decides which one creates, and the loser re-reads the winner's row from the savepoint.
     """
-    link = TournamentLink.objects.filter(issuer=issuer, fixture_id=ticket['fix']).first()
+    link = TournamentLink.objects.filter(
+        issuer=issuer, fixture_id=ticket['fix']).first()
     if link is not None:
         room = GameRoom.objects.select_for_update().get(pk=link.room_id)
         _sync_waiting_room_from_ticket(room, ticket)
@@ -260,10 +296,12 @@ def _link_for_fixture(issuer, ticket):
                 rating_policy='server-v1',
             )
     except IntegrityError:
-        link = TournamentLink.objects.get(issuer=issuer, fixture_id=ticket['fix'])
+        link = TournamentLink.objects.get(
+            issuer=issuer, fixture_id=ticket['fix'])
         return link, GameRoom.objects.select_for_update().get(pk=link.room_id)
 
-    logger.info(f"link room provisioned: issuer={issuer} fixture={ticket['fix']} room={room.code}")
+    logger.info(
+        f"link room provisioned: issuer={issuer} fixture={ticket['fix']} room={room.code}")
     return link, room
 
 
@@ -325,13 +363,12 @@ def _handoff(user, room, color, frontend_url):
     }
     link = getattr(room, 'tournament_link', None)
     if link:
-        fragment_data.update({
-            'tournament': str(link.tournament_id),
-            # All completed games return to the tournament lobby.  In
-            # particular, tournament_id=0 used to lead to /play, which is the
-            # game's landing page rather than the tournament experience.
-            'return': f"{settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.rstrip('/')}/tournaments/",
-        })
+        # Only propagate a real tournament id. Non-tournament rooms (Head-to-Head)
+        # use tournament_id=0 as a placeholder and should not expose a tournament
+        # query parameter — frontend treats ?tournament=0 as not a tournament.
+        if getattr(link, 'tournament_id', 0):
+            fragment_data['tournament'] = str(link.tournament_id)
+        fragment_data['return'] = tournaments_frontend_url()
     fragment = urlencode(fragment_data)
     response = HttpResponseRedirect(f"{frontend_url}/link#{fragment}")
     response['Referrer-Policy'] = 'no-referrer'

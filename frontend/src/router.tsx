@@ -6,11 +6,10 @@ import {
   useLocation,
 } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
-import AuthScreen from "./components/AuthScreen";
-import HomeScreen from "./components/HomeScreen";
+
 import WaitingRoom from "./components/WaitingRoom";
 import GameScreen from "./components/GameScreen";
 import LinkEntry from "./components/LinkEntry";
@@ -29,8 +28,9 @@ const TOURNAMENTS_URL = configuredTournamentsUrl || "/tournaments/";
 function safeTournamentReturnUrl(value: string | null): URL | null {
   if (!value) return null;
   try {
-    const base = new URL(TOURNAMENTS_URL, window.location.origin);
-    const next = new URL(value, window.location.origin);
+    const origin = window.location.origin && window.location.origin !== "null" ? window.location.origin : "http://localhost:5173";
+    const base = new URL(TOURNAMENTS_URL, origin);
+    const next = new URL(value, origin);
     const basePath = base.pathname.replace(/\/+$/, "") || "/";
     const isWithinBase =
       next.pathname === basePath || next.pathname.startsWith(`${basePath}/`);
@@ -41,14 +41,41 @@ function safeTournamentReturnUrl(value: string | null): URL | null {
 }
 
 function tournamentLobbyUrl(): URL {
-  // Every exit from a game belongs in the tournaments app.  A ticket normally
-  // carries a return URL, but older links (and the special tournament=0 links)
-  // do not always do so.  They must not fall back to the game's own home page.
-  return new URL(TOURNAMENTS_URL, window.location.origin);
+  const fallback = "/tournaments/";
+  const target = TOURNAMENTS_URL || fallback;
+  const origin = window.location.origin && window.location.origin !== "null" ? window.location.origin : "http://localhost:5173";
+  try {
+    return new URL(target, origin);
+  } catch {
+    return new URL(fallback, origin);
+  }
 }
 
 function returnToTournament() {
   window.location.assign(tournamentLobbyUrl().toString());
+}
+
+function RedirectToTournaments() {
+  const url = tournamentLobbyUrl().toString();
+  // Immediate redirect + effect fallback. Show fallback link if auto-redirect blocked.
+  useEffect(() => {
+    window.location.replace(url);
+  }, [url]);
+  if (typeof window !== "undefined" && window.location.href !== url) {
+    // Kick redirect synchronously on mount (outside effect) for blank-screen case
+    // Use timeout to avoid render-phase side-effect in StrictMode double-invoke
+    setTimeout(() => {
+      if (window.location.href !== url) window.location.replace(url);
+    }, 0);
+  }
+  return (
+    <div style={{ display: "grid", placeItems: "center", minHeight: "100dvh", background: "#03090a", color: "#f0e3cd", padding: 24, textAlign: "center" }}>
+      <div>
+        <p style={{ marginBottom: 12 }}>Redirecting to tournaments…</p>
+        <a href={url} style={{ color: "#e7bd72", textDecoration: "underline" }}>{url}</a>
+      </div>
+    </div>
+  );
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -71,6 +98,38 @@ function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+export function isValidTournamentId(value: string | null): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "0" || trimmed === "null" || trimmed === "undefined") return false;
+  const num = Number(trimmed);
+  if (Number.isFinite(num)) return num > 0;
+  return true;
+}
+
+export function resolveGameType(
+  params: URLSearchParams,
+  backendFormat?: string | null,
+): import("./types/context").GameType {
+  // 1. Valid real tournament id -> tournament
+  const tournamentId = params.get("tournament");
+  if (isValidTournamentId(tournamentId)) return "tournament";
+
+  // 2-3. Backend authoritative format (propagated from HeadToHeadTable.game_format / ticket)
+  const format = backendFormat ?? params.get("format");
+  if (format === "money") return "quick";
+  if (format === "match") return "1v1";
+
+  // 4-5. Explicit URL mode
+  const mode = params.get("mode");
+  if (mode === "quick") return "quick";
+  if (mode === "1v1" || mode === "match" || mode === "friend") return "1v1";
+  if (params.get("quick") === "1") return "quick";
+
+  // 6. Safe fallback — never default to tournament
+  return "1v1";
+}
+
 function GameRoute() {
   const { roomId } = useParams<{ roomId: string }>();
   const location = useLocation();
@@ -78,13 +137,20 @@ function GameRoute() {
     (new URLSearchParams(location.search).get("color") as Color) || "white";
   const params = new URLSearchParams(location.search);
   const tournamentId = params.get("tournament");
+  const backendFormat = params.get("format");
+  const gameType = resolveGameType(params, backendFormat);
   const returnUrl = safeTournamentReturnUrl(params.get("return")) ?? tournamentLobbyUrl();
 
   function handleLeave(outcome?: "won" | "lost") {
     clearRoom();
-    const next = new URL(returnUrl);
+    let next: URL;
+    try {
+      next = new URL(returnUrl.toString());
+    } catch {
+      next = tournamentLobbyUrl();
+    }
     if (outcome) next.searchParams.set("matchResult", outcome);
-    if (tournamentId) next.searchParams.set("tournament", tournamentId);
+    if (isValidTournamentId(tournamentId)) next.searchParams.set("tournament", tournamentId!);
     window.location.assign(next.toString());
   }
 
@@ -92,6 +158,7 @@ function GameRoute() {
     <GameProvider
       roomId={roomId || ""}
       playerColor={playerColor}
+      gameType={gameType}
       serverUrl={
         (
           import.meta as ImportMeta & {
@@ -102,7 +169,8 @@ function GameRoute() {
     >
       <GameScreen
         onLeave={handleLeave}
-        homeLabel="Back to Tournament"
+        homeLabel={gameType === "tournament" ? "Back to Tournament" : "Back to Lobby"}
+        gameType={gameType}
       />
     </GameProvider>
   );
@@ -113,6 +181,7 @@ function LocalRoute() {
   const botParam = params.get("bot");
   const targetParam = params.get("target");
   const timeParam = params.get("time");
+  const modeParam = params.get("mode");
   const botColor: Color | undefined =
     botParam === "white" || botParam === "black" ? botParam : undefined;
   const parsedTarget = targetParam ? parseInt(targetParam, 10) : 7;
@@ -123,14 +192,17 @@ function LocalRoute() {
     () => parseTimeControl(timeParam, matchTarget),
     [timeParam, matchTarget],
   );
+  const localGameType: import("./types/context").GameType =
+    modeParam === "quick" ? "quick" : modeParam === "tournament" ? "tournament" : botColor ? "1v1" : "quick";
   return (
     <LocalGameProvider
       botColor={botColor}
       matchTarget={matchTarget}
       timeControl={timeControl}
+      gameType={localGameType}
       onQuitMatch={returnToTournament}
     >
-      <GameScreen onLeave={returnToTournament} homeLabel="Back to Tournament" />
+      <GameScreen onLeave={returnToTournament} homeLabel={localGameType === "tournament" ? "Back to Tournament" : "Back to Lobby"} gameType={localGameType} />
     </LocalGameProvider>
   );
 }
@@ -138,22 +210,8 @@ function LocalRoute() {
 export default function Router() {
   return (
     <Routes>
-      <Route
-        path="/"
-        element={
-          <RedirectIfAuthed>
-            <AuthScreen />
-          </RedirectIfAuthed>
-        }
-      />
-      <Route
-        path="/home"
-        element={
-          <RequireAuth>
-            <HomeScreen />
-          </RequireAuth>
-        }
-      />
+      <Route path="/" element={<RedirectToTournaments />} />
+      <Route path="/home" element={<RedirectToTournaments />} />
       <Route
         path="/waiting/:roomId"
         element={

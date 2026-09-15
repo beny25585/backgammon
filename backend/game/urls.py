@@ -15,6 +15,7 @@ urlpatterns = [
     path('matches/', views.save_match, name='save_match'),
     path('matches/list/', views.list_matches, name='list_matches'),
     path('matches/<uuid:pk>/', views.match_detail, name='match_detail'),
+    path('rooms/<uuid:room_id>/result/', views.room_finalized_result, name='room-finalized-result'),
     path('stats/', views.player_stats, name='player_stats'),
     path('dice/roll/', views.dice_roll, name='dice_roll'),
     path('dice/health/', views.dice_health, name='dice_health'),

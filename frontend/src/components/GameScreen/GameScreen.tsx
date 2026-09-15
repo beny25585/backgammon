@@ -1,12 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+
 import styles from "./GameScreen.module.css";
+
 import { useGame } from "../../services/gameContext";
+
 import GameBoard from "./GameBoard";
-import GameResultOverlay from "../GameResultOverlay/GameResultOverlay";
+
+import TournamentGameResult from "../GameResult/TournamentGameResult";
+import QuickGameResult from "../GameResult/QuickGameResult";
+import PrivateGameResult from "../GameResult/PrivateGameResult";
+
 import SamsungDarkModeHelp from "../SamsungDarkModeHelp/SamsungDarkModeHelp";
+
 import { DiceRow } from "../Dice";
+
 import { useI18n } from "../../i18n/I18nProvider";
+
 import type { Color, GameState } from "../../lib/backgammon/engine";
+import type { GameType } from "../../types/context";
+
 import {
   DEFAULT_BOARD_THEME,
   isBoardTheme,
@@ -23,23 +35,34 @@ const themeClassByTheme: Record<BoardTheme, string> = {
 
 function initialBoardTheme(): BoardTheme {
   const saved = window.localStorage.getItem(BOARD_THEME_STORAGE_KEY);
+
   return isBoardTheme(saved) ? saved : DEFAULT_BOARD_THEME;
 }
 
 interface GameScreenProps {
   onLeave?: (outcome?: "won" | "lost") => void;
   homeLabel?: string;
+  gameType?: GameType;
 }
 
 function hasInterruptedOpeningMove(
   state: GameState | null,
   playerColor: Color,
 ): boolean {
-  if (!state || state.phase !== "rolling" || state.turn !== playerColor) return false;
+  if (!state || state.phase !== "rolling" || state.turn !== playerColor) {
+    return false;
+  }
+
   const { white, black } = state.openingRoll;
-  if (white === null || black === null || white === black) return false;
+
+  if (white === null || black === null || white === black) {
+    return false;
+  }
+
   const winner = white > black ? "white" : "black";
+
   const message = state.message.toLowerCase();
+
   return (
     playerColor === winner &&
     state.dice.length === 0 &&
@@ -50,59 +73,99 @@ function hasInterruptedOpeningMove(
   );
 }
 
-export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
+export default function GameScreen({
+  onLeave,
+  homeLabel,
+  gameType: propGameType,
+}: GameScreenProps) {
   const { t } = useI18n();
+
   const {
     state,
     playerColor,
+
     isLoading,
+
     error,
     clearError,
+
     makeMove,
     rollDice,
     reorderDice,
+
     reconnected,
     opponentConnected,
+
     undoMove,
     endTurn,
+
     respondToDouble,
     offerDouble,
+
     clock,
     turnStartedAt,
     timeControl,
+
     gameResult,
+
     whiteName,
     blackName,
+
     openingRollResult,
     noMovesMessage,
+
     handleNextGame,
     handleHome,
     leaveGame,
+
+    gameType: contextGameType,
   } = useGame();
 
+  /*
+   * Keep the prop for API compatibility even though GameScreen
+   * currently does not need the label directly.
+   */
+  void homeLabel;
+
   const leavingRef = useRef(false);
+
   const requestLeave = useCallback(() => {
     if (gameResult?.matchOver) {
-      if (onLeave) onLeave(gameResult.winner === playerColor ? "won" : "lost");
-      else handleHome();
+      if (onLeave) {
+        onLeave(gameResult.winner === playerColor ? "won" : "lost");
+      } else {
+        handleHome();
+      }
+
       return;
     }
+
     leavingRef.current = true;
     leaveGame();
   }, [gameResult, onLeave, playerColor, handleHome, leaveGame]);
 
   useEffect(() => {
-    if (!leavingRef.current || !gameResult?.matchOver) return;
+    if (!leavingRef.current || !gameResult?.matchOver) {
+      return;
+    }
+
     leavingRef.current = false;
-    if (onLeave) onLeave(gameResult.winner === playerColor ? "won" : "lost");
-    else handleHome();
+
+    if (onLeave) {
+      onLeave(gameResult.winner === playerColor ? "won" : "lost");
+    } else {
+      handleHome();
+    }
   }, [gameResult, onLeave, playerColor, handleHome]);
 
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
+
   const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(
     null,
   );
+
   const automaticOpeningRollRef = useRef<string | null>(null);
+
   const gameHasStarted =
     state?.phase === "rolling" ||
     state?.phase === "moving" ||
@@ -116,8 +179,12 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
   }, [boardTheme]);
 
-  // The server decides the forfeit. This countdown only makes its 40-second
-  // reconnect grace period visible to the player who remains in the room.
+  /*
+   * The server decides the forfeit.
+   *
+   * This countdown only makes its reconnect grace period
+   * visible to the player who remains in the room.
+   */
   useEffect(() => {
     if (opponentConnected || reconnected || gameResult || !gameHasStarted) {
       setDisconnectCountdown(null);
@@ -125,23 +192,34 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
     }
 
     const deadline = Date.now() + 40_000;
+
     const updateCountdown = () => {
-      setDisconnectCountdown(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
+      setDisconnectCountdown(
+        Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
+      );
     };
+
     updateCountdown();
+
     const interval = window.setInterval(updateCountdown, 250);
-    return () => window.clearInterval(interval);
+
+    return () => {
+      window.clearInterval(interval);
+    };
   }, [gameHasStarted, gameResult, opponentConnected, reconnected]);
 
   const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
+
   const interruptedOpeningMoveKey =
     interruptedOpeningMove && state
       ? `resume:${state.openingRoll.white}:${state.openingRoll.black}`
       : null;
+
   const waitingForOpeningRoll =
     state?.phase === "opening_roll" &&
     state.turn === playerColor &&
     state.openingRoll[playerColor] === null;
+
   const automaticOpeningRollKey =
     interruptedOpeningMoveKey ??
     (waitingForOpeningRoll
@@ -153,12 +231,18 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
       automaticOpeningRollRef.current = null;
       return;
     }
-    if (automaticOpeningRollRef.current === automaticOpeningRollKey) return;
+
+    if (automaticOpeningRollRef.current === automaticOpeningRollKey) {
+      return;
+    }
+
     automaticOpeningRollRef.current = automaticOpeningRollKey;
+
     rollDice();
   }, [automaticOpeningRollKey, rollDice]);
 
   const isOpeningResult = state?.phase === "opening_result";
+
   const needsToRoll =
     state?.phase === "rolling" &&
     !interruptedOpeningMove &&
@@ -171,17 +255,27 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
 
   if (!state) {
     if (error) {
-      return <div className={styles.error}>{t("game.errorPrefix")}: {error}</div>;
+      return (
+        <div className={styles.error}>
+          {t("game.errorPrefix")}: {error}
+        </div>
+      );
     }
+
     return <div className={styles.loading}>{t("game.initializing")}</div>;
   }
 
   return (
     <div className={`${styles.container} ${themeClassByTheme[boardTheme]}`}>
       <SamsungDarkModeHelp />
+
+      {/* GLOBAL GAME ERROR */}
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
-          <span>{t("game.errorPrefix")}: {error}</span>
+          <span>
+            {t("game.errorPrefix")}: {error}
+          </span>
+
           <button
             type="button"
             className={styles.errorCardClose}
@@ -194,29 +288,182 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
         </div>
       )}
 
-      {gameResult && (
-        <GameResultOverlay
-          playerColor={playerColor}
-          winner={gameResult.winner}
-          winType={gameResult.winType}
-          points={gameResult.points}
-          cube={gameResult.cube}
-          matchScore={gameResult.matchScore}
-          matchTarget={gameResult.targetPoints}
-          matchOver={gameResult.matchOver}
-          reason={gameResult.reason}
-          adminReason={gameResult.adminReason}
-          whiteName={whiteName}
-          blackName={blackName}
-          onNext={handleNextGame}
-          onHome={requestLeave}
-          homeLabel={homeLabel}
-        />
-      )}
+      {/* FINAL MATCH RESULT */}
+      {gameResult?.matchOver &&
+        (() => {
+          /*
+           * The actual result type must win over the route/default prop.
+           *
+           * Example:
+           *
+           * propGameType     = "1v1"
+           * gameResult.type  = "quick"
+           * contextGameType  = "quick"
+           *
+           * This must render QuickGameResult.
+           */
+          const gt = (gameResult.gameType ??
+            contextGameType ??
+            propGameType ??
+            "1v1") as string;
 
-      {!gameResult && (
+          const common = {
+            winner: gameResult.winner,
+
+            whiteScore: gameResult.matchScore.white,
+
+            blackScore: gameResult.matchScore.black,
+
+            whiteName,
+            blackName,
+
+            winType: gameResult.winType,
+
+            reason: gameResult.reason,
+
+            onClose: requestLeave,
+          };
+
+          /*
+           * TOURNAMENT RESULT
+           */
+          if (gt === "tournament") {
+            return (
+              <TournamentGameResult
+                {...common}
+                winnerIsWhite={gameResult.winner === "white"}
+                tournamentRound={gameResult.tournament?.roundLabel}
+                nextOpponent={gameResult.tournament?.nextOpponent ?? null}
+                ratingBefore={gameResult.ratingBefore ?? null}
+                ratingAfter={gameResult.ratingAfter ?? null}
+                opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
+                opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
+                ratingChange={gameResult.ratingChange ?? null}
+                opponentRatingChange={gameResult.opponentRatingChange ?? null}
+                hits={gameResult.hits ?? null}
+                doublesOffered={gameResult.doublesOffered ?? null}
+                doublesAccepted={gameResult.doublesAccepted ?? null}
+                openingRoll={gameResult.openingRoll ?? null}
+                firstPlayer={gameResult.firstPlayer ?? null}
+                durationSeconds={gameResult.durationSeconds ?? null}
+                clockRemaining={gameResult.clockRemaining ?? null}
+                onViewTournament={requestLeave}
+                onViewBracket={requestLeave}
+              />
+            );
+          }
+
+          /*
+           * QUICK MATCH RESULT
+           */
+          console.log(
+            "[QUICK RESULT DATA]",
+            JSON.stringify(
+              {
+                winner: gameResult.winner,
+                playerColor,
+
+                whiteName,
+                blackName,
+
+                matchScore: gameResult.matchScore,
+
+                cube: gameResult.cube,
+                stakeAmount: gameResult.stakeAmount,
+
+                ratingBefore: gameResult.ratingBefore,
+                ratingAfter: gameResult.ratingAfter,
+
+                opponentRatingBefore: gameResult.opponentRatingBefore,
+                opponentRatingAfter: gameResult.opponentRatingAfter,
+
+                ratingChange: gameResult.ratingChange,
+                opponentRatingChange: gameResult.opponentRatingChange,
+
+                coinsChange: gameResult.coinsChange,
+                opponentCoinsChange: gameResult.opponentCoinsChange,
+
+                hits: gameResult.hits,
+                doublesOffered: gameResult.doublesOffered,
+                doublesAccepted: gameResult.doublesAccepted,
+
+                openingRoll: gameResult.openingRoll,
+                firstPlayer: gameResult.firstPlayer,
+
+                durationSeconds: gameResult.durationSeconds,
+                clockRemaining: gameResult.clockRemaining,
+              },
+              null,
+              2,
+            ),
+          );
+          if (gt === "quick") {
+            return (
+              <QuickGameResult
+                {...common}
+                playerColor={playerColor}
+                cube={gameResult.cube}
+                stakeAmount={gameResult.stakeAmount ?? null}
+                ratingBefore={gameResult.ratingBefore ?? null}
+                ratingAfter={gameResult.ratingAfter ?? null}
+                opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
+                opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
+                ratingChange={gameResult.ratingChange ?? null}
+                opponentRatingChange={gameResult.opponentRatingChange ?? null}
+                hits={gameResult.hits ?? null}
+                doublesOffered={gameResult.doublesOffered ?? null}
+                doublesAccepted={gameResult.doublesAccepted ?? null}
+                openingRoll={gameResult.openingRoll ?? null}
+                firstPlayer={gameResult.firstPlayer ?? null}
+                durationSeconds={gameResult.durationSeconds ?? null}
+                clockRemaining={gameResult.clockRemaining ?? null}
+                coinsDelta={gameResult.coinsChange ?? null}
+                opponentCoinsDelta={gameResult.opponentCoinsChange ?? null}
+                onRematch={handleNextGame}
+                rematchPending={false}
+                onCancelRematch={() => {}}
+              />
+            );
+          }
+
+          /*
+           * PRIVATE / NORMAL 1V1 RESULT
+           */
+          return (
+            <PrivateGameResult
+              {...common}
+              playerColor={playerColor}
+              cube={gameResult.cube}
+              ratingBefore={gameResult.ratingBefore ?? null}
+              ratingAfter={gameResult.ratingAfter ?? null}
+              opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
+              opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
+              ratingChange={gameResult.ratingChange ?? null}
+              opponentRatingChange={gameResult.opponentRatingChange ?? null}
+              hits={gameResult.hits ?? null}
+              doublesOffered={gameResult.doublesOffered ?? null}
+              doublesAccepted={gameResult.doublesAccepted ?? null}
+              openingRoll={gameResult.openingRoll ?? null}
+              firstPlayer={gameResult.firstPlayer ?? null}
+              durationSeconds={gameResult.durationSeconds ?? null}
+              clockRemaining={gameResult.clockRemaining ?? null}
+              onRematch={handleNextGame}
+            />
+          );
+        })()}
+
+      {/*
+       * Non-final game wins automatically continue.
+       * No final-result overlay is shown here.
+       */}
+      {!gameResult?.matchOver && (
         <>
-          {reconnected && <div className={styles.reconnected} role="status">{t("game.reconnected")}</div>}
+          {reconnected && (
+            <div className={styles.reconnected} role="status">
+              {t("game.reconnected")}
+            </div>
+          )}
+
           {!opponentConnected && !reconnected && (
             <div className={styles.disconnected} role="status">
               {t("game.opponentDisconnected", {
@@ -247,13 +494,18 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
         </>
       )}
 
+      {/* OPENING ROLL RESULT */}
       {isOpeningResult && openingRollResult && (
         <div className={styles.overlayDim}>
           <div
             className={styles.overlayCard}
             data-testid="opening-result-overlay"
           >
-            <div style={{ marginBottom: "0.75rem" }}>
+            <div
+              style={{
+                marginBottom: "0.75rem",
+              }}
+            >
               <DiceRow
                 dice={[]}
                 remaining={[]}
@@ -264,9 +516,11 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
                 winner={openingRollResult.winner}
               />
             </div>
+
             {openingRollResult.winner === playerColor && (
               <div className={styles.winnerText}>{t("game.youFirst")}</div>
             )}
+
             {openingRollResult.winner &&
               openingRollResult.winner !== playerColor && (
                 <div className={styles.subText}>{t("game.opponentFirst")}</div>
@@ -274,7 +528,6 @@ export default function GameScreen({ onLeave, homeLabel }: GameScreenProps) {
           </div>
         </div>
       )}
-
     </div>
   );
 }

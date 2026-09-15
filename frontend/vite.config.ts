@@ -30,18 +30,22 @@ export default defineConfig({
     port: 5173,
     open: true,
     allowedHosts: ["morphotonemic-compellably-roselee.ngrok-free.dev"],
+    hmr: {
+      host: "localhost",
+      protocol: "ws",
+      clientPort: 5173,
+    },
     proxy: {
-  "/backgammon/api": {
-    target: "http://localhost:8000",
-    changeOrigin: true,
-    rewrite: (path) => path.replace(/^\/backgammon/, ""),
-  },
-  "/backgammon/ws": {
-    target: "ws://localhost:8000",
-    ws: true,
-    rewrite: (path) => path.replace(/^\/backgammon/, ""),
-  },
-    
+      "/backgammon/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/backgammon/, ""),
+      },
+      "/backgammon/ws": {
+        target: "ws://localhost:8000",
+        ws: true,
+        rewrite: (path) => path.replace(/^\/backgammon/, ""),
+      },
     },
     watch: {
       usePolling: true,

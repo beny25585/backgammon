@@ -21,16 +21,18 @@ def check_gamelink_configuration(app_configs, **kwargs):
         return []
 
     errors = []
-    ticket_secrets = [secret for secret in settings.GAMELINK_TICKET_SECRETS if secret]
+    ticket_secrets = [
+        secret for secret in settings.GAMELINK_TICKET_SECRETS if secret]
     result_secret = settings.GAMELINK_RESULT_SECRET
-    command_secrets = [secret for secret in settings.GAMELINK_COMMAND_SECRETS if secret]
+    command_secrets = [
+        secret for secret in settings.GAMELINK_COMMAND_SECRETS if secret]
 
     if not ticket_secrets or not all(_strong(secret) for secret in ticket_secrets):
         errors.append(Error(
             'GAMELINK_TICKET_SECRETS is empty or contains a secret that is too short.',
             hint=f'Every entry must be at least {MINIMUM_SECRET_LENGTH} characters. During '
-                 'rotation the list holds both the old and the new secret; the issuer signs with '
-                 'the first entry of its own list.',
+            'rotation the list holds both the old and the new secret; the issuer signs with '
+            'the first entry of its own list.',
             id='gamelink.E001',
         ))
 
@@ -38,7 +40,7 @@ def check_gamelink_configuration(app_configs, **kwargs):
         errors.append(Error(
             'GAMELINK_RESULT_SECRET is missing or too short.',
             hint=f'Set it from the environment to at least {MINIMUM_SECRET_LENGTH} characters. '
-                 'It is a different secret from the ticket secrets on purpose.',
+            'It is a different secret from the ticket secrets on purpose.',
             id='gamelink.E002',
         ))
 
@@ -88,6 +90,17 @@ def check_gamelink_configuration(app_configs, **kwargs):
                  'would put them on the wire.',
             id='gamelink.E006',
         ))
+
+    if settings.GAMELINK_TOURNAMENTS_FRONTEND_URL:
+        normalized = settings.GAMELINK_TOURNAMENTS_FRONTEND_URL.strip()
+        parsed = __import__('urllib.parse').parse.urlparse(normalized)
+        if parsed.path not in ('', '/'):
+            errors.append(Error(
+                'GAMELINK_TOURNAMENTS_FRONTEND_URL includes an app path.',
+                hint='Set it to the frontend origin only, for example http://127.0.0.1:5174. '
+                     'The backend appends /tournaments/ automatically.',
+                id='gamelink.E009',
+            ))
 
     return errors
 
