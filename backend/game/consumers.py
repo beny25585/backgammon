@@ -225,7 +225,9 @@ class GameConsumer(AsyncWebsocketConsumer):
             game_state = await get_game_state(room)
             state_data = game_state.state_data or {}
             timed_out_color = None
-            admin_review_pending = needs_admin_adjudication(room)
+            admin_review_pending = await database_sync_to_async(
+                needs_admin_adjudication
+            )(room)
 
             # Ensure an active game always sends authoritative clock state on connect.
             if room.status == 'playing' and not admin_review_pending:
@@ -431,7 +433,14 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.info(f"WS receive: type={message_type} player={self.player_color} room={self.room_id}")
 
             room = await get_room(self.room_id)
-            if room and needs_admin_adjudication(room):
+            if room:
+                admin_review_pending = await database_sync_to_async(
+                    needs_admin_adjudication
+                )(room)
+            else:
+                admin_review_pending = False
+
+            if room and admin_review_pending:
                 await self.send(json.dumps({
                     'type': 'admin_review_required',
                     'payload': {'message': 'Match paused pending organizer decision'},
@@ -791,11 +800,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not state.get('matchScored'):
             return {'success': False, 'message': 'Game result not settled'}
         room = await get_room(self.room_id)
-        if (
-            not room
-            or room.status != 'playing'
-            or needs_admin_adjudication(room)
-        ):
+        if not room or room.status != 'playing':
+            return {'success': False, 'message': 'No active game'}
+
+        admin_review_pending = await database_sync_to_async(
+            needs_admin_adjudication
+        )(room)
+
+        if admin_review_pending:
             return {'success': False, 'message': 'No active game'}
         doubling_enabled = state.get('doublingEnabled', True)
         engine.state = BackgammonEngine.get_initial_state()
@@ -939,11 +951,14 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _start_next_game(self):
         """Start the next game of a match, mirroring the `next_game` intent."""
         room = await get_room(self.room_id)
-        if (
-            not room
-            or room.status != 'playing'
-            or needs_admin_adjudication(room)
-        ):
+        if not room or room.status != 'playing':
+            return
+
+        admin_review_pending = await database_sync_to_async(
+            needs_admin_adjudication
+        )(room)
+
+        if admin_review_pending:
             return
         gs = await get_game_state(room)
         stored = dict(gs.state_data or {})
@@ -1030,7 +1045,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         room = await get_room(self.room_id)
         if not room:
             return
-        if needs_admin_adjudication(room):
+        if await database_sync_to_async(needs_admin_adjudication)(room):
             return
         gs = await get_game_state(room)
         stored = gs.state_data or {}
@@ -1044,7 +1059,14 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _reschedule_timeout_from_state(self):
         """Re-arm the deadline from the saved state (e.g. after a disconnect)."""
         room = await get_room(self.room_id)
-        if not room or room.status != 'playing' or needs_admin_adjudication(room):
+        if not room or room.status != 'playing':
+            return
+
+        admin_review_pending = await database_sync_to_async(
+            needs_admin_adjudication
+        )(room)
+
+        if admin_review_pending:
             return
         gs = await get_game_state(room)
         stored = gs.state_data or {}
@@ -1059,7 +1081,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         room = await get_room(self.room_id)
         if not room:
             return
-        if needs_admin_adjudication(room):
+        if await database_sync_to_async(needs_admin_adjudication)(room):
             return
         gs = await get_game_state(room)
         stored = dict(gs.state_data or {})
