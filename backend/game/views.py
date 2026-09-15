@@ -462,6 +462,32 @@ def room_finalized_result(request, room_id):
     white_name = str(white_rp.player) if white_rp else None
     black_name = str(black_rp.player) if black_rp else None
 
+    request_color = None
+    if white_rp and white_rp.player.user_id == request.user.id:
+        request_color = 'white'
+    elif black_rp and black_rp.player.user_id == request.user.id:
+        request_color = 'black'
+
+    self_seat = None
+    opponent_seat = None
+    if link and request_color is not None:
+        p1_color = link.color_for_seat('p1')
+        if request_color == p1_color:
+            self_seat = 'p1'
+            opponent_seat = 'p2'
+        else:
+            self_seat = 'p2'
+            opponent_seat = 'p1'
+
+    settlement_response = (
+        link.result_response
+        if link and isinstance(link.result_response, dict)
+        else {}
+    )
+
+    remote_rating = settlement_response.get('rating')
+    remote_money = settlement_response.get('money')
+
     result = {
         'roomId': str(room.id),
         'gameType': game_type,
@@ -541,19 +567,35 @@ def room_finalized_result(request, room_id):
             'nextOpponent': None,
         }
 
-    # Money settlement — for quick, try to include stake if available in state
     if game_type == 'quick':
-        stake = state.get('stake')
+        stake = remote_money.get('stake') if isinstance(remote_money, dict) and 'stake' in remote_money else state.get('stake')
+        self_change = None
+        opponent_change = None
+        if isinstance(remote_money, dict) and self_seat and opponent_seat:
+            if self_seat == 'p1':
+                self_change = remote_money.get('p1Change')
+                opponent_change = remote_money.get('p2Change')
+            else:
+                self_change = remote_money.get('p2Change')
+                opponent_change = remote_money.get('p1Change')
         result['money'] = {
             'stake': stake,
-            'selfChange': None,  # to be filled via wallet after settlement; null signals pending
-            'opponentChange': None,
+            'selfChange': self_change,
+            'opponentChange': opponent_change,
         }
-        # If link is delivered, we could fetch the actual settlement from tournaments via HTTP,
-        # but for now return null to indicate pending — frontend will hide the row per real-data-only.
 
-    # Rating — for quick/tournament, include null to signal pending until tournaments persists
     if expects_rating:
-        result['rating'] = None  # will be populated once tournaments RatingResult is queried via dedicated endpoint
+        result['rating'] = None
+        if (
+            self_seat
+            and opponent_seat
+            and isinstance(remote_rating, dict)
+            and isinstance(remote_rating.get(self_seat), dict)
+            and isinstance(remote_rating.get(opponent_seat), dict)
+        ):
+            result['rating'] = {
+                'self': remote_rating[self_seat],
+                'opponent': remote_rating[opponent_seat],
+            }
 
     return Response(result)

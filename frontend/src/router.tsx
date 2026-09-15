@@ -88,16 +88,6 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function RedirectIfAuthed({ children }: { children: React.ReactNode }) {
-  const token = getAccessToken();
-  if (token && isTokenExpired(token)) {
-    clearTokens();
-    return <>{children}</>;
-  }
-  if (token) return <Navigate to="/home" replace />;
-  return <>{children}</>;
-}
-
 export function isValidTournamentId(value: string | null): boolean {
   if (!value) return false;
   const trimmed = value.trim();

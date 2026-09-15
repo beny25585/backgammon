@@ -45,13 +45,12 @@ interface RatingChangeProps {
   after: number;
 }
 
-export function RatingChange({ before, change, after }: RatingChangeProps) {
+export function RatingChange({ change, after }: RatingChangeProps) {
   const deltaText = change > 0 ? `+${change}` : String(change);
   const deltaClass = change > 0 ? styles.adv : change < 0 ? styles.elim : "";
   return (
     <span className={styles.ratingChange}>
-      <span className={`${styles.ratingDelta} ${deltaClass}`}>{deltaText}</span>
-      <span className={styles.ratingTransition}>{before} → {after}</span>
+      {after} <span className={`${styles.ratingDelta} ${deltaClass}`}>({deltaText})</span>
     </span>
   );
 }

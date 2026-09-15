@@ -38,15 +38,10 @@ export default function PrivateGameResult({
   blackScore,
   whiteName,
   blackName,
+  playerColor,
   winType,
   reason,
   cube,
-  ratingBefore,
-  ratingAfter,
-  opponentRatingBefore,
-  opponentRatingAfter,
-  ratingChange,
-  opponentRatingChange,
   hits,
   doublesOffered,
   doublesAccepted,
@@ -75,6 +70,7 @@ export default function PrivateGameResult({
       blackScore={blackScore}
       whiteName={whiteName}
       blackName={blackName}
+      playerColor={playerColor}
       winType={winType}
       reason={reason}
       onClose={onClose}

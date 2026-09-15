@@ -264,9 +264,24 @@ def deliver_result(link_id):
             f"result delivery for fixture {link.fixture_id} refused with "
             f"HTTP {response.status_code}")
 
+    result_response = None
+    try:
+        parsed_response = response.json()
+    except (ValueError, AttributeError):
+        parsed_response = None
+    if isinstance(parsed_response, dict):
+        result_response = parsed_response
+
     link.result_status = 'delivered'
     link.delivered_at = timezone.now()
-    link.save(update_fields=['result_status', 'delivered_at'])
+    link.result_response = result_response
+    link.save(
+        update_fields=[
+            'result_status',
+            'delivered_at',
+            'result_response',
+        ]
+    )
 
     logger.info(f"result delivered: fixture {link.fixture_id} -> HTTP {response.status_code}")
     return {'status': 'delivered', 'fixture_id': link.fixture_id}

@@ -799,14 +799,28 @@ export function GameProvider({
           | null
           | undefined;
 
+        const finalizedGameType =
+          data.gameType === "quick" ||
+          data.gameType === "1v1" ||
+          data.gameType === "tournament"
+            ? (data.gameType as GameType)
+            : undefined;
+
         console.log("[FINAL RESULT] extracted", {
           rating,
           money,
           stats,
           result,
+          finalizedGameType,
         });
 
-        if (rating || money || stats || result?.endReason) {
+        if (
+          finalizedGameType ||
+          rating ||
+          money ||
+          stats ||
+          result?.endReason
+        ) {
           setGameResult((prev) => {
             if (!prev) {
               console.warn(
@@ -818,6 +832,8 @@ export function GameProvider({
 
             const next = {
               ...prev,
+
+              gameType: finalizedGameType ?? prev.gameType,
 
               reason: result?.endReason ?? prev.reason,
 

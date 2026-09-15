@@ -42,6 +42,22 @@ def _schedule(room_id, delay=WATCH_SECONDS):
     )
 
 
+def _requires_organizer_adjudication(room):
+    from .link.models import TournamentLink
+
+    tournament_id = (
+        TournamentLink.objects
+        .filter(room_id=room.id)
+        .values_list('tournament_id', flat=True)
+        .first()
+    )
+
+    if tournament_id is None:
+        return True
+
+    return tournament_id != 0
+
+
 def _publish_admin_transition(room):
     snapshot_state = dict(
         GameState.objects.filter(room=room)
@@ -64,6 +80,10 @@ def mark_connected(room_id, channel_name, color, now=None):
     now = time.time() if now is None else now
     room = GameRoom.objects.select_for_update().get(pk=room_id)
     state, presence = _presence(room)
+    requires_organizer = _requires_organizer_adjudication(room)
+    if not requires_organizer and presence.get('needsAdminAdjudication'):
+        presence['needsAdminAdjudication'] = False
+        presence['absentSince'] = {}
     presence['connections'][channel_name] = {'color': color, 'lastSeen': now}
     colors = _colors(presence)
     if {'white', 'black'} <= colors:
@@ -103,6 +123,7 @@ def mark_disconnected(room_id, channel_name, now=None):
     if not room:
         return False
     state, presence = _presence(room)
+    requires_organizer = _requires_organizer_adjudication(room)
     previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
     removed = presence['connections'].pop(channel_name, None)
     if not removed:
@@ -113,7 +134,11 @@ def mark_disconnected(room_id, channel_name, now=None):
         presence['absentSince'][color] = now
         missing = {'white', 'black'} - colors
         if len(missing) == 2:
-            presence['needsAdminAdjudication'] = True
+            if requires_organizer:
+                presence['needsAdminAdjudication'] = True
+            else:
+                presence['needsAdminAdjudication'] = False
+                presence['absentSince'] = {}
         _schedule(room.id, WATCH_SECONDS if len(missing) == 2 else ABSENCE_SECONDS)
     state['presence'] = presence
     room.state = state
@@ -130,6 +155,8 @@ def mark_disconnected(room_id, channel_name, now=None):
 
 
 def needs_admin_adjudication(room):
+    if not _requires_organizer_adjudication(room):
+        return False
     return bool(((room.state or {}).get('presence') or {}).get('needsAdminAdjudication'))
 
 
@@ -143,13 +170,17 @@ def check_room_presence(room_id, now=None):
         if not room or room.status != 'playing':
             return {'status': 'closed'}
         state, presence = _presence(room)
+        requires_organizer = _requires_organizer_adjudication(room)
+        previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
+        if not requires_organizer and previous_needs_admin:
+            presence['needsAdminAdjudication'] = False
+            presence['absentSince'] = {}
         if not presence.get('everBothConnected'):
             return {'status': 'not_started'}
         game_state = GameState.objects.select_for_update().filter(room=room).first()
         game_started = bool(
             game_state and (game_state.state_data or {}).get('phase') in ACTIVE_GAME_PHASES
         )
-        previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
 
         for connection_id, entry in list(presence['connections'].items()):
             if now - float(entry.get('lastSeen', 0)) > STALE_SECONDS:
@@ -161,7 +192,7 @@ def check_room_presence(room_id, now=None):
 
         colors = _colors(presence)
         missing = {'white', 'black'} - colors
-        if presence.get('needsAdminAdjudication'):
+        if presence.get('needsAdminAdjudication') and requires_organizer:
             # Sticky terminal-review state: a later reconnect cannot create an
             # automatic winner after both players were absent together.
             missing = {'white', 'black'} - colors
@@ -179,7 +210,11 @@ def check_room_presence(room_id, now=None):
             else:
                 _schedule(room.id, ABSENCE_SECONDS - (now - float(absent_since)))
         elif len(missing) == 2:
-            presence['needsAdminAdjudication'] = True
+            if requires_organizer:
+                presence['needsAdminAdjudication'] = True
+            else:
+                presence['needsAdminAdjudication'] = False
+                presence['absentSince'] = {}
         elif not missing:
             presence['absentSince'] = {}
             presence['needsAdminAdjudication'] = False

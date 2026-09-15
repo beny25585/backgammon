@@ -129,20 +129,27 @@ export default function GameScreen({
 
   const leavingRef = useRef(false);
 
+  const closeFinalResult = useCallback(() => {
+    if (!gameResult?.matchOver) {
+      return;
+    }
+
+    if (onLeave) {
+      onLeave(gameResult.winner === playerColor ? "won" : "lost");
+    } else {
+      handleHome();
+    }
+  }, [gameResult, onLeave, playerColor, handleHome]);
+
   const requestLeave = useCallback(() => {
     if (gameResult?.matchOver) {
-      if (onLeave) {
-        onLeave(gameResult.winner === playerColor ? "won" : "lost");
-      } else {
-        handleHome();
-      }
-
+      closeFinalResult();
       return;
     }
 
     leavingRef.current = true;
     leaveGame();
-  }, [gameResult, onLeave, playerColor, handleHome, leaveGame]);
+  }, [gameResult, closeFinalResult, leaveGame]);
 
   useEffect(() => {
     if (!leavingRef.current || !gameResult?.matchOver) {
@@ -187,8 +194,13 @@ export default function GameScreen({
    */
   useEffect(() => {
     if (opponentConnected || reconnected || gameResult || !gameHasStarted) {
-      setDisconnectCountdown(null);
-      return;
+      const resetTimer = window.setTimeout(() => {
+        setDisconnectCountdown(null);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(resetTimer);
+      };
     }
 
     const deadline = Date.now() + 40_000;
@@ -199,11 +211,11 @@ export default function GameScreen({
       );
     };
 
-    updateCountdown();
-
+    const initialTimer = window.setTimeout(updateCountdown, 0);
     const interval = window.setInterval(updateCountdown, 250);
 
     return () => {
+      window.clearTimeout(initialTimer);
       window.clearInterval(interval);
     };
   }, [gameHasStarted, gameResult, opponentConnected, reconnected]);
@@ -321,7 +333,7 @@ export default function GameScreen({
 
             reason: gameResult.reason,
 
-            onClose: requestLeave,
+            onClose: closeFinalResult,
           };
 
           /*
@@ -340,15 +352,14 @@ export default function GameScreen({
                 opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
                 ratingChange={gameResult.ratingChange ?? null}
                 opponentRatingChange={gameResult.opponentRatingChange ?? null}
-                hits={gameResult.hits ?? null}
                 doublesOffered={gameResult.doublesOffered ?? null}
                 doublesAccepted={gameResult.doublesAccepted ?? null}
                 openingRoll={gameResult.openingRoll ?? null}
                 firstPlayer={gameResult.firstPlayer ?? null}
                 durationSeconds={gameResult.durationSeconds ?? null}
                 clockRemaining={gameResult.clockRemaining ?? null}
-                onViewTournament={requestLeave}
-                onViewBracket={requestLeave}
+                onViewTournament={closeFinalResult}
+                onViewBracket={closeFinalResult}
               />
             );
           }
@@ -410,7 +421,6 @@ export default function GameScreen({
                 opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
                 ratingChange={gameResult.ratingChange ?? null}
                 opponentRatingChange={gameResult.opponentRatingChange ?? null}
-                hits={gameResult.hits ?? null}
                 doublesOffered={gameResult.doublesOffered ?? null}
                 doublesAccepted={gameResult.doublesAccepted ?? null}
                 openingRoll={gameResult.openingRoll ?? null}
@@ -438,10 +448,9 @@ export default function GameScreen({
               ratingAfter={gameResult.ratingAfter ?? null}
               opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
               opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
-              ratingChange={gameResult.ratingChange ?? null}
-              opponentRatingChange={gameResult.opponentRatingChange ?? null}
-              hits={gameResult.hits ?? null}
-              doublesOffered={gameResult.doublesOffered ?? null}
+                ratingChange={gameResult.ratingChange ?? null}
+                opponentRatingChange={gameResult.opponentRatingChange ?? null}
+                doublesOffered={gameResult.doublesOffered ?? null}
               doublesAccepted={gameResult.doublesAccepted ?? null}
               openingRoll={gameResult.openingRoll ?? null}
               firstPlayer={gameResult.firstPlayer ?? null}

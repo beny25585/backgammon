@@ -158,8 +158,8 @@ export default function GameResult({
 }: BaseGameResultProps) {
   const { t } = useI18n();
 
-  const rightColor: Color = winner;
-  const leftColor: Color = otherColor(winner);
+  const leftColor: Color = playerColor ?? "white";
+  const rightColor: Color = otherColor(leftColor);
 
   const leftScore = leftColor === "white" ? whiteScore : blackScore;
 
@@ -175,8 +175,8 @@ export default function GameResult({
       ? (whiteName ?? t("common.whitePlayer"))
       : (blackName ?? t("common.blackPlayer"));
 
-  const leftIsWinner = false;
-  const rightIsWinner = true;
+  const leftIsWinner = winner === leftColor;
+  const rightIsWinner = winner === rightColor;
 
   /**
    * LEFT = current player

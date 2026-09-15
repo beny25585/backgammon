@@ -104,6 +104,7 @@ export default function TournamentGameResult({
       blackScore={blackScore}
       whiteName={whiteName}
       blackName={blackName}
+      playerColor={playerColor}
       winType={winType}
       reason={reason}
       onClose={onClose}
