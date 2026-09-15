@@ -15,6 +15,7 @@ import type {
   GameType,
   NoMovesMessage,
   OpeningRollResult,
+  RematchState,
 } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import {
@@ -93,6 +94,9 @@ export function GameProvider({
   const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
     null,
   );
+  const [rematchState, setRematchState] = useState<RematchState>({
+    status: "idle",
+  });
   const [matchScore, setMatchScore] = useState<Record<Color, number>>({
     white: 0,
     black: 0,
@@ -730,6 +734,29 @@ export function GameProvider({
           );
         });
 
+        socket.on("rematch_status", (message) => {
+          const payload = (message as Record<string, unknown>).payload as Record<string, unknown> | undefined;
+          const status = (payload?.status as string) ?? "idle";
+          const reason = payload?.reason as string | undefined;
+          setRematchState({ status: status as RematchState["status"], reason: reason ?? null });
+        });
+
+        socket.on("rematch_ready", (message) => {
+          const payload = (message as Record<string, unknown>).payload as Record<string, unknown> | undefined;
+          if (!payload) return;
+          if (typeof payload.ticket === "string" && payload.ticket) {
+            const finalUrl = serverUrl ? `${serverUrl.replace(/\/$/, "")}/api/link/enter/?ticket=${encodeURIComponent(payload.ticket as string)}` : `${window.location.origin}/backgammon/api/link/enter/?ticket=${encodeURIComponent(payload.ticket as string)}`;
+            window.location.href = finalUrl;
+            return;
+          }
+          if (typeof payload.roomId === "string" && typeof payload.color === "string") {
+            const roomId = payload.roomId as string;
+            const color = payload.color as string;
+            const url = `${window.location.origin}/backgammon/game/${roomId}?color=${color}&mode=1v1`;
+            window.location.href = url;
+          }
+        });
+
         socket.on("admin_review_required", (message) => {
           const payload = (message as Record<string, unknown>).payload as
             | Record<string, unknown>
@@ -902,13 +929,50 @@ export function GameProvider({
   const clearError = useCallback(() => setError(null), []);
 
   const handleNextGame = useCallback(() => {
+    // next_game is ONLY for non-final games of same match; final rematch uses separate flow
+    if (gameResult?.matchOver) return;
     setGameResult(null);
     sendIntent({ action: "next_game" });
-  }, [sendIntent]);
+  }, [sendIntent, gameResult]);
 
   const handleHome = useCallback(() => {
     setGameResult(null);
+    setRematchState({ status: "idle" });
   }, []);
+
+  const requestRematch = useCallback(() => {
+    setRematchState({ status: "requested" });
+    socket.send("rematch_request", {});
+  }, [socket]);
+
+  const acceptRematch = useCallback(() => {
+    setRematchState({ status: "creating" });
+    socket.send("rematch_accept", {});
+  }, [socket]);
+
+  const declineRematch = useCallback(() => {
+    socket.send("rematch_decline", {});
+    setRematchState({ status: "available" });
+  }, [socket]);
+
+  const cancelRematch = useCallback(() => {
+    socket.send("rematch_cancel", {});
+    setRematchState({ status: "available" });
+  }, [socket]);
+
+  // When final result arrives, make rematch available for non-tournament
+  useEffect(() => {
+    if (gameResult?.matchOver) {
+      const isTournament = gameResult.gameType === "tournament" || gameType === "tournament";
+      if (isTournament) {
+        setRematchState({ status: "unavailable", reason: "tournament" });
+      } else {
+        setRematchState((prev) => (prev.status === "idle" ? { status: "available" } : prev));
+      }
+    } else if (!gameResult) {
+      setRematchState({ status: "idle" });
+    }
+  }, [gameResult, gameType]);
 
   return (
     <GameContext.Provider
@@ -944,6 +1008,11 @@ export function GameProvider({
         undoMove,
         giveUp,
         leaveGame,
+        rematchState,
+        requestRematch,
+        acceptRematch,
+        declineRematch,
+        cancelRematch,
       }}
     >
       {children}

@@ -33,6 +33,28 @@ def _colors(presence):
     return {entry.get('color') for entry in presence['connections'].values()}
 
 
+def connected_colors(room, now=None):
+    if now is None:
+        now = time.time()
+    _state, presence = _presence(room)
+    colors = set()
+    for entry in presence.get('connections', {}).values():
+        last_seen = entry.get('lastSeen')
+        try:
+            last = float(last_seen)
+        except (TypeError, ValueError):
+            continue
+        if now - last <= STALE_SECONDS:
+            color = entry.get('color')
+            if color in ('white', 'black'):
+                colors.add(color)
+    return colors
+
+
+def both_players_connected(room, now=None):
+    return {'white', 'black'} <= connected_colors(room, now)
+
+
 def _schedule(room_id, delay=WATCH_SECONDS):
     Task.objects.create(
         name=WATCH_TASK,

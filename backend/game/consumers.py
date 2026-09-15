@@ -15,9 +15,11 @@ from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
 from .game_service import finalize_room, game_ended_payload, record_game_end
-from .presence import (HEARTBEAT_SECONDS, check_room_presence, mark_connected,
-                       mark_disconnected, mark_heartbeat, needs_admin_adjudication)
+from .presence import (HEARTBEAT_SECONDS, STALE_SECONDS, check_room_presence, mark_connected,
+                       mark_disconnected, mark_heartbeat, needs_admin_adjudication,
+                       both_players_connected, connected_colors)
 from .link.live import publish_snapshot
+from .link.rematch import RematchServiceError, send_direct_play_rematch_action
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
 
@@ -414,6 +416,43 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
         if should_watch:
             run_in_background(self._presence_absence_watch())
+        # Completed room disconnect: invalidate rematch, do NOT start 40s forfeit
+        try:
+            room = await get_room(self.room_id)
+            if room and room.status == 'completed':
+                link = await self._get_rematch_link(room)
+                if link is not None and link.tournament_id == 0 and link.fixture_id < 0:
+                    try:
+                        await database_sync_to_async(send_direct_play_rematch_action)(
+                            link=link, room=room, actor_color=self.player_color, action='disconnect'
+                        )
+                    except Exception:
+                        pass
+                    other = 'black' if self.player_color == 'white' else 'white'
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other, 'payload': {'status': 'unavailable', 'reason': 'opponent_left'}}
+                    )
+                elif link is None:
+                    def _clear_private_rematch():
+                        with transaction.atomic():
+                            try:
+                                r = GameRoom.objects.select_for_update().get(pk=room.id)
+                                s = dict(r.state or {})
+                                if s.get('rematch'):
+                                    s.pop('rematch', None)
+                                    r.state = s
+                                    r.save(update_fields=['state'])
+                            except GameRoom.DoesNotExist:
+                                pass
+                    await database_sync_to_async(_clear_private_rematch)()
+                    other = 'black' if self.player_color == 'white' else 'white'
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other, 'payload': {'status': 'unavailable', 'reason': 'opponent_left'}}
+                    )
+        except Exception:
+            pass
 
     async def _presence_heartbeat(self):
         while True:
@@ -455,6 +494,14 @@ class GameConsumer(AsyncWebsocketConsumer):
                 await self._handle_leave()
             elif message_type == 'game_ended':
                 await self._handle_game_ended(payload)
+            elif message_type == 'rematch_request':
+                await self._handle_rematch_request()
+            elif message_type == 'rematch_accept':
+                await self._handle_rematch_accept()
+            elif message_type == 'rematch_decline':
+                await self._handle_rematch_decline()
+            elif message_type == 'rematch_cancel':
+                await self._handle_rematch_cancel()
             else:
                 logger.warning(f"WS unknown message type: {message_type} player={self.player_color}")
                 await self._send_error(f'Unknown message type: {message_type}')
@@ -821,6 +868,287 @@ class GameConsumer(AsyncWebsocketConsumer):
         engine.state['turnStartedAt'] = None
         engine.state['message'] = 'New game started'
         return {'success': True}
+
+    async def _get_rematch_link(self, room):
+        from .link.models import TournamentLink
+        return await database_sync_to_async(
+            lambda: TournamentLink.objects.filter(room_id=room.id).first()
+        )()
+
+    async def _send_rematch_status(self, status, extra=None):
+        payload = {'status': status}
+        if extra:
+            payload.update(extra)
+        await self.channel_layer.group_send(
+            self.room_group_name, {'type': 'rematch_status_msg', 'payload': payload}
+        )
+
+    async def _send_rematch_status_to_self(self, status, extra=None):
+        payload = {'status': status}
+        if extra:
+            payload.update(extra)
+        await self.send(json.dumps({'type': 'rematch_status', 'payload': payload}))
+
+    async def _rematch_guards(self, room, gs):
+        # room must be completed, final result persisted
+        if not room or room.status != 'completed':
+            await self._send_rematch_status_to_self('unavailable', {'reason': 'not_completed'})
+            return None, None, False
+        state = gs.state_data or {}
+        if state.get('phase') != 'game_over' or not state.get('winner'):
+            await self._send_rematch_status_to_self('unavailable', {'reason': 'not_completed'})
+            return None, None, False
+        # both players must be connected (fresh presence)
+        both = await database_sync_to_async(both_players_connected)(room)
+        if not both:
+            await self._send_rematch_status_to_self('unavailable', {'reason': 'opponent_left'})
+            return None, None, False
+        link = await self._get_rematch_link(room)
+        # tournament guard
+        if link is not None and link.tournament_id != 0:
+            await self._send_rematch_status_to_self('unavailable', {'reason': 'tournament'})
+            return None, None, False
+        return link, state, True
+
+    async def _handle_rematch_request(self):
+        room = await get_room(self.room_id)
+        gs = await get_game_state(room) if room else None
+        if not room or not gs:
+            return await self._send_error('Room not found')
+        link, _state, ok = await self._rematch_guards(room, gs)
+        if not ok:
+            return
+        # direct play
+        if link is not None and link.tournament_id == 0 and link.fixture_id < 0:
+            try:
+                result = await database_sync_to_async(send_direct_play_rematch_action)(
+                    link=link, room=room, actor_color=self.player_color, action='request'
+                )
+            except RematchServiceError as exc:
+                code = getattr(exc, "code", None)
+                if code == 'requester_not_eligible':
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'requester_not_eligible'})
+                elif code == 'opponent_not_eligible':
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'opponent_not_eligible'})
+                else:
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
+                return
+            # tournament backend decides pending/declined etc
+            # broadcast requested/offered
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {'type': 'rematch_offer_msg', 'requesterColor': self.player_color}
+            )
+            return
+        # plain private
+        # store pending marker in room.state
+        def _set_pending():
+            with transaction.atomic():
+                r = GameRoom.objects.select_for_update().get(pk=room.id)
+                s = dict(r.state or {})
+                if s.get('rematch') and s['rematch'].get('status') == 'pending':
+                    return s['rematch']
+                s['rematch'] = {'status': 'pending', 'requester': self.player_color}
+                r.state = s
+                r.save(update_fields=['state'])
+                return s['rematch']
+        await database_sync_to_async(_set_pending)()
+        await self.channel_layer.group_send(
+            self.room_group_name, {'type': 'rematch_offer_msg', 'requesterColor': self.player_color}
+        )
+
+    async def _handle_rematch_accept(self):
+        room = await get_room(self.room_id)
+        gs = await get_game_state(room) if room else None
+        if not room or not gs:
+            return await self._send_error('Room not found')
+        link, _state, ok = await self._rematch_guards(room, gs)
+        if not ok:
+            return
+        if link is not None and link.tournament_id == 0 and link.fixture_id < 0:
+            try:
+                result = await database_sync_to_async(send_direct_play_rematch_action)(
+                    link=link, room=room, actor_color=self.player_color, action='accept'
+                )
+            except RematchServiceError as exc:
+                code = getattr(exc, "code", None)
+                if code == "requester_not_eligible":
+                    # acceptor is requester_not_eligible
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': self.player_color, 'payload': {'status': 'unavailable', 'reason': 'requester_not_eligible'}}
+                    )
+                    other_color = 'black' if self.player_color == 'white' else 'white'
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {'status': 'unavailable', 'reason': 'opponent_not_eligible'}}
+                    )
+                elif code == "opponent_not_eligible":
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': self.player_color, 'payload': {'status': 'unavailable', 'reason': 'opponent_not_eligible'}}
+                    )
+                    other_color = 'black' if self.player_color == 'white' else 'white'
+                    await self.channel_layer.group_send(
+                        self.room_group_name,
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {'status': 'unavailable', 'reason': 'requester_not_eligible'}}
+                    )
+                else:
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
+                return
+            # expect tickets
+            tickets = result.get('tickets') if isinstance(result, dict) else None
+            if not tickets or 'p1' not in tickets or 'p2' not in tickets:
+                await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
+                return
+            # map to colors
+            p1_color = link.color_for_seat('p1')
+            p2_color = link.color_for_seat('p2')
+            # send each player only its ticket
+            for color, ticket in [('p1', tickets['p1']), ('p2', tickets['p2'])]:
+                target_color = p1_color if color == 'p1' else p2_color
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {'type': 'rematch_ready_msg', 'targetColor': target_color, 'ticket': ticket}
+                )
+            return
+        # plain private
+        # verify pending exists and requester is opponent
+        def _check_and_create():
+            with transaction.atomic():
+                r = GameRoom.objects.select_for_update().get(pk=room.id)
+                s = dict(r.state or {})
+                rem = s.get('rematch')
+                if not rem or rem.get('status') != 'pending':
+                    return None, 'no_pending'
+                if rem.get('requester') == self.player_color:
+                    return None, 'cannot_accept_own'
+                # create new room
+                from .game_service import create_private_rematch_room
+                new_room = create_private_rematch_room(r)
+                # clear rematch marker from old room
+                s.pop('rematch', None)
+                r.state = s
+                r.save(update_fields=['state'])
+                return new_room, None
+        result = await database_sync_to_async(_check_and_create)()
+        if result[0] is None:
+            await self._send_rematch_status_to_self('unavailable', {'reason': result[1]})
+            return
+        new_room = result[0]
+        # send each player roomId/color
+        for rp in await database_sync_to_async(lambda: list(new_room.players.select_related('player').all()))():
+            col = rp.color
+            payload = {'roomId': str(new_room.id), 'color': col}
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_ready_msg', 'roomId': payload['roomId'], 'color': col, 'targetColor': col}
+            )
+
+    async def _handle_rematch_decline(self):
+        room = await get_room(self.room_id)
+        if not room:
+            return
+        link = await self._get_rematch_link(room)
+        if link is not None and link.tournament_id == 0 and link.fixture_id < 0:
+            try:
+                await database_sync_to_async(send_direct_play_rematch_action)(
+                    link=link, room=room, actor_color=self.player_color, action='decline'
+                )
+            except RematchServiceError:
+                pass
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'declined'}}
+            )
+            await asyncio.sleep(0.5)
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+            )
+            return
+        # plain
+        def _clear():
+            with transaction.atomic():
+                r = GameRoom.objects.select_for_update().get(pk=room.id)
+                s = dict(r.state or {})
+                s.pop('rematch', None)
+                r.state = s
+                r.save(update_fields=['state'])
+        await database_sync_to_async(_clear)()
+        await self.channel_layer.group_send(
+            self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'declined'}}
+        )
+        await asyncio.sleep(0.5)
+        await self.channel_layer.group_send(
+            self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+        )
+
+    async def _handle_rematch_cancel(self):
+        room = await get_room(self.room_id)
+        if not room:
+            return
+        link = await self._get_rematch_link(room)
+        if link is not None and link.tournament_id == 0 and link.fixture_id < 0:
+            try:
+                await database_sync_to_async(send_direct_play_rematch_action)(
+                    link=link, room=room, actor_color=self.player_color, action='cancel'
+                )
+            except RematchServiceError:
+                pass
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'cancelled'}}
+            )
+            await asyncio.sleep(0.3)
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+            )
+            return
+        def _clear_if_requester():
+            with transaction.atomic():
+                r = GameRoom.objects.select_for_update().get(pk=room.id)
+                s = dict(r.state or {})
+                rem = s.get('rematch')
+                if rem and rem.get('requester') == self.player_color:
+                    s.pop('rematch', None)
+                    r.state = s
+                    r.save(update_fields=['state'])
+                    return True
+                return False
+        cleared = await database_sync_to_async(_clear_if_requester)()
+        if cleared:
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'cancelled'}}
+            )
+            await asyncio.sleep(0.3)
+            await self.channel_layer.group_send(
+                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+            )
+
+    async def rematch_status_msg(self, event):
+        await self.send(json.dumps({'type': 'rematch_status', 'payload': event['payload']}))
+
+    async def rematch_status_targeted_msg(self, event):
+        if event.get("targetColor") != self.player_color:
+            return
+        await self.send(json.dumps({'type': 'rematch_status', 'payload': event['payload']}))
+
+    async def rematch_offer_msg(self, event):
+        requester = event.get('requesterColor')
+        if requester == self.player_color:
+            await self.send(json.dumps({'type': 'rematch_status', 'payload': {'status': 'requested', 'requesterColor': requester}}))
+        else:
+            await self.send(json.dumps({'type': 'rematch_status', 'payload': {'status': 'offered', 'requesterColor': requester}}))
+
+    async def rematch_ready_msg(self, event):
+        # For direct play ticket, only send to targetColor
+        target = event.get('targetColor')
+        if target is not None and target != self.player_color:
+            return
+        payload = {}
+        if 'ticket' in event:
+            payload['ticket'] = event['ticket']
+        if 'roomId' in event:
+            payload['roomId'] = event['roomId']
+            payload['color'] = event['color']
+        await self.send(json.dumps({'type': 'rematch_ready', 'payload': payload}))
 
     async def _finalize_and_broadcast(self, state, winner, win_type, reason, force_close=False):
         """Score the finished game and broadcast game_ended to the room.

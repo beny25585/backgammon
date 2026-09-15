@@ -120,6 +120,12 @@ export default function GameScreen({
     handleHome,
     leaveGame,
 
+    rematchState,
+    requestRematch,
+    acceptRematch,
+    declineRematch,
+    cancelRematch,
+
     gameType: contextGameType,
   } = useGame();
 
@@ -187,9 +193,15 @@ export default function GameScreen({
    *
    * This countdown only makes its reconnect grace period
    * visible to the player who remains in the room.
+   * Only after gameHasStarted does the 40s forfeit apply.
    */
   useEffect(() => {
-    if (opponentConnected || reconnected || gameResult || !gameHasStarted) {
+    if (
+      opponentConnected ||
+      reconnected ||
+      gameResult?.matchOver ||
+      !gameHasStarted
+    ) {
       const resetTimer = window.setTimeout(() => {
         setDisconnectCountdown(null);
       }, 0);
@@ -417,6 +429,9 @@ export default function GameScreen({
                 2,
               ),
             );
+            const quickRematchPending =
+              rematchState.status === "requested" || rematchState.status === "creating";
+            const quickOffered = rematchState.status === "offered";
             return (
               <QuickGameResult
                 {...common}
@@ -437,16 +452,47 @@ export default function GameScreen({
                 clockRemaining={gameResult.clockRemaining ?? null}
                 coinsDelta={gameResult.coinsChange ?? null}
                 opponentCoinsDelta={gameResult.opponentCoinsChange ?? null}
-                onRematch={handleNextGame}
-                rematchPending={false}
-                onCancelRematch={() => {}}
+                onRematch={quickOffered ? acceptRematch : requestRematch}
+                rematchPending={quickRematchPending}
+                onCancelRematch={quickOffered ? declineRematch : cancelRematch}
+                rematchState={rematchState}
               />
             );
           }
 
           /*
-           * PRIVATE / NORMAL 1V1 RESULT
-           */
+            * PRIVATE / NORMAL 1V1 RESULT
+            */
+          // Tournament results must not expose arbitrary rematch
+          const isTournamentResult = (gameResult.gameType ?? contextGameType) === "tournament";
+          if (isTournamentResult) {
+            return (
+              <PrivateGameResult
+                {...common}
+                playerColor={playerColor}
+                showRematch={false}
+                closeLabel={homeLabel}
+                cube={gameResult.cube}
+                ratingBefore={gameResult.ratingBefore ?? null}
+                ratingAfter={gameResult.ratingAfter ?? null}
+                opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
+                opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
+                ratingChange={gameResult.ratingChange ?? null}
+                opponentRatingChange={gameResult.opponentRatingChange ?? null}
+                doublesOffered={gameResult.doublesOffered ?? null}
+                doublesAccepted={gameResult.doublesAccepted ?? null}
+                openingRoll={gameResult.openingRoll ?? null}
+                firstPlayer={gameResult.firstPlayer ?? null}
+                durationSeconds={gameResult.durationSeconds ?? null}
+                clockRemaining={gameResult.clockRemaining ?? null}
+                onRematch={() => {}}
+                rematchState={{ status: "unavailable", reason: "tournament" }}
+              />
+            );
+          }
+          const privateOffered = rematchState.status === "offered";
+          const privatePending =
+            rematchState.status === "requested" || rematchState.status === "creating";
           return (
             <PrivateGameResult
               {...common}
@@ -466,7 +512,10 @@ export default function GameScreen({
               firstPlayer={gameResult.firstPlayer ?? null}
               durationSeconds={gameResult.durationSeconds ?? null}
               clockRemaining={gameResult.clockRemaining ?? null}
-              onRematch={handleNextGame}
+              onRematch={privateOffered ? acceptRematch : requestRematch}
+              rematchPending={privatePending}
+              onCancelRematch={privateOffered ? declineRematch : cancelRematch}
+              rematchState={rematchState}
             />
           );
         })()}
@@ -483,13 +532,25 @@ export default function GameScreen({
             </div>
           )}
 
-          {!opponentConnected && !reconnected && (
-            <div className={styles.disconnected} role="status">
-              {t("game.opponentDisconnected", {
-                seconds: disconnectCountdown ?? 40,
-              })}
-            </div>
-          )}
+          {!opponentConnected &&
+            !reconnected &&
+            !gameHasStarted &&
+            !gameResult?.matchOver && (
+              <div className={styles.disconnected} role="status">
+                {t("game.opponentNotConnected")}
+              </div>
+            )}
+
+          {!opponentConnected &&
+            !reconnected &&
+            gameHasStarted &&
+            !gameResult?.matchOver && (
+              <div className={styles.disconnected} role="status">
+                {t("game.opponentDisconnected", {
+                  seconds: disconnectCountdown ?? 40,
+                })}
+              </div>
+            )}
 
           <GameBoard
             state={state}

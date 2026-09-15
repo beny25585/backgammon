@@ -351,3 +351,43 @@ def game_ended_payload(state, winner, win_type, reason, room):
         'blackScore': room.black_score,
         'targetPoints': room.target_points,
     }
+
+
+@transaction.atomic
+def create_private_rematch_room(source_room):
+    from .engine import BackgammonEngine
+    from .models import GameRoom, GameState, RoomPlayer, generate_room_code
+
+    locked = GameRoom.objects.select_for_update().get(pk=source_room.pk)
+    if locked.status != 'completed':
+        raise ValueError('source room not completed')
+    rps = list(locked.players.select_related('player').all())
+    if len(rps) != 2:
+        raise ValueError('rematch requires exactly two players')
+    colors = {rp.color for rp in rps}
+    if colors != {'white', 'black'}:
+        raise ValueError('rematch requires white and black')
+    # fresh engine state
+    fresh = BackgammonEngine.get_initial_state()
+    # ensure fresh fields
+    fresh['phase'] = fresh.get('phase', 'opening_roll')
+    # Reset match-specific fields from spec
+    new_room = GameRoom.objects.create(
+        code=generate_room_code(),
+        status='playing',
+        target_points=locked.target_points,
+        time_control=locked.time_control,
+        white_score=0,
+        black_score=0,
+        state={},
+        last_sequence=0,
+    )
+    # Initialize GameState with fresh engine state + clock init
+    # Clock will be set on first connect via consumers; keep turnStartedAt null
+    fresh['message'] = 'New rematch started'
+    fresh['turnStartedAt'] = None
+    # Ensure board reset: fresh already has board/bar/home
+    GameState.objects.create(room=new_room, state_data=fresh)
+    for rp in rps:
+        RoomPlayer.objects.create(room=new_room, player=rp.player, color=rp.color)
+    return new_room

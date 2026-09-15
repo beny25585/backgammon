@@ -30,10 +30,10 @@ test("timeout ends a local match even when the target is above one", async ({ mo
     </LocalGameProvider>,
   );
   await page.clock.fastForward(2000);
-  await expect(component.getByText("Match Lost")).toBeVisible();
+  await expect(component.getByText("Match Result")).toBeVisible();
   await expect(component.getByText(/clock:\{"white":0,/)).toBeVisible();
   await page.clock.fastForward(2000);
-  await expect(component.getByText("Match Lost")).toBeVisible();
+  await expect(component.getByText("Match Result")).toBeVisible();
 });
 
 test("local match keeps spent bank when the next game starts", async ({ mount, page }) => {

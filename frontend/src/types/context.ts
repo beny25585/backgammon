@@ -58,6 +58,19 @@ export interface NoMovesMessage {
   noticeVisible?: boolean;
 }
 
+export type RematchStatus =
+  | "idle"
+  | "available"
+  | "requested"
+  | "offered"
+  | "creating"
+  | "unavailable";
+
+export interface RematchState {
+  status: RematchStatus;
+  reason?: string | null;
+}
+
 export interface GameContextType {
   state: GameState | null;
   playerColor: Color;
@@ -90,4 +103,9 @@ export interface GameContextType {
   giveUp: () => void;
   leaveGame: () => void;
   noMovesMessage: NoMovesMessage | null;
+  rematchState: RematchState;
+  requestRematch: () => void;
+  acceptRematch: () => void;
+  declineRematch: () => void;
+  cancelRematch: () => void;
 }

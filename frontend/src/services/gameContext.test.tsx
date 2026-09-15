@@ -462,7 +462,15 @@ test(`explicit leave waits for the server's final match result (${betweenGames ?
       winner: "white", winType: "single", points: 1, cube: 1,
       whiteScore: 1, blackScore: 0, targetPoints: 7, matchOver: false,
     } }));
-    await component.getByRole("button", { name: "Quit match", exact: true }).last().click();
+    await component.getByRole(
+      "button",
+      { name: "Match control" }
+    ).click();
+
+    await component.getByRole(
+      "button",
+      { name: "Leave and forfeit match", exact: true }
+    ).click();
   } else {
     await component.getByRole("button", { name: "Match control" }).click();
     await component.getByRole("button", { name: "Leave and forfeit match", exact: true }).click();
@@ -572,11 +580,18 @@ function gameOverState(): GameState {
   return { ...newGame(), phase: "game_over", winner: "white", version: 2 };
 }
 
-test("an intermediate game end shows its result until the next game starts", async ({
+test("an intermediate game end updates the match without showing a final result", async ({
   mount,
   page,
 }) => {
-  const component = await mountProbe(mount, page);
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+      <MatchScoreProbe />
+    </GameProvider>,
+  );
+  await expect(component.getByTestId("loading")).toHaveText("false");
   await emitInitialState(page, { ...midGameState(), version: 1 });
 
   await emitGameEnded(page, {
@@ -589,18 +604,17 @@ test("an intermediate game end shows its result until the next game starts", asy
     targetPoints: 7,
   });
 
-  await expect(component.getByTestId("game-result")).toHaveText(
-    '{"winner":"white"}',
-  );
+  await expect(component.getByTestId("game-result")).toHaveText("null");
+  await expect(component.getByTestId("score")).toHaveText('{"white":1,"black":0}');
 
-  // Server auto-starts the next game and broadcasts a fresh opening roll.
+  // Server fresh opening state
   await emitBroadcast(page, { ...gameOverState(), version: 3, phase: "opening_roll" });
 
   await expect(component.getByTestId("game-result")).toHaveText("null");
   await expect(component.getByTestId("phase")).toHaveText("opening_roll");
 });
 
-test("handleNextGame sends a next_game intent after an intermediate game", async ({ mount, page }) => {
+test("handleNextGame sends next_game only for an unfinished match", async ({ mount, page }) => {
   const component = await mountProbe(mount, page);
   await emitInitialState(page, { ...midGameState(), version: 1 });
 
@@ -612,10 +626,9 @@ test("handleNextGame sends a next_game intent after an intermediate game", async
     whiteScore: 1,
     blackScore: 0,
     targetPoints: 7,
+    matchOver: false,
   });
-  await expect(component.getByTestId("game-result")).toHaveText(
-    '{"winner":"white"}',
-  );
+  await expect(component.getByTestId("game-result")).toHaveText("null");
 
   await component.getByTestId("next").click();
 

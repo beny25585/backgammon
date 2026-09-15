@@ -39,6 +39,11 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
     giveUp: () => {},
     leaveGame: () => {},
     noMovesMessage: null,
+    rematchState: { status: "available" },
+    requestRematch: () => {},
+    acceptRematch: () => {},
+    declineRematch: () => {},
+    cancelRematch: () => {},
     ...overrides,
   };
 }

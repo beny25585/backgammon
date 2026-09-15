@@ -60,6 +60,11 @@ test("non-final game does not show final GameResult overlay", async ({ mount }) 
         giveUp: () => {},
         leaveGame: () => {},
         noMovesMessage: null,
+        rematchState: { status: "available" },
+        requestRematch: () => {},
+        acceptRematch: () => {},
+        declineRematch: () => {},
+        cancelRematch: () => {},
       }}
     >
       <GameScreen />
@@ -107,6 +112,11 @@ test("final game shows base GameResult", async ({ mount }) => {
         giveUp: () => {},
         leaveGame: () => {},
         noMovesMessage: null,
+        rematchState: { status: "available" },
+        requestRematch: () => {},
+        acceptRematch: () => {},
+        declineRematch: () => {},
+        cancelRematch: () => {},
       }}
     >
       <GameScreen />
