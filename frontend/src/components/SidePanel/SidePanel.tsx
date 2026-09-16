@@ -41,7 +41,10 @@ function SidePanel({
   const opponentName = playerColor === "white" ? blackName : whiteName;
   const selfName = playerColor === "white" ? whiteName : blackName;
   const opponentLabel =
-    opponentName || (playerColor === "white" ? t("common.blackPlayer") : t("common.whitePlayer"));
+    opponentName ||
+    (playerColor === "white"
+      ? t("common.blackPlayer")
+      : t("common.whitePlayer"));
   const selfLabel = selfName
     ? `${selfName} (${t("common.youLower")})`
     : playerColor === "white"
@@ -104,8 +107,16 @@ function SidePanel({
         <div className={styles.menuDrawer} data-testid="match-control-drawer">
           <div className={styles.header}>
             <span className={styles.kicker}>{t("game.matchControl")}</span>
-            <span className={activeColor === playerColor ? styles.turnSelf : styles.turnOpponent}>
-              {activeColor === playerColor ? t("common.yourTurn") : t("common.opponentTurn")}
+            <span
+              className={
+                activeColor === playerColor
+                  ? styles.turnSelf
+                  : styles.turnOpponent
+              }
+            >
+              {activeColor === playerColor
+                ? t("common.yourTurn")
+                : t("common.opponentTurn")}
             </span>
           </div>
 
@@ -116,7 +127,10 @@ function SidePanel({
 
           {boardTheme && onBoardThemeChange && (
             <div className={`${styles.section} ${styles.themeSection}`}>
-              <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} />
+              <BoardThemeSelector
+                value={boardTheme}
+                onChange={onBoardThemeChange}
+              />
             </div>
           )}
           <div className={styles.actions}>
@@ -129,7 +143,9 @@ function SidePanel({
               </button>
             ) : (
               <div className={styles.resignConfirm}>
-                <span className={styles.resignText}>{t("game.giveUpCurrentConfirm")}</span>
+                <span className={styles.resignText}>
+                  {t("game.giveUpCurrentConfirm")}
+                </span>
                 <button
                   className={styles.confirmYes}
                   onClick={() => {
@@ -157,7 +173,9 @@ function SidePanel({
                 }}
                 className={styles.leaveBtn}
               >
-                {state.gameFormat === "money" ? t("game.leaveMoney") : t("game.leaveSeries")}
+                {state.gameFormat === "money"
+                  ? t("game.leaveMoney")
+                  : t("game.leaveSeries")}
               </button>
             )}
           </div>

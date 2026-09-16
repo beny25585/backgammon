@@ -16,6 +16,7 @@ import type {
   NoMovesMessage,
   OpeningRollResult,
   RematchState,
+  MakeMoveOptions,
 } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import {
@@ -44,9 +45,17 @@ interface GameProviderProps {
 }
 
 interface PendingMove {
+  id: number;
   from: Source;
   to: Target;
   sentAt: number;
+  origin: "manual" | "forced";
+}
+
+interface AutoConfirmRequest {
+  gen: number;
+  pendingId: number;
+  stage: "awaiting_move_ack" | "awaiting_end_turn_ack";
 }
 
 function applyOptimisticMove(
@@ -104,6 +113,11 @@ export function GameProvider({
   const [gameType, setGameType] = useState<GameType>(initialGameType);
   const gameTypeRef = useRef(gameType);
   const autoNextGameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoConfirmPending, setAutoConfirmPending] = useState(false);
+  const nextLocalIdRef = useRef(1);
+  const lifecycleGenRef = useRef(0);
+  const autoConfirmRequestRef = useRef<AutoConfirmRequest | null>(null);
+  const endTurnInFlightRef = useRef(false);
   useEffect(() => {
     gameTypeRef.current = gameType;
   }, [gameType]);
@@ -112,6 +126,23 @@ export function GameProvider({
       if (autoNextGameRef.current) clearTimeout(autoNextGameRef.current);
     };
   }, [roomId]);
+
+  // Auto-confirm: clear on game end or turn change
+  useEffect(() => {
+    if (!state) return;
+    if (state.phase === "game_over" || state.winner) {
+      autoConfirmRequestRef.current = null;
+      setAutoConfirmPending(false);
+      endTurnInFlightRef.current = false;
+      return;
+    }
+    if (autoConfirmRequestRef.current && state.turn !== playerColorRef.current) {
+      // Turn changed (auto-pass or opponent turn) - clear without sending
+      autoConfirmRequestRef.current = null;
+      setAutoConfirmPending(false);
+      endTurnInFlightRef.current = false;
+    }
+  }, [state]);
 
   // Backend is source of truth for quick vs 1v1 via state.gameFormat.
   // Tournament stays tournament only when URL had a real id; otherwise correct
@@ -137,6 +168,26 @@ export function GameProvider({
   useEffect(() => {
     playerColorRef.current = playerColor;
   }, [playerColor]);
+
+  const clearAutoConfirm = useCallback(() => {
+    autoConfirmRequestRef.current = null;
+    setAutoConfirmPending(false);
+  }, []);
+
+  const bumpLifecycleAndClear = useCallback(() => {
+    lifecycleGenRef.current += 1;
+    autoConfirmRequestRef.current = null;
+    setAutoConfirmPending(false);
+    endTurnInFlightRef.current = false;
+  }, []);
+
+  // Lifecycle: room change / unmount clears pending auto-confirm
+  useEffect(() => {
+    bumpLifecycleAndClear();
+    return () => {
+      bumpLifecycleAndClear();
+    };
+  }, [roomId, bumpLifecycleAndClear]);
 
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
@@ -452,6 +503,11 @@ export function GameProvider({
             pendingMovesRef.current = [];
             authoritativeStateRef.current = initialState;
             stateRef.current = initialState;
+            // Lifecycle: initial snapshot clears auto-confirm
+            lifecycleGenRef.current += 1;
+            autoConfirmRequestRef.current = null;
+            setAutoConfirmPending(false);
+            endTurnInFlightRef.current = false;
             setState(initialState);
 
             const players = (msg as Record<string, unknown>).players as
@@ -506,17 +562,71 @@ export function GameProvider({
           const acknowledgedAction =
             typeof msg.action === "string" ? msg.action : undefined;
 
+          const prevAuthoritative = authoritativeStateRef.current;
+          const pendingSnapshotIds = pendingMovesRef.current.map((p) => p.id);
+          const autoReqBefore = autoConfirmRequestRef.current ? { ...autoConfirmRequestRef.current } : null;
+
+          const isRealProgression = (
+            prevAuth: GameState | null,
+            nxt: GameState,
+            pend: PendingMove,
+            color: Color,
+          ): boolean => {
+            if (!prevAuth) return false;
+            const expected = applyOptimisticMove(prevAuth, pend, color);
+            if (!expected) return false;
+            if (expected.phase !== nxt.phase) return false;
+            if (expected.turn !== nxt.turn) return false;
+            if (expected.winner !== nxt.winner) return false;
+            if (expected.winType !== nxt.winType) return false;
+            if (expected.points.length !== nxt.points.length) return false;
+            for (let i = 0; i < expected.points.length; i++) {
+              if (expected.points[i] !== nxt.points[i]) return false;
+            }
+            if (expected.bar.white !== nxt.bar.white) return false;
+            if (expected.bar.black !== nxt.bar.black) return false;
+            if (expected.home.white !== nxt.home.white) return false;
+            if (expected.home.black !== nxt.home.black) return false;
+            const expDice = [...expected.dice].sort((a, b) => a - b);
+            const nxtDice = [...nxt.dice].sort((a, b) => a - b);
+            if (expDice.length !== nxtDice.length) return false;
+            for (let i = 0; i < expDice.length; i++) {
+              if (expDice[i] !== nxtDice[i]) return false;
+            }
+            const expRem = [...expected.remaining].sort((a, b) => a - b);
+            const nxtRem = [...nxt.remaining].sort((a, b) => a - b);
+            if (expRem.length !== nxtRem.length) return false;
+            for (let i = 0; i < expRem.length; i++) {
+              if (expRem[i] !== nxtRem[i]) return false;
+            }
+            const expLast = expected.lastMove;
+            const nxtLast = nxt.lastMove;
+            if (expLast === null && nxtLast === null) {
+              // no lastMove on either, continue
+            } else {
+              if (!expLast || !nxtLast) return false;
+              if (expLast.length !== nxtLast.length) return false;
+              for (let i = 0; i < expLast.length; i++) {
+                if (expLast[i].from !== nxtLast[i].from || expLast[i].to !== nxtLast[i].to) return false;
+              }
+            }
+            if (expected.moveHistory && nxt.moveHistory) {
+              if (expected.moveHistory.length !== nxt.moveHistory.length) return false;
+            } else if ((expected.moveHistory === null) !== (nxt.moveHistory === null)) {
+              // allow null vs null, but mismatch in presence without length check handled above
+            }
+            return true;
+          };
+
           if (
             sourceColor === playerColorRef.current &&
             pendingMovesRef.current.length > 0
           ) {
             const pending = pendingMovesRef.current[0];
-            const serverMove = next.lastMove?.[next.lastMove.length - 1];
             const acknowledgesMove =
               acknowledgedAction === "move" ||
               (acknowledgedAction === undefined &&
-                serverMove?.from === pending.from &&
-                serverMove?.to === pending.to);
+                isRealProgression(prevAuthoritative, next, pending, playerColorRef.current));
             if (acknowledgesMove) {
               pendingMovesRef.current.shift();
               clientLogger.debug("[move] server acknowledgement", {
@@ -525,6 +635,8 @@ export function GameProvider({
               });
             }
           }
+
+          const pendingAfterAckIds = pendingMovesRef.current.map((p) => p.id);
 
           authoritativeStateRef.current = next;
           let displayedState = next;
@@ -539,7 +651,109 @@ export function GameProvider({
             replayedMoves.push(pending);
             displayedState = replayed;
           }
+          const hadDiscard = pendingMovesRef.current.length !== replayedMoves.length;
           pendingMovesRef.current = replayedMoves;
+          const pendingAfterReplayIds = replayedMoves.map((p) => p.id);
+
+          // Auto-confirm: two stages
+          const req = autoReqBefore;
+          if (req) {
+            if (req.gen !== lifecycleGenRef.current) {
+              autoConfirmRequestRef.current = null;
+              setAutoConfirmPending(false);
+            } else if (req.stage === "awaiting_move_ack") {
+              const wasAcknowledged =
+                pendingSnapshotIds.includes(req.pendingId) &&
+                !pendingAfterAckIds.includes(req.pendingId);
+              const wasDiscarded =
+                pendingAfterAckIds.includes(req.pendingId) &&
+                !pendingAfterReplayIds.includes(req.pendingId);
+              const isCurrentRequest =
+                autoConfirmRequestRef.current?.gen === req.gen &&
+                autoConfirmRequestRef.current?.pendingId === req.pendingId &&
+                autoConfirmRequestRef.current?.stage === "awaiting_move_ack";
+              if (!isCurrentRequest) {
+                // newer request superseded this one, do not touch
+              } else if (hadDiscard || wasDiscarded) {
+                autoConfirmRequestRef.current = null;
+                setAutoConfirmPending(false);
+                endTurnInFlightRef.current = false;
+              } else if (wasAcknowledged) {
+                if (pendingMovesRef.current.length === 0) {
+                  const isMoving = next.phase === "moving";
+                  const isOurTurn = next.turn === playerColorRef.current;
+                  const noWinner = !next.winner;
+                  const noLegal = allLegalMoves(next, playerColorRef.current).length === 0;
+                  if (isMoving && isOurTurn && noWinner && noLegal && !endTurnInFlightRef.current) {
+                    autoConfirmRequestRef.current = {
+                      gen: req.gen,
+                      pendingId: req.pendingId,
+                      stage: "awaiting_end_turn_ack",
+                    };
+                    endTurnInFlightRef.current = true;
+                    const sent = socket.send("state_update", { action: "end_turn" });
+                    if (!sent) {
+                      endTurnInFlightRef.current = false;
+                      if (
+                        autoConfirmRequestRef.current?.gen === req.gen &&
+                        autoConfirmRequestRef.current?.pendingId === req.pendingId
+                      ) {
+                        autoConfirmRequestRef.current = null;
+                        setAutoConfirmPending(false);
+                      }
+                      setError("Connection lost. Please wait for reconnection.");
+                    }
+                  } else {
+                    // Not eligible for automatic completion (legal moves remain, turn passed, game over, not moving) – retire matching request
+                    autoConfirmRequestRef.current = null;
+                    setAutoConfirmPending(false);
+                    endTurnInFlightRef.current = false;
+                  }
+                } else {
+                  // Doubles: still pending, keep awaiting_move_ack
+                }
+              } else {
+                const stillPending = pendingAfterReplayIds.includes(req.pendingId);
+                if (!wasAcknowledged && !stillPending && !pendingSnapshotIds.includes(req.pendingId)) {
+                  autoConfirmRequestRef.current = null;
+                  setAutoConfirmPending(false);
+                }
+              }
+            } else if (req.stage === "awaiting_end_turn_ack") {
+              // Keep pending UI locked, do not send again, do not clear on pendingId absence
+              // Will be cleared on end_turn ack, turn change, game over, or lifecycle bump
+            }
+          }
+          // Clear in-flight on authoritative turn transition even without request (manual end_turn)
+          if (endTurnInFlightRef.current) {
+            if (
+              next.phase === "game_over" ||
+              next.winner ||
+              next.turn !== playerColorRef.current
+            ) {
+              endTurnInFlightRef.current = false;
+              if (autoConfirmRequestRef.current?.stage === "awaiting_end_turn_ack") {
+                autoConfirmRequestRef.current = null;
+                setAutoConfirmPending(false);
+              }
+            }
+          }
+          if (acknowledgedAction === "end_turn" && endTurnInFlightRef.current) {
+            endTurnInFlightRef.current = false;
+            autoConfirmRequestRef.current = null;
+            setAutoConfirmPending(false);
+          }
+          // Also handle action-less end_turn response (no action field but turn switched)
+          if (
+            endTurnInFlightRef.current &&
+            autoConfirmRequestRef.current?.stage === "awaiting_end_turn_ack" &&
+            next.turn !== playerColorRef.current &&
+            next.phase === "rolling"
+          ) {
+            endTurnInFlightRef.current = false;
+            autoConfirmRequestRef.current = null;
+            setAutoConfirmPending(false);
+          }
 
           // Server auto-pass: we rolled, but no legal moves existed. Show the
           // "No moves available" overlay briefly with the rolled dice.
@@ -639,11 +853,19 @@ export function GameProvider({
                 : undefined;
           if (failedAction === "move" && pendingMovesRef.current.length > 0) {
             pendingMovesRef.current = [];
+            autoConfirmRequestRef.current = null;
+            setAutoConfirmPending(false);
+            endTurnInFlightRef.current = false;
             const authoritative = authoritativeStateRef.current;
             if (authoritative) {
               stateRef.current = authoritative;
               setState(authoritative);
             }
+          }
+          if (failedAction === "end_turn") {
+            endTurnInFlightRef.current = false;
+            autoConfirmRequestRef.current = null;
+            setAutoConfirmPending(false);
           }
           // The server auto-resolves the opening once both sockets connect, so
           // a roll intent still in flight can hit a resolved opening. That
@@ -854,27 +1076,60 @@ export function GameProvider({
   }, [sendIntent]);
 
   const makeMove = useCallback(
-    (from: Source, to: Target) => {
+    (from: Source, to: Target, options?: MakeMoveOptions) => {
+      if (
+        autoConfirmRequestRef.current !== null ||
+        endTurnInFlightRef.current
+      )
+        return;
       const current = stateRef.current;
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
-      const pending: PendingMove = { from, to, sentAt: performance.now() };
+      const origin: "manual" | "forced" = options?.origin === "forced" ? "forced" : "manual";
+      const id = nextLocalIdRef.current++;
+      const pending: PendingMove = { id, from, to, sentAt: performance.now(), origin };
       const optimistic = applyOptimisticMove(
         current,
         pending,
         playerColorRef.current,
       );
+      if (!optimistic) return;
       if (!sendIntent({ action: "move", from, to })) return;
-      if (optimistic) {
-        pendingMovesRef.current.push(pending);
-        stateRef.current = optimistic;
-        setState(optimistic);
+      // Only clear prior auto request after manual move is validated and sent
+      if (origin === "manual" && autoConfirmRequestRef.current) {
+        clearAutoConfirm();
       }
+      pendingMovesRef.current.push(pending);
+      // Arm auto-confirm only after successful send and optimistic update
+      if (origin === "forced") {
+        const isTerminal =
+          optimistic.phase === "moving" &&
+          optimistic.turn === playerColorRef.current &&
+          !optimistic.winner &&
+          allLegalMoves(optimistic, playerColorRef.current).length === 0;
+        if (isTerminal) {
+          autoConfirmRequestRef.current = { gen: lifecycleGenRef.current, pendingId: id, stage: "awaiting_move_ack" };
+          setAutoConfirmPending(true);
+        } else {
+          autoConfirmRequestRef.current = null;
+          setAutoConfirmPending(false);
+        }
+      } else {
+        autoConfirmRequestRef.current = null;
+        setAutoConfirmPending(false);
+      }
+      stateRef.current = optimistic;
+      setState(optimistic);
     },
-    [sendIntent],
+    [sendIntent, clearAutoConfirm],
   );
 
   const reorderDice = useCallback(() => {
+    if (
+      autoConfirmRequestRef.current !== null ||
+      endTurnInFlightRef.current
+    )
+      return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
@@ -899,18 +1154,37 @@ export function GameProvider({
   );
 
   const endTurn = useCallback(() => {
+    if (
+      autoConfirmRequestRef.current !== null ||
+      endTurnInFlightRef.current
+    )
+      return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
     if (allLegalMoves(current, current.turn).length > 0) return;
-    sendIntent({ action: "end_turn" });
+    endTurnInFlightRef.current = true;
+    const sent = sendIntent({ action: "end_turn" });
+    if (!sent) {
+      endTurnInFlightRef.current = false;
+      setError("Connection lost. Please wait for reconnection.");
+    }
   }, [sendIntent]);
 
   const undoMove = useCallback(() => {
+    if (
+      autoConfirmRequestRef.current !== null ||
+      endTurnInFlightRef.current
+    )
+      return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
+    if (current.turn !== playerColorRef.current) return;
+    if (current.phase !== "moving") return;
+    clearAutoConfirm();
+    endTurnInFlightRef.current = false;
     sendIntent({ action: "undo" });
-  }, [sendIntent]);
+  }, [sendIntent, clearAutoConfirm]);
 
   const giveUp = useCallback(() => {
     const current = stateRef.current;
@@ -987,6 +1261,7 @@ export function GameProvider({
         openingRollResult,
         setOpeningRollResult,
         noMovesMessage,
+        autoConfirmPending,
         reconnected,
         opponentConnected,
         timeControl,

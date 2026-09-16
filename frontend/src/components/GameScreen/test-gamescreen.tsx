@@ -37,6 +37,7 @@ function makeMock(): GameContextType {
     gameResult: null,
     nextGameCountdown: null,
     matchScore: null,
+    autoConfirmPending: false,
      gameType: "1v1",
      rematchState: { status: "available" },
      requestRematch: () => {},

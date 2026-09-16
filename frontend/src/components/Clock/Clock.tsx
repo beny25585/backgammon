@@ -16,7 +16,15 @@ interface ClockProps {
 
 const DISPLAY_TICK_MS = 250;
 
-export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, delayMs = 0, turnStartedAt }: ClockProps) {
+export default function Clock({
+  clock,
+  activeColor,
+  myColor,
+  myLabel,
+  oppLabel,
+  delayMs = 0,
+  turnStartedAt,
+}: ClockProps) {
   const { t } = useI18n();
   const oppColor: Color = myColor === "white" ? "black" : "white";
   const myActive = activeColor === myColor;
@@ -26,7 +34,9 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
   // numbers keep moving between server updates. The server (or local hook) owns
   // the real clock; this never decides anything.
   const [now, setNow] = useState(() => turnStartedAt ?? 0);
-  const [fallbackStartedAt, setFallbackStartedAt] = useState<number | null>(null);
+  const [fallbackStartedAt, setFallbackStartedAt] = useState<number | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!activeColor || turnStartedAt != null) {
@@ -61,7 +71,7 @@ export default function Clock({ clock, activeColor, myColor, myLabel, oppLabel, 
   const delayMsLeft = activeColor
     ? delayLeft(activeColor, effectiveTurnStartedAt, now, delayMs)
     : 0;
-  const showDelay = delayMs > 0 && delayMsLeft > 0;
+  const showDelay = delayMs > 0;
 
   const myLow = myValue != null && myValue <= 10_000;
   const oppLow = oppValue != null && oppValue <= 10_000;

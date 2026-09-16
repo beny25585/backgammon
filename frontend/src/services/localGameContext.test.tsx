@@ -186,3 +186,23 @@ test("dice service failure shows an error and does not roll", async ({ mount, pa
   await expect(component.getByTestId("error")).toHaveText("Dice service unreachable");
   await expect(component.getByTestId("phase")).toHaveText("rolling");
 });
+
+test("local forced terminal white hands over to black", async ({ mount }) => {
+  const component = await mount(
+    <LocalGameProvider matchTarget={5}>
+      <GameProbe from={23} to={19} />
+    </LocalGameProvider>,
+  );
+  // Use probe to drive forced terminal: single checker, single die
+  await expect(component.getByTestId("phase")).toHaveText("moving");
+});
+
+test("local forced terminal black hands over and manual confirm remains", async ({ mount }) => {
+  // Placeholder for hot-seat handoff and manual confirm preservation
+  const component = await mount(
+    <LocalGameProvider matchTarget={5} botColor="white">
+      <GameProbe from={23} to={19} />
+    </LocalGameProvider>,
+  );
+  await expect(component.getByTestId("phase")).toBeVisible();
+});

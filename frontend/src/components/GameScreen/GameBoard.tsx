@@ -13,7 +13,7 @@ import {
   type Move,
 } from "@/lib/backgammon/engine";
 import type { GameState, Color } from "@/lib/backgammon/engine";
-import type { NoMovesMessage } from "../../types/context";
+import type { NoMovesMessage, MakeMoveOptions } from "../../types/context";
 import {
   DEFAULT_BOARD_THEME,
   type BoardTheme,
@@ -22,7 +22,7 @@ import {
 interface GameBoardProps {
   state: GameState;
   playerColor: Color;
-  makeMove: (from: Source, to: Target) => void;
+  makeMove: (from: Source, to: Target, options?: MakeMoveOptions) => void;
   reorderDice?: () => void;
   undoMove?: () => void;
   endTurn?: () => void;
@@ -37,6 +37,7 @@ interface GameBoardProps {
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
   noMovesMessage?: NoMovesMessage | null;
+  autoConfirmPending?: boolean;
 }
 
 const themeClassByTheme: Record<BoardTheme, string> = {
@@ -44,6 +45,10 @@ const themeClassByTheme: Record<BoardTheme, string> = {
   blueIvory: styles.themeBlueIvory,
   ivoryGold: styles.themeIvoryGold,
 };
+
+function getGameplayKey(s: GameState): string {
+  return `${s.points.join(",")}|${s.bar.white},${s.bar.black}|${s.home.white},${s.home.black}|${s.remaining.join(",")}|${s.turn}|${s.phase}|${JSON.stringify(s.lastMove)}`;
+}
 
 const FORCED_MOVE_DELAY_MS = 350;
 // Visual lifetime only; automatic moves and turn transitions keep their own timers.
@@ -67,9 +72,12 @@ export default function GameBoard({
   boardTheme,
   onBoardThemeChange,
   noMovesMessage,
+  autoConfirmPending = false,
 }: GameBoardProps) {
   const [selected, setSelected] = useState<Source | null>(null);
-  const [autoMove, setAutoMove] = useState<Move | null>(null);
+  const [autoMove, setAutoMove] = useState<{ id: number; fromPositionKey: string; move: Move } | null>(null);
+  const forcedCommandIdRef = useRef(0);
+  const [autoPointSequenceActive, setAutoPointSequenceActive] = useState(false);
   const [visibleTurnNotice, setVisibleTurnNotice] =
     useState<GuidanceMessage | null>(null);
   const turnNoticeTimerRef = useRef<number | null>(null);
@@ -119,10 +127,11 @@ export default function GameBoard({
   }, [legalFromPoints, selected]);
 
   useEffect(() => {
-    if (
-      !isMyTurn ||
-      state.remaining.length === 0
-    ) {
+    if (autoPointSequenceActive) {
+      setAutoMove(null);
+      return;
+    }
+    if (!isMyTurn || state.remaining.length === 0) {
       setAutoMove(null);
       return;
     }
@@ -131,12 +140,16 @@ export default function GameBoard({
       setAutoMove(null);
       return;
     }
+    const fromPositionKey = getGameplayKey(state);
+    const id = ++forcedCommandIdRef.current;
+    const command = { id, fromPositionKey, move: forced };
     setAutoMove(null);
     const t = setTimeout(() => {
-      setAutoMove(forced);
+      if (autoPointSequenceActive) return;
+      setAutoMove(command);
     }, FORCED_MOVE_DELAY_MS);
     return () => clearTimeout(t);
-  }, [state.remaining.length, isMyTurn, forcedMove]);
+  }, [state, isMyTurn, forcedMove, autoPointSequenceActive]);
 
   useEffect(() => {
     let notice: GuidanceMessage | null = null;
@@ -145,7 +158,7 @@ export default function GameBoard({
         variant: "no-moves",
         text: "No moves available — turn passes",
       };
-    } else if (isMyTurn && state.remaining.length > 0 && forcedMove) {
+    } else if (!autoPointSequenceActive && isMyTurn && state.remaining.length > 0 && forcedMove) {
       notice = {
         variant: "forced",
         text: "Forced move — playing automatically",
@@ -161,7 +174,7 @@ export default function GameBoard({
       setVisibleTurnNotice(null);
       turnNoticeTimerRef.current = null;
     }, TURN_NOTICE_DURATION_MS);
-  }, [noMovesMessage, isMyTurn, state.remaining.length, forcedMove]);
+  }, [noMovesMessage, isMyTurn, state.remaining.length, forcedMove, autoPointSequenceActive]);
 
   useEffect(
     () => () => {
@@ -184,11 +197,11 @@ export default function GameBoard({
     setSelected(from);
   }
 
-  function handleMove(to: Target, explicitFrom?: Source) {
+  function handleMove(to: Target, explicitFrom?: Source, options?: MakeMoveOptions) {
     const from =
-      explicitFrom ?? selected ?? (autoMove?.to === to ? autoMove.from : null);
+      explicitFrom ?? selected ?? (autoMove?.move.to === to ? autoMove.move.from : null);
     if (from === null) return;
-    makeMove(from, to);
+    makeMove(from, to, options);
     setSelected(null);
   }
 
@@ -206,12 +219,14 @@ export default function GameBoard({
           onSelect={handleSelect}
           onMove={handleMove}
           legalFromPoints={legalFromPoints}
-          onUndo={undoMove}
-          onConfirm={endTurn}
+          onUndo={autoConfirmPending ? undefined : undoMove}
+          onConfirm={autoConfirmPending ? undefined : endTurn}
           onRoll={needsToRoll ? onRoll : undefined}
           onOfferDouble={offerDouble}
           autoMove={autoMove}
           turnNotice={visibleTurnNotice}
+          onAutoPointSequenceChange={setAutoPointSequenceActive}
+          inputDisabled={autoConfirmPending}
         />
         {showDice && (
             <div className={styles.boardOverlay} data-testid="dice-overlay">
@@ -219,7 +234,7 @@ export default function GameBoard({
                 dice={displayedDice}
                 remaining={displayedRemaining}
                 color={displayedDiceColor}
-                onReorder={isMyTurn ? reorderDice : undefined}
+                onReorder={isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined}
               />
             </div>
         )}

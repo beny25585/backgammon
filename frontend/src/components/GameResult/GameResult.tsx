@@ -156,7 +156,7 @@ export default function GameResult({
   actions,
   children,
 }: BaseGameResultProps) {
-  const { t } = useI18n();
+  const { t, direction } = useI18n();
 
   const leftColor: Color = playerColor ?? "white";
   const rightColor: Color = otherColor(leftColor);
@@ -232,9 +232,10 @@ export default function GameResult({
         </button>
 
         {/* HERO */}
-        <div className={styles.resultHero}>
+        <div className={styles.resultHero} dir="ltr">
           {/* LEFT PLAYER */}
           <section
+            dir={direction}
             className={[
               styles.playerCard,
               leftIsWinner ? styles.playerWinner : styles.playerLoser,
@@ -283,7 +284,7 @@ export default function GameResult({
           </section>
 
           {/* CENTER */}
-          <section className={styles.scoreColumn}>
+          <section dir={direction} className={styles.scoreColumn}>
             <p id="game-result-title" className={styles.resultTitle}>
               {title ?? t("game.matchResult")}
             </p>
@@ -326,6 +327,7 @@ export default function GameResult({
 
           {/* RIGHT PLAYER */}
           <section
+            dir={direction}
             className={[
               styles.playerCard,
               rightIsWinner ? styles.playerWinner : styles.playerLoser,

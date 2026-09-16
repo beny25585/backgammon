@@ -99,7 +99,7 @@ export default function WaitingRoom() {
       socket.off("room_started", handleRoomStarted);
       socket.off("error", handleError);
     };
-  }, [roomId, socket, navigate, playerColor]);
+  }, [roomId, socket, navigate, playerColor, t]);
 
   async function handleCopy() {
     try {

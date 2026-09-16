@@ -36,6 +36,7 @@ const mock: GameContextType = {
   gameResult: null,
   nextGameCountdown: null,
   matchScore: { white: 2, black: 3 },
+  autoConfirmPending: false,
   gameType: "1v1",
   rematchState: { status: "available" },
   requestRematch: () => {},

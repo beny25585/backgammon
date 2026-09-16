@@ -19,6 +19,7 @@ import { GameProvider } from "./services/gameContext";
 import { LocalGameProvider } from "./services/localGameContext";
 import { parseTimeControl } from "./lib/clock";
 import type { Color } from "./types/game";
+import { resolveGameType, isValidTournamentId } from "./routerGameType";
 
 const configuredTournamentsUrl =
   (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
@@ -88,37 +89,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-export function isValidTournamentId(value: string | null): boolean {
-  if (!value) return false;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed === "0" || trimmed === "null" || trimmed === "undefined") return false;
-  const num = Number(trimmed);
-  if (Number.isFinite(num)) return num > 0;
-  return true;
-}
-
-export function resolveGameType(
-  params: URLSearchParams,
-  backendFormat?: string | null,
-): import("./types/context").GameType {
-  // 1. Valid real tournament id -> tournament
-  const tournamentId = params.get("tournament");
-  if (isValidTournamentId(tournamentId)) return "tournament";
-
-  // 2-3. Backend authoritative format (propagated from HeadToHeadTable.game_format / ticket)
-  const format = backendFormat ?? params.get("format");
-  if (format === "money") return "quick";
-  if (format === "match") return "1v1";
-
-  // 4-5. Explicit URL mode
-  const mode = params.get("mode");
-  if (mode === "quick") return "quick";
-  if (mode === "1v1" || mode === "match" || mode === "friend") return "1v1";
-  if (params.get("quick") === "1") return "quick";
-
-  // 6. Safe fallback — never default to tournament
-  return "1v1";
-}
+export { resolveGameType, isValidTournamentId } from "./routerGameType";
 
 function GameRoute() {
   const { roomId } = useParams<{ roomId: string }>();

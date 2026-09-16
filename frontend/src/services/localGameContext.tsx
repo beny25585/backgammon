@@ -11,6 +11,7 @@ import type {
   GameType,
   NoMovesMessage,
   OpeningRollResult,
+  MakeMoveOptions,
 } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import { saveMatch, fetchDice } from "../services/api";
@@ -475,42 +476,73 @@ export function LocalGameProvider({
     });
   }, []);
 
+  function completeLocalTurn(cur: GameState, actor: Color): GameState {
+    if (cur.phase !== "moving") return cur;
+    if (cur.turn !== actor) return cur;
+    if (cur.winner) return cur;
+    if (allLegalMoves(cur, actor).length > 0) return cur;
+    return {
+      ...cur,
+      remaining: [] as number[],
+      turn: cur.turn === "white" ? "black" : "white",
+      phase: "rolling" as const,
+      dice: [],
+      lastMove: null,
+      moveHistory: null,
+    };
+  }
+
   const makeMove = useCallback(
-    (from: Source, to: Target) => {
-      setState((prev) => {
-        if (prev.phase !== "moving") return prev;
-        if (prev.turn !== playerColorRef.current) return prev;
-        const dest = to === OFF ? OFF : to;
-        const moves = allLegalMoves(prev, prev.turn);
-        const matchingMoves = moves.filter(
-          (m: Move) =>
-            m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
-        );
-        const match =
-          prev.remaining
-            .map((die) => matchingMoves.find((m) => m.die === die))
-            .find((move): move is Move => Boolean(move)) ?? matchingMoves[0];
-        if (!match) return prev;
-        const next = applyMove(prev, match, prev.turn);
-        if (
-          next.phase === "rolling" &&
-          next.turn !== prev.turn &&
-          prev.remaining.length > 1
-        ) {
-          const remaining = [...prev.remaining];
-          const usedDieIndex = remaining.indexOf(match.die);
-          if (usedDieIndex >= 0) remaining.splice(usedDieIndex, 1);
-          revealNoMoves({
-            dice: prev.dice,
-            remaining,
-            color: prev.turn,
-          });
-        }
-        setTurnColor(next.turn);
-        return next;
-      });
+    (from: Source, to: Target, options?: MakeMoveOptions) => {
+      const origin = options?.origin === "forced" ? "forced" : "manual";
+      const cur = stateRef.current;
+      if (!cur || cur.phase !== "moving") return;
+      if (cur.turn !== playerColorRef.current) return;
+      const actor = playerColorRef.current;
+      const dest = to === OFF ? OFF : to;
+      const moves = allLegalMoves(cur, cur.turn);
+      const matchingMoves = moves.filter(
+        (m: Move) =>
+          m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
+      );
+      const match =
+        cur.remaining
+          .map((die) => matchingMoves.find((m) => m.die === die))
+          .find((move): move is Move => Boolean(move)) ?? matchingMoves[0];
+      if (!match) return;
+      let next = applyMove(cur, match, cur.turn);
+      let shouldReveal = false;
+      let revealPayload: { dice: number[]; remaining: number[]; color: Color } | null = null;
+      if (
+        next.phase === "rolling" &&
+        next.turn !== cur.turn &&
+        cur.remaining.length > 1
+      ) {
+        const remaining = [...cur.remaining];
+        const usedDieIndex = remaining.indexOf(match.die);
+        if (usedDieIndex >= 0) remaining.splice(usedDieIndex, 1);
+        revealPayload = {
+          dice: cur.dice,
+          remaining,
+          color: cur.turn,
+        };
+        shouldReveal = true;
+      }
+      if (
+        origin === "forced" &&
+        next.phase === "moving" &&
+        next.turn === actor &&
+        !next.winner &&
+        allLegalMoves(next, actor).length === 0
+      ) {
+        next = completeLocalTurn(next, actor);
+      }
+      stateRef.current = next;
+      setState(next);
+      setTurnColor(next.turn);
+      if (shouldReveal && revealPayload) revealNoMoves(revealPayload);
     },
-    [setTurnColor, revealNoMoves],
+    [revealNoMoves],
   );
 
   const offerDoubleAction = useCallback(() => {
@@ -532,20 +564,14 @@ export function LocalGameProvider({
   );
 
   const endTurn = useCallback(() => {
-    setState((prev) => {
-      if (prev.phase !== "moving") return prev;
-      if (prev.turn !== playerColorRef.current) return prev;
-      if (allLegalMoves(prev, prev.turn).length > 0) return prev;
-      const next = { ...prev, remaining: [] as number[] };
-      next.turn = prev.turn === "white" ? "black" : "white";
-      next.phase = "rolling";
-      next.dice = [];
-      next.lastMove = null;
-      next.moveHistory = null;
-      setTurnColor(next.turn);
-      return next;
-    });
-  }, [setTurnColor]);
+    const cur = stateRef.current;
+    const actor = playerColorRef.current;
+    const next = completeLocalTurn(cur, actor);
+    if (next === cur) return;
+    stateRef.current = next;
+    setState(next);
+    setTurnColor(next.turn);
+  }, []);
 
   const undoMove = useCallback(() => {
     setState((prev) => {
@@ -637,6 +663,7 @@ export function LocalGameProvider({
         openingRollResult,
         setOpeningRollResult,
         noMovesMessage,
+        autoConfirmPending: false,
         reconnected,
         opponentConnected,
         timeControl: timeControl ?? null,

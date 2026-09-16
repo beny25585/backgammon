@@ -10,8 +10,10 @@ interface BearOffProps {
   onClick: () => void;
 }
 
-export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps) {
+export default function BearOff({ state, myColor, isLegalTarget, onClick }: BearOffProps) {
   const { t } = useI18n();
+  const bottomBearOffColor: Color = myColor ?? "white";
+  const topBearOffColor: Color = bottomBearOffColor === "white" ? "black" : "white";
 
   return (
     <button
@@ -24,29 +26,29 @@ export default function BearOff({ state, isLegalTarget, onClick }: BearOffProps)
       )}
       <div className={styles.section} data-testid="bear-off-top">
         <div className={styles.label}>
-          <span>{t("common.black")}</span>
-          <span className={styles.count}>{state.home.black}</span>
+          <span>{t(topBearOffColor === "white" ? "common.white" : "common.black")}</span>
+          <span className={styles.count}>{state.home[topBearOffColor]}</span>
         </div>
-        {Array.from({ length: Math.min(state.home.black, 15) }).map((_, i) => (
+        {Array.from({ length: Math.min(state.home[topBearOffColor], 15) }).map((_, i) => (
           <motion.div
             key={i}
             initial={{ scale: 0.6, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className={`${styles.checkerPip} ${styles.pipBlack}`}
+            className={`${styles.checkerPip} ${topBearOffColor === "white" ? styles.pipWhite : styles.pipBlack}`}
           />
         ))}
       </div>
       <div className={styles.sectionReverse} data-testid="bear-off-bottom">
         <div className={styles.label}>
-          <span>{t("common.white")}</span>
-          <span className={styles.count}>{state.home.white}</span>
+          <span>{t(bottomBearOffColor === "white" ? "common.white" : "common.black")}</span>
+          <span className={styles.count}>{state.home[bottomBearOffColor]}</span>
         </div>
-        {Array.from({ length: Math.min(state.home.white, 15) }).map((_, i) => (
+        {Array.from({ length: Math.min(state.home[bottomBearOffColor], 15) }).map((_, i) => (
           <motion.div
             key={i}
             initial={{ scale: 0.6, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className={`${styles.checkerPip} ${styles.pipWhite}`}
+            className={`${styles.checkerPip} ${bottomBearOffColor === "white" ? styles.pipWhite : styles.pipBlack}`}
           />
         ))}
       </div>

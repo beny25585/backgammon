@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { GameContext } from "../services/gameContext";

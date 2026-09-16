@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/experimental-ct-react";
+import { test, expect, type ComponentFixtures } from "@playwright/experimental-ct-react";
 import { Board } from "../Board";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { newGame } from "@/lib/backgammon/engine";
@@ -41,7 +41,7 @@ function busyState(): GameState {
   };
 }
 
-async function mountBoard(mount: any, state: GameState) {
+async function mountBoard(mount: ComponentFixtures["mount"], state: GameState) {
   return mount(
     <div className={styles.container}>
       <MockGameWrapper playerColor="white" state={state}>

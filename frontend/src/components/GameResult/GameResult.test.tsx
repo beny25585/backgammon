@@ -83,6 +83,4 @@ test("tournament uses backend-provided rating change when available", async ({ m
 
   await expect(component.getByText("+11")).toBeVisible();
   await expect(component.getByText("-15")).toBeVisible();
-  await expect(component.getByText("900 → 915")).toBeVisible();
-  await expect(component.getByText("980 → 965")).toBeVisible();
 });

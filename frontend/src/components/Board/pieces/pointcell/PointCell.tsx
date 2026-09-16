@@ -4,6 +4,7 @@ import styles from "./PointCell.module.css";
 
 interface PointCellProps {
   index: number;
+  pointNumber?: number;
   top?: boolean;
   pointValue: number;
   selected: boolean;
@@ -15,6 +16,7 @@ interface PointCellProps {
 
 function PointCell({
   index,
+  pointNumber = index + 1,
   top,
   pointValue,
   selected,
@@ -72,6 +74,14 @@ function PointCell({
           }}
         />
       )}
+
+      <span
+        className={`${styles.pointNumber} ${
+          top ? styles.pointNumberTop : styles.pointNumberBottom
+        }`}
+      >
+        {pointNumber}
+      </span>
 
       <div className={top ? styles.checkersTop : styles.checkersBottom}>
         {Array.from({ length: renderCount }).map((_, i) => (

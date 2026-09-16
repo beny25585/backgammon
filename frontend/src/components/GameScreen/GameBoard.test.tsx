@@ -1,9 +1,11 @@
 import { test, expect, type ComponentFixtures } from "@playwright/experimental-ct-react";
+import type { ComponentProps } from "react";
 import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
-import { applyMove, newGame } from "@/lib/backgammon/engine";
+import { applyMove, newGame, OFF } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage } from "../../types/context";
+import { Board } from "../Board/Board";
 
 function simpleWhiteState(): GameState {
   const points = new Array(24).fill(0);
@@ -30,7 +32,7 @@ function movingState(overrides: Partial<GameState> = {}): GameState {
 interface MountProps {
   state: GameState;
   playerColor: Color;
-  makeMove?: (from: Source, to: Target) => void;
+  makeMove?: ComponentProps<typeof GameBoard>["makeMove"];
   undoMove?: () => void;
   endTurn?: () => void;
   offerDouble?: () => void;
@@ -821,4 +823,589 @@ test("match control drawer stays above dice and board actions", async ({ mount, 
     { x: (left + right) / 2, y: (top + bottom) / 2 },
   );
   expect(topLayer).toBe("match-control-drawer");
+});
+
+// ---------------------------------------------------------------------------
+// Bear-off orientation regression (viewer-relative trays) - corrected fixtures & real geometry
+// ---------------------------------------------------------------------------
+
+function bearOffRenderState(
+  homeWhite: number,
+  homeBlack: number,
+  overrides: Partial<GameState> = {},
+): GameState {
+  const home = overrides.home ?? {
+    white: homeWhite,
+    black: homeBlack,
+  };
+
+  const bar = overrides.bar ?? {
+    white: 0,
+    black: 0,
+  };
+
+  const points: GameState["points"] =
+    overrides.points !== undefined
+      ? [...overrides.points]
+      : new Array<number>(24).fill(0);
+
+  if (overrides.points === undefined) {
+    const remainingWhite = 15 - home.white - bar.white;
+    const remainingBlack = 15 - home.black - bar.black;
+
+    if (remainingWhite < 0 || remainingBlack < 0) {
+      throw new Error(
+        "Invalid bear-off fixture: home plus bar exceeds 15 checkers.",
+      );
+    }
+
+    if (remainingWhite > 0) points[5] = remainingWhite;
+    if (remainingBlack > 0) points[18] = -remainingBlack;
+  }
+
+  return {
+    ...newGame(),
+    phase: "moving",
+    turn: "white",
+    dice: [],
+    remaining: [],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+    cube: 1,
+    cubeOwner: "center",
+    doubleOfferedBy: null,
+    winner: null,
+    winType: null,
+    openingRoll: { white: null, black: null },
+    ...overrides,
+    home: { ...home },
+    bar: { ...bar },
+    points,
+  };
+}
+
+function assertTotal15(state: GameState) {
+  const boardWhite = state.points.filter((v) => v > 0).reduce((s, v) => s + v, 0);
+  const boardBlack = state.points.filter((v) => v < 0).reduce((s, v) => s + Math.abs(v), 0);
+  expect(boardWhite + state.bar.white + state.home.white).toBe(15);
+  expect(boardBlack + state.bar.black + state.home.black).toBe(15);
+}
+
+async function assertBearOffTray(
+  component: Awaited<ReturnType<ComponentFixtures["mount"]>>,
+  testId: "bear-off-top" | "bear-off-bottom",
+  expected: { count: number; color: "white" | "black" },
+) {
+  const tray = component.getByTestId(testId);
+  await expect(tray).toBeAttached();
+  const countEl = tray.locator('[class*="count"]');
+  await expect(countEl).toHaveText(String(expected.count));
+  const whitePips = tray.locator('[class*="pipWhite"]');
+  const blackPips = tray.locator('[class*="pipBlack"]');
+  const allPips = tray.locator('[class*="checkerPip"]');
+  await expect(allPips).toHaveCount(expected.count);
+  if (expected.color === "white") {
+    await expect(whitePips).toHaveCount(expected.count);
+    await expect(blackPips).toHaveCount(0);
+  } else {
+    await expect(blackPips).toHaveCount(expected.count);
+    await expect(whitePips).toHaveCount(0);
+  }
+}
+
+async function getTrayGeometry(component: Awaited<ReturnType<ComponentFixtures["mount"]>>) {
+  return await component.evaluate((root: HTMLElement) => {
+    const getRect = (sel: string) => {
+      const el = root.querySelector(sel) as HTMLElement | null;
+      if (!el) throw new Error(`missing element ${sel}`);
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) {
+        throw new Error(`empty rect ${sel}`);
+      }
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+    };
+    const top = getRect('[data-testid="bear-off-top"]');
+    const bottom = getRect('[data-testid="bear-off-bottom"]');
+    const off = getRect('[data-point-idx="off"]');
+    if (top.cx === bottom.cx && top.cy === bottom.cy) throw new Error("trays share rect");
+    return { top, bottom, off };
+  });
+}
+
+async function getPointRect(component: Awaited<ReturnType<ComponentFixtures["mount"]>>, idx: number) {
+  return await component.evaluate((root: HTMLElement, i: number) => {
+    const el = root.querySelector(`[data-point-idx="${i}"]`) as HTMLElement | null;
+    if (!el) throw new Error(`missing point ${i}`);
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) {
+      throw new Error(`empty point rect ${i}`);
+    }
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  }, idx);
+}
+
+function validBearOffWhiteState(die: number): GameState {
+  // Non-winning: 13 borne off + 1 at 0 + 1 at 5 + 15 black at 23 = 15 each
+  const points = new Array(24).fill(0);
+  points[0] = 1;
+  points[5] = 1;
+  points[23] = -15;
+  // die=1 bears off from 0
+  return bearOffRenderState(13, 0, {
+    points,
+    turn: "white",
+    dice: [die],
+    remaining: [die],
+    phase: "moving",
+    lastMove: [],
+    moveHistory: [],
+  });
+}
+
+function validBearOffBlackState(die: number): GameState {
+  const points = new Array(24).fill(0);
+  points[23] = -1;
+  points[18] = -1;
+  points[0] = 15;
+  return bearOffRenderState(0, 13, {
+    points,
+    turn: "black",
+    dice: [die],
+    remaining: [die],
+    phase: "moving",
+    lastMove: [],
+    moveHistory: [],
+  });
+}
+
+test("bear-off rendering: black viewer sees white on top (2) and black on bottom (3)", async ({ mount }) => {
+  const state = bearOffRenderState(2, 3, { turn: "black", phase: "moving" });
+  assertTotal15(state);
+  const component = await mountBoard(mount, { state, playerColor: "black" });
+  await assertBearOffTray(component, "bear-off-top", { count: 2, color: "white" });
+  await assertBearOffTray(component, "bear-off-bottom", { count: 3, color: "black" });
+  const { top, bottom } = await getTrayGeometry(component);
+  expect(top.cy, "top tray should be physically above bottom").toBeLessThan(bottom.cy - 20);
+});
+
+test("bear-off rendering: white viewer sees black on top (3) and white on bottom (2)", async ({ mount }) => {
+  const state = bearOffRenderState(2, 3, { turn: "white", phase: "moving" });
+  assertTotal15(state);
+  const component = await mountBoard(mount, { state, playerColor: "white" });
+  await assertBearOffTray(component, "bear-off-top", { count: 3, color: "black" });
+  await assertBearOffTray(component, "bear-off-bottom", { count: 2, color: "white" });
+  const { top, bottom } = await getTrayGeometry(component);
+  expect(top.cy).toBeLessThan(bottom.cy - 20);
+});
+
+test("bear-off fallback when myColor is null shows white bottom (white perspective)", async ({ mount }) => {
+  const state = bearOffRenderState(2, 3, { turn: "white", phase: "moving" });
+  assertTotal15(state);
+  const component = await mount(
+    <Board
+      state={state}
+      myColor={null}
+      selected={null}
+      legalTargets={[]}
+      onSelect={() => {}}
+      onMove={() => {}}
+      legalFromPoints={[]}
+    />,
+  );
+  await expect(component.getByTestId("bear-off-top")).toBeAttached();
+  await assertBearOffTray(component, "bear-off-top", { count: 3, color: "black" });
+  await assertBearOffTray(component, "bear-off-bottom", { count: 2, color: "white" });
+  const { top, bottom } = await getTrayGeometry(component);
+  expect(top.cy).toBeLessThan(bottom.cy - 20);
+});
+
+test("bear-off rerender updates bottom black count from 3 to 4 for black viewer", async ({ mount }) => {
+  const initial = bearOffRenderState(2, 3, { turn: "black", phase: "moving" });
+  assertTotal15(initial);
+  const component = await mountBoard(mount, { state: initial, playerColor: "black" });
+  await assertBearOffTray(component, "bear-off-top", { count: 2, color: "white" });
+  await assertBearOffTray(component, "bear-off-bottom", { count: 3, color: "black" });
+
+  const updated = bearOffRenderState(2, 4, { turn: "black", phase: "moving" });
+  assertTotal15(updated);
+  await component.update(
+    <MockGameWrapper playerColor="black" state={updated}>
+      <GameBoard state={updated} playerColor="black" makeMove={() => {}} onLeave={() => {}} />
+    </MockGameWrapper>,
+  );
+  await assertBearOffTray(component, "bear-off-top", { count: 2, color: "white" });
+  await assertBearOffTray(component, "bear-off-bottom", { count: 4, color: "black" });
+  const { top, bottom } = await getTrayGeometry(component);
+  expect(top.cy).toBeLessThan(bottom.cy - 20);
+});
+
+type SlotRect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
+type FlyerCapture = { rect: SlotRect; cx: number; cy: number; width: number; height: number; color: string | null };
+
+function expectedBottomSlotCenter(rect: SlotRect, stackIndex: number, checkerSize: number): { cx: number; cy: number } {
+  return {
+    cx: rect.left + rect.width / 2,
+    cy: rect.bottom - 8 - stackIndex * (checkerSize + 2) - checkerSize / 2,
+  };
+}
+
+async function installFlyerRemovalRecorder(
+  component: Awaited<ReturnType<ComponentFixtures["mount"]>>,
+): Promise<{ getCapture: () => Promise<FlyerCapture | null>; restore: () => Promise<void> }> {
+  await component.evaluate((root: HTMLElement) => {
+    const w = window as unknown as {
+      __flyerCapture: FlyerCapture | null;
+      __flyerOrig: typeof Node.prototype.removeChild | null;
+      __flyerRoot: Element | null;
+    };
+    w.__flyerCapture = null;
+    w.__flyerRoot = root;
+    if (w.__flyerOrig) {
+      Node.prototype.removeChild = w.__flyerOrig;
+    }
+    const orig = Node.prototype.removeChild;
+    w.__flyerOrig = orig;
+    Node.prototype.removeChild = function (this: Node, child: Node): Node {
+      try {
+        if (w.__flyerCapture === null && child instanceof Element) {
+          let flyer: Element | null = null;
+          if ((child as Element).matches('[data-testid="flying-checker"]')) {
+            flyer = child as Element;
+          } else {
+            flyer = (child as Element).querySelector('[data-testid="flying-checker"]');
+          }
+          if (flyer && w.__flyerRoot && (w.__flyerRoot as Element).contains(flyer) && flyer.isConnected) {
+            const rect = flyer.getBoundingClientRect();
+            const colorEl = flyer.querySelector('[data-checker-color]');
+            const color = colorEl ? colorEl.getAttribute('data-checker-color') : flyer.getAttribute('data-checker-color');
+            w.__flyerCapture = {
+              rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height },
+              cx: rect.left + rect.width / 2,
+              cy: rect.top + rect.height / 2,
+              width: rect.width,
+              height: rect.height,
+              color: color as string | null,
+            };
+          }
+        }
+      } catch {
+          /* intentionally ignored */
+        }
+      return (orig as unknown as (child: Node) => Node).call(this, child);
+    } as unknown as typeof Node.prototype.removeChild;
+  });
+  return {
+    getCapture: async () =>
+      (await component.evaluate(() => (window as unknown as { __flyerCapture: FlyerCapture | null }).__flyerCapture)) as FlyerCapture | null,
+    restore: async () => {
+      await component.evaluate(() => {
+        const w = window as unknown as {
+          __flyerOrig: typeof Node.prototype.removeChild | null;
+        };
+        if (w.__flyerOrig) {
+          Node.prototype.removeChild = w.__flyerOrig;
+          w.__flyerOrig = null;
+        }
+      });
+    },
+  };
+}
+
+// --- Animation target tests - real geometry, precise centers ---
+
+test("local white checker bears off to bottom tray (triggerFly)", async ({ mount }) => {
+  const before = validBearOffWhiteState(1);
+  assertTotal15(before);
+  const moveCalls: [Source, Target][] = [];
+  const component = await mountBoard(mount, {
+    state: before,
+    playerColor: "white",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+  const { top, bottom, off } = await getTrayGeometry(component);
+  const recorder = await installFlyerRemovalRecorder(component);
+  try {
+    await component.locator('[data-point-idx="0"]').click();
+    await expect.poll(() => moveCalls.length).toBe(1);
+    expect(moveCalls).toEqual([[0, OFF]]);
+    await expect.poll(async () => await recorder.getCapture(), { timeout: 3000 }).not.toBeNull();
+    const cap = (await recorder.getCapture())!;
+    if (!cap) throw new Error("missing flyer capture for local white bear-off");
+    expect(cap.color).toBe("white");
+    const expected = expectedBottomSlotCenter(bottom, 0, cap.width);
+    expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
+    const altTop = expectedBottomSlotCenter(top, 0, cap.width);
+    expect(Math.abs(cap.cx - altTop.cx) > 2 || Math.abs(cap.cy - altTop.cy) > 2).toBeTruthy();
+    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
+    if (Math.abs(altOff.cx - expected.cx) > 2 || Math.abs(altOff.cy - expected.cy) > 2) {
+      expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
+    }
+    expect(moveCalls.length).toBe(1);
+  } finally {
+    await recorder.restore();
+  }
+});
+
+test("local black checker bears off to bottom tray (triggerFly)", async ({ mount }) => {
+  const before = validBearOffBlackState(1);
+  assertTotal15(before);
+  const moveCalls: [Source, Target][] = [];
+  const component = await mountBoard(mount, {
+    state: before,
+    playerColor: "black",
+    makeMove: (from, to) => moveCalls.push([from, to]),
+  });
+  const { top, bottom, off } = await getTrayGeometry(component);
+  const recorder = await installFlyerRemovalRecorder(component);
+  try {
+    await component.locator('[data-point-idx="23"]').click();
+    await expect.poll(() => moveCalls.length).toBe(1);
+    expect(moveCalls).toEqual([[23, OFF]]);
+    await expect.poll(async () => await recorder.getCapture(), { timeout: 3000 }).not.toBeNull();
+    const cap = (await recorder.getCapture())!;
+    if (!cap) throw new Error("missing flyer capture for local black bear-off");
+    expect(cap.color).toBe("black");
+    const expected = expectedBottomSlotCenter(bottom, 0, cap.width);
+    expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
+    const altTop = expectedBottomSlotCenter(top, 0, cap.width);
+    expect(Math.abs(cap.cx - altTop.cx) > 2 || Math.abs(cap.cy - altTop.cy) > 2).toBeTruthy();
+    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
+    if (Math.abs(altOff.cx - expected.cx) > 2 || Math.abs(altOff.cy - expected.cy) > 2) {
+      expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
+    }
+    expect(moveCalls.length).toBe(1);
+  } finally {
+    await recorder.restore();
+  }
+});
+
+test("opponent white bears off observed by black viewer lands in top tray (animateExternalMove)", async ({ mount }) => {
+  const before = validBearOffWhiteState(1);
+  assertTotal15(before);
+  const component = await mountBoard(mount, { state: { ...before, turn: "white", phase: "moving", lastMove: [] }, playerColor: "black" });
+  const { top, bottom, off } = await getTrayGeometry(component);
+  const after = applyMove(before, { from: 0, to: OFF, die: 1 }, "white");
+  assertTotal15(after);
+  const recorder = await installFlyerRemovalRecorder(component);
+  try {
+    await component.update(
+      <MockGameWrapper playerColor="black" state={after}>
+        <GameBoard state={after} playerColor="black" makeMove={() => {}} onLeave={() => {}} />
+      </MockGameWrapper>,
+    );
+    await expect.poll(async () => await recorder.getCapture(), { timeout: 3000 }).not.toBeNull();
+    const cap = (await recorder.getCapture())!;
+    if (!cap) throw new Error("missing flyer capture for opponent white bear-off");
+    expect(cap.color).toBe("white");
+    const topPip = component.getByTestId("bear-off-top").locator('[class*="checkerPip"]').last();
+    const topPipBox = await topPip.boundingBox();
+    if (!topPipBox) throw new Error("missing top tray pip");
+    const expected = { cx: topPipBox.x + topPipBox.width / 2, cy: topPipBox.y + topPipBox.height / 2 };
+    expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
+    const altBottom = expectedBottomSlotCenter(bottom, 0, cap.width);
+    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
+    expect(Math.abs(expected.cx - altBottom.cx) > 2 || Math.abs(expected.cy - altBottom.cy) > 2).toBeTruthy();
+    expect(Math.abs(expected.cx - altOff.cx) > 2 || Math.abs(expected.cy - altOff.cy) > 2).toBeTruthy();
+    expect(Math.abs(cap.cx - altBottom.cx) > 2 || Math.abs(cap.cy - altBottom.cy) > 2).toBeTruthy();
+    expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
+  } finally {
+    await recorder.restore();
+  }
+});
+
+test("opponent black bears off observed by white viewer lands in top tray (animateExternalMove)", async ({ mount }) => {
+  const before = validBearOffBlackState(1);
+  assertTotal15(before);
+  const component = await mountBoard(mount, { state: { ...before, turn: "black", phase: "moving", lastMove: [] }, playerColor: "white" });
+  const { top, bottom, off } = await getTrayGeometry(component);
+  const after = applyMove(before, { from: 23, to: OFF, die: 1 }, "black");
+  assertTotal15(after);
+  const recorder = await installFlyerRemovalRecorder(component);
+  try {
+    await component.update(
+      <MockGameWrapper playerColor="white" state={after}>
+        <GameBoard state={after} playerColor="white" makeMove={() => {}} onLeave={() => {}} />
+      </MockGameWrapper>,
+    );
+    await expect.poll(async () => await recorder.getCapture(), { timeout: 3000 }).not.toBeNull();
+    const cap = (await recorder.getCapture())!;
+    if (!cap) throw new Error("missing flyer capture for opponent black bear-off");
+    expect(cap.color).toBe("black");
+    const topPip = component.getByTestId("bear-off-top").locator('[class*="checkerPip"]').last();
+    const topPipBox = await topPip.boundingBox();
+    if (!topPipBox) throw new Error("missing top tray pip");
+    const expected = { cx: topPipBox.x + topPipBox.width / 2, cy: topPipBox.y + topPipBox.height / 2 };
+    expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
+    const altBottom = expectedBottomSlotCenter(bottom, 0, cap.width);
+    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
+    expect(Math.abs(expected.cx - altBottom.cx) > 2 || Math.abs(expected.cy - altBottom.cy) > 2).toBeTruthy();
+    expect(Math.abs(expected.cx - altOff.cx) > 2 || Math.abs(expected.cy - altOff.cy) > 2).toBeTruthy();
+    expect(Math.abs(cap.cx - altBottom.cx) > 2 || Math.abs(cap.cy - altBottom.cy) > 2).toBeTruthy();
+    expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
+  } finally {
+    await recorder.restore();
+  }
+});
+
+test("undo of local white bear-off starts from bottom tray (handleUndo)", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  const before = validBearOffWhiteState(1);
+  const after = applyMove(before, { from: 0, to: OFF, die: 1 }, "white");
+  assertTotal15(after);
+  let undoCalled = 0;
+  const component = await mountBoard(mount, {
+    state: { ...after, turn: "white", phase: "moving", dice: [], remaining: [], lastMove: [{ from: 0, to: OFF }], moveHistory: [before], message: "White — confirm" } as GameState,
+    playerColor: "white",
+    undoMove: () => undoCalled++,
+  });
+  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
+  const recorder = await installFlyerRemovalRecorder(component);
+  try {
+    const { bottom } = await getTrayGeometry(component);
+    const pointRectBefore = await getPointRect(component, 0);
+    const undoBtn = component.getByTitle("Undo last move");
+    await expect(undoBtn).toBeVisible();
+    await undoBtn.click();
+    await expect.poll(() => undoCalled).toBe(1);
+    const flyer = component.getByTestId("flying-checker");
+    await expect(flyer).toHaveCount(1);
+    const startBox = await flyer.boundingBox();
+    if (!startBox) throw new Error("missing flyer boundingBox for undo white start");
+    const startCenter = { cx: startBox.x + startBox.width / 2, cy: startBox.y + startBox.height / 2 };
+    const startExpected = expectedBottomSlotCenter(bottom, 4, startBox.width);
+    expect(Math.abs(startCenter.cx - startExpected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(startCenter.cy - startExpected.cy)).toBeLessThanOrEqual(2);
+    expect(startCenter.cy).toBeGreaterThan(bottom.top - 2);
+    expect(startCenter.cy).toBeLessThan(bottom.bottom + 2);
+    expect(startCenter.cx).toBeGreaterThan(bottom.left - 2);
+    expect(startCenter.cx).toBeLessThan(bottom.right + 2);
+    await page.clock.resume();
+    await expect.poll(async () => await recorder.getCapture(), { timeout: 3000 }).not.toBeNull();
+    const cap = (await recorder.getCapture())!;
+    if (!cap) throw new Error("missing flyer capture for undo white end");
+    expect(cap.color).toBe("white");
+    const endExpected = expectedBottomSlotCenter(pointRectBefore, 0, cap.width);
+    expect(Math.abs(cap.cx - endExpected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(cap.cy - endExpected.cy)).toBeLessThanOrEqual(2);
+    expect(undoCalled).toBe(1);
+  } finally {
+    await recorder.restore();
+  }
+});
+
+test("undo of local black bear-off starts from bottom tray (handleUndo)", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  const before = validBearOffBlackState(1);
+  const after = applyMove(before, { from: 23, to: OFF, die: 1 }, "black");
+  assertTotal15(after);
+  let undoCalled2 = 0;
+  const component = await mountBoard(mount, {
+    state: { ...after, turn: "black", phase: "moving", dice: [], remaining: [], lastMove: [{ from: 23, to: OFF }], moveHistory: [before], message: "Black — confirm" } as GameState,
+    playerColor: "black",
+    undoMove: () => undoCalled2++,
+  });
+  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
+  const recorder = await installFlyerRemovalRecorder(component);
+  try {
+    const { bottom } = await getTrayGeometry(component);
+    const pointRectBefore = await getPointRect(component, 23);
+    const undoBtn = component.getByTitle("Undo last move");
+    await expect(undoBtn).toBeVisible();
+    await undoBtn.click();
+    await expect.poll(() => undoCalled2).toBe(1);
+    const flyer = component.getByTestId("flying-checker");
+    await expect(flyer).toHaveCount(1);
+    const startBox = await flyer.boundingBox();
+    if (!startBox) throw new Error("missing flyer boundingBox for undo black start");
+    const startCenter = { cx: startBox.x + startBox.width / 2, cy: startBox.y + startBox.height / 2 };
+    const startExpected = expectedBottomSlotCenter(bottom, 4, startBox.width);
+    expect(Math.abs(startCenter.cx - startExpected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(startCenter.cy - startExpected.cy)).toBeLessThanOrEqual(2);
+    expect(startCenter.cy).toBeGreaterThan(bottom.top - 2);
+    expect(startCenter.cy).toBeLessThan(bottom.bottom + 2);
+    expect(startCenter.cx).toBeGreaterThan(bottom.left - 2);
+    expect(startCenter.cx).toBeLessThan(bottom.right + 2);
+    await page.clock.resume();
+    await expect.poll(async () => await recorder.getCapture(), { timeout: 3000 }).not.toBeNull();
+    const cap = (await recorder.getCapture())!;
+    if (!cap) throw new Error("missing flyer capture for undo black end");
+    expect(cap.color).toBe("black");
+    const endExpected = expectedBottomSlotCenter(pointRectBefore, 0, cap.width);
+    expect(Math.abs(cap.cx - endExpected.cx)).toBeLessThanOrEqual(2);
+    expect(Math.abs(cap.cy - endExpected.cy)).toBeLessThanOrEqual(2);
+    expect(undoCalled2).toBe(1);
+  } finally {
+    await recorder.restore();
+  }
+});
+
+// --- Forced auto-confirm: provenance and UI ---
+test("forced autoMove dispatched as forced", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const forcedCalls: Array<{from: Source, to: Target, origin?: string}> = [];
+  const state = movingState({ dice: [4], remaining: [4], points: (()=>{ const p=new Array(24).fill(0); p[23]=1; return p;})() });
+  await mountBoard(mount, { state, playerColor: "white", makeMove: (from, to, options) => {
+  forcedCalls.push({
+    from,
+    to,
+    origin: options?.origin,
+  });
+} });
+  await page.clock.runFor(400);
+  await expect.poll(()=> forcedCalls.length).toBe(1);
+  expect(forcedCalls[0].origin).toBe("forced");
+});
+
+test("manual click is manual", async ({ mount }) => {
+  const manualCalls: Array<{from: Source, to: Target, origin?: string}> = [];
+  const manualState = movingState({ dice: [4,3], remaining: [4,3], points: (()=>{ const p=new Array(24).fill(0); p[23]=1; p[12]=1; return p;})() });
+  const component = await mountBoard(mount, { state: manualState, playerColor: "white", makeMove: (from, to, options) => {
+  manualCalls.push({
+    from,
+    to,
+    origin: options?.origin,
+  });
+} });
+  await component.locator('[data-point-idx="23"]').click();
+  await component.locator('[data-point-idx="19"]').click();
+  await expect.poll(()=> manualCalls.length).toBe(1);
+  expect(manualCalls[0].origin).not.toBe("forced");
+});
+
+test("terminal forced move shows confirm when not pending", async ({ mount }) => {
+  const state = movingState({ dice: [], remaining: [], moveHistory: [{...simpleWhiteState()}] });
+  const component = await mountBoard(mount, { state, playerColor: "white", endTurn: ()=>{}, undoMove: ()=>{} });
+  await expect(component.getByTitle("Confirm and end your turn")).toBeVisible();
+});
+
+test("terminal forced move hides confirm and blocks input when pending", async ({ mount }) => {
+  const state = movingState({ dice: [], remaining: [], moveHistory: [{...simpleWhiteState()}] });
+  const component = await mount(
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameBoard state={state} playerColor="white" makeMove={()=>{}} endTurn={()=>{}} undoMove={()=>{}} autoConfirmPending={true} />
+    </MockGameWrapper>
+  );
+  await expect(component.getByTitle("Confirm and end your turn")).toHaveCount(0);
+  await expect(component.getByTitle("Undo last move")).toHaveCount(0);
+});
+
+test("forced autoMove resumes after animation without duplicate", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
+  const state = movingState({ dice: [4], remaining: [4], points: (()=>{ const p=new Array(24).fill(0); p[23]=1; return p;})() });
+  const calls: Array<[Source,Target]> = [];
+  const comp = await mountBoard(mount, { state, playerColor: "white", makeMove: (f,t)=> calls.push([f,t]) });
+  // trigger a manual move to create flyChecker, then schedule forced autoMove while animating
+  await comp.locator('[data-point-idx="23"]').dispatchEvent("click");
+  await expect(comp.getByTestId("flying-checker")).toHaveCount(1);
+  // Flying checker: 220ms animation + 600ms committed timeout = 820ms
+  await page.clock.runFor(1000);
+  await expect(comp.getByTestId("flying-checker")).toHaveCount(0);
+  expect(calls.length).toBe(1);
 });

@@ -449,6 +449,73 @@ export function legalMovesFrom(state: GameState, from: Source, color: Color): Mo
   return allLegalMoves(state, color).filter(move => move.from === from);
 }
 
+export function getMakePointSequence(
+  state: GameState,
+  color: Color,
+  target: number,
+): Move[] | null {
+  if (
+    !Number.isInteger(target) ||
+    target < 0 ||
+    target >= BOARD_SIZE ||
+    state.phase !== "moving" ||
+    state.turn !== color ||
+    state.remaining.length === 0
+  ) {
+    return null;
+  }
+
+  const ownCount = (position: GameState): number => {
+    const value = position.points[target] ?? 0;
+    return color === "white"
+      ? Math.max(0, value)
+      : Math.max(0, -value);
+  };
+
+  if (
+    ownCount(state) >= 2 ||
+    isOpponentBlockade(state, target, color)
+  ) {
+    return null;
+  }
+
+  const search = (
+    position: GameState,
+    sequence: Move[],
+  ): Move[] | null => {
+    if (ownCount(position) >= 2) {
+      return sequence;
+    }
+
+    if (sequence.length >= 2 || position.remaining.length === 0) {
+      return null;
+    }
+
+    const moves = allLegalMoves(position, color)
+      .filter((move) => move.to === target)
+      .sort(
+        (a, b) =>
+          position.remaining.indexOf(a.die) -
+          position.remaining.indexOf(b.die),
+      );
+
+    for (const move of moves) {
+      const result = search(
+        positionAfterMove(position, move, color),
+        [...sequence, move],
+      );
+
+      if (result) {
+        return result;
+      }
+    }
+
+    return null;
+  };
+
+  return search(state, []);
+}
+
 /**
  * If `color` has exactly one legal placement available, return a matching
  * move. Otherwise return null. Multiple dice that land on the same point

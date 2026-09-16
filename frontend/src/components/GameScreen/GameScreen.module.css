@@ -8,7 +8,11 @@
     radial-gradient(circle at 82% 8%, rgba(229, 180, 77, 0.1), transparent 28%),
     radial-gradient(circle at 11% 88%, rgba(36, 83, 74, 0.26), transparent 35%),
     linear-gradient(135deg, rgba(5, 16, 17, 0.97), rgba(2, 7, 9, 0.99) 62%),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 42px);
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.015) 0 1px,
+      transparent 1px 42px
+    );
   padding: 0;
   /* viewport-fit=cover exposes these insets on notched iPhones. Keeping them
      overridable also lets the responsive test emulate iOS safe areas. */
@@ -26,10 +30,18 @@
 /* === Board + Side Panel outer frame === */
 .gameFrame {
   --bearoff-control-right: calc(
-    clamp(1px, 0.22vw, 3px) + clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px
+    clamp(1px, 0.22vw, 3px) + clamp(7px, 0.7vw, 11px) +
+      clamp(8px, 0.9vw, 13px) + 3px
   );
   --lux-case-bg:
-    linear-gradient(90deg, #2b170c, #5c3720 22%, #2b170c 54%, #6f4728 78%, #28150b),
+    linear-gradient(
+      90deg,
+      #2b170c,
+      #5c3720 22%,
+      #2b170c 54%,
+      #6f4728 78%,
+      #28150b
+    ),
     #08171b;
   --lux-case-border: rgba(229, 180, 77, 0.52);
   --lux-case-glow-top: rgba(255, 233, 178, 0.18);
@@ -42,22 +54,51 @@
   --lux-frame-texture-opacity: 0.34;
   --lux-photo-texture-blend: soft-light;
   --lux-board-area-bg:
-    radial-gradient(circle at 50% 44%, rgba(244, 204, 123, 0.08), transparent 46%),
+    radial-gradient(
+      circle at 50% 44%,
+      rgba(244, 204, 123, 0.08),
+      transparent 46%
+    ),
     linear-gradient(180deg, rgba(6, 18, 18, 0.5), rgba(3, 9, 10, 0.68));
   --lux-rail-bg:
-    radial-gradient(circle at 18% 14%, rgba(255, 231, 172, 0.18), transparent 22%),
+    radial-gradient(
+      circle at 18% 14%,
+      rgba(255, 231, 172, 0.18),
+      transparent 22%
+    ),
     radial-gradient(circle at 88% 82%, rgba(0, 0, 0, 0.34), transparent 32%),
-    linear-gradient(90deg, #231207 0%, #61391f 16%, #2a160b 47%, #7b4a28 72%, #241207 100%);
+    linear-gradient(
+      90deg,
+      #231207 0%,
+      #61391f 16%,
+      #2a160b 47%,
+      #7b4a28 72%,
+      #241207 100%
+    );
   --lux-rail-border: rgba(229, 180, 77, 0.35);
   --lux-rivet: rgba(244, 194, 91, 0.68);
   --lux-rivet-soft: rgba(244, 194, 91, 0.16);
   --lux-field-bg:
-    radial-gradient(ellipse at 50% 44%, rgba(255, 226, 161, 0.12), transparent 52%),
+    radial-gradient(
+      ellipse at 50% 44%,
+      rgba(255, 226, 161, 0.12),
+      transparent 52%
+    ),
     linear-gradient(90deg, #5a3320, #83522f 48%, #5a3320);
   --lux-field-sheen:
-    radial-gradient(ellipse at 50% 12%, rgba(255, 245, 214, 0.13), transparent 38%),
+    radial-gradient(
+      ellipse at 50% 12%,
+      rgba(255, 245, 214, 0.13),
+      transparent 38%
+    ),
     radial-gradient(ellipse at 50% 88%, rgba(1, 10, 9, 0.22), transparent 42%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.28), transparent 7%, transparent 93%, rgba(0, 0, 0, 0.28));
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.28),
+      transparent 7%,
+      transparent 93%,
+      rgba(0, 0, 0, 0.28)
+    );
   --lux-point-light-a: #f4e4bd;
   --lux-point-light-b: #d0a960;
   --lux-point-light-sheen: rgba(255, 249, 229, 0.88);
@@ -70,16 +111,44 @@
   --lux-point-edge-soft: rgba(255, 226, 159, 0.24);
   --lux-center-belt: rgba(28, 14, 6, 0.88);
   --lux-row-bg:
-    radial-gradient(circle at 50% 50%, rgba(255, 222, 153, 0.05), transparent 48%),
-    linear-gradient(90deg, rgba(32, 15, 7, 0.2), transparent 20%, transparent 80%, rgba(32, 15, 7, 0.2)),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 222, 153, 0.05),
+      transparent 48%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(32, 15, 7, 0.2),
+      transparent 20%,
+      transparent 80%,
+      rgba(32, 15, 7, 0.2)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bar-bg:
-    radial-gradient(circle at 50% 8%, rgba(229, 180, 77, 0.11), transparent 38%),
-    linear-gradient(90deg, rgba(255, 231, 177, 0.11), transparent 31%, rgba(0, 0, 0, 0.3)),
+    radial-gradient(
+      circle at 50% 8%,
+      rgba(229, 180, 77, 0.11),
+      transparent 38%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 231, 177, 0.11),
+      transparent 31%,
+      rgba(0, 0, 0, 0.3)
+    ),
     #251409;
   --lux-bearoff-bg:
-    radial-gradient(circle at 50% 4%, rgba(229, 180, 77, 0.12), transparent 35%),
-    linear-gradient(90deg, rgba(255, 231, 177, 0.08), transparent 40%, rgba(0, 0, 0, 0.28)),
+    radial-gradient(
+      circle at 50% 4%,
+      rgba(229, 180, 77, 0.12),
+      transparent 35%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 231, 177, 0.08),
+      transparent 40%,
+      rgba(0, 0, 0, 0.28)
+    ),
     #251409;
   --lux-panel-bg:
     radial-gradient(circle at 50% 0, rgba(229, 180, 77, 0.08), transparent 38%),
@@ -107,9 +176,17 @@
   --ui-on-accent: #fff6ec;
   --ui-secondary-bg: rgba(14, 82, 70, 0.94);
   --ui-secondary-border: rgba(86, 168, 146, 0.56);
-  --ui-bar-overlay: linear-gradient(180deg, rgba(18, 82, 68, 0.5), rgba(42, 9, 14, 0.58));
+  --ui-bar-overlay: linear-gradient(
+    180deg,
+    rgba(18, 82, 68, 0.5),
+    rgba(42, 9, 14, 0.58)
+  );
   --ui-cube-bg: linear-gradient(180deg, #a93643, #6f1722);
-  --ui-menu-bg: linear-gradient(180deg, rgba(31, 11, 14, 0.98), rgba(10, 7, 8, 0.99));
+  --ui-menu-bg: linear-gradient(
+    180deg,
+    rgba(31, 11, 14, 0.98),
+    rgba(10, 7, 8, 0.99)
+  );
   position: relative;
   display: grid;
   grid-template-columns: clamp(96px, 14vw, 150px) minmax(0, 1fr);
@@ -118,12 +195,6 @@
   isolation: isolate;
   border-radius: 0;
   background: var(--lux-case-bg);
-  box-shadow:
-    0 32px 82px rgba(0, 0, 0, 0.55),
-    0 14px 38px rgba(0, 0, 0, 0.26),
-    inset 0 1px 0 rgba(255, 239, 191, 0.18),
-    inset 0 0 0 1px rgba(5, 2, 0, 0.6);
-  border: clamp(1px, 0.22vw, 3px) solid var(--lux-case-border);
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -141,7 +212,11 @@
   --ui-on-accent: #fff6ec;
   --ui-secondary-bg: rgba(14, 82, 70, 0.94);
   --ui-secondary-border: rgba(86, 168, 146, 0.56);
-  --ui-menu-bg: linear-gradient(180deg, rgba(31, 11, 14, 0.98), rgba(10, 7, 8, 0.99));
+  --ui-menu-bg: linear-gradient(
+    180deg,
+    rgba(31, 11, 14, 0.98),
+    rgba(10, 7, 8, 0.99)
+  );
   --lux-material-texture: url("../../assets/6b-material-mahogany.png");
   --lux-material-layer-blend: multiply;
   --lux-photo-texture-opacity: 0.68;
@@ -150,27 +225,85 @@
   --lux-point-texture-opacity: 0.3;
   --lux-point-edge-soft: rgba(255, 210, 130, 0.28);
   --lux-rail-bg:
-    radial-gradient(circle at 18% 14%, rgba(255, 231, 172, 0.2), transparent 22%),
+    radial-gradient(
+      circle at 18% 14%,
+      rgba(255, 231, 172, 0.2),
+      transparent 22%
+    ),
     radial-gradient(circle at 88% 82%, rgba(0, 0, 0, 0.38), transparent 32%),
-    linear-gradient(90deg, rgba(18, 7, 2, 0.74), rgba(102, 57, 28, 0.48) 18%, rgba(25, 10, 4, 0.76) 52%, rgba(123, 72, 37, 0.5) 75%, rgba(16, 6, 2, 0.78)),
+    linear-gradient(
+      90deg,
+      rgba(18, 7, 2, 0.74),
+      rgba(102, 57, 28, 0.48) 18%,
+      rgba(25, 10, 4, 0.76) 52%,
+      rgba(123, 72, 37, 0.5) 75%,
+      rgba(16, 6, 2, 0.78)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-field-bg:
-    radial-gradient(ellipse at 50% 44%, rgba(255, 226, 161, 0.12), transparent 52%),
-    linear-gradient(90deg, rgba(58, 29, 14, 0.78), rgba(123, 74, 39, 0.54) 48%, rgba(50, 23, 11, 0.82)),
+    radial-gradient(
+      ellipse at 50% 44%,
+      rgba(255, 226, 161, 0.12),
+      transparent 52%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(58, 29, 14, 0.78),
+      rgba(123, 74, 39, 0.54) 48%,
+      rgba(50, 23, 11, 0.82)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-row-bg:
-    radial-gradient(circle at 50% 50%, rgba(255, 222, 153, 0.08), transparent 48%),
-    linear-gradient(90deg, rgba(37, 15, 6, 0.42), transparent 20%, transparent 80%, rgba(37, 15, 6, 0.42)),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 222, 153, 0.08),
+      transparent 48%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(37, 15, 6, 0.42),
+      transparent 20%,
+      transparent 80%,
+      rgba(37, 15, 6, 0.42)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bar-bg:
-    radial-gradient(circle at 50% 8%, rgba(229, 180, 77, 0.12), transparent 38%),
-    linear-gradient(90deg, rgba(255, 231, 177, 0.1), transparent 31%, rgba(0, 0, 0, 0.32)),
-    linear-gradient(90deg, rgba(20, 9, 4, 0.72), rgba(72, 39, 18, 0.52), rgba(16, 6, 2, 0.78)),
+    radial-gradient(
+      circle at 50% 8%,
+      rgba(229, 180, 77, 0.12),
+      transparent 38%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 231, 177, 0.1),
+      transparent 31%,
+      rgba(0, 0, 0, 0.32)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(20, 9, 4, 0.72),
+      rgba(72, 39, 18, 0.52),
+      rgba(16, 6, 2, 0.78)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bearoff-bg:
-    radial-gradient(circle at 50% 4%, rgba(229, 180, 77, 0.12), transparent 35%),
-    linear-gradient(90deg, rgba(255, 231, 177, 0.08), transparent 40%, rgba(0, 0, 0, 0.28)),
-    linear-gradient(90deg, rgba(20, 9, 4, 0.7), rgba(75, 40, 19, 0.5), rgba(16, 6, 2, 0.76)),
+    radial-gradient(
+      circle at 50% 4%,
+      rgba(229, 180, 77, 0.12),
+      transparent 35%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 231, 177, 0.08),
+      transparent 40%,
+      rgba(0, 0, 0, 0.28)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(20, 9, 4, 0.7),
+      rgba(75, 40, 19, 0.5),
+      rgba(16, 6, 2, 0.76)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
 }
 
@@ -184,40 +317,89 @@
   --ui-on-accent: #f5f8ff;
   --ui-secondary-bg: rgba(10, 49, 88, 0.94);
   --ui-secondary-border: rgba(102, 159, 198, 0.55);
-  --ui-bar-overlay: linear-gradient(180deg, rgba(10, 49, 88, 0.72), rgba(4, 17, 35, 0.82));
+  --ui-bar-overlay: linear-gradient(
+    180deg,
+    rgba(10, 49, 88, 0.72),
+    rgba(4, 17, 35, 0.82)
+  );
   --ui-cube-bg: linear-gradient(180deg, #3d6cff, #2439d6);
-  --ui-menu-bg: linear-gradient(180deg, rgba(8, 15, 35, 0.98), rgba(2, 6, 17, 0.99));
+  --ui-menu-bg: linear-gradient(
+    180deg,
+    rgba(8, 15, 35, 0.98),
+    rgba(2, 6, 17, 0.99)
+  );
   --lux-material-texture: linear-gradient(#173653, #173653);
   --lux-material-layer-blend: soft-light;
   --lux-photo-texture-opacity: 0.06;
   --lux-frame-texture-opacity: 0.04;
   --lux-photo-texture-blend: soft-light;
   --lux-case-bg:
-    linear-gradient(90deg, #172331, #37516d 22%, #101a25 54%, #52677b 78%, #111820),
+    linear-gradient(
+      90deg,
+      #172331,
+      #37516d 22%,
+      #101a25 54%,
+      #52677b 78%,
+      #111820
+    ),
     #07121a;
   --lux-case-border: rgba(214, 194, 143, 0.58);
   --lux-case-glow-top: rgba(229, 238, 247, 0.2);
   --lux-case-glow-side: rgba(201, 225, 243, 0.17);
   --lux-inner-border: rgba(244, 236, 213, 0.18);
   --lux-board-area-bg:
-    radial-gradient(circle at 50% 44%, rgba(214, 194, 143, 0.1), transparent 46%),
+    radial-gradient(
+      circle at 50% 44%,
+      rgba(214, 194, 143, 0.1),
+      transparent 46%
+    ),
     linear-gradient(180deg, rgba(8, 22, 31, 0.66), rgba(3, 9, 13, 0.74));
   --lux-rail-bg:
-    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.16), transparent 22%),
+    radial-gradient(
+      circle at 18% 14%,
+      rgba(255, 255, 255, 0.16),
+      transparent 22%
+    ),
     radial-gradient(circle at 88% 82%, rgba(0, 0, 0, 0.34), transparent 32%),
-    linear-gradient(90deg, rgba(10, 19, 29, 0.98) 0%, rgba(47, 75, 106, 0.95) 19%, rgba(8, 15, 24, 0.98) 49%, rgba(78, 101, 126, 0.94) 75%, rgba(9, 14, 20, 0.98) 100%),
+    linear-gradient(
+      90deg,
+      rgba(10, 19, 29, 0.98) 0%,
+      rgba(47, 75, 106, 0.95) 19%,
+      rgba(8, 15, 24, 0.98) 49%,
+      rgba(78, 101, 126, 0.94) 75%,
+      rgba(9, 14, 20, 0.98) 100%
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-rail-border: rgba(214, 194, 143, 0.42);
   --lux-rivet: rgba(236, 222, 180, 0.72);
   --lux-rivet-soft: rgba(236, 222, 180, 0.18);
   --lux-field-bg:
-    radial-gradient(ellipse at 50% 44%, rgba(249, 245, 229, 0.14), transparent 52%),
-    linear-gradient(90deg, rgba(18, 37, 58, 0.98), rgba(59, 91, 122, 0.95) 48%, rgba(17, 32, 49, 0.98)),
+    radial-gradient(
+      ellipse at 50% 44%,
+      rgba(249, 245, 229, 0.14),
+      transparent 52%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(18, 37, 58, 0.98),
+      rgba(59, 91, 122, 0.95) 48%,
+      rgba(17, 32, 49, 0.98)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-field-sheen:
-    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.18), transparent 38%),
+    radial-gradient(
+      ellipse at 50% 12%,
+      rgba(255, 255, 255, 0.18),
+      transparent 38%
+    ),
     radial-gradient(ellipse at 50% 88%, rgba(1, 8, 14, 0.24), transparent 42%),
-    linear-gradient(90deg, rgba(0, 0, 0, 0.26), transparent 8%, transparent 92%, rgba(0, 0, 0, 0.26));
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.26),
+      transparent 8%,
+      transparent 92%,
+      rgba(0, 0, 0, 0.26)
+    );
   --lux-point-light-a: #f7eed7;
   --lux-point-light-b: #cdbb8f;
   --lux-point-light-sheen: rgba(255, 255, 255, 0.9);
@@ -230,21 +412,62 @@
   --lux-point-edge-soft: rgba(229, 238, 247, 0.24);
   --lux-center-belt: rgba(16, 27, 39, 0.92);
   --lux-row-bg:
-    radial-gradient(circle at 50% 50%, rgba(249, 245, 229, 0.07), transparent 48%),
-    linear-gradient(90deg, rgba(9, 20, 32, 0.98), rgba(39, 65, 90, 0.94) 50%, rgba(9, 20, 32, 0.98)),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(249, 245, 229, 0.07),
+      transparent 48%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(9, 20, 32, 0.98),
+      rgba(39, 65, 90, 0.94) 50%,
+      rgba(9, 20, 32, 0.98)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bar-bg:
-    radial-gradient(circle at 50% 8%, rgba(255, 255, 255, 0.12), transparent 38%),
-    linear-gradient(90deg, rgba(236, 222, 180, 0.11), transparent 31%, rgba(0, 0, 0, 0.28)),
-    linear-gradient(90deg, rgba(10, 20, 31, 0.98), rgba(39, 66, 94, 0.94), rgba(8, 15, 23, 0.98)),
+    radial-gradient(
+      circle at 50% 8%,
+      rgba(255, 255, 255, 0.12),
+      transparent 38%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(236, 222, 180, 0.11),
+      transparent 31%,
+      rgba(0, 0, 0, 0.28)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(10, 20, 31, 0.98),
+      rgba(39, 66, 94, 0.94),
+      rgba(8, 15, 23, 0.98)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bearoff-bg:
-    radial-gradient(circle at 50% 4%, rgba(255, 255, 255, 0.13), transparent 35%),
-    linear-gradient(90deg, rgba(236, 222, 180, 0.1), transparent 40%, rgba(0, 0, 0, 0.28)),
-    linear-gradient(90deg, rgba(10, 20, 31, 0.98), rgba(39, 66, 94, 0.94), rgba(8, 15, 23, 0.98)),
+    radial-gradient(
+      circle at 50% 4%,
+      rgba(255, 255, 255, 0.13),
+      transparent 35%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(236, 222, 180, 0.1),
+      transparent 40%,
+      rgba(0, 0, 0, 0.28)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(10, 20, 31, 0.98),
+      rgba(39, 66, 94, 0.94),
+      rgba(8, 15, 23, 0.98)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-panel-bg:
-    radial-gradient(circle at 50% 0, rgba(214, 194, 143, 0.09), transparent 38%),
+    radial-gradient(
+      circle at 50% 0,
+      rgba(214, 194, 143, 0.09),
+      transparent 38%
+    ),
     linear-gradient(180deg, rgba(12, 27, 38, 0.98), rgba(5, 13, 19, 0.99));
   --lux-checker-light-hi: #fffdfa;
   --lux-checker-light-mid: #f6ecd2;
@@ -264,7 +487,7 @@
 
 .themeIvoryGold {
   --ui-accent: #c79535;
-  --ui-accent-hover: #ddaF4b;
+  --ui-accent-hover: #ddaf4b;
   --ui-accent-soft: rgba(199, 149, 53, 0.24);
   --ui-accent-faint: rgba(199, 149, 53, 0.14);
   --ui-accent-border: rgba(232, 194, 112, 0.76);
@@ -272,13 +495,28 @@
   --ui-on-accent: #201607;
   --ui-secondary-bg: rgba(81, 65, 32, 0.94);
   --ui-secondary-border: rgba(199, 162, 84, 0.58);
-  --ui-bar-overlay: linear-gradient(180deg, rgba(232, 218, 179, 0.42), rgba(154, 112, 41, 0.5));
+  --ui-bar-overlay: linear-gradient(
+    180deg,
+    rgba(232, 218, 179, 0.42),
+    rgba(154, 112, 41, 0.5)
+  );
   --ui-cube-bg: linear-gradient(180deg, #e0bb68, #a87927);
-  --ui-menu-bg: linear-gradient(180deg, rgba(35, 29, 18, 0.98), rgba(12, 11, 8, 0.99));
+  --ui-menu-bg: linear-gradient(
+    180deg,
+    rgba(35, 29, 18, 0.98),
+    rgba(12, 11, 8, 0.99)
+  );
   --lux-material-texture: url("../../assets/6b-material-ivory-silver-gold.png");
   --lux-material-layer-blend: soft-light;
   --lux-case-bg:
-    linear-gradient(90deg, #eee4ca, #bfc3bf 22%, #f7efd8 50%, #d4a849 76%, #f0e7d2),
+    linear-gradient(
+      90deg,
+      #eee4ca,
+      #bfc3bf 22%,
+      #f7efd8 50%,
+      #d4a849 76%,
+      #f0e7d2
+    ),
     #f1ead9;
   --lux-case-border: rgba(225, 181, 73, 0.66);
   --lux-case-glow-top: rgba(255, 255, 255, 0.28);
@@ -288,26 +526,80 @@
   --lux-frame-texture-opacity: 0.07;
   --lux-photo-texture-blend: soft-light;
   --lux-board-area-bg:
-    radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.18), transparent 46%),
-    linear-gradient(180deg, rgba(237, 229, 207, 0.72), rgba(181, 181, 169, 0.54));
+    radial-gradient(
+      circle at 50% 44%,
+      rgba(255, 255, 255, 0.18),
+      transparent 46%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(237, 229, 207, 0.72),
+      rgba(181, 181, 169, 0.54)
+    );
   --lux-rail-bg:
-    radial-gradient(circle at 18% 14%, rgba(255, 255, 255, 0.28), transparent 22%),
-    radial-gradient(circle at 88% 82%, rgba(133, 117, 82, 0.24), transparent 32%),
-    repeating-linear-gradient(0deg, rgba(121, 115, 98, 0.12) 0 1px, transparent 1px 13px),
-    linear-gradient(90deg, rgba(239, 229, 205, 0.84) 0%, rgba(191, 196, 195, 0.78) 18%, rgba(250, 242, 220, 0.82) 49%, rgba(210, 167, 77, 0.72) 74%, rgba(239, 229, 205, 0.84) 100%),
+    radial-gradient(
+      circle at 18% 14%,
+      rgba(255, 255, 255, 0.28),
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 88% 82%,
+      rgba(133, 117, 82, 0.24),
+      transparent 32%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(121, 115, 98, 0.12) 0 1px,
+      transparent 1px 13px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(239, 229, 205, 0.84) 0%,
+      rgba(191, 196, 195, 0.78) 18%,
+      rgba(250, 242, 220, 0.82) 49%,
+      rgba(210, 167, 77, 0.72) 74%,
+      rgba(239, 229, 205, 0.84) 100%
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-rail-border: rgba(209, 169, 72, 0.52);
   --lux-rivet: rgba(212, 148, 26, 0.78);
   --lux-rivet-soft: rgba(212, 148, 26, 0.2);
   --lux-field-bg:
-    radial-gradient(ellipse at 50% 44%, rgba(255, 255, 255, 0.2), transparent 52%),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px 12px),
-    linear-gradient(90deg, rgba(214, 206, 188, 0.84), rgba(247, 238, 215, 0.76) 48%, rgba(197, 190, 171, 0.84)),
+    radial-gradient(
+      ellipse at 50% 44%,
+      rgba(255, 255, 255, 0.2),
+      transparent 52%
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.09) 0 1px,
+      transparent 1px 12px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(214, 206, 188, 0.84),
+      rgba(247, 238, 215, 0.76) 48%,
+      rgba(197, 190, 171, 0.84)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-field-sheen:
-    radial-gradient(ellipse at 50% 12%, rgba(255, 255, 255, 0.22), transparent 38%),
-    radial-gradient(ellipse at 50% 88%, rgba(133, 117, 82, 0.2), transparent 42%),
-    linear-gradient(90deg, rgba(103, 92, 69, 0.2), transparent 8%, transparent 92%, rgba(103, 92, 69, 0.2));
+    radial-gradient(
+      ellipse at 50% 12%,
+      rgba(255, 255, 255, 0.22),
+      transparent 38%
+    ),
+    radial-gradient(
+      ellipse at 50% 88%,
+      rgba(133, 117, 82, 0.2),
+      transparent 42%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(103, 92, 69, 0.2),
+      transparent 8%,
+      transparent 92%,
+      rgba(103, 92, 69, 0.2)
+    );
   --lux-point-light-a: #f2dfae;
   --lux-point-light-b: #bc9650;
   --lux-point-light-sheen: rgba(255, 249, 224, 0.76);
@@ -320,21 +612,62 @@
   --lux-point-edge-soft: rgba(255, 248, 217, 0.28);
   --lux-center-belt: rgba(192, 182, 158, 0.9);
   --lux-row-bg:
-    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.12), transparent 48%),
-    linear-gradient(90deg, rgba(208, 199, 180, 0.82), rgba(243, 233, 207, 0.7) 50%, rgba(200, 190, 170, 0.82)),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 255, 255, 0.12),
+      transparent 48%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(208, 199, 180, 0.82),
+      rgba(243, 233, 207, 0.7) 50%,
+      rgba(200, 190, 170, 0.82)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bar-bg:
-    radial-gradient(circle at 50% 8%, rgba(255, 255, 255, 0.2), transparent 38%),
-    linear-gradient(90deg, rgba(245, 235, 207, 0.16), transparent 31%, rgba(116, 93, 46, 0.2)),
-    linear-gradient(90deg, rgba(186, 187, 181, 0.82), rgba(239, 229, 205, 0.72), rgba(191, 154, 69, 0.62)),
+    radial-gradient(
+      circle at 50% 8%,
+      rgba(255, 255, 255, 0.2),
+      transparent 38%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(245, 235, 207, 0.16),
+      transparent 31%,
+      rgba(116, 93, 46, 0.2)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(186, 187, 181, 0.82),
+      rgba(239, 229, 205, 0.72),
+      rgba(191, 154, 69, 0.62)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-bearoff-bg:
-    radial-gradient(circle at 50% 4%, rgba(255, 255, 255, 0.22), transparent 35%),
-    linear-gradient(90deg, rgba(245, 235, 207, 0.16), transparent 40%, rgba(116, 93, 46, 0.2)),
-    linear-gradient(90deg, rgba(186, 187, 181, 0.82), rgba(239, 229, 205, 0.72), rgba(191, 154, 69, 0.62)),
+    radial-gradient(
+      circle at 50% 4%,
+      rgba(255, 255, 255, 0.22),
+      transparent 35%
+    ),
+    linear-gradient(
+      90deg,
+      rgba(245, 235, 207, 0.16),
+      transparent 40%,
+      rgba(116, 93, 46, 0.2)
+    ),
+    linear-gradient(
+      90deg,
+      rgba(186, 187, 181, 0.82),
+      rgba(239, 229, 205, 0.72),
+      rgba(191, 154, 69, 0.62)
+    ),
     var(--lux-material-texture) center / cover no-repeat;
   --lux-panel-bg:
-    radial-gradient(circle at 50% 0, rgba(224, 213, 182, 0.12), transparent 38%),
+    radial-gradient(
+      circle at 50% 0,
+      rgba(224, 213, 182, 0.12),
+      transparent 38%
+    ),
     linear-gradient(180deg, rgba(31, 31, 27, 0.98), rgba(12, 12, 10, 0.99));
   --lux-checker-light-hi: #fffefa;
   --lux-checker-light-mid: #f3e9d2;
@@ -358,11 +691,7 @@
   inset: 5px;
   z-index: 3;
   pointer-events: none;
-  border: 1px solid var(--lux-inner-border);
   border-radius: 8px;
-  box-shadow:
-    inset 0 0 0 1px rgba(31, 15, 6, 0.7),
-    inset 0 0 28px rgba(0, 0, 0, 0.28);
 }
 
 .gameFrame::after {
@@ -373,8 +702,20 @@
   pointer-events: none;
   border-radius: inherit;
   background:
-    linear-gradient(180deg, var(--lux-case-glow-top), transparent 8%, transparent 92%, var(--lux-case-shadow-bottom)),
-    linear-gradient(90deg, var(--lux-case-glow-side), transparent 13%, transparent 87%, rgba(0, 0, 0, 0.34));
+    linear-gradient(
+      180deg,
+      var(--lux-case-glow-top),
+      transparent 8%,
+      transparent 92%,
+      var(--lux-case-shadow-bottom)
+    ),
+    linear-gradient(
+      90deg,
+      var(--lux-case-glow-side),
+      transparent 13%,
+      transparent 87%,
+      rgba(0, 0, 0, 0.34)
+    );
   opacity: 0.72;
 }
 
@@ -390,7 +731,7 @@
   height: 100%;
   min-width: 0;
   position: relative;
-  background: var(--lux-board-area-bg);
+  background: black;
 }
 
 /* === Board inner frame === */
@@ -399,16 +740,9 @@
   inset: clamp(7px, 0.7vw, 11px);
   direction: ltr;
   border-radius: 8px;
-  padding: clamp(8px, 0.9vw, 13px);
+  padding: 20px clamp(8px, 0.9vw, 13px) 20px;
   box-sizing: border-box;
-  overflow: hidden;
-  background: var(--lux-rail-bg);
-  box-shadow:
-    0 30px 80px -28px rgba(0, 0, 0, 0.82),
-    inset 0 0 0 1px rgba(255, 232, 176, 0.2),
-    inset 0 0 0 5px rgba(7, 3, 1, 0.54),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  border: 1px solid var(--lux-rail-border);
+  overflow: visible;
 }
 
 .frame::before,
@@ -422,10 +756,6 @@
   inset: clamp(5px, 0.45vw, 8px);
   z-index: 2;
   border-radius: 6px;
-  border: 1px solid rgba(255, 231, 172, 0.2);
-  box-shadow:
-    inset 0 0 0 2px rgba(18, 8, 2, 0.64),
-    inset 0 0 18px rgba(0, 0, 0, 0.35);
 }
 
 .frame::after {
@@ -433,10 +763,30 @@
   z-index: 3;
   border-radius: inherit;
   background:
-    radial-gradient(circle at 2.4% 3%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px),
-    radial-gradient(circle at 97.6% 3%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px),
-    radial-gradient(circle at 2.4% 97%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px),
-    radial-gradient(circle at 97.6% 97%, var(--lux-rivet), var(--lux-rivet-soft) 2px, transparent 4px);
+    radial-gradient(
+      circle at 2.4% 3%,
+      var(--lux-rivet),
+      var(--lux-rivet-soft) 2px,
+      transparent 4px
+    ),
+    radial-gradient(
+      circle at 97.6% 3%,
+      var(--lux-rivet),
+      var(--lux-rivet-soft) 2px,
+      transparent 4px
+    ),
+    radial-gradient(
+      circle at 2.4% 97%,
+      var(--lux-rivet),
+      var(--lux-rivet-soft) 2px,
+      transparent 4px
+    ),
+    radial-gradient(
+      circle at 97.6% 97%,
+      var(--lux-rivet),
+      var(--lux-rivet-soft) 2px,
+      transparent 4px
+    );
 }
 
 .inner {
@@ -448,11 +798,8 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr);
   border-radius: 5px;
-  overflow: hidden;
+  overflow: visible;
   background: var(--lux-field-bg);
-  box-shadow:
-    inset 0 0 60px rgba(2, 7, 9, 0.68),
-    inset 0 0 0 1px rgba(255, 235, 185, 0.08);
 }
 
 .inner::before,
@@ -473,11 +820,6 @@
   z-index: 3;
   background: none;
   mix-blend-mode: soft-light;
-  border: 1px solid rgba(255, 233, 178, 0.08);
-  box-shadow:
-    inset 0 0 0 1px rgba(32, 14, 5, 0.62),
-    inset 0 16px 20px rgba(255, 231, 172, 0.06),
-    inset 0 -22px 26px rgba(0, 0, 0, 0.28);
 }
 
 .themeRedGreen .inner::after {
@@ -491,14 +833,13 @@
   grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   gap: clamp(6px, 0.72cqw, 11px);
   min-width: 0;
-  background:
-    linear-gradient(
-      180deg,
-      transparent calc(50% - 8px),
-      var(--lux-center-belt) calc(50% - 8px),
-      var(--lux-center-belt) calc(50% + 8px),
-      transparent calc(50% + 8px)
-    );
+  background: linear-gradient(
+    180deg,
+    transparent calc(50% - 8px),
+    var(--lux-center-belt) calc(50% - 8px),
+    var(--lux-center-belt) calc(50% + 8px),
+    transparent calc(50% + 8px)
+  );
   box-shadow:
     inset 0 0 0 1px rgba(34, 16, 6, 0.52),
     inset 0 0 34px rgba(0, 0, 0, 0.18);
@@ -516,6 +857,13 @@
   width: 100%;
   height: 100%;
   direction: ltr;
+
+  --point-number-gutter: clamp(26px, 2.2vw, 34px);
+
+  box-sizing: border-box;
+  padding-top: var(--point-number-gutter);
+  padding-bottom: var(--point-number-gutter);
+
   overflow: hidden;
   position: relative;
   container-type: inline-size;
@@ -851,7 +1199,8 @@
 }
 
 /* === Landscape phones, including wider screens with a short viewport === */
-@media (width < 800px) and (orientation: landscape), (orientation: landscape) and (max-height: 430px) {
+@media (width < 800px) and (orientation: landscape),
+  (orientation: landscape) and (max-height: 430px) {
   .container {
     /* Sizes scale with the board's own width (.wrapper is the cqw container) */
     --checker: max(18px, 4.25cqw);
@@ -860,7 +1209,9 @@
   }
 
   .gameFrame {
-    --bearoff-control-right: calc(clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px);
+    --bearoff-control-right: calc(
+      clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px
+    );
     grid-template-columns: clamp(92px, 21dvw, 116px) minmax(0, 1fr);
     width: 100%;
     height: 100%;
@@ -892,22 +1243,27 @@
     --game-viewport-gutter-block: clamp(5px, 1.5dvh, 7px);
     --game-viewport-gutter-inline: clamp(7px, 1.5dvw, 12px);
     padding-top: calc(
-      var(--game-safe-top, env(safe-area-inset-top, 0px)) + var(--game-viewport-gutter-block)
+      var(--game-safe-top, env(safe-area-inset-top, 0px)) +
+        var(--game-viewport-gutter-block)
     );
     padding-right: calc(
-      var(--game-safe-right, env(safe-area-inset-right, 0px)) + var(--game-viewport-gutter-inline)
+      var(--game-safe-right, env(safe-area-inset-right, 0px)) +
+        var(--game-viewport-gutter-inline)
     );
     padding-bottom: calc(
-      var(--game-safe-bottom, env(safe-area-inset-bottom, 0px)) + var(--game-viewport-gutter-block)
+      var(--game-safe-bottom, env(safe-area-inset-bottom, 0px)) +
+        var(--game-viewport-gutter-block)
     );
     padding-left: calc(
-      var(--game-safe-left, env(safe-area-inset-left, 0px)) + var(--game-viewport-gutter-inline)
+      var(--game-safe-left, env(safe-area-inset-left, 0px)) +
+        var(--game-viewport-gutter-inline)
     );
   }
 
   .gameFrame {
     --bearoff-control-right: calc(
-      var(--game-safe-right, env(safe-area-inset-right, 0px)) + var(--game-viewport-gutter-inline) + 3px
+      var(--game-safe-right, env(safe-area-inset-right, 0px)) +
+        var(--game-viewport-gutter-inline) + 3px
     );
     grid-template-columns: clamp(88px, 21dvw, 108px) minmax(0, 1fr);
   }
@@ -956,7 +1312,6 @@
   .boardOverlay {
     left: 75%;
   }
-
 }
 
 @media (width < 800px) and (orientation: portrait) {
@@ -1004,8 +1359,11 @@
     padding: 28px;
     border: 1px solid rgba(229, 180, 77, 0.46);
     border-radius: 0;
-    background:
-      linear-gradient(180deg, rgba(8, 23, 27, 0.97), rgba(3, 9, 10, 0.98));
+    background: linear-gradient(
+      180deg,
+      rgba(8, 23, 27, 0.97),
+      rgba(3, 9, 10, 0.98)
+    );
     color: #f5d28c;
     box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
     text-align: center;

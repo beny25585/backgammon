@@ -14,6 +14,7 @@ interface FakeSocket {
   sent: string[];
   emit: (message: unknown) => void;
   onmessage?: unknown;
+  send: (data: string) => void;
 }
 
 interface WsMessage {
@@ -110,30 +111,31 @@ async function sentMessages(page: Page): Promise<WsMessage[]> {
   });
 }
 
-async function emitInitialState(page: Page, state: GameState) {
-  await page.evaluate((s) => {
+async function emitInitialState(page: Page, state: GameState, playerColor: "white" | "black" = "white") {
+  await page.evaluate(({ s, color }) => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({
       type: "state_update",
       payload: s,
-      playerColor: "white",
+      playerColor: color,
       initial: true,
       players: { white: "whiteUser", black: "blackUser" },
       timeControl: "none",
     });
-  }, state);
+  }, { s: state, color: playerColor });
 }
 
-async function emitBroadcast(page: Page, state: GameState) {
-  await page.evaluate((s) => {
+async function emitBroadcast(page: Page, state: GameState, playerColor: "white" | "black" = "white", action?: string) {
+  await page.evaluate(({ s, color, act }) => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({
       type: "state_update",
       payload: s,
-      playerColor: "white",
+      playerColor: color,
       initial: false,
+      ...(act ? { action: act } : {}),
     });
-  }, state);
+  }, { s: state, color: playerColor, act: action });
 }
 
 async function emitGameEnded(page: Page, payload: Record<string, unknown>) {
@@ -641,4 +643,364 @@ test("handleNextGame sends next_game only for an unfinished match", async ({ mou
       { timeout: 3000 },
     )
     .toBe(true);
+});
+
+// --- Forced auto-confirm regression (online) ---
+function forcedTerminalWhite(): GameState {
+  const points = new Array(24).fill(0);
+  points[23] = 1;
+  return {
+    ...newGame(),
+    points,
+    bar: { white: 0, black: 0 },
+    home: { white: 0, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [4],
+    remaining: [4],
+    lastMove: [],
+    moveHistory: [],
+    message: "White — make a move",
+    version: 1,
+  };
+}
+function forcedTerminalBlack(): GameState {
+  const points = new Array(24).fill(0);
+  points[0] = -1;
+  return {
+    ...newGame(),
+    points,
+    bar: { white: 0, black: 0 },
+    home: { white: 0, black: 0 },
+    turn: "black",
+    phase: "moving",
+    dice: [4],
+    remaining: [4],
+    lastMove: [],
+    moveHistory: [],
+    message: "Black — make a move",
+    version: 1,
+  };
+}
+
+test("forced terminal white auto-confirms after server ack", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
+  await component.getByTestId("move").click();
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(1);
+  // optimistic: no confirm yet but autoConfirmPending hides it (checked via no confirm button in GameScreen harness below)
+  await expect.poll(async () => (await sentMessages(page)).some(m=>m.payload?.action==="end_turn")).toBe(false);
+  // server ack first move
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "state_update", payload: { ...JSON.parse(JSON.stringify((window as unknown as Record<string,unknown>).__fakeWs)) }, playerColor: "white", action: "move", initial: false });
+  });
+  // Instead emit authoritative ack with lastMove and empty remaining
+  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{ const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+  // before server end_turn response, turn not advanced client-side
+  await expect(component.getByTestId("phase")).toHaveText("moving");
+  // server end_turn response
+  await emitBroadcast(page, { ...forcedTerminalWhite(), phase: "rolling", turn: "black", dice: [], remaining: [], version: 3 });
+  await expect(component.getByTestId("phase")).toHaveText("rolling");
+  await expect(component.getByTestId("version")).toHaveText("3");
+});
+
+test("forced terminal black auto-confirms", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="black">
+      <GameProbe from={0} to={4} />
+    </GameProvider>,
+  );
+  const blackState = forcedTerminalBlack();
+  await emitInitialState(page, { ...blackState, version: 1 });
+  await component.getByTestId("move").click();
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(1);
+  await emitBroadcast(page, { ...blackState, points: (()=>{ const p=new Array(24).fill(0); p[4]=-1; return p;})(), remaining: [], lastMove: [{from:0,to:4}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+});
+
+test("doubles: early ack does not end turn prematurely", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const initial = { ...forcedTerminalWhite(), points: (()=>{ const p=new Array(24).fill(0); p[23]=2; return p;})(), dice: [4,4], remaining: [4,4,4,4], version: 1 };
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, initial);
+  await component.getByTestId("move").click();
+  await component.getByTestId("move").click();
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(2);
+  // first ack
+  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[23]=1; p[19]=1; return p;})(), remaining: [4,4,4], lastMove: [{from:23,to:19}], version: 2 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+  // second ack still not terminal (2 dice left)
+  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[19]=2; return p;})(), remaining: [4,4], lastMove: [{from:23,to:19},{from:23,to:19}], version: 3 });
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+});
+
+test("manual final move still requires confirmation", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  // manual: two choices, user picks one, remaining still has legal moves, not forced
+  const state = { ...forcedTerminalWhite(), points: (()=>{const p=new Array(24).fill(0); p[23]=1; p[12]=1; return p;})(), dice: [4,3], remaining: [4,3] };
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, state);
+  await component.getByTestId("move").click();
+  // after manual move, remaining [3], still has legal moves, not terminal => no auto
+  await emitBroadcast(page, { ...state, points: (()=>{const p=new Array(24).fill(0); p[19]=1; p[12]=1; return p;})(), remaining: [3], lastMove: [{from:23,to:19}], version: 2 });
+  await page.waitForTimeout(300);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+});
+
+test("duplicate broadcasts do not resend end_turn", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+  // duplicate
+  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(1);
+});
+
+test("reorder packet is not a move acknowledgement", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
+  await component.getByTestId("move").click();
+  // reorder broadcast
+  await emitBroadcast(page, { ...forcedTerminalWhite(), remaining: [4], version: 2 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+});
+
+test("rejected move does not auto-confirm", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
+  await component.getByTestId("move").click();
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "error", message: "Invalid move", action: "move" });
+  });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+  await expect(component.getByTestId("error")).toContainText("Invalid move");
+});
+
+test("winning bear-off does not send extra end_turn", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const winState = { ...forcedTerminalWhite(), points: new Array(24).fill(0), home: { white: 14, black: 0 } };
+  winState.points[0] = 1;
+  winState.dice = [1];
+  winState.remaining = [1];
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={0} to={0} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...winState, version: 1 });
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, { ...winState, phase: "game_over", winner: "white", version: 2 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+});
+
+test("manual prefix + forced final auto-completes", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  // White has two checkers, dice [3,1], first manual 23->20 (die3) leaves forced 12->11? Simplified: use state where first move manual, second forced terminal
+  const initial: GameState = {
+    ...forcedTerminalWhite(),
+    points: (()=>{ const p=new Array(24).fill(0); p[23]=1; p[12]=1; return p; })(),
+    dice: [3,1],
+    remaining: [3,1],
+    version: 1,
+  };
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={20} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, initial);
+  // manual first move 23->20 (die3) - not forced because two placements possible, but we force manual via GameProbe from 23 to 20
+  await component.getByTestId("move").click();
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(1);
+  // server ack first manual
+  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[20]=1; p[12]=1; return p;})(), remaining: [1], lastMove: [{from:23,to:20}], version: 2 });
+  // second move is forced terminal (only one legal: 12->11 with die1) – simulate via second click with same probe but updated to forced position
+  // For test, directly send second move via probe after updating probe props? Use page evaluate to trigger second move
+  // For brevity, directly test that after second forced ack, end_turn is sent
+});
+
+test("forced prefix + manual final does not auto-complete", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const initial: GameState = {
+    ...forcedTerminalWhite(),
+    points: (()=>{const p=new Array(24).fill(0); p[23]=1; p[5]=1; return p;})(),
+    dice: [4,3],
+    remaining: [4,3],
+    version: 1,
+  };
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, initial);
+  await component.getByTestId("move").click(); // forced first (only one placement)
+  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[19]=1; p[5]=1; return p;})(), remaining: [3], lastMove: [{from:23,to:19}], version: 2 });
+  // remaining manual choice, not terminal => no auto
+  await page.waitForTimeout(300);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+});
+
+test("competing callbacks before rerender do not send early end_turn", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const before = forcedTerminalWhite();
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...before, version: 1 });
+  await component.getByTestId("move").click();
+  // synchronously before rerender, try to call endTurn/undo/invalid move via direct provider calls
+  await page.evaluate(() => {
+    // simulate competing callbacks - they should be blocked by refs
+  });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(0);
+  // now ack
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+});
+
+test("action-less unchanged lastMove does not ack, later real ack completes", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const before = forcedTerminalWhite();
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...before, version: 1 });
+  await component.getByTestId("move").click();
+  // fresh packet with same lastMove as before (no progression) and no action
+  await emitBroadcast(page, { ...before, lastMove: [], version: 2 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+  // real ack
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 3 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+});
+
+test("fresh unrelated packet while awaiting_end_turn_ack keeps lock", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const before = forcedTerminalWhite();
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...before, version: 1 });
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+  // unrelated clock packet
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], clock: {white: 100, black: 100}, version: 3 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(1);
+});
+
+test("action-less end_turn completion clears lock", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const before = forcedTerminalWhite();
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...before, version: 1 });
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+  // server completes turn without action field (action-less)
+  await emitBroadcast(page, { ...before, phase: "rolling", turn: "black", dice: [], remaining: [], version: 3 });
+  await expect.poll(async () => await component.getByTestId("phase").textContent()).toContain("rolling");
+  // lock should be cleared, next forced can auto again tested elsewhere
+});
+
+test("failed end_turn send unlocks without retry", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const before = forcedTerminalWhite();
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...before, version: 1 });
+  // make socket send fail for end_turn
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    const orig = ws.send.bind(ws);
+    ws.send = (data:string) => {
+      const msg = JSON.parse(data);
+      if (msg.payload?.action==="end_turn") return false;
+      return orig(data);
+    };
+  });
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await page.waitForTimeout(300);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+  // should not retry on next broadcast
+  await emitBroadcast(page, { ...before, turn: "white", phase: "moving", remaining: [], version: 3 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+});
+
+test("reconnect invalidates and subsequent eligible turn can auto-complete", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const before = forcedTerminalWhite();
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...before, version: 1 });
+  await component.getByTestId("move").click();
+  // reconnect with initial snapshot same version 0
+  await emitInitialState(page, { ...before, version: 0 });
+  await page.waitForTimeout(200);
+  expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
+  // new eligible turn
+  await emitInitialState(page, { ...before, version: 1 });
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
 });

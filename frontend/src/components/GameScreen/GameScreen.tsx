@@ -115,8 +115,8 @@ export default function GameScreen({
 
     openingRollResult,
     noMovesMessage,
+    autoConfirmPending,
 
-    handleNextGame,
     handleHome,
     leaveGame,
 
@@ -366,6 +366,7 @@ export default function GameScreen({
             return (
               <TournamentGameResult
                 {...common}
+                playerColor={playerColor}
                 winnerIsWhite={gameResult.winner === "white"}
                 tournamentRound={gameResult.tournament?.roundLabel}
                 nextOpponent={gameResult.tournament?.nextOpponent ?? null}
@@ -570,6 +571,7 @@ export default function GameScreen({
             turnStartedAt={turnStartedAt}
             timeControl={timeControl}
             noMovesMessage={noMovesMessage}
+            autoConfirmPending={autoConfirmPending}
           />
         </>
       )}

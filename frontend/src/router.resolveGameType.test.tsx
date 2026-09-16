@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { resolveGameType, isValidTournamentId } from "./router";
+import { resolveGameType, isValidTournamentId } from "./routerGameType";
 
 function params(query: string) {
   return new URLSearchParams(query);

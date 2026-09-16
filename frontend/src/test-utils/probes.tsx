@@ -173,6 +173,23 @@ export function MatchScoreProbe() {
   );
 }
 
+export function ForcedAutoConfirmProbe() {
+  const { state, autoConfirmPending, clock, turnStartedAt } = useGame();
+  return (
+    <div>
+      <div data-testid="probe-phase">{String(state?.phase ?? "")}</div>
+      <div data-testid="probe-turn">{String(state?.turn ?? "")}</div>
+      <div data-testid="probe-points">{JSON.stringify(state?.points ?? [])}</div>
+      <div data-testid="probe-remaining">{JSON.stringify(state?.remaining ?? [])}</div>
+      <div data-testid="probe-autoConfirmPending">{String(autoConfirmPending)}</div>
+      <div data-testid="probe-clock">{JSON.stringify(clock ?? null)}</div>
+      <div data-testid="probe-turnStartedAt">{String(turnStartedAt ?? "")}</div>
+      <div data-testid="probe-dice">{JSON.stringify(state?.dice ?? [])}</div>
+      <div data-testid="probe-winner">{String(state?.winner ?? "")}</div>
+    </div>
+  );
+}
+
 export function ErrorCardHarness() {
   const [error, setError] = useState<string | null>("Cannot double");
   return (

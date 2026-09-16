@@ -12,8 +12,12 @@ import {
   OFF,
   canOfferDouble,
   legalMovesFrom,
+  allLegalMoves,
+  applyMove,
+  getMakePointSequence,
   type Move,
 } from "@/lib/backgammon/engine";
+import type { MakeMoveOptions } from "../../types/context";
 import UndoButton from "./buttons/undobutton/UndoButton";
 import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
 import PointCell from "./pieces/pointcell/PointCell";
@@ -36,15 +40,16 @@ interface BoardProps {
   selected: Source | null;
   legalTargets: Target[];
   onSelect: (from: Source | null) => void;
-  onMove: (to: Target, from?: Source) => void;
+  onMove: (to: Target, from?: Source, options?: MakeMoveOptions) => void;
   legalFromPoints: Source[];
   onUndo?: () => void;
   onConfirm?: () => void;
   onRoll?: () => void;
   onOfferDouble?: () => void;
-  autoMove?: Move | null;
+  autoMove?: { id: number; fromPositionKey: string; move: Move } | null;
   inputDisabled?: boolean;
   turnNotice?: GuidanceMessage | null;
+  onAutoPointSequenceChange?: (active: boolean) => void;
 }
 
 function getCheckerSize(board: HTMLElement): number {
@@ -73,6 +78,48 @@ function preferredDirectMove(moves: Move[], remaining: number[]): Move | null {
   return [...moves].sort((a, b) => b.die - a.die)[0];
 }
 
+function pointNumberFor(index: number, color: Color | null): number {
+  return color === "black" ? 24 - index : index + 1;
+}
+
+function diceUnorderedEqual(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort((x, y) => x - y);
+  const sb = [...b].sort((x, y) => x - y);
+  for (let i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+  return true;
+}
+
+function lastMoveEqual(
+  a: { from: Source | Target; to: Target }[] | null,
+  b: { from: Source | Target; to: Target }[] | null,
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].from !== b[i].from || a[i].to !== b[i].to) return false;
+  }
+  return true;
+}
+
+function gameplayEqual(a: GameState, b: GameState): boolean {
+  if (a.turn !== b.turn) return false;
+  if (a.phase !== b.phase) return false;
+  if (a.bar.white !== b.bar.white || a.bar.black !== b.bar.black) return false;
+  if (a.home.white !== b.home.white || a.home.black !== b.home.black) return false;
+  if (!diceUnorderedEqual(a.dice, b.dice)) return false;
+  if (!diceUnorderedEqual(a.remaining, b.remaining)) return false;
+  if (!lastMoveEqual(a.lastMove, b.lastMove)) return false;
+  if (a.points.length !== b.points.length) return false;
+  for (let i = 0; i < a.points.length; i++) if (a.points[i] !== b.points[i]) return false;
+  return true;
+}
+
+function getGameplayKey(s: GameState): string {
+  return `${s.points.join(",")}|${s.bar.white},${s.bar.black}|${s.home.white},${s.home.black}|${s.remaining.join(",")}|${s.turn}|${s.phase}|${JSON.stringify(s.lastMove)}`;
+}
+
 export function Board({
   state,
   myColor,
@@ -88,10 +135,15 @@ export function Board({
   autoMove,
   inputDisabled = false,
   turnNotice,
+  onAutoPointSequenceChange,
 }: BoardProps) {
   const { t } = useI18n();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const onAutoPointSequenceChangeRef = useRef(onAutoPointSequenceChange);
+  useLayoutEffect(() => {
+    onAutoPointSequenceChangeRef.current = onAutoPointSequenceChange;
+  }, [onAutoPointSequenceChange]);
   useLayoutEffect(() => {
     const board = boardRef.current;
     const point = board?.querySelector<HTMLElement>("[data-point-idx]");
@@ -137,6 +189,30 @@ export function Board({
     null,
   );
 
+  const [autoPointSequenceActive, setAutoPointSequenceActive] = useState(false);
+  const autoPointRunRef = useRef<{
+    id: number;
+    target: number;
+    remaining: Move[];
+    dispatched: { move: Move; fromState: GameState; toState: GameState; observedApplied: boolean } | null;
+    timer: number | null;
+  } | null>(null);
+  const autoPointRunIdRef = useRef(0);
+  const forcedExecRef = useRef<{ id: number; posKey: string; from: Source; to: Target } | null>(null);
+
+  const clearAutoPointSequence = useCallback(
+    (notify = true) => {
+      const run = autoPointRunRef.current;
+      autoPointRunRef.current = null;
+      if (run?.timer != null) {
+        window.clearTimeout(run.timer);
+      }
+      setAutoPointSequenceActive(false);
+      if (notify) onAutoPointSequenceChangeRef.current?.(false);
+    },
+    [],
+  );
+
   const flySourceCount = flyChecker
     ? checkerCountAt(state, flyChecker.from, flyChecker.color)
     : null;
@@ -145,9 +221,10 @@ export function Board({
   );
   // Once the move is reflected on the board (including optimistic online
   // updates), further input is safe. The visual animation must not swallow it.
-  const interactionBlocked = Boolean(
+  const baseInteractionBlocked = Boolean(
     inputDisabled || (flyChecker && (flyChecker.external || !flyMoveApplied)),
   );
+  const interactionBlocked = baseInteractionBlocked || autoPointSequenceActive;
 
   useEffect(() => {
     if (!flyChecker?.committed) return;
@@ -169,6 +246,8 @@ export function Board({
   const displayTopPoints = myColor === "black" ? BOTTOM_POINTS : TOP_POINTS;
 
   const displayBottomPoints = myColor === "black" ? TOP_POINTS : BOTTOM_POINTS;
+
+  const bottomBearOffColor: Color = myColor ?? "white";
 
   const computeSlotY = useCallback(
     (
@@ -193,19 +272,34 @@ export function Board({
   );
 
   const triggerFly = useCallback(
-    (from: Source, to: Target, origin?: { x: number; y: number }) => {
+    (
+      from: Source,
+      to: Target,
+      pointerOrigin?: { x: number; y: number },
+      options?: MakeMoveOptions,
+    ) => {
+      const origin = pointerOrigin;
       humanMoveRef.current = { from, to };
       const board = boardRef.current;
       if (!board) {
-        onMove(to, from);
+        onMove(to, from, options);
         return;
       }
-      const fromEl = board.querySelector<HTMLElement>(
-        `[data-point-idx="${from}"]`,
-      );
-      const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
+      const moverColor: Color = myColor ?? "white";
+      const fromEl =
+        (from as unknown) === OFF
+          ? board.querySelector<HTMLElement>(
+              `[data-testid="${moverColor === bottomBearOffColor ? "bear-off-bottom" : "bear-off-top"}"]`,
+            ) ?? board.querySelector<HTMLElement>(`[data-point-idx="${from}"]`)
+          : board.querySelector<HTMLElement>(`[data-point-idx="${from}"]`);
+      const toEl =
+        to === OFF
+          ? board.querySelector<HTMLElement>(
+              `[data-testid="${moverColor === bottomBearOffColor ? "bear-off-bottom" : "bear-off-top"}"]`,
+            ) ?? board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`)
+          : board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
       if (!fromEl || !toEl) {
-        onMove(to, from);
+        onMove(to, from, options);
         return;
       }
 
@@ -259,17 +353,18 @@ export function Board({
         toY,
         from,
         fromCount,
-        color: myColor ?? "white",
+        color: moverColor,
         size: checkerPx,
         to,
         committed: false,
       });
       // Dispatch immediately so the server/local engine works while the visual
       // animation is running instead of adding the animation time to every move.
-      onMove(to, from);
+      onMove(to, from, options);
     },
     [
       myColor,
+      bottomBearOffColor,
       onMove,
       state.points,
       state.bar,
@@ -288,10 +383,18 @@ export function Board({
     (from: Source | Target, to: Target, mover: Color) => {
       const board = boardRef.current;
       if (!board) return;
-      const fromEl = board.querySelector<HTMLElement>(
-        `[data-point-idx="${from}"]`,
-      );
-      const toEl = board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
+      const fromEl =
+        from === OFF
+          ? board.querySelector<HTMLElement>(
+              `[data-testid="${mover === bottomBearOffColor ? "bear-off-bottom" : "bear-off-top"}"]`,
+            ) ?? board.querySelector<HTMLElement>(`[data-point-idx="${from}"]`)
+          : board.querySelector<HTMLElement>(`[data-point-idx="${from}"]`);
+      const toEl =
+        to === OFF
+          ? board.querySelector<HTMLElement>(
+              `[data-testid="${mover === bottomBearOffColor ? "bear-off-bottom" : "bear-off-top"}"]`,
+            ) ?? board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`)
+          : board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
       if (!fromEl || !toEl) return;
 
       const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
@@ -348,7 +451,7 @@ export function Board({
         committed: false,
       });
     },
-    [state.points, state.bar, displayTopPoints, computeSlotY],
+    [state.points, state.bar, displayTopPoints, computeSlotY, bottomBearOffColor],
   );
 
   useEffect(() => {
@@ -377,26 +480,66 @@ export function Board({
   }, [state.lastMove, flyChecker, myColor, animateExternalMove]);
 
   useEffect(() => {
-    if (!autoMove) return;
+    if (autoPointRunRef.current) return;
+    if (autoPointSequenceActive) return;
+    if (!autoMove) {
+      forcedExecRef.current = null;
+      return;
+    }
+    if (inputDisabled) return;
+    if (myColor === null) return;
+    if (state.phase !== "moving" || state.turn !== myColor || state.winner) return;
+    const currentKey = getGameplayKey(state);
+    if (currentKey !== autoMove.fromPositionKey) {
+      forcedExecRef.current = null;
+      return;
+    }
+    const legal = allLegalMoves(state, myColor);
+    const placements = new Set(legal.map((m) => `${m.from}->${m.to}`));
+    const currentForced = placements.size === 1 ? legal[0] : null;
+    if (!currentForced) {
+      forcedExecRef.current = null;
+      return;
+    }
+    if (
+      currentForced.from !== autoMove.move.from ||
+      currentForced.to !== autoMove.move.to ||
+      currentForced.die !== autoMove.move.die
+    ) {
+      forcedExecRef.current = null;
+      return;
+    }
+    const existing = forcedExecRef.current;
+    if (existing && existing.id === autoMove.id) return;
     if (flyChecker) return;
-    triggerFly(autoMove.from, autoMove.to);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoMove]);
+    forcedExecRef.current = { id: autoMove.id, posKey: currentKey, from: autoMove.move.from, to: autoMove.move.to };
+    triggerFly(autoMove.move.from, autoMove.move.to, undefined, { origin: "forced" });
+  }, [autoMove, autoPointSequenceActive, flyChecker, state, myColor, inputDisabled, triggerFly]);
 
   const handleUndo = useCallback(() => {
-    if (interactionBlocked) return;
+    if (autoPointRunRef.current) {
+      const run = autoPointRunRef.current;
+      if (run.timer !== null) window.clearTimeout(run.timer);
+      // Cancel unsent remainder; current in-flight animation is allowed to finish
+      if (run.remaining.length > 0 || run.dispatched) {
+        clearAutoPointSequence(true);
+      }
+    }
+    if (baseInteractionBlocked) return;
     const board = boardRef.current;
     const last = lastMoveLast;
     if (!board || !last) {
       onUndo?.();
       return;
     }
-    const toEl = board.querySelector<HTMLElement>(
-      `[data-point-idx="${last.to}"]`,
-    );
-    const fromEl = board.querySelector<HTMLElement>(
-      `[data-point-idx="${last.from}"]`,
-    );
+    const undoColor: Color = myColor ?? "white";
+    const toEl =
+      last.to === OFF
+        ? board.querySelector<HTMLElement>(
+            `[data-testid="${undoColor === bottomBearOffColor ? "bear-off-bottom" : "bear-off-top"}"]`,
+          ) ?? board.querySelector<HTMLElement>(`[data-point-idx="${last.to}"]`)
+        : board.querySelector<HTMLElement>(`[data-point-idx="${last.to}"]`);
+    const fromEl = board.querySelector<HTMLElement>(`[data-point-idx="${last.from}"]`);
     if (!toEl || !fromEl) {
       onUndo?.();
       return;
@@ -456,13 +599,78 @@ export function Board({
     onUndo?.();
   }, [
     myColor,
+    bottomBearOffColor,
     onUndo,
     state,
     displayTopPoints,
     computeSlotY,
     lastMoveLast,
-    interactionBlocked,
+    baseInteractionBlocked,
+    clearAutoPointSequence,
   ]);
+
+  // Auto make-point sequence: advance on state + animation completion
+  // Auto make-point sequence: advance on state + animation completion
+  useEffect(() => {
+    const run = autoPointRunRef.current;
+    if (!run || !run.dispatched) return;
+    if (inputDisabled || myColor === null || state.turn !== myColor || state.phase !== "moving") {
+      return;
+    }
+    const step = run.dispatched;
+    if (gameplayEqual(state, step.toState)) {
+      step.observedApplied = true;
+      if (run.timer !== null) {
+        window.clearTimeout(run.timer);
+        run.timer = null;
+      }
+    } else if (gameplayEqual(state, step.fromState)) {
+      if (!step.observedApplied) return;
+      clearAutoPointSequence(true);
+      return;
+    } else {
+      clearAutoPointSequence(true);
+      return;
+    }
+    if (flyChecker) return;
+    if (run.remaining.length === 0) {
+      clearAutoPointSequence(true);
+      return;
+    }
+    const nextMove = run.remaining[0];
+    const legal = allLegalMoves(state, myColor as Color).some(
+      (m) => m.from === nextMove.from && m.to === nextMove.to && m.die === nextMove.die,
+    );
+    if (!legal) {
+      clearAutoPointSequence(true);
+      return;
+    }
+    const fromState = state;
+    const toState = applyMove(fromState, nextMove, myColor as Color);
+    const newStep = { move: nextMove, fromState, toState, observedApplied: false };
+    run.remaining = run.remaining.slice(1);
+    run.dispatched = newStep;
+    const capturedRun = run;
+    const capturedStep = newStep;
+    capturedRun.timer = window.setTimeout(() => {
+      if (autoPointRunRef.current !== capturedRun) return;
+      if (capturedRun.dispatched !== capturedStep) return;
+      if (capturedStep.observedApplied) return;
+      clearAutoPointSequence(true);
+    }, 2000);
+    triggerFly(nextMove.from, nextMove.to);
+  }, [state, flyChecker, myColor, inputDisabled, clearAutoPointSequence, triggerFly]);
+
+  useEffect(() => {
+    return () => {
+      const run = autoPointRunRef.current;
+      autoPointRunRef.current = null;
+      if (run?.timer != null) window.clearTimeout(run.timer);
+      if (run) {
+        onAutoPointSequenceChangeRef.current?.(false);
+      }
+    };
+  }, []);
 
   function hideTopCheckerAt(idx: number) {
     if (drag?.from === idx) return true;
@@ -474,7 +682,47 @@ export function Board({
   }
 
   const handleClick = useCallback((idx: Source) => {
-    if (interactionBlocked) return;
+    if (interactionBlocked || autoPointRunRef.current !== null) return;
+    // Destination-click make-point shortcut (no source selected)
+    if (
+      selected === null &&
+      typeof idx === "number" &&
+      myColor !== null &&
+      state.turn === myColor &&
+      state.phase === "moving"
+    ) {
+      const seq = getMakePointSequence(state, myColor, idx);
+      if (seq && seq.length > 0) {
+        // Validate again against live legal moves for the first step
+        const firstLegal = allLegalMoves(state, myColor).some(
+          (m) => m.from === seq[0].from && m.to === seq[0].to && m.die === seq[0].die,
+        );
+        if (firstLegal) {
+          const fromState = state;
+          const toState = applyMove(fromState, seq[0], myColor);
+          const runId = ++autoPointRunIdRef.current;
+          const newStep = { move: seq[0], fromState, toState, observedApplied: false };
+          const run = {
+            id: runId,
+            target: idx,
+            remaining: seq.slice(1),
+            dispatched: newStep,
+            timer: null as number | null,
+          };
+          autoPointRunRef.current = run;
+          setAutoPointSequenceActive(true);
+          onAutoPointSequenceChangeRef.current?.(true);
+          run.timer = window.setTimeout(() => {
+            if (autoPointRunRef.current !== run) return;
+            if (run.dispatched !== newStep) return;
+            if (newStep.observedApplied) return;
+            clearAutoPointSequence(true);
+          }, 2000);
+          triggerFly(seq[0].from, seq[0].to);
+          return;
+        }
+      }
+    }
     if (typeof idx === "number" && legalTargets.includes(idx)) {
       if (selected !== null) {
         triggerFly(selected, idx);
@@ -512,6 +760,7 @@ export function Board({
     myColor,
     state,
     onSelect,
+    clearAutoPointSequence,
   ]);
 
   // Point cells are memoized. Keep the callback passed to all 24 cells stable,
@@ -531,6 +780,7 @@ export function Board({
     state.phase === "moving";
   const canConfirm =
     Boolean(onConfirm) &&
+    !autoPointSequenceActive &&
     state.phase === "moving" &&
     state.turn === myColor &&
     state.remaining.length === 0;
@@ -566,6 +816,7 @@ export function Board({
                 <PointCell
                   key={idx}
                   index={idx}
+                  pointNumber={pointNumberFor(idx, myColor)}
                   top
                   pointValue={state.points[idx] ?? 0}
                   selected={(drag?.from ?? selected) === idx}
@@ -577,10 +828,12 @@ export function Board({
               ))}
             </div>
             <div className={styles.row6}>
+              {/* Bottom point numbers are owned by PointCell and rendered at outer bottom edge */}
               {displayBottomPoints.slice(0, 6).map((idx) => (
                 <PointCell
                   key={idx}
                   index={idx}
+                  pointNumber={pointNumberFor(idx, myColor)}
                   pointValue={state.points[idx] ?? 0}
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
@@ -622,6 +875,7 @@ export function Board({
                 <PointCell
                   key={idx}
                   index={idx}
+                  pointNumber={pointNumberFor(idx, myColor)}
                   top
                   pointValue={state.points[idx] ?? 0}
                   selected={(drag?.from ?? selected) === idx}
@@ -637,6 +891,7 @@ export function Board({
                 <PointCell
                   key={idx}
                   index={idx}
+                  pointNumber={pointNumberFor(idx, myColor)}
                   pointValue={state.points[idx] ?? 0}
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
