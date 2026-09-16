@@ -10,7 +10,7 @@ test("returns null during game_over", () => {
 test("waiting phase shows waiting text", () => {
   const g = getGuidance(makeGameState({ phase: "waiting" }), "white");
   expect(g?.variant).toBe("opponent");
-  expect(g?.text).toBe("Waiting to start");
+  expect(g?.text).toBe("Waiting for the game to start…");
 });
 
 test("opening roll on my turn → 'Roll to start' with roll interaction", () => {
@@ -20,7 +20,7 @@ test("opening roll on my turn → 'Roll to start' with roll interaction", () => 
   );
   expect(g).toEqual({
     variant: "roll",
-    text: "Roll to start",
+    text: "Roll the dice to start.",
     dice: [],
     remaining: [],
     interactive: "roll",
@@ -33,7 +33,7 @@ test("opening roll on opponent's turn → waiting text, no interaction", () => {
     "black",
   );
   expect(g?.variant).toBe("opponent");
-  expect(g?.text).toBe("Waiting for opponent's roll");
+  expect(g?.text).toBe("Waiting for your opponent to roll…");
   expect(g?.interactive).toBeNull();
 });
 
@@ -51,7 +51,7 @@ test("opening result lost → 'Opponent goes first'", () => {
     makeGameState({ phase: "opening_result", turn: "white" }),
     "black",
   );
-  expect(g?.text).toBe("Opponent goes first");
+  expect(g?.text).toBe("Your opponent goes first.");
 });
 
 test("doubling offered to me → double interaction", () => {
@@ -64,7 +64,7 @@ test("doubling offered to me → double interaction", () => {
     "white",
   );
   expect(g?.variant).toBe("double");
-  expect(g?.text).toBe("Opponent offers a double!");
+  expect(g?.text).toBe("Your opponent offered a double.");
   expect(g?.interactive).toBe("double");
 });
 
@@ -78,20 +78,20 @@ test("doubling offered by me → waiting text", () => {
     "white",
   );
   expect(g?.variant).toBe("opponent");
-  expect(g?.text).toBe("Waiting for their response");
+  expect(g?.text).toBe("Waiting for your opponent’s response…");
 });
 
 test("rolling on my turn → roll interaction", () => {
   const g = getGuidance(makeGameState({ phase: "rolling", turn: "white" }), "white");
   expect(g?.variant).toBe("roll");
-  expect(g?.text).toBe("Your turn — tap to roll");
+  expect(g?.text).toBe("Your turn — roll the dice.");
   expect(g?.interactive).toBe("roll");
 });
 
 test("rolling on opponent's turn → 'Opponent is thinking…'", () => {
   const g = getGuidance(makeGameState({ phase: "rolling", turn: "black" }), "white");
   expect(g?.variant).toBe("opponent");
-  expect(g?.text).toBe("Opponent is thinking…");
+  expect(g?.text).toBe("Waiting for your opponent…");
 });
 
 test("moving on my turn with dice → move variant with dice", () => {
@@ -103,7 +103,7 @@ test("moving on my turn with dice → move variant with dice", () => {
   });
   const g = getGuidance(state, "white");
   expect(g?.variant).toBe("move");
-  expect(g?.text).toBe("Your turn — tap a checker to move");
+  expect(g?.text).toBe("Your turn — choose a checker to move.");
   expect(g?.dice).toEqual([4, 3]);
   expect(g?.remaining).toEqual([4, 3]);
 });
@@ -114,7 +114,7 @@ test("moving on my turn with all dice used → confirm", () => {
     "white",
   );
   expect(g?.variant).toBe("confirm");
-  expect(g?.text).toBe("Confirm your turn");
+  expect(g?.text).toBe("Confirm to end your turn.");
 });
 
 test("moving on my turn with no legal moves → no-moves", () => {
@@ -132,7 +132,7 @@ test("moving on my turn with no legal moves → no-moves", () => {
     "white",
   );
   expect(g?.variant).toBe("no-moves");
-  expect(g?.text).toBe("No moves available — turn passes");
+  expect(g?.text).toBe("No legal moves — turn passes to your opponent.");
 });
 
 test("moving on opponent's turn → 'Opponent is thinking…'", () => {
@@ -141,5 +141,5 @@ test("moving on opponent's turn → 'Opponent is thinking…'", () => {
     "white",
   );
   expect(g?.variant).toBe("opponent");
-  expect(g?.text).toBe("Opponent is thinking…");
+  expect(g?.text).toBe("Waiting for your opponent…");
 });

@@ -472,10 +472,11 @@ export function getMakePointSequence(
       : Math.max(0, -value);
   };
 
-  if (
-    ownCount(state) >= 2 ||
-    isOpponentBlockade(state, target, color)
-  ) {
+  if (ownCount(state) !== 0) {
+    return null;
+  }
+
+  if (isOpponentBlockade(state, target, color)) {
     return null;
   }
 
@@ -529,6 +530,23 @@ export function getForcedMove(
   const placements = new Set(moves.map((m) => `${m.from}->${m.to}`));
   if (placements.size !== 1) return null;
   return moves[0];
+}
+
+export function isTurnChoiceFreeSoFar(state: GameState, color: Color): boolean {
+  if (state.phase !== "moving") return false;
+  if (state.turn !== color) return false;
+  const history = state.moveHistory ?? [];
+  const last = state.lastMove ?? [];
+  if (history.length !== last.length) return false;
+  const decisionStates: GameState[] = [...history, state];
+  for (const s of decisionStates) {
+    if (s.phase !== "moving") return false;
+    if (s.turn !== color) return false;
+    const moves = allLegalMoves(s, color);
+    const placements = new Set(moves.map((m) => `${m.from}->${m.to}`));
+    if (placements.size !== 1) return false;
+  }
+  return true;
 }
 
 // ============================================================

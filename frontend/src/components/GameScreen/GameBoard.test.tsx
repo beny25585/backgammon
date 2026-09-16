@@ -140,7 +140,7 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   });
 
   await expect(component.getByTestId("forced-move-notice")).toContainText(
-    "Forced move — playing automatically",
+    "Only one legal move — playing it automatically.",
   );
   await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(1);
   const readBox = (testId: string) =>
@@ -471,7 +471,7 @@ test("no-moves overlay shows the rolled dice and message", async ({ mount }) => 
 
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
   await expect(component.getByTestId("no-moves-overlay")).toContainText(
-    "No moves available — turn passes",
+    "No legal moves — turn passes to your opponent.",
   );
   await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(2);
 });
@@ -1253,7 +1253,9 @@ test("opponent black bears off observed by white viewer lands in top tray (anima
 });
 
 test("undo of local white bear-off starts from bottom tray (handleUndo)", async ({ mount, page }) => {
-  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  const clockStart = new Date("2024-01-01T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart);
   const before = validBearOffWhiteState(1);
   const after = applyMove(before, { from: 0, to: OFF, die: 1 }, "white");
   assertTotal15(after);
@@ -1263,7 +1265,6 @@ test("undo of local white bear-off starts from bottom tray (handleUndo)", async 
     playerColor: "white",
     undoMove: () => undoCalled++,
   });
-  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
   const recorder = await installFlyerRemovalRecorder(component);
   try {
     const { bottom } = await getTrayGeometry(component);
@@ -1299,7 +1300,9 @@ test("undo of local white bear-off starts from bottom tray (handleUndo)", async 
 });
 
 test("undo of local black bear-off starts from bottom tray (handleUndo)", async ({ mount, page }) => {
-  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  const clockStart = new Date("2024-01-01T00:00:00Z");
+  await page.clock.install({ time: clockStart });
+  await page.clock.pauseAt(clockStart);
   const before = validBearOffBlackState(1);
   const after = applyMove(before, { from: 23, to: OFF, die: 1 }, "black");
   assertTotal15(after);
@@ -1309,7 +1312,6 @@ test("undo of local black bear-off starts from bottom tray (handleUndo)", async 
     playerColor: "black",
     undoMove: () => undoCalled2++,
   });
-  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
   const recorder = await installFlyerRemovalRecorder(component);
   try {
     const { bottom } = await getTrayGeometry(component);
@@ -1407,5 +1409,70 @@ test("forced autoMove resumes after animation without duplicate", async ({ mount
   // Flying checker: 220ms animation + 600ms committed timeout = 820ms
   await page.clock.runFor(1000);
   await expect(comp.getByTestId("flying-checker")).toHaveCount(0);
+  expect(calls.length).toBe(1);
+});
+
+test("GameBoard no-moves overlay renders Hebrew with rtl dir", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.setItem("backgammon-game-locale", "he"));
+  const state = movingState({
+    phase: "rolling",
+    turn: "white",
+    dice: [2, 4],
+    remaining: [],
+    message: "No legal moves",
+  });
+  const component = await mountBoard(mount, {
+    state,
+    playerColor: "black",
+    noMovesMessage: {
+      dice: [2, 4],
+      remaining: [2, 4],
+      color: "white",
+    },
+  });
+  // reload to pick up he locale from localStorage
+  await page.evaluate(() => localStorage.setItem("backgammon-game-locale", "he"));
+  const heComponent = await mountBoard(mount, {
+    state,
+    playerColor: "black",
+    noMovesMessage: {
+      dice: [2, 4],
+      remaining: [2, 4],
+      color: "white",
+    },
+  });
+  const textEl = heComponent.getByTestId("no-moves-overlay").locator("span").first();
+  // The actual visible no-moves message should be the Hebrew one
+  await expect(heComponent.getByTestId("no-moves-overlay")).toContainText("אין מהלכים חוקיים — התור עובר ליריב.");
+  // Check that the underlying GuidanceBanner text element has dir rtl and lang he
+  const bannerText = heComponent.getByTestId("guidance-banner").locator('[class*="text"]').first();
+  // Fallback: if not found via guidance-banner, check the overlay's span
+  const target = (await bannerText.count()) > 0 ? bannerText : textEl;
+  await expect(target).toHaveAttribute("dir", "rtl");
+  await expect(target).toHaveAttribute("lang", "he");
+  const content = await target.textContent();
+  expect(content).toBe("אין מהלכים חוקיים — התור עובר ליריב.");
+  expect(content?.endsWith("היריב.")).toBe(true);
+});
+
+test("stale forced command with same from/to but no longer forced is not dispatched", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
+  const initial = movingState({ dice: [4], remaining: [4], points: (() => { const p = new Array(24).fill(0); p[23] = 1; return p; })() });
+  const calls: Array<[Source, Target]> = [];
+  const component = await mountBoard(mount, { state: initial, playerColor: "white", makeMove: (f, t) => calls.push([f, t]) });
+  // trigger a manual move to create flyChecker and defer forced command
+  await component.locator('[data-point-idx="23"]').dispatchEvent("click");
+  await expect(component.getByTestId("flying-checker")).toHaveCount(1);
+  // while animation is active, change position so old forced move is still legal but no longer forced (add alternative placement)
+  const altered = movingState({ dice: [4], remaining: [4], points: (() => { const p = new Array(24).fill(0); p[23] = 1; p[12] = 1; return p; })() });
+  await component.update(
+    <MockGameWrapper playerColor="white" state={altered}>
+      <GameBoard state={altered} playerColor="white" makeMove={(f, t) => calls.push([f, t])} />
+    </MockGameWrapper>,
+  );
+  await page.clock.runFor(1000);
+  await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+  // old forced command should have been invalidated, not dispatched
   expect(calls.length).toBe(1);
 });

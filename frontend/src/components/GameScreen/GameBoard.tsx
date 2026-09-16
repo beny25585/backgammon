@@ -156,12 +156,12 @@ export default function GameBoard({
     if (noMovesMessage && noMovesMessage.noticeVisible !== false) {
       notice = {
         variant: "no-moves",
-        text: "No moves available — turn passes",
+        textKey: "guidance.noMoves",
       };
     } else if (!autoPointSequenceActive && isMyTurn && state.remaining.length > 0 && forcedMove) {
       notice = {
         variant: "forced",
-        text: "Forced move — playing automatically",
+        textKey: "guidance.forced",
       };
     }
     if (!notice) return;

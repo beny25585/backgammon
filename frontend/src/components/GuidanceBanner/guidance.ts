@@ -13,7 +13,8 @@ export type GuidanceVariant =
 
 export interface Guidance {
   variant: GuidanceVariant;
-  text: string;
+  textKey: string;
+  text?: string;
   dice: number[];
   remaining: number[];
   interactive: "roll" | "double" | null;
@@ -32,7 +33,7 @@ export function getGuidance(
   if (state.phase === "waiting") {
     return {
       variant: "opponent",
-      text: "Waiting to start",
+      textKey: "guidance.waitingStart",
       dice: NO_DICE,
       remaining: NO_DICE,
       interactive: null,
@@ -43,14 +44,14 @@ export function getGuidance(
     return isMyTurn
       ? {
           variant: "roll",
-          text: "Roll to start",
+          textKey: "guidance.rollStart",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: "roll",
         }
       : {
           variant: "opponent",
-          text: "Waiting for opponent's roll",
+          textKey: "guidance.waitingRoll",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: null,
@@ -61,14 +62,14 @@ export function getGuidance(
     return isMyTurn
       ? {
           variant: "opening",
-          text: "You go first!",
+          textKey: "guidance.youFirst",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: null,
         }
       : {
           variant: "opening",
-          text: "Opponent goes first",
+          textKey: "guidance.opponentFirst",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: null,
@@ -80,14 +81,14 @@ export function getGuidance(
     return offered !== null && offered !== playerColor
       ? {
           variant: "double",
-          text: "Opponent offers a double!",
+          textKey: "guidance.double",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: "double",
         }
       : {
           variant: "opponent",
-          text: "Waiting for their response",
+          textKey: "guidance.waitingResponse",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: null,
@@ -98,14 +99,14 @@ export function getGuidance(
     return isMyTurn
       ? {
           variant: "roll",
-          text: "Your turn — tap to roll",
+          textKey: "guidance.roll",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: "roll",
         }
       : {
           variant: "opponent",
-          text: "Opponent is thinking…",
+          textKey: "guidance.opponent",
           dice: NO_DICE,
           remaining: NO_DICE,
           interactive: null,
@@ -116,7 +117,7 @@ export function getGuidance(
     if (!isMyTurn) {
       return {
         variant: "opponent",
-        text: "Opponent is thinking…",
+        textKey: "guidance.opponent",
         dice: NO_DICE,
         remaining: NO_DICE,
         interactive: null,
@@ -125,7 +126,7 @@ export function getGuidance(
     if (state.remaining.length === 0) {
       return {
         variant: "confirm",
-        text: "Confirm your turn",
+        textKey: "guidance.confirm",
         dice: NO_DICE,
         remaining: NO_DICE,
         interactive: null,
@@ -134,7 +135,7 @@ export function getGuidance(
     if (allLegalMoves(state, playerColor).length === 0) {
       return {
         variant: "no-moves",
-        text: "No moves available — turn passes",
+        textKey: "guidance.noMoves",
         dice: NO_DICE,
         remaining: NO_DICE,
         interactive: null,
@@ -143,7 +144,7 @@ export function getGuidance(
     if (getForcedMove(state, playerColor) !== null) {
       return {
         variant: "forced",
-        text: "Forced move — playing automatically",
+        textKey: "guidance.forced",
         dice: NO_DICE,
         remaining: NO_DICE,
         interactive: null,
@@ -151,7 +152,7 @@ export function getGuidance(
     }
     return {
       variant: "move",
-      text: "Your turn — tap a checker to move",
+      textKey: "guidance.move",
       dice: state.dice,
       remaining: state.remaining,
       interactive: null,
@@ -160,7 +161,7 @@ export function getGuidance(
 
   return {
     variant: "opponent",
-    text: "Waiting…",
+    textKey: "guidance.waiting",
     dice: NO_DICE,
     remaining: NO_DICE,
     interactive: null,

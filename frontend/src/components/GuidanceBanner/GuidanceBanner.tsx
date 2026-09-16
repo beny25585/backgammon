@@ -3,12 +3,12 @@ import { motion } from "motion/react";
 import styles from "./GuidanceBanner.module.css";
 import type { Color, GameState } from "@/lib/backgammon/engine";
 import { getGuidance } from "./guidance";
-import type { GuidanceVariant } from "./guidance";
+import type { Guidance, GuidanceVariant } from "./guidance";
 import { useI18n } from "../../i18n/I18nProvider";
 
 export interface GuidanceMessage {
   variant: GuidanceVariant;
-  text: string;
+  textKey: string;
 }
 
 interface GuidanceBannerProps {
@@ -34,21 +34,7 @@ function variantClass(variant: GuidanceVariant): string {
   }
 }
 
-const guidanceTextKeys: Record<string, string> = {
-  "Waiting to start": "guidance.waitingStart",
-  "Roll to start": "guidance.rollStart",
-  "Waiting for opponent's roll": "guidance.waitingRoll",
-  "You go first!": "guidance.youFirst",
-  "Opponent goes first": "guidance.opponentFirst",
-  "Opponent offers a double!": "guidance.opponentDouble",
-  "Waiting for their response": "guidance.waitingResponse",
-  "Your turn — tap to roll": "guidance.yourRoll",
-  "Opponent is thinking…": "guidance.opponentThinking",
-  "Confirm your turn": "guidance.confirmTurn",
-  "No moves available — turn passes": "guidance.noMoves",
-  "Forced move — playing automatically": "guidance.forcedMove",
-  "Waiting…": "guidance.waiting",
-};
+
 
 export default function GuidanceBanner({
   state,
@@ -69,7 +55,7 @@ export default function GuidanceBanner({
 
   useEffect(() => {
     setResponding(false);
-  }, [guidance?.variant, guidance?.text]);
+  }, [guidance?.variant, guidance?.textKey]);
 
   if (!guidance) return null;
 
@@ -81,10 +67,7 @@ export default function GuidanceBanner({
     respondToDouble?.(accept);
   };
 
-  const text =
-    locale === "he"
-      ? t(guidanceTextKeys[guidance.text] ?? `guidance.${guidance.variant}`)
-      : guidance.text;
+  const text = t(guidance.textKey);
 
   return (
     <div
@@ -103,9 +86,15 @@ export default function GuidanceBanner({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <span className={styles.text}>{text}</span>
+        <span
+          className={styles.text}
+          dir={locale === "he" ? "rtl" : "ltr"}
+          lang={locale}
+        >
+          {text}
+        </span>
         {isDecision && (
-          <div className={styles.actions}>
+          <div className={styles.actions} dir="ltr">
             <button
               type="button"
               className={styles.accept}

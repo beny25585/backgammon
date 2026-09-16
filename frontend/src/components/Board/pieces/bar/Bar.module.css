@@ -78,7 +78,7 @@
   width: 100%;
   transform: translateX(-50%);
   color: #f4f7ff;
-  font-size: clamp(7px, 1.05cqw, 11px);
+  font-size: clamp(16px, 2.1cqw, 22px);
   font-weight: 900;
   line-height: 1;
   text-align: center;
@@ -131,7 +131,7 @@
 
 @media (orientation: landscape) and (max-height: 430px) {
   .pipCount {
-    font-size: clamp(11px, 1.4cqw, 14px);
+    font-size: clamp(18px, 2.4cqw, 24px);
   }
 
   .topPip,

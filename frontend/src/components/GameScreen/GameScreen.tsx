@@ -80,7 +80,7 @@ export default function GameScreen({
   gameType: propGameType,
   showRematch = true,
 }: GameScreenProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const {
     state,
@@ -291,7 +291,13 @@ export default function GameScreen({
 
       {/* GLOBAL GAME ERROR */}
       {error && (
-        <div className={styles.errorCard} data-testid="error-card" role="alert">
+        <div
+          className={styles.errorCard}
+          data-testid="error-card"
+          role="alert"
+          dir={locale === "he" ? "rtl" : "ltr"}
+          lang={locale}
+        >
           <span>
             {t("game.errorPrefix")}: {error}
           </span>
@@ -528,7 +534,12 @@ export default function GameScreen({
       {!gameResult?.matchOver && (
         <>
           {reconnected && (
-            <div className={styles.reconnected} role="status">
+            <div
+              className={styles.reconnected}
+              role="status"
+              dir={locale === "he" ? "rtl" : "ltr"}
+              lang={locale}
+            >
               {t("game.reconnected")}
             </div>
           )}
@@ -537,7 +548,12 @@ export default function GameScreen({
             !reconnected &&
             !gameHasStarted &&
             !gameResult?.matchOver && (
-              <div className={styles.disconnected} role="status">
+              <div
+                className={styles.disconnected}
+                role="status"
+                dir={locale === "he" ? "rtl" : "ltr"}
+                lang={locale}
+              >
                 {t("game.opponentNotConnected")}
               </div>
             )}
@@ -546,7 +562,12 @@ export default function GameScreen({
             !reconnected &&
             gameHasStarted &&
             !gameResult?.matchOver && (
-              <div className={styles.disconnected} role="status">
+              <div
+                className={styles.disconnected}
+                role="status"
+                dir={locale === "he" ? "rtl" : "ltr"}
+                lang={locale}
+              >
                 {t("game.opponentDisconnected", {
                   seconds: disconnectCountdown ?? 40,
                 })}

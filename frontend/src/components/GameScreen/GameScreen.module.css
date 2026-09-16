@@ -1048,6 +1048,7 @@
   max-width: calc(100% - 1rem);
   text-align: center;
   box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
+  unicode-bidi: plaintext;
 }
 
 .disconnected {
@@ -1057,6 +1058,7 @@
   transform: translateX(-50%);
   z-index: 50;
   background: rgba(250, 204, 21, 0.92);
+  unicode-bidi: plaintext;
   color: #3d2f00;
   padding: 0.6rem 1rem;
   border-radius: 9999px;
@@ -1165,6 +1167,7 @@
   max-width: min(30rem, calc(100% - 2rem));
   padding: 0.75rem 1rem;
   border-radius: 12px;
+  unicode-bidi: plaintext;
   background: rgba(30, 12, 14, 0.92);
   border: 1px solid rgba(255, 107, 107, 0.5);
   box-shadow: 0 10px 25px rgba(0, 0, 0, 0.35);

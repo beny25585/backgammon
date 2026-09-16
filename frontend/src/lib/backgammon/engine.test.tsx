@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, applyMove, undoLastMove, BAR, OFF, type Color, type GameState } from "./engine";
+import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, applyMove, undoLastMove, BAR, OFF, isTurnChoiceFreeSoFar, type Color, type GameState } from "./engine";
 
 for (const color of ["white", "black"] as Color[]) {
   const point = (whitePoint: number) => color === "white" ? whitePoint : 23 - whitePoint;
@@ -121,4 +121,69 @@ test("reorderDice reverses the playable dice order", async () => {
 
   expect(next.remaining).toEqual([2, 5]);
   expect(state.remaining).toEqual([5, 2]);
+});
+
+test("isTurnChoiceFreeSoFar: earlier choice followed by forced move is not choice-free", async () => {
+  const points = new Array(24).fill(0);
+  points[0] = 2;
+  points[1] = 1;
+  const s0: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 0, black: 0 },
+    home: { white: 12, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [2, 1],
+    remaining: [2, 1],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  // initially multiple placements
+  const placements0 = new Set(allLegalMoves(s0, "white").map((m) => `${m.from}->${m.to}`));
+  expect(placements0.size).toBeGreaterThan(1);
+  const s1 = applyMove(s0, { from: 0, to: OFF, die: 1 }, "white");
+  // s1 should be forced (only 1 -> OFF with 2)
+  expect(new Set(allLegalMoves(s1, "white").map((m) => `${m.from}->${m.to}`)).size).toBe(1);
+  // current s1 is after one manual choice, so not choice-free
+  expect(isTurnChoiceFreeSoFar(s1, "white")).toBe(false);
+  // also check that the current move itself is forced but history had choice
+  expect(allLegalMoves(s1, "white").some((m) => m.from === 1 && m.to === OFF)).toBe(true);
+});
+
+test("isTurnChoiceFreeSoFar: fully forced sequence stays choice-free", async () => {
+  const s0: GameState = {
+    ...newGame(),
+    points: (() => { const p = new Array(24).fill(0); p[23] = 1; return p; })(),
+    bar: { white: 0, black: 0 },
+    home: { white: 0, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [4],
+    remaining: [4],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  expect(new Set(allLegalMoves(s0, "white").map((m) => `${m.from}->${m.to}`)).size).toBe(1);
+  expect(isTurnChoiceFreeSoFar(s0, "white")).toBe(true);
+  const s1 = applyMove(s0, { from: 23, to: 19, die: 4 }, "white");
+  // s1 is terminal (no remaining), but still choice-free if we check before terminal
+  // For a non-terminal forced second move, create a doubles case
+  const sDoubles: GameState = {
+    ...newGame(),
+    points: (() => { const p = new Array(24).fill(0); p[23] = 2; return p; })(),
+    bar: { white: 0, black: 0 },
+    home: { white: 0, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [4, 4],
+    remaining: [4, 4],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  const sD1 = applyMove(sDoubles, { from: 23, to: 19, die: 4 }, "white");
+  expect(isTurnChoiceFreeSoFar(sD1, "white")).toBe(true);
 });

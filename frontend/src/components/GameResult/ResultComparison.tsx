@@ -50,7 +50,7 @@ export function RatingChange({ change, after }: RatingChangeProps) {
   const deltaClass = change > 0 ? styles.adv : change < 0 ? styles.elim : "";
   return (
     <span className={styles.ratingChange}>
-      {after} <span className={`${styles.ratingDelta} ${deltaClass}`}>({deltaText})</span>
+      <bdi dir="ltr">{after}</bdi> <span className={`${styles.ratingDelta} ${deltaClass}`}><bdi dir="ltr">({deltaText})</bdi></span>
     </span>
   );
 }

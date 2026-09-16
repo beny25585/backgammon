@@ -25,6 +25,7 @@ import {
   respondDouble,
   undoLastMove,
   allLegalMoves,
+  isTurnChoiceFreeSoFar,
   OFF,
   type Source,
   type Target,
@@ -494,11 +495,11 @@ export function LocalGameProvider({
 
   const makeMove = useCallback(
     (from: Source, to: Target, options?: MakeMoveOptions) => {
-      const origin = options?.origin === "forced" ? "forced" : "manual";
       const cur = stateRef.current;
       if (!cur || cur.phase !== "moving") return;
       if (cur.turn !== playerColorRef.current) return;
       const actor = playerColorRef.current;
+      const wasChoiceFreeSoFar = isTurnChoiceFreeSoFar(cur, actor);
       const dest = to === OFF ? OFF : to;
       const moves = allLegalMoves(cur, cur.turn);
       const matchingMoves = moves.filter(
@@ -529,7 +530,7 @@ export function LocalGameProvider({
         shouldReveal = true;
       }
       if (
-        origin === "forced" &&
+        wasChoiceFreeSoFar &&
         next.phase === "moving" &&
         next.turn === actor &&
         !next.winner &&

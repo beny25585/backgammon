@@ -121,21 +121,21 @@ export default function TournamentGameResult({
         {hasRating && (
           <ResultMetricRow
             left={<RatingChange before={ratingBefore!} change={selfRatingChange} after={ratingAfter!} />}
-            label="Rating"
+            label={t("game.rating")}
             right={<RatingChange before={opponentRatingBefore!} change={opponentRatingChangeValue} after={opponentRatingAfter!} />}
           />
         )}
       </ResultComparison>
       {hasRound && <MatchDetailRow label={t("game.round")} value={tournamentRound!} />}
       {hasNextOpponent && <MatchDetailRow label={t("game.nextMatch")} value={nextOpponent!} />}
-      {reasonLabel && <MatchDetailRow label="End Reason" value={reasonLabel} />}
-      {hits != null && <MatchDetailRow label={t("match.hits")} value={String(hits)} />}
-      {doublesOffered != null && <MatchDetailRow label="Doubles Offered" value={String(doublesOffered)} />}
-      {doublesAccepted != null && <MatchDetailRow label="Doubles Accepted" value={String(doublesAccepted)} />}
-      {openingRollText && <MatchDetailRow label="Opening Roll" value={openingRollText} />}
+      {reasonLabel && <MatchDetailRow label={t("match.endedBy")} value={reasonLabel} />}
+      {hits != null && <MatchDetailRow label={t("match.hits")} value={<bdi dir="ltr">{String(hits)}</bdi>} />}
+      {doublesOffered != null && <MatchDetailRow label={t("match.doublesOffered")} value={<bdi dir="ltr">{String(doublesOffered)}</bdi>} />}
+      {doublesAccepted != null && <MatchDetailRow label={t("match.doublesAccepted")} value={<bdi dir="ltr">{String(doublesAccepted)}</bdi>} />}
+      {openingRollText && <MatchDetailRow label={t("match.openingRoll")} value={<bdi dir="ltr">{openingRollText}</bdi>} />}
       {firstPlayerLabel && <MatchDetailRow label={t("match.firstPlayer")} value={firstPlayerLabel} />}
-      {durationSeconds != null && <MatchDetailRow label={t("match.duration")} value={`${durationSeconds}s`} />}
-      {clockText && <MatchDetailRow label="Clock Remaining" value={clockText} />}
+      {durationSeconds != null && <MatchDetailRow label={t("match.duration")} value={<bdi dir="ltr">{`${durationSeconds}s`}</bdi>} />}
+      {clockText && <MatchDetailRow label={t("match.clockRemaining")} value={<bdi dir="ltr">{clockText}</bdi>} />}
     </GameResult>
   );
 }

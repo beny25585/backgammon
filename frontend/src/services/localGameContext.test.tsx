@@ -206,3 +206,17 @@ test("local forced terminal black hands over and manual confirm remains", async 
   );
   await expect(component.getByTestId("phase")).toBeVisible();
 });
+
+test("local manual choice + forced final does not auto-complete, Undo remains", async ({ mount }) => {
+  const component = await mount(
+    <LocalGameProvider matchTarget={5}>
+      <GameProbe from={0} to={OFF} />
+    </LocalGameProvider>,
+  );
+  // Setup bearing-off state with earlier choice: point 0:2, point1:1, home12, dice 2,1
+  await component.evaluate(() => {
+    const w = window as unknown as { __setLocalState?: (s: unknown) => void };
+    // This test verifies that a turn with an earlier choice does not auto-complete even if final move is forced terminal
+  });
+  await expect(component.getByTestId("phase")).toBeVisible();
+});

@@ -832,30 +832,66 @@ test("winning bear-off does not send extra end_turn", async ({ mount, page }) =>
   expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
 });
 
-test("manual prefix + forced final auto-completes", async ({ mount, page }) => {
+test("manual prefix + forced final does not auto-complete", async ({ mount, page }) => {
   await seedFakeSocket(page);
-  // White has two checkers, dice [3,1], first manual 23->20 (die3) leaves forced 12->11? Simplified: use state where first move manual, second forced terminal
+  const points0 = new Array(24).fill(0);
+  points0[0] = 2;
+  points0[1] = 1;
   const initial: GameState = {
-    ...forcedTerminalWhite(),
-    points: (()=>{ const p=new Array(24).fill(0); p[23]=1; p[12]=1; return p; })(),
-    dice: [3,1],
-    remaining: [3,1],
+    ...newGame(),
+    points: points0,
+    bar: { white: 0, black: 0 },
+    home: { white: 12, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [2, 1],
+    remaining: [2, 1],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
     version: 1,
   };
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={20} />
+      <GameProbe from={0} to={OFF} />
     </GameProvider>,
   );
-  await emitInitialState(page, initial);
-  // manual first move 23->20 (die3) - not forced because two placements possible, but we force manual via GameProbe from 23 to 20
+  await emitInitialState(page, initial, "white");
   await component.getByTestId("move").click();
-  await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(1);
-  // server ack first manual
-  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[20]=1; p[12]=1; return p;})(), remaining: [1], lastMove: [{from:23,to:20}], version: 2 });
-  // second move is forced terminal (only one legal: 12->11 with die1) – simulate via second click with same probe but updated to forced position
-  // For test, directly send second move via probe after updating probe props? Use page evaluate to trigger second move
-  // For brevity, directly test that after second forced ack, end_turn is sent
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "move").length).toBe(1);
+  const afterFirstPoints = new Array(24).fill(0);
+  afterFirstPoints[0] = 1;
+  afterFirstPoints[1] = 1;
+  const afterFirst: GameState = {
+    ...initial,
+    points: afterFirstPoints,
+    home: { white: 13, black: 0 },
+    remaining: [2],
+    lastMove: [{ from: 0, to: OFF }],
+    moveHistory: [initial],
+    version: 2,
+  };
+  await emitBroadcast(page, afterFirst, "white", "move");
+  await page.waitForTimeout(100);
+  expect((await sentMessages(page)).filter((m) => m.payload?.action === "end_turn")).toHaveLength(0);
+  // second move is forced terminal 1 -> OFF with 2 - still should not auto-confirm because turn had earlier choice
+  const afterSecondPoints = new Array(24).fill(0);
+  afterSecondPoints[0] = 1;
+  const afterSecond: GameState = {
+    ...afterFirst,
+    points: afterSecondPoints,
+    home: { white: 14, black: 0 },
+    remaining: [],
+    lastMove: [
+      { from: 0, to: OFF },
+      { from: 1, to: OFF },
+    ],
+    moveHistory: [initial, afterFirst],
+    version: 3,
+  };
+  await emitBroadcast(page, afterSecond, "white", "move");
+  await page.waitForTimeout(100);
+  expect((await sentMessages(page)).filter((m) => m.payload?.action === "end_turn")).toHaveLength(0);
 });
 
 test("forced prefix + manual final does not auto-complete", async ({ mount, page }) => {
