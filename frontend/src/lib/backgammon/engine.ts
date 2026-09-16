@@ -532,21 +532,174 @@ export function getForcedMove(
   return moves[0];
 }
 
-export function isTurnChoiceFreeSoFar(state: GameState, color: Color): boolean {
-  if (state.phase !== "moving") return false;
-  if (state.turn !== color) return false;
-  const history = state.moveHistory ?? [];
-  const last = state.lastMove ?? [];
-  if (history.length !== last.length) return false;
-  const decisionStates: GameState[] = [...history, state];
-  for (const s of decisionStates) {
-    if (s.phase !== "moving") return false;
-    if (s.turn !== color) return false;
-    const moves = allLegalMoves(s, color);
-    const placements = new Set(moves.map((m) => `${m.from}->${m.to}`));
-    if (placements.size !== 1) return false;
+export function getDeterministicTurnSequence(
+  state: GameState,
+  color: Color,
+): Move[] | null {
+  if (state.phase !== "moving" || state.turn !== color) {
+    return null;
   }
-  return true;
+
+  type SearchResult = {
+    outcomeKey: string;
+    sequence: Move[];
+  };
+
+  const memo = new Map<string, SearchResult | null>();
+
+  const searchKey = (position: GameState): string =>
+    [
+      position.points.join(","),
+      position.bar.white,
+      position.bar.black,
+      position.home.white,
+      position.home.black,
+      position.remaining.join(","),
+    ].join("|");
+
+  const terminalOutcomeKey = (position: GameState): string => {
+    const winner =
+      position.home[color] === TOTAL_CHECKERS
+        ? color
+        : (position.winner ?? "");
+
+    return [
+      position.points.join(","),
+      position.bar.white,
+      position.bar.black,
+      position.home.white,
+      position.home.black,
+      winner,
+    ].join("|");
+  };
+
+  const solve = (position: GameState): SearchResult | null => {
+    const key = searchKey(position);
+
+    if (memo.has(key)) {
+      return memo.get(key) ?? null;
+    }
+
+    if (
+      position.home[color] === TOTAL_CHECKERS ||
+      position.remaining.length === 0
+    ) {
+      const result = {
+        outcomeKey: terminalOutcomeKey(position),
+        sequence: [],
+      };
+      memo.set(key, result);
+      return result;
+    }
+
+    const legalMoves = allLegalMoves(position, color);
+
+    if (legalMoves.length === 0) {
+      const result = {
+        outcomeKey: terminalOutcomeKey(position),
+        sequence: [],
+      };
+      memo.set(key, result);
+      return result;
+    }
+
+    const orderedMoves = [...legalMoves].sort(
+      (a, b) =>
+        position.remaining.indexOf(a.die) -
+        position.remaining.indexOf(b.die),
+    );
+
+    let expectedOutcome: string | null = null;
+    let canonicalSequence: Move[] | null = null;
+
+    for (const move of orderedMoves) {
+      const child = solve(positionAfterMove(position, move, color));
+
+      if (child === null) {
+        memo.set(key, null);
+        return null;
+      }
+
+      if (expectedOutcome === null) {
+        expectedOutcome = child.outcomeKey;
+        canonicalSequence = [move, ...child.sequence];
+        continue;
+      }
+
+      if (child.outcomeKey !== expectedOutcome) {
+        memo.set(key, null);
+        return null;
+      }
+    }
+
+    const result: SearchResult = {
+      outcomeKey: expectedOutcome!,
+      sequence: canonicalSequence!,
+    };
+
+    memo.set(key, result);
+    return result;
+  };
+
+  return solve(state)?.sequence ?? null;
+}
+
+export function getAutomaticMove(
+  state: GameState,
+  color: Color,
+): Move | null {
+  const forced = getForcedMove(state, color);
+
+  if (forced) {
+    return forced;
+  }
+
+  const deterministic = getDeterministicTurnSequence(state, color);
+
+  return deterministic && deterministic.length > 0
+    ? deterministic[0]
+    : null;
+}
+
+export function isWholeTurnDeterministic(
+  state: GameState,
+  color: Color,
+): boolean {
+  if (state.phase !== "moving" || state.turn !== color) {
+    return false;
+  }
+
+  const lastMoves = state.lastMove ?? [];
+  const history = state.moveHistory ?? [];
+
+  let turnStart: GameState;
+
+  if (lastMoves.length === 0) {
+    if (history.length !== 0) {
+      return false;
+    }
+
+    turnStart = state;
+  } else {
+    if (history.length !== lastMoves.length) {
+      return false;
+    }
+
+    const first = history[0];
+
+    if (
+      !first ||
+      first.phase !== "moving" ||
+      first.turn !== color ||
+      (first.lastMove?.length ?? 0) !== 0
+    ) {
+      return false;
+    }
+
+    turnStart = first;
+  }
+
+  return getDeterministicTurnSequence(turnStart, color) !== null;
 }
 
 // ============================================================

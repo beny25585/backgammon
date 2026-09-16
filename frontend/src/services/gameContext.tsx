@@ -22,7 +22,7 @@ import type { GameState, Color, Move } from "../types/game";
 import {
   allLegalMoves,
   applyMove,
-  isTurnChoiceFreeSoFar,
+  isWholeTurnDeterministic,
   reorderDice as reorderGameDice,
   type Source,
   type Target,
@@ -1086,7 +1086,8 @@ export function GameProvider({
       const current = stateRef.current;
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
-      const wasChoiceFreeSoFar = isTurnChoiceFreeSoFar(current, playerColorRef.current);
+      const wholeTurnDeterministic =
+        isWholeTurnDeterministic(current, playerColorRef.current);
       const origin: "manual" | "forced" = options?.origin === "forced" ? "forced" : "manual";
       const id = nextLocalIdRef.current++;
       const pending: PendingMove = { id, from, to, sentAt: performance.now(), origin };
@@ -1107,7 +1108,7 @@ export function GameProvider({
         optimistic.turn === playerColorRef.current &&
         !optimistic.winner &&
         allLegalMoves(optimistic, playerColorRef.current).length === 0;
-      if (wasChoiceFreeSoFar && isTerminal) {
+      if (wholeTurnDeterministic && isTerminal) {
         autoConfirmRequestRef.current = { gen: lifecycleGenRef.current, pendingId: id, stage: "awaiting_move_ack" };
         setAutoConfirmPending(true);
       } else {

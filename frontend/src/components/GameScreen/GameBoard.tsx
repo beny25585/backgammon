@@ -8,6 +8,7 @@ import { DiceRow } from "../Dice";
 import {
   allLegalMoves,
   BAR,
+  getAutomaticMove,
   type Source,
   type Target,
   type Move,
@@ -110,11 +111,12 @@ export default function GameBoard({
   }, [legalMoves, selected]);
 
   const forcedMove = useMemo(() => {
-    const placements = new Set(
-      legalMoves.map((move) => `${move.from}->${move.to}`),
-    );
-    return placements.size === 1 ? legalMoves[0] : null;
-  }, [legalMoves]);
+    if (!isMyTurn || state.remaining.length === 0) {
+      return null;
+    }
+
+    return getAutomaticMove(state, playerColor);
+  }, [state, playerColor, isMyTurn]);
 
   useEffect(() => {
     if (

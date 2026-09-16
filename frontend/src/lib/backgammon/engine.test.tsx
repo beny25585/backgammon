@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, applyMove, undoLastMove, BAR, OFF, isTurnChoiceFreeSoFar, type Color, type GameState } from "./engine";
+import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, applyMove, undoLastMove, BAR, OFF, getAutomaticMove, getDeterministicTurnSequence, isWholeTurnDeterministic, type Color, type GameState } from "./engine";
 
 for (const color of ["white", "black"] as Color[]) {
   const point = (whitePoint: number) => color === "white" ? whitePoint : 23 - whitePoint;
@@ -123,7 +123,45 @@ test("reorderDice reverses the playable dice order", async () => {
   expect(state.remaining).toEqual([5, 2]);
 });
 
-test("isTurnChoiceFreeSoFar: earlier choice followed by forced move is not choice-free", async () => {
+test("deterministic turn: two bar checkers may enter in either order", async () => {
+  for (const color of ["white", "black"] as Color[]) {
+    const points = Array(24).fill(0);
+    const state: GameState = {
+      ...newGame(),
+      points,
+      bar: { white: color === "white" ? 2 : 0, black: color === "black" ? 2 : 0 },
+      home: { white: color === "white" ? 13 : 0, black: color === "black" ? 13 : 0 },
+      turn: color,
+      phase: "moving",
+      dice: [5, 3],
+      remaining: [5, 3],
+      lastMove: [],
+      moveHistory: [],
+      message: "",
+    };
+    expect(allLegalMoves(state, color).length).toBe(2);
+    const sequence = getDeterministicTurnSequence(state, color);
+    expect(sequence).not.toBeNull();
+    expect(sequence!.length).toBe(2);
+    expect(sequence!.map((m) => m.die)).toEqual([5, 3]);
+    expect(sequence!.every((m) => m.from === BAR)).toBe(true);
+    const destinations = sequence!.map((m) => m.to).sort((a, b) => (a as number) - (b as number));
+    if (color === "white") {
+      expect(destinations).toEqual([19, 21]);
+    } else {
+      expect(destinations).toEqual([2, 4]);
+    }
+    let cur = state;
+    for (const mv of sequence!) {
+      cur = applyMove(cur, mv, color);
+    }
+    expect(cur.bar[color]).toBe(0);
+    expect(cur.remaining).toEqual([]);
+    expect(isWholeTurnDeterministic(cur, color)).toBe(true);
+  }
+});
+
+test("meaningful earlier choice prevents whole-turn auto-confirm", async () => {
   const points = new Array(24).fill(0);
   points[0] = 2;
   points[1] = 1;
@@ -140,19 +178,88 @@ test("isTurnChoiceFreeSoFar: earlier choice followed by forced move is not choic
     moveHistory: [],
     message: "",
   };
-  // initially multiple placements
   const placements0 = new Set(allLegalMoves(s0, "white").map((m) => `${m.from}->${m.to}`));
   expect(placements0.size).toBeGreaterThan(1);
+  expect(getDeterministicTurnSequence(s0, "white")).toBeNull();
+  expect(isWholeTurnDeterministic(s0, "white")).toBe(false);
   const s1 = applyMove(s0, { from: 0, to: OFF, die: 1 }, "white");
-  // s1 should be forced (only 1 -> OFF with 2)
   expect(new Set(allLegalMoves(s1, "white").map((m) => `${m.from}->${m.to}`)).size).toBe(1);
-  // current s1 is after one manual choice, so not choice-free
-  expect(isTurnChoiceFreeSoFar(s1, "white")).toBe(false);
-  // also check that the current move itself is forced but history had choice
+  expect(getAutomaticMove(s1, "white")).not.toBeNull();
+  expect(isWholeTurnDeterministic(s1, "white")).toBe(false);
   expect(allLegalMoves(s1, "white").some((m) => m.from === 1 && m.to === OFF)).toBe(true);
 });
 
-test("isTurnChoiceFreeSoFar: fully forced sequence stays choice-free", async () => {
+test("order-equivalent sequences return deterministic", async () => {
+  const points = Array(24).fill(0);
+  const state: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 2, black: 0 },
+    home: { white: 13, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [5, 3],
+    remaining: [5, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  const seq = getDeterministicTurnSequence(state, "white");
+  expect(seq).not.toBeNull();
+  // Both orders lead to same outcome, so deterministic
+  expect(seq!.length).toBe(2);
+});
+
+test("two sequences producing different final board states return non-deterministic", async () => {
+  const points = new Array(24).fill(0);
+  points[0] = 2;
+  points[1] = 1;
+  const state: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 0, black: 0 },
+    home: { white: 12, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [2, 1],
+    remaining: [2, 1],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  expect(getDeterministicTurnSequence(state, "white")).toBeNull();
+  expect(getAutomaticMove(state, "white")).toBeNull();
+});
+
+test("manual meaningful first choice -> later forced final move: forced continuation plays automatically but NO auto-confirm", async () => {
+  const points = new Array(24).fill(0);
+  points[0] = 2;
+  points[1] = 1;
+  const s0: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 0, black: 0 },
+    home: { white: 12, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [2, 1],
+    remaining: [2, 1],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  expect(getDeterministicTurnSequence(s0, "white")).toBeNull();
+  const s1 = applyMove(s0, { from: 0, to: OFF, die: 1 }, "white");
+  // s1 has forced continuation
+  const auto = getAutomaticMove(s1, "white");
+  expect(auto).not.toBeNull();
+  expect(auto!.from).toBe(1);
+  expect(auto!.to).toBe(OFF);
+  // But whole turn was not deterministic, so no auto-confirm
+  expect(isWholeTurnDeterministic(s1, "white")).toBe(false);
+});
+
+test("fully deterministic ordinary single-placement turn still auto-confirms", async () => {
   const s0: GameState = {
     ...newGame(),
     points: (() => { const p = new Array(24).fill(0); p[23] = 1; return p; })(),
@@ -166,24 +273,99 @@ test("isTurnChoiceFreeSoFar: fully forced sequence stays choice-free", async () 
     moveHistory: [],
     message: "",
   };
-  expect(new Set(allLegalMoves(s0, "white").map((m) => `${m.from}->${m.to}`)).size).toBe(1);
-  expect(isTurnChoiceFreeSoFar(s0, "white")).toBe(true);
+  expect(getDeterministicTurnSequence(s0, "white")).not.toBeNull();
+  expect(getAutomaticMove(s0, "white")).not.toBeNull();
+  expect(isWholeTurnDeterministic(s0, "white")).toBe(true);
   const s1 = applyMove(s0, { from: 23, to: 19, die: 4 }, "white");
-  // s1 is terminal (no remaining), but still choice-free if we check before terminal
-  // For a non-terminal forced second move, create a doubles case
-  const sDoubles: GameState = {
+  expect(s1.remaining).toEqual([]);
+  expect(isWholeTurnDeterministic(s1, "white")).toBe(true);
+});
+
+test("deterministic doubles", async () => {
+  const points = new Array(24).fill(0);
+  points[23] = 2;
+  const state: GameState = {
     ...newGame(),
-    points: (() => { const p = new Array(24).fill(0); p[23] = 2; return p; })(),
+    points,
     bar: { white: 0, black: 0 },
     home: { white: 0, black: 0 },
     turn: "white",
     phase: "moving",
-    dice: [4, 4],
-    remaining: [4, 4],
+    dice: [3, 3],
+    remaining: [3, 3, 3, 3],
     lastMove: [],
     moveHistory: [],
     message: "",
   };
-  const sD1 = applyMove(sDoubles, { from: 23, to: 19, die: 4 }, "white");
-  expect(isTurnChoiceFreeSoFar(sD1, "white")).toBe(true);
+  // Force a bar-like deterministic? Use isolated board where only one path
+  // With 2 checkers at 23 and empty board, doubles are not unique but still deterministic if blocked
+  // Create a board where only one checker can move repeatedly
+  const solo: GameState = {
+    ...newGame(),
+    points: (() => { const p = new Array(24).fill(0); p[23] = 1; return p; })(),
+    bar: { white: 0, black: 0 },
+    home: { white: 0, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [3, 3],
+    remaining: [3, 3, 3, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  const seq = getDeterministicTurnSequence(solo, "white");
+  expect(seq).not.toBeNull();
+  expect(seq!.length).toBe(4);
+  expect(isWholeTurnDeterministic(solo, "white")).toBe(true);
+});
+
+test("one BAR entry blocked: obey maximum-dice/higher-die rules and do not invent an illegal sequence", async () => {
+  const points = new Array(24).fill(0);
+  // Block entry for die 5 for white (point 19) with 2 black checkers
+  points[19] = -2;
+  const state: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 2, black: 0 },
+    home: { white: 13, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [5, 3],
+    remaining: [5, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  // Only die 3 can enter, and only one checker can enter per turn under blocking
+  const moves = allLegalMoves(state, "white");
+  expect(moves.length).toBe(1);
+  expect(moves[0].die).toBe(3);
+  const seq = getDeterministicTurnSequence(state, "white");
+  expect(seq).not.toBeNull();
+  expect(seq!.length).toBe(1);
+  expect(seq![0].die).toBe(3);
+  expect(isWholeTurnDeterministic(state, "white")).toBe(true);
+});
+
+test("both BAR entries blocked: preserve existing no-moves auto-pass behavior", async () => {
+  const points = new Array(24).fill(0);
+  points[19] = -2;
+  points[21] = -2;
+  const state: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 2, black: 0 },
+    home: { white: 13, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [5, 3],
+    remaining: [5, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  expect(allLegalMoves(state, "white")).toEqual([]);
+  const seq = getDeterministicTurnSequence(state, "white");
+  expect(seq).not.toBeNull();
+  expect(seq!.length).toBe(0);
 });

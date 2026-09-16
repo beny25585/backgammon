@@ -14,6 +14,7 @@ import {
   legalMovesFrom,
   allLegalMoves,
   applyMove,
+  getAutomaticMove,
   getMakePointSequence,
   type Move,
 } from "@/lib/backgammon/engine";
@@ -494,9 +495,7 @@ export function Board({
       forcedExecRef.current = null;
       return;
     }
-    const legal = allLegalMoves(state, myColor);
-    const placements = new Set(legal.map((m) => `${m.from}->${m.to}`));
-    const currentForced = placements.size === 1 ? legal[0] : null;
+    const currentForced = getAutomaticMove(state, myColor);
     if (!currentForced) {
       forcedExecRef.current = null;
       return;

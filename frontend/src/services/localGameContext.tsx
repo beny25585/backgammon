@@ -25,7 +25,7 @@ import {
   respondDouble,
   undoLastMove,
   allLegalMoves,
-  isTurnChoiceFreeSoFar,
+  isWholeTurnDeterministic,
   OFF,
   type Source,
   type Target,
@@ -494,12 +494,13 @@ export function LocalGameProvider({
   }
 
   const makeMove = useCallback(
-    (from: Source, to: Target, options?: MakeMoveOptions) => {
+    (from: Source, to: Target, _options?: MakeMoveOptions) => {
       const cur = stateRef.current;
       if (!cur || cur.phase !== "moving") return;
       if (cur.turn !== playerColorRef.current) return;
       const actor = playerColorRef.current;
-      const wasChoiceFreeSoFar = isTurnChoiceFreeSoFar(cur, actor);
+      const wholeTurnDeterministic =
+        isWholeTurnDeterministic(cur, actor);
       const dest = to === OFF ? OFF : to;
       const moves = allLegalMoves(cur, cur.turn);
       const matchingMoves = moves.filter(
@@ -530,7 +531,7 @@ export function LocalGameProvider({
         shouldReveal = true;
       }
       if (
-        wasChoiceFreeSoFar &&
+        wholeTurnDeterministic &&
         next.phase === "moving" &&
         next.turn === actor &&
         !next.winner &&
