@@ -2,7 +2,7 @@ import { test, expect, type ComponentFixtures } from "@playwright/experimental-c
 import type { ComponentProps } from "react";
 import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
-import { applyMove, newGame, OFF } from "@/lib/backgammon/engine";
+import { applyMove, BAR, newGame, OFF } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage } from "../../types/context";
 import { Board } from "../Board/Board";
@@ -1476,3 +1476,81 @@ test("stale forced command with same from/to but no longer forced is not dispatc
   // old forced command should have been invalidated, not dispatched
   expect(calls.length).toBe(1);
 });
+
+test("deterministic bar entries auto-play one checker at a time", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const state: GameState = {
+    ...newGame(),
+    points: new Array(24).fill(0),
+    bar: { white: 2, black: 0 },
+    home: { white: 13, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [5, 3],
+    remaining: [5, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
+  const calls: Array<{
+    from: Source;
+    to: Target;
+    origin?: string;
+  }> = [];
+  const component = await mount(
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameBoard
+        state={state}
+        playerColor="white"
+        makeMove={(from, to, options) => {
+          calls.push({
+            from,
+            to,
+            origin: options?.origin,
+          });
+        }}
+      />
+    </MockGameWrapper>,
+  );
+  expect(calls).toHaveLength(0);
+  await page.clock.runFor(349);
+  expect(calls).toHaveLength(0);
+  await page.clock.runFor(1);
+  await expect.poll(() => calls.length).toBe(1);
+  expect(calls[0]).toEqual({
+    from: BAR,
+    to: 19,
+    origin: "forced",
+  });
+  const afterFirst = applyMove(
+    state,
+    { from: BAR, to: 19, die: 5 },
+    "white",
+  );
+  await component.update(
+    <MockGameWrapper playerColor="white" state={afterFirst}>
+      <GameBoard
+        state={afterFirst}
+        playerColor="white"
+        makeMove={(from, to, options) => {
+          calls.push({
+            from,
+            to,
+            origin: options?.origin,
+          });
+        }}
+      />
+    </MockGameWrapper>,
+  );
+  await page.clock.runFor(600);
+  await page.clock.runFor(350);
+  await expect.poll(() => calls.length).toBe(2);
+  expect(calls[1]).toEqual({
+    from: BAR,
+    to: 21,
+    origin: "forced",
+  });
+  expect(calls.length).toBe(2);
+});
+

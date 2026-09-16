@@ -5,10 +5,19 @@ import {
 } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
 import { GameProvider } from "./gameContext";
-import { GameProbe, MatchScoreProbe, OnlineClockProbe } from "../test-utils/probes";
+import {
+  GameProbe,
+  MatchScoreProbe,
+  OnlineClockProbe,
+  ForcedAutoConfirmProbe,
+} from "../test-utils/probes";
 import GameScreen from "../components/GameScreen/GameScreen";
 import type { GameState } from "../lib/backgammon/engine";
-import { newGame } from "../lib/backgammon/engine";
+import {
+  BAR,
+  OFF,
+  newGame,
+} from "../lib/backgammon/engine";
 
 interface FakeSocket {
   sent: string[];
@@ -853,7 +862,12 @@ test("manual prefix + forced final does not auto-complete", async ({ mount, page
   };
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={0} to={OFF} />
+      <GameProbe
+        from={0}
+        to={OFF}
+        secondMove={{ from: 1, to: OFF }}
+      />
+      <ForcedAutoConfirmProbe />
     </GameProvider>,
   );
   await emitInitialState(page, initial, "white");
@@ -872,9 +886,9 @@ test("manual prefix + forced final does not auto-complete", async ({ mount, page
     version: 2,
   };
   await emitBroadcast(page, afterFirst, "white", "move");
-  await page.waitForTimeout(100);
-  expect((await sentMessages(page)).filter((m) => m.payload?.action === "end_turn")).toHaveLength(0);
-  // second move is forced terminal 1 -> OFF with 2 - still should not auto-confirm because turn had earlier choice
+  await component.getByTestId("move-2").click();
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "move").length).toBe(2);
+  await expect(component.getByTestId("probe-autoConfirmPending")).toHaveText("false");
   const afterSecondPoints = new Array(24).fill(0);
   afterSecondPoints[0] = 1;
   const afterSecond: GameState = {
@@ -890,8 +904,76 @@ test("manual prefix + forced final does not auto-complete", async ({ mount, page
     version: 3,
   };
   await emitBroadcast(page, afterSecond, "white", "move");
-  await page.waitForTimeout(100);
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "end_turn").length).toBe(0);
+  await component.getByTestId("undo").click();
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "undo").length).toBe(1);
+});
+
+test("two equivalent bar-entry orders auto-confirm after the second move ack", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const initial: GameState = {
+    ...newGame(),
+    points: new Array(24).fill(0),
+    bar: { white: 2, black: 0 },
+    home: { white: 13, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [5, 3],
+    remaining: [5, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+    version: 1,
+  };
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe
+        from={BAR}
+        to={19}
+        secondMove={{ from: BAR, to: 21 }}
+      />
+      <ForcedAutoConfirmProbe />
+    </GameProvider>,
+  );
+  await emitInitialState(page, initial, "white");
+  await component.getByTestId("move").click();
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "move").length).toBe(1);
+  const afterFirst: GameState = {
+    ...initial,
+    points: (() => {
+      const p = new Array(24).fill(0);
+      p[19] = 1;
+      return p;
+    })(),
+    bar: { white: 1, black: 0 },
+    remaining: [3],
+    lastMove: [{ from: BAR, to: 19 }],
+    moveHistory: [initial],
+    version: 2,
+  };
+  await emitBroadcast(page, afterFirst, "white", "move");
+  await component.getByTestId("move-2").click();
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "move").length).toBe(2);
   expect((await sentMessages(page)).filter((m) => m.payload?.action === "end_turn")).toHaveLength(0);
+  const afterSecond: GameState = {
+    ...afterFirst,
+    points: (() => {
+      const p = new Array(24).fill(0);
+      p[19] = 1;
+      p[21] = 1;
+      return p;
+    })(),
+    bar: { white: 0, black: 0 },
+    remaining: [],
+    lastMove: [
+      { from: BAR, to: 19 },
+      { from: BAR, to: 21 },
+    ],
+    moveHistory: [initial, afterFirst],
+    version: 3,
+  };
+  await emitBroadcast(page, afterSecond, "white", "move");
+  await expect.poll(async () => (await sentMessages(page)).filter((m) => m.payload?.action === "end_turn").length).toBe(1);
 });
 
 test("forced prefix + manual final does not auto-complete", async ({ mount, page }) => {

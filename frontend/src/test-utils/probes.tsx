@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { useGame } from "../services/gameContext";
-import { newGame } from "../lib/backgammon/engine";
+import {
+  newGame,
+  type GameState,
+  type Source,
+  type Target,
+} from "../lib/backgammon/engine";
 import { gameOverFixture } from "./fixtures";
 import { MockGameWrapper } from "./wrappers";
 import { makeGameState } from "./gameState";
@@ -81,7 +86,18 @@ export function SeedRollingBot() {
   return <div />;
 }
 
-export function GameProbe({ from, to }: { from: number; to: number }) {
+export function GameProbe({
+  from,
+  to,
+  secondMove,
+}: {
+  from: Source;
+  to: Target;
+  secondMove?: {
+    from: Source;
+    to: Target;
+  };
+}) {
   const {
     state,
     makeMove,
@@ -115,6 +131,14 @@ export function GameProbe({ from, to }: { from: number; to: number }) {
       <button data-testid="move" onClick={() => makeMove(from, to)}>
         move
       </button>
+      {secondMove && (
+        <button
+          data-testid="move-2"
+          onClick={() => makeMove(secondMove.from, secondMove.to)}
+        >
+          move-2
+        </button>
+      )}
       <button data-testid="undo" onClick={() => undoMove()}>
         undo
       </button>
@@ -188,6 +212,16 @@ export function ForcedAutoConfirmProbe() {
       <div data-testid="probe-winner">{String(state?.winner ?? "")}</div>
     </div>
   );
+}
+
+export function StateSeedProbe({ state }: { state: GameState }) {
+  const { updateState } = useGame();
+
+  useEffect(() => {
+    updateState(state);
+  }, [state, updateState]);
+
+  return null;
 }
 
 export function ErrorCardHarness() {

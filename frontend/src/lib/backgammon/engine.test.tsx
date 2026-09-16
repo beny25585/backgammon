@@ -252,9 +252,11 @@ test("manual meaningful first choice -> later forced final move: forced continua
   const s1 = applyMove(s0, { from: 0, to: OFF, die: 1 }, "white");
   // s1 has forced continuation
   const auto = getAutomaticMove(s1, "white");
-  expect(auto).not.toBeNull();
-  expect(auto!.from).toBe(1);
-  expect(auto!.to).toBe(OFF);
+  expect(auto).toEqual({
+    from: 1,
+    to: OFF,
+    die: 2,
+  });
   // But whole turn was not deterministic, so no auto-confirm
   expect(isWholeTurnDeterministic(s1, "white")).toBe(false);
 });
@@ -282,24 +284,6 @@ test("fully deterministic ordinary single-placement turn still auto-confirms", a
 });
 
 test("deterministic doubles", async () => {
-  const points = new Array(24).fill(0);
-  points[23] = 2;
-  const state: GameState = {
-    ...newGame(),
-    points,
-    bar: { white: 0, black: 0 },
-    home: { white: 0, black: 0 },
-    turn: "white",
-    phase: "moving",
-    dice: [3, 3],
-    remaining: [3, 3, 3, 3],
-    lastMove: [],
-    moveHistory: [],
-    message: "",
-  };
-  // Force a bar-like deterministic? Use isolated board where only one path
-  // With 2 checkers at 23 and empty board, doubles are not unique but still deterministic if blocked
-  // Create a board where only one checker can move repeatedly
   const solo: GameState = {
     ...newGame(),
     points: (() => { const p = new Array(24).fill(0); p[23] = 1; return p; })(),

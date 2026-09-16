@@ -1,4 +1,10 @@
 import { test, expect } from "@playwright/experimental-ct-react";
+import {
+  BAR,
+  OFF,
+  newGame,
+  type GameState,
+} from "../lib/backgammon/engine";
 import { LocalGameProvider } from "./localGameContext";
 import {
   ClockMatchLifecycleProbe,
@@ -8,6 +14,8 @@ import {
   SeedRolling,
   SeedRollingBot,
   LocalGiveUpProbe,
+  StateSeedProbe,
+  ForcedAutoConfirmProbe,
 } from "../test-utils/probes";
 
 test("clock does not run during the opening roll", async ({ mount, page }) => {
@@ -187,36 +195,75 @@ test("dice service failure shows an error and does not roll", async ({ mount, pa
   await expect(component.getByTestId("phase")).toHaveText("rolling");
 });
 
-test("local forced terminal white hands over to black", async ({ mount }) => {
+test("local deterministic bar entries complete the turn automatically", async ({ mount }) => {
+  const state: GameState = {
+    ...newGame(),
+    points: new Array(24).fill(0),
+    bar: { white: 2, black: 0 },
+    home: { white: 13, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [5, 3],
+    remaining: [5, 3],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
   const component = await mount(
     <LocalGameProvider matchTarget={5}>
-      <GameProbe from={23} to={19} />
+      <StateSeedProbe state={state} />
+      <GameProbe
+        from={BAR}
+        to={19}
+        secondMove={{ from: BAR, to: 21 }}
+      />
+      <ForcedAutoConfirmProbe />
     </LocalGameProvider>,
   );
-  // Use probe to drive forced terminal: single checker, single die
-  await expect(component.getByTestId("phase")).toHaveText("moving");
+  await expect(component.getByTestId("probe-phase")).toHaveText("moving");
+  await expect(component.getByTestId("probe-turn")).toHaveText("white");
+  await component.getByTestId("move").click();
+  await component.getByTestId("move-2").click();
+  await expect(component.getByTestId("probe-phase")).toHaveText("rolling");
+  await expect(component.getByTestId("probe-turn")).toHaveText("black");
 });
 
-test("local forced terminal black hands over and manual confirm remains", async ({ mount }) => {
-  // Placeholder for hot-seat handoff and manual confirm preservation
-  const component = await mount(
-    <LocalGameProvider matchTarget={5} botColor="white">
-      <GameProbe from={23} to={19} />
-    </LocalGameProvider>,
-  );
-  await expect(component.getByTestId("phase")).toBeVisible();
-});
-
-test("local manual choice + forced final does not auto-complete, Undo remains", async ({ mount }) => {
+test("local earlier meaningful choice keeps undo after forced final", async ({ mount }) => {
+  const points = new Array(24).fill(0);
+  points[0] = 2;
+  points[1] = 1;
+  const state: GameState = {
+    ...newGame(),
+    points,
+    bar: { white: 0, black: 0 },
+    home: { white: 12, black: 0 },
+    turn: "white",
+    phase: "moving",
+    dice: [2, 1],
+    remaining: [2, 1],
+    lastMove: [],
+    moveHistory: [],
+    message: "",
+  };
   const component = await mount(
     <LocalGameProvider matchTarget={5}>
-      <GameProbe from={0} to={OFF} />
+      <StateSeedProbe state={state} />
+      <GameProbe
+        from={0}
+        to={OFF}
+        secondMove={{ from: 1, to: OFF }}
+      />
+      <ForcedAutoConfirmProbe />
     </LocalGameProvider>,
   );
-  // Setup bearing-off state with earlier choice: point 0:2, point1:1, home12, dice 2,1
-  await component.evaluate(() => {
-    const w = window as unknown as { __setLocalState?: (s: unknown) => void };
-    // This test verifies that a turn with an earlier choice does not auto-complete even if final move is forced terminal
-  });
-  await expect(component.getByTestId("phase")).toBeVisible();
+  await component.getByTestId("move").click();
+  await component.getByTestId("move-2").click();
+  await expect(component.getByTestId("probe-phase")).toHaveText("moving");
+  await expect(component.getByTestId("probe-turn")).toHaveText("white");
+  await expect(component.getByTestId("probe-remaining")).toHaveText("[]");
+  await component.getByTestId("undo").click();
+  await expect(component.getByTestId("probe-phase")).toHaveText("moving");
+  await expect(component.getByTestId("probe-turn")).toHaveText("white");
+  await expect(component.getByTestId("probe-remaining")).toHaveText("[2]");
 });
+
