@@ -168,3 +168,57 @@ test("short landscape keeps bar checkers clear of the larger pip counts", async 
   expect((pipCenter - barBox!.y) / barBox!.height).toBeCloseTo(0.82, 1);
   expect((checkerCenter - barBox!.y) / barBox!.height).toBeCloseTo(0.62, 1);
 });
+
+const SHORT_LANDSCAPE_VIEWPORTS = [
+  { width: 844, height: 390 },
+  { width: 915, height: 350 },
+];
+
+for (const vp of SHORT_LANDSCAPE_VIEWPORTS) {
+  test(
+    `point numbers stay inside visible board on short landscape ${vp.width}x${vp.height}`,
+    async ({ mount, page }) => {
+      await page.setViewportSize(vp);
+
+      const component = await mountBoard(mount, busyState());
+
+      const wrapper = component.getByTestId("board-wrapper");
+      const pointNumbers = component.getByTestId("point-number");
+
+      await expect(pointNumbers).toHaveCount(24);
+
+      const wrapperBox = await wrapper.boundingBox();
+
+      expect(wrapperBox).not.toBeNull();
+
+      const visibleBounds = {
+        top: wrapperBox!.y,
+        bottom: wrapperBox!.y + wrapperBox!.height,
+      };
+
+      const outOfBounds = await pointNumbers.evaluateAll(
+        (elements, bounds) =>
+          elements
+            .map((element) => {
+              const rect = element.getBoundingClientRect();
+
+              return {
+                text: element.textContent,
+                top: rect.top,
+                bottom: rect.bottom,
+                inside:
+                  rect.top >= bounds.top - 1 &&
+                  rect.bottom <= bounds.bottom + 1,
+              };
+            })
+            .filter((result) => !result.inside),
+        visibleBounds,
+      );
+
+      expect(
+        outOfBounds,
+        `all 24 point numbers must stay inside the visible wrapper at ${vp.width}x${vp.height}`,
+      ).toEqual([]);
+    },
+  );
+}

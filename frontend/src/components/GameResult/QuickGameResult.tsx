@@ -126,17 +126,17 @@ export default function QuickGameResult({
   let rematchActions: React.ReactNode;
   if (status === "creating") {
     rematchActions = (
-      <button type="button" disabled>
+      <button type="button" disabled className={styles.primaryAction}>
         {t("game.rematchStarting")}
       </button>
     );
   } else if (status === "requested" || rematchPending) {
     rematchActions = (
       <>
-        <button type="button" onClick={onCancelRematch}>
+        <button type="button" onClick={onCancelRematch} className={styles.secondaryAction}>
           {t("game.cancel")}
         </button>
-        <button type="button" disabled>
+        <button type="button" disabled className={styles.primaryAction}>
           ⏳ {t("game.rematchWaiting")}
         </button>
       </>
@@ -144,8 +144,8 @@ export default function QuickGameResult({
   } else if (status === "offered") {
     rematchActions = (
       <>
-        <div style={{ width: "100%", textAlign: "center", marginBottom: 8 }}>{t("game.rematchOffer")}</div>
-        <button type="button" onClick={onCancelRematch}>
+        <div className={styles.rematchMessage}>{t("game.rematchOffer")}</div>
+        <button type="button" onClick={onCancelRematch} className={styles.secondaryAction}>
           {t("game.rematchDecline")}
         </button>
         <button
@@ -163,28 +163,28 @@ export default function QuickGameResult({
     } else if (rematchReason === "opponent_left") {
       rematchActions = (
         <>
-          <button type="button" disabled className={styles.rematchButton}>
+          <button type="button" disabled className={styles.primaryAction}>
             {t("game.rematch")}
           </button>
-          <div>{t("game.rematchOpponentLeft")}</div>
+          <div className={styles.rematchMessage}>{t("game.rematchOpponentLeft")}</div>
         </>
       );
     } else if (rematchReason === "requester_not_eligible") {
       rematchActions = (
         <>
-          <button type="button" disabled className={styles.rematchButton}>
+          <button type="button" disabled className={styles.primaryAction}>
             {t("game.rematch")}
           </button>
-          <div>{t("game.rematchNoCoins")}</div>
+          <div className={styles.rematchMessage}>{t("game.rematchNoCoins")}</div>
         </>
       );
     } else if (rematchReason === "opponent_not_eligible") {
       rematchActions = (
         <>
-          <button type="button" disabled className={styles.rematchButton}>
+          <button type="button" disabled className={styles.primaryAction}>
             {t("game.rematch")}
           </button>
-          <div>{t("game.rematchOpponentIneligible")}</div>
+          <div className={styles.rematchMessage}>{t("game.rematchOpponentIneligible")}</div>
         </>
       );
     } else {
@@ -209,6 +209,7 @@ export default function QuickGameResult({
 
   return (
     <GameResult
+      variant="quick"
       winner={winner}
       whiteScore={whiteScore}
       blackScore={blackScore}
@@ -220,18 +221,18 @@ export default function QuickGameResult({
       onClose={onClose}
       actions={
         <>
-          <button type="button" onClick={onClose}>
+          <button type="button" onClick={onClose} className={styles.secondaryAction}>
             <span aria-hidden="true">←</span>
             {t("common.backHome")}
           </button>
           {onAnalysis && (
-            <button type="button" onClick={onAnalysis}>
+            <button type="button" onClick={onAnalysis} className={styles.secondaryAction}>
               <span aria-hidden="true">🔍</span>
               {t("game.analysis")}
             </button>
           )}
           {onStats && (
-            <button type="button" onClick={onStats}>
+            <button type="button" onClick={onStats} className={styles.secondaryAction}>
               <span aria-hidden="true">▮▮</span>
               {t("game.stats")}
             </button>

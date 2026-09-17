@@ -1186,7 +1186,7 @@ test("opponent white bears off observed by black viewer lands in top tray (anima
   const before = validBearOffWhiteState(1);
   assertTotal15(before);
   const component = await mountBoard(mount, { state: { ...before, turn: "white", phase: "moving", lastMove: [] }, playerColor: "black" });
-  const { top, bottom, off } = await getTrayGeometry(component);
+  const { bottom, off } = await getTrayGeometry(component);
   const after = applyMove(before, { from: 0, to: OFF, die: 1 }, "white");
   assertTotal15(after);
   const recorder = await installFlyerRemovalRecorder(component);
@@ -1221,7 +1221,7 @@ test("opponent black bears off observed by white viewer lands in top tray (anima
   const before = validBearOffBlackState(1);
   assertTotal15(before);
   const component = await mountBoard(mount, { state: { ...before, turn: "black", phase: "moving", lastMove: [] }, playerColor: "white" });
-  const { top, bottom, off } = await getTrayGeometry(component);
+  const { bottom, off } = await getTrayGeometry(component);
   const after = applyMove(before, { from: 23, to: OFF, die: 1 }, "black");
   assertTotal15(after);
   const recorder = await installFlyerRemovalRecorder(component);
@@ -1413,7 +1413,11 @@ test("forced autoMove resumes after animation without duplicate", async ({ mount
 });
 
 test("GameBoard no-moves overlay renders Hebrew with rtl dir", async ({ mount, page }) => {
-  await page.evaluate(() => localStorage.setItem("backgammon-game-locale", "he"));
+  await page.evaluate(() => {
+    localStorage.setItem("backgammon-game-locale", "he");
+    document.documentElement.lang = "he";
+    document.documentElement.dir = "rtl";
+  });
   const state = movingState({
     phase: "rolling",
     turn: "white",
@@ -1430,29 +1434,17 @@ test("GameBoard no-moves overlay renders Hebrew with rtl dir", async ({ mount, p
       color: "white",
     },
   });
-  // reload to pick up he locale from localStorage
-  await page.evaluate(() => localStorage.setItem("backgammon-game-locale", "he"));
-  const heComponent = await mountBoard(mount, {
-    state,
-    playerColor: "black",
-    noMovesMessage: {
-      dice: [2, 4],
-      remaining: [2, 4],
-      color: "white",
-    },
-  });
-  const textEl = heComponent.getByTestId("no-moves-overlay").locator("span").first();
+  const textEl = component.getByTestId("no-moves-overlay").locator("span").first();
   // The actual visible no-moves message should be the Hebrew one
-  await expect(heComponent.getByTestId("no-moves-overlay")).toContainText("אין מהלכים חוקיים — התור עובר ליריב.");
+  await expect(component.getByTestId("no-moves-overlay")).toContainText("אין מהלכים חוקיים — התור עובר ליריב.");
   // Check that the underlying GuidanceBanner text element has dir rtl and lang he
-  const bannerText = heComponent.getByTestId("guidance-banner").locator('[class*="text"]').first();
+  const bannerText = component.getByTestId("guidance-banner").locator('[class*="text"]').first();
   // Fallback: if not found via guidance-banner, check the overlay's span
   const target = (await bannerText.count()) > 0 ? bannerText : textEl;
   await expect(target).toHaveAttribute("dir", "rtl");
   await expect(target).toHaveAttribute("lang", "he");
   const content = await target.textContent();
   expect(content).toBe("אין מהלכים חוקיים — התור עובר ליריב.");
-  expect(content?.endsWith("היריב.")).toBe(true);
 });
 
 test("stale forced command with same from/to but no longer forced is not dispatched", async ({ mount, page }) => {

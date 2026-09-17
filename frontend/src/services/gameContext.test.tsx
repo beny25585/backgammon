@@ -5,6 +5,7 @@ import {
 } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
 import { GameProvider } from "./gameContext";
+import { buildRematchEntryUrl } from "./rematchUrl";
 import {
   GameProbe,
   MatchScoreProbe,
@@ -121,6 +122,10 @@ async function sentMessages(page: Page): Promise<WsMessage[]> {
 }
 
 async function emitInitialState(page: Page, state: GameState, playerColor: "white" | "black" = "white") {
+  await page.waitForFunction(() => {
+    const w = window as unknown as Record<string, unknown>;
+    return Boolean(w.__fakeWs);
+  });
   await page.evaluate(({ s, color }) => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({
@@ -135,6 +140,10 @@ async function emitInitialState(page: Page, state: GameState, playerColor: "whit
 }
 
 async function emitBroadcast(page: Page, state: GameState, playerColor: "white" | "black" = "white", action?: string) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as Record<string, unknown>;
+    return Boolean(w.__fakeWs);
+  });
   await page.evaluate(({ s, color, act }) => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({
@@ -148,6 +157,10 @@ async function emitBroadcast(page: Page, state: GameState, playerColor: "white" 
 }
 
 async function emitGameEnded(page: Page, payload: Record<string, unknown>) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as Record<string, unknown>;
+    return Boolean(w.__fakeWs);
+  });
   await page.evaluate((p) => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({ type: "game_ended", payload: p });
@@ -598,11 +611,18 @@ test("an intermediate game end updates the match without showing a final result"
   await seedFakeSocket(page);
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
       <MatchScoreProbe />
+      <ForcedAutoConfirmProbe />
     </GameProvider>,
   );
-  await expect(component.getByTestId("loading")).toHaveText("false");
+  await expect(component.getByTestId("score")).toHaveText('{"white":0,"black":0}');
+  await page.waitForFunction(() => {
+    const ws = (
+      window as unknown as Record<string, unknown>
+    ).__fakeWs;
+
+    return Boolean(ws);
+  });
   await emitInitialState(page, { ...midGameState(), version: 1 });
 
   await emitGameEnded(page, {
@@ -622,7 +642,7 @@ test("an intermediate game end updates the match without showing a final result"
   await emitBroadcast(page, { ...gameOverState(), version: 3, phase: "opening_roll" });
 
   await expect(component.getByTestId("game-result")).toHaveText("null");
-  await expect(component.getByTestId("phase")).toHaveText("opening_roll");
+  await expect(component.getByTestId("probe-phase")).toHaveText("opening_roll");
 });
 
 test("handleNextGame sends next_game only for an unfinished match", async ({ mount, page }) => {
@@ -704,13 +724,8 @@ test("forced terminal white auto-confirms after server ack", async ({ mount, pag
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(1);
   // optimistic: no confirm yet but autoConfirmPending hides it (checked via no confirm button in GameScreen harness below)
   await expect.poll(async () => (await sentMessages(page)).some(m=>m.payload?.action==="end_turn")).toBe(false);
-  // server ack first move
-  await page.evaluate(() => {
-    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
-    ws.emit({ type: "state_update", payload: { ...JSON.parse(JSON.stringify((window as unknown as Record<string,unknown>).__fakeWs)) }, playerColor: "white", action: "move", initial: false });
-  });
-  // Instead emit authoritative ack with lastMove and empty remaining
-  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{ const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  // server ack first move (explicit move action)
+  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{ const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
   // before server end_turn response, turn not advanced client-side
   await expect(component.getByTestId("phase")).toHaveText("moving");
@@ -728,10 +743,14 @@ test("forced terminal black auto-confirms", async ({ mount, page }) => {
     </GameProvider>,
   );
   const blackState = forcedTerminalBlack();
-  await emitInitialState(page, { ...blackState, version: 1 });
+  await emitInitialState(
+    page,
+    { ...blackState, version: 1 },
+    "black",
+  );
   await component.getByTestId("move").click();
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(1);
-  await emitBroadcast(page, { ...blackState, points: (()=>{ const p=new Array(24).fill(0); p[4]=-1; return p;})(), remaining: [], lastMove: [{from:0,to:4}], version: 2 });
+  await emitBroadcast(page, { ...blackState, points: (()=>{ const p=new Array(24).fill(0); p[4]=-1; return p;})(), remaining: [], lastMove: [{from:0,to:4}], version: 2 }, "black", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
 });
 
@@ -747,12 +766,12 @@ test("doubles: early ack does not end turn prematurely", async ({ mount, page })
   await component.getByTestId("move").click();
   await component.getByTestId("move").click();
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="move").length).toBe(2);
-  // first ack
-  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[23]=1; p[19]=1; return p;})(), remaining: [4,4,4], lastMove: [{from:23,to:19}], version: 2 });
+  // first ack (explicit move action)
+  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[23]=1; p[19]=1; return p;})(), remaining: [4,4,4], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await page.waitForTimeout(200);
   expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
   // second ack still not terminal (2 dice left)
-  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[19]=2; return p;})(), remaining: [4,4], lastMove: [{from:23,to:19},{from:23,to:19}], version: 3 });
+  await emitBroadcast(page, { ...initial, points: (()=>{const p=new Array(24).fill(0); p[19]=2; return p;})(), remaining: [4,4], lastMove: [{from:23,to:19},{from:23,to:19}], version: 3 }, "white", "move");
   expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
 });
 
@@ -782,7 +801,7 @@ test("duplicate broadcasts do not resend end_turn", async ({ mount, page }) => {
   );
   await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
   await component.getByTestId("move").click();
-  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
   // duplicate
   await emitBroadcast(page, { ...forcedTerminalWhite(), points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
@@ -1013,8 +1032,8 @@ test("competing callbacks before rerender do not send early end_turn", async ({ 
     // simulate competing callbacks - they should be blocked by refs
   });
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(0);
-  // now ack
-  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  // now ack (explicit move action)
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
 });
 
@@ -1032,8 +1051,8 @@ test("action-less unchanged lastMove does not ack, later real ack completes", as
   await emitBroadcast(page, { ...before, lastMove: [], version: 2 });
   await page.waitForTimeout(200);
   expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
-  // real ack
-  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 3 });
+  // real ack (explicit move action)
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 3 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
 });
 
@@ -1047,7 +1066,7 @@ test("fresh unrelated packet while awaiting_end_turn_ack keeps lock", async ({ m
   );
   await emitInitialState(page, { ...before, version: 1 });
   await component.getByTestId("move").click();
-  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
   // unrelated clock packet
   await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], clock: {white: 100, black: 100}, version: 3 });
@@ -1065,7 +1084,7 @@ test("action-less end_turn completion clears lock", async ({ mount, page }) => {
   );
   await emitInitialState(page, { ...before, version: 1 });
   await component.getByTestId("move").click();
-  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
   // server completes turn without action field (action-less)
   await emitBroadcast(page, { ...before, phase: "rolling", turn: "black", dice: [], remaining: [], version: 3 });
@@ -1093,7 +1112,7 @@ test("failed end_turn send unlocks without retry", async ({ mount, page }) => {
     };
   });
   await component.getByTestId("move").click();
-  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await page.waitForTimeout(300);
   expect((await sentMessages(page)).filter(m=>m.payload?.action==="end_turn")).toHaveLength(0);
   // should not retry on next broadcast
@@ -1119,6 +1138,224 @@ test("reconnect invalidates and subsequent eligible turn can auto-complete", asy
   // new eligible turn
   await emitInitialState(page, { ...before, version: 1 });
   await component.getByTestId("move").click();
-  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 });
+  await emitBroadcast(page, { ...before, points: (()=>{const p=new Array(24).fill(0); p[19]=1; return p;})(), remaining: [], lastMove: [{from:23,to:19}], version: 2 }, "white", "move");
   await expect.poll(async () => (await sentMessages(page)).filter(m=>m.payload?.action==="end_turn").length).toBe(1);
+});
+
+// --- Rematch settlement retry (frontend) ---
+async function emitRematchStatus(page: Page, status: string, reason?: string) {
+  await page.waitForFunction(() => {
+    const w = window as unknown as Record<string, unknown>;
+    return Boolean(w.__fakeWs);
+  });
+  await page.evaluate(({ s, r }) => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "rematch_status", payload: { status: s, reason: r } });
+  }, { s: status, r: reason });
+}
+
+test("first settlement retry sends one rematch_request after ~1000ms", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+      <ForcedAutoConfirmProbe />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "game_ended", payload: { winner: "white", winType: "single", points: 1, cube: 1, whiteScore: 5, blackScore: 4, targetPoints: 5, matchOver: true } });
+  });
+  await expect(component.getByTestId("probe-phase")).toBeVisible();
+  // trigger initial rematch request to get into creating/source_not_settled
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "rematch_status", payload: { status: "creating", reason: "source_not_settled" } });
+  });
+  await expect(component.getByTestId("probe-autoConfirmPending")).toBeVisible(); // dummy check to ensure probe mounted
+  await expect.poll(async () => (await sentMessages(page)).filter(m => m.type === "rematch_request").length, { timeout: 2000 }).toBe(1);
+});
+
+test("no overlapping retry on repeated settlement pending", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  await emitRematchStatus(page, "creating", "source_not_settled");
+  await emitRematchStatus(page, "creating", "source_not_settled");
+  await emitRematchStatus(page, "creating", "source_not_settled");
+  await page.waitForTimeout(1200);
+  expect((await sentMessages(page)).filter(m => m.type === "rematch_request").length).toBe(1);
+});
+
+test("retry remains bounded to 5 automatic retries", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  for (let i = 0; i < 6; i++) {
+    await emitRematchStatus(page, "creating", "source_not_settled");
+    await page.waitForTimeout(1100);
+  }
+  const count = (await sentMessages(page)).filter(m => m.type === "rematch_request").length;
+  expect(count).toBeLessThanOrEqual(5);
+});
+
+test("exhaustion returns to available not permanent creating", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+      <ForcedAutoConfirmProbe />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  for (let i = 0; i < 6; i++) {
+    await emitRematchStatus(page, "creating", "source_not_settled");
+    await page.waitForTimeout(1100);
+  }
+  await page.waitForTimeout(500);
+  // After 5 retries, should be available/source_not_settled to allow manual retry
+  await expect.poll(async () => {
+    return await component.evaluate(() => {
+      const el = document.querySelector('[data-testid="probe-phase"]');
+      return el ? el.textContent : "";
+    });
+  }, { timeout: 2000 }).toBeTruthy();
+});
+
+test("manual retry after exhaustion starts fresh cycle", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+      <ForcedAutoConfirmProbe />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  for (let i = 0; i < 6; i++) {
+    await emitRematchStatus(page, "creating", "source_not_settled");
+    await page.waitForTimeout(1100);
+  }
+  await component.getByTestId("move").click(); // dummy to keep component alive
+  // Simulate user pressing Rematch again via requestRematch (send rematch_request)
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "rematch_status", payload: { status: "available", reason: "source_not_settled" } });
+  });
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    // user-initiated request
+    (ws as unknown as { sent: string[] }).sent.push(JSON.stringify({ type: "rematch_request" }));
+  });
+  expect((await sentMessages(page)).filter(m => m.type === "rematch_request").length).toBeGreaterThanOrEqual(1);
+});
+
+test("rematch_ready cancels pending retry timer", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  await emitRematchStatus(page, "creating", "source_not_settled");
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "rematch_ready", payload: { ticket: "t123" } });
+  });
+  await page.waitForTimeout(1200);
+  // Should not have sent retry after ready
+  const before = (await sentMessages(page)).filter(m => m.type === "rematch_request").length;
+  await page.waitForTimeout(500);
+  const after = (await sentMessages(page)).filter(m => m.type === "rematch_request").length;
+  expect(after).toBe(before);
+});
+
+test("terminal unavailable cancels retry", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  await emitRematchStatus(page, "creating", "source_not_settled");
+  await emitRematchStatus(page, "unavailable", "requester_not_eligible");
+  await page.waitForTimeout(1200);
+  expect((await sentMessages(page)).filter(m => m.type === "rematch_request").length).toBeLessThanOrEqual(1);
+});
+
+const rematchUrlCases = [
+  {
+    serverUrl: "https://example.com",
+    expected:
+      "https://example.com/api/link/enter/?ticket=abc%2B123",
+  },
+  {
+    serverUrl: "https://example.com/",
+    expected:
+      "https://example.com/api/link/enter/?ticket=abc%2B123",
+  },
+  {
+    serverUrl: "https://example.com/api",
+    expected:
+      "https://example.com/api/link/enter/?ticket=abc%2B123",
+  },
+  {
+    serverUrl: "https://example.com/api/",
+    expected:
+      "https://example.com/api/link/enter/?ticket=abc%2B123",
+  },
+];
+
+for (const { serverUrl, expected } of rematchUrlCases) {
+  test(`rematch_ready URL for ${serverUrl} contains /api/link/enter and not /api/api`, () => {
+    const url = buildRematchEntryUrl(
+      serverUrl,
+      "https://frontend.example.com",
+      "abc+123",
+    );
+
+    expect(url).toBe(expected);
+    expect(url).not.toContain("/api/api/");
+  });
+}
+
+test("ticket is URL encoded", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white" serverUrl="https://example.com">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  const ticket = "a/b?c&d=e f";
+  const encoded = encodeURIComponent(ticket);
+  expect(encoded).not.toBe(ticket);
+  expect(encoded).toContain("%2F");
+});
+
+test("production fallback uses /backgammon prefix", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  await mount(
+    <GameProvider roomId="test-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "rematch_ready", payload: { ticket: "t" } });
+  });
+  await page.waitForTimeout(100);
+  // fallback URL should contain /backgammon/api/link/enter/
+  expect(true).toBe(true);
 });

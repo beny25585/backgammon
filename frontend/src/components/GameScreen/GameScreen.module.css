@@ -1273,7 +1273,8 @@
 
   .frame {
     inset: 0;
-    padding: 0;
+    padding-block: calc(var(--point-number-gutter) - 7px);
+    padding-inline: 0;
     border-radius: 0;
     border: 0;
     box-shadow: none;

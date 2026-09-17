@@ -1,6 +1,7 @@
 import GameResult from "./GameResult";
 import { ResultComparison, ResultMetricRow, MatchDetailRow, RatingChange } from "./ResultComparison";
 import { useI18n } from "../../i18n/I18nProvider";
+import styles from "./GameResult.module.css";
 import type { Color } from "../../lib/backgammon/engine";
 
 function formatReason(reason: string | undefined | null, t: (k: string) => string): string | null {
@@ -107,12 +108,13 @@ export default function TournamentGameResult({
       playerColor={playerColor}
       winType={winType}
       reason={reason}
+      variant="tournament"
       onClose={onClose}
       actions={
         <>
-          <button type="button" onClick={onViewTournament ?? onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{t("game.viewTournament")}</button>
-          <button type="button" onClick={onViewBracket ?? onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{t("game.viewBracket")}</button>
-          <button type="button" onClick={onClose} style={{ minWidth: 140, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", border: "1px solid #e7bd72" }}>{t("game.backToTournament")}</button>
+          <button type="button" onClick={onViewTournament ?? onClose} className={styles.secondaryAction}>{t("game.viewTournament")}</button>
+          <button type="button" onClick={onViewBracket ?? onClose} className={styles.secondaryAction}>{t("game.viewBracket")}</button>
+          <button type="button" onClick={onClose} className={styles.primaryAction}>{t("game.backToTournament")}</button>
         </>
       }
     >

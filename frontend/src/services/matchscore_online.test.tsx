@@ -69,7 +69,7 @@ test("online matchScore survives game_ended then fresh opening_roll", async ({ m
     payload: { winner: "white", winType: "single", points: 1, cube: 1, whiteScore: 1, blackScore: 0, targetPoints: 7 },
   });
   await expect(page.getByTestId("score")).toHaveText('{"white":1,"black":0}');
-  await expect(page.getByTestId("game-result")).toHaveText('{"winner":"white"}');
+  await expect(page.getByTestId("game-result")).toHaveText("null");
 
   // Fresh opening_roll = next game auto-started by server after 30s countdown
   await emitSocket(page, {

@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import styles from "./GuidanceBanner.module.css";
 import type { Color, GameState } from "@/lib/backgammon/engine";
 import { getGuidance } from "./guidance";
-import type { Guidance, GuidanceVariant } from "./guidance";
+import type { GuidanceVariant } from "./guidance";
 import { useI18n } from "../../i18n/I18nProvider";
 
 export interface GuidanceMessage {

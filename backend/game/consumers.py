@@ -930,6 +930,18 @@ class GameConsumer(AsyncWebsocketConsumer):
                     await self._send_rematch_status_to_self('unavailable', {'reason': 'requester_not_eligible'})
                 elif code == 'opponent_not_eligible':
                     await self._send_rematch_status_to_self('unavailable', {'reason': 'opponent_not_eligible'})
+                elif code in ('source_not_settled', 'settlement_pending'):
+                    await self._send_rematch_status_to_self(
+                        'creating',
+                        {'reason': 'source_not_settled'},
+                    )
+                elif code == 'source_room_mismatch':
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'source_room_mismatch'})
+                elif code == 'invalid_source':
+                    await self._send_rematch_status_to_self(
+                        'unavailable',
+                        {'reason': 'invalid_source'},
+                    )
                 else:
                     await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
                 return
@@ -993,6 +1005,10 @@ class GameConsumer(AsyncWebsocketConsumer):
                         self.room_group_name,
                         {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {'status': 'unavailable', 'reason': 'requester_not_eligible'}}
                     )
+                elif code in ('source_not_settled', 'settlement_pending'):
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'source_not_settled'})
+                elif code == 'source_room_mismatch':
+                    await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
                 else:
                     await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
                 return

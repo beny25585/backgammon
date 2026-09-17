@@ -800,7 +800,12 @@ export function Board({
         : "top";
 
   return (
-    <div ref={wrapperRef} className={styles.wrapper} dir="ltr">
+    <div
+      ref={wrapperRef}
+      className={styles.wrapper}
+      dir="ltr"
+      data-testid="board-wrapper"
+    >
       <div
         ref={boardRef}
         className={`${styles.frame} ${drag ? dragStyles.dragging : ""}`}

@@ -187,8 +187,6 @@ test("Hebrew no-moves message has rtl dir and correct text", async ({ mount, pag
   await expect(textEl).toContainText("אין מהלכים חוקיים — התור עובר ליריב.");
   const content = await textEl.textContent();
   expect(content).toBe("אין מהלכים חוקיים — התור עובר ליריב.");
-  expect(content?.endsWith(".")).toBe(false);
-  expect(content?.endsWith("היריב.")).toBe(true);
 });
 
 test("English no-moves message has ltr dir and correct text", async ({ mount, page }) => {

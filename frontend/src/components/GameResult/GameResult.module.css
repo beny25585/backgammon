@@ -1,709 +1,576 @@
 /* =========================================================
-   GAME RESULT — GALAXY-LIKE LAYOUT
+   GAME RESULT — PREMIUM BACKGAMMON CLUB
+   Warm dark felt, restrained gold/parchment, typography led
    ========================================================= */
 
+/* Backdrop — quiet expensive felt */
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 1000;
-
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-
   min-height: 100dvh;
-
-  background:
-    radial-gradient(circle at 50% 58%, rgba(18, 35, 80, 0.16), transparent 34%),
-    #030611;
-
-  overflow: hidden;
-
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
   padding:
-    max(12px, env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-top))
     max(16px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-bottom))
     max(16px, env(safe-area-inset-left));
-
   box-sizing: border-box;
+  background:
+    radial-gradient(ellipse 900px 520px at 50% -8%, rgba(229,180,77,0.07), transparent 58%),
+    radial-gradient(ellipse 700px 420px at 82% 92%, rgba(21,61,66,0.38), transparent 62%),
+    linear-gradient(180deg, var(--color-ink-3) 0%, var(--color-ink) 42%, var(--color-felt-2) 100%);
 }
 
+/* Subtle felt texture — 1px dotted noise via layered gradient, no animation */
+.backdrop::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 1px, rgba(240,227,205,0.06) 1px, transparent 2px);
+}
+
+/* Card — restrained premium surface */
 .card {
   position: relative;
-
-  width: min(94vw, 900px);
-  max-height: calc(
-    100dvh -
-    max(24px, env(safe-area-inset-top)) -
-    max(24px, env(safe-area-inset-bottom))
-  );
-
+  width: min(92vw, 760px);
+  max-width: 760px;
+  margin: auto 0;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  justify-content: center;
-
-  padding: 0;
-
-  border: 0;
-  border-radius: 0;
-
-  background: transparent;
-  box-shadow: none;
-
+  gap: 0;
+  padding: clamp(20px, 3vw, 32px) clamp(18px, 3vw, 32px) clamp(18px, 3vw, 26px);
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.02), transparent 42%),
+    var(--surface-panel);
+  background-color: rgba(7, 18, 24, 0.96);
+  box-shadow: var(--shadow-panel), 0 1px 0 rgba(240,227,205,0.06) inset;
   box-sizing: border-box;
 }
 
-/* =========================================================
-   CLOSE BUTTON
-   ========================================================= */
+/* faint inner geometric line — backgammon point motif, very understated */
+.card::after {
+  content: "";
+  position: absolute;
+  left: clamp(18px, 3vw, 32px);
+  right: clamp(18px, 3vw, 32px);
+  top: 64px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(229,180,77,0.10) 18%, rgba(229,180,77,0.10) 82%, transparent);
+  pointer-events: none;
+  opacity: 0.7;
+}
 
+/* Close — compact premium icon button */
 .closeButton {
-  position: fixed;
-
-  top: max(24px, env(safe-area-inset-top));
-  right: max(24px, env(safe-area-inset-right));
-
-  z-index: 20;
-
-  width: 52px;
-  height: 52px;
-
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  width: 42px;
+  height: 42px;
   display: grid;
   place-items: center;
-
   padding: 0;
-
-  border: 0;
-  border-radius: 5px;
-
-  background: #ff2d50;
-  color: white;
-
-  font-size: 38px;
-  font-weight: 300;
+  border: 1px solid var(--color-border);
+  border-radius: 9px;
+  background: rgba(255,255,255,0.04);
+  color: var(--color-parchment);
+  font-size: 22px;
+  font-weight: 400;
   line-height: 1;
-
   cursor: pointer;
-
-  box-shadow: 0 6px 18px rgba(255, 45, 80, 0.2);
-
-  transition:
-    transform 0.16s ease,
-    filter 0.16s ease;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
 }
-
 .closeButton:hover {
-  filter: brightness(1.08);
+  background: rgba(229,180,77,0.10);
+  border-color: rgba(229,180,77,0.32);
+  color: var(--color-brand-gold-light);
 }
-
 .closeButton:active {
-  transform: scale(0.94);
+  transform: scale(0.96);
+}
+.closeButton:focus-visible {
+  outline: 2px solid var(--color-brand-gold-light);
+  outline-offset: 2px;
 }
 
-/* =========================================================
-   HERO
-   ========================================================= */
-
+/* Hero — PLAYER LEFT | CENTER | PLAYER RIGHT */
 .resultHero {
   display: grid;
-  grid-template-columns:
-    minmax(150px, 1fr)
-    minmax(230px, 300px)
-    minmax(150px, 1fr);
-
+  grid-template-columns: minmax(132px, 1fr) minmax(220px, 300px) minmax(132px, 1fr);
   align-items: center;
-
+  gap: clamp(16px, 3vw, 36px);
   width: 100%;
-
-  gap: clamp(20px, 5vw, 64px);
-
-  margin-bottom: 18px;
+  padding-top: 10px;
+  margin-bottom: 10px;
 }
 
-/* =========================================================
-   PLAYER
-   ========================================================= */
-
+/* Player */
 .playerCard {
   min-width: 0;
-
   display: flex;
   flex-direction: column;
   align-items: center;
-
-  gap: 10px;
-
+  gap: 9px;
   padding: 0;
-
   border: 0;
-
   background: transparent;
 }
-
 .playerRole {
-  color: #f0f2ff;
-
-  font-size: 15px;
-  font-weight: 700;
-
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   line-height: 1;
 }
-
+.playerWinner .playerRole {
+  color: var(--color-brand-gold-soft);
+}
 .playerAvatarWrap {
   position: relative;
-
-  width: 100px;
-  height: 100px;
-
+  width: 88px;
+  height: 88px;
   display: grid;
   place-items: center;
-
   border-radius: 50%;
-
-  background: radial-gradient(circle, rgba(30, 92, 255, 0.18), transparent 68%);
+  background: transparent;
 }
-
-.winnerHighlight::before {
-  content: "";
-
-  position: absolute;
-  inset: -12px;
-
-  border-radius: 50%;
-
-  background: radial-gradient(
-    circle,
-    rgba(91, 58, 255, 0.34),
-    rgba(41, 32, 123, 0.15) 48%,
-    transparent 72%
-  );
-
-  filter: blur(3px);
-}
-
 .playerAvatar {
   position: relative;
   z-index: 1;
-
-  width: 86px;
-  height: 86px;
-
+  width: 78px;
+  height: 78px;
   display: grid;
   place-items: center;
-
-  border: 3px solid #3158e6;
+  border: 1px solid rgba(240,227,205,0.22);
   border-radius: 50%;
-
-  background: radial-gradient(circle at 35% 30%, #24365b, #111827 72%);
-
-  color: white;
-
-  font-size: 34px;
-  font-weight: 800;
-
-  box-shadow: 0 0 0 2px rgba(31, 82, 255, 0.14);
+  background: radial-gradient(circle at 32% 28%, #1a2e33, #0c1a1e 70%);
+  color: var(--color-parchment);
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.28);
 }
-
-.playerAvatarWinner {
-  box-shadow:
-    0 0 14px rgba(82, 62, 255, 0.85),
-    0 0 32px rgba(82, 62, 255, 0.36);
+.playerWinner .playerAvatar {
+  border-color: rgba(229,180,77,0.52);
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 0 0 1px rgba(229,180,77,0.12), 0 10px 28px rgba(0,0,0,0.34);
 }
-
+.playerLoser .playerAvatar {
+  opacity: 0.96;
+}
 .playerName {
   display: flex;
   align-items: center;
-
   gap: 7px;
-
-  max-width: 170px;
-
-  color: #f7f7fb;
-
-  font-size: 16px;
-  font-weight: 700;
+  max-width: 148px;
+  color: var(--color-parchment);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
 }
-
 .playerNameText {
   min-width: 0;
-
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
+/* checker dot tied to actual color */
 .dot {
-  width: 12px;
-  height: 12px;
-
-  flex: 0 0 12px;
-
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
   border-radius: 50%;
-
-  background: #f4f4fa;
+  border: 1px solid rgba(0,0,0,0.18);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.24);
 }
-
+.checkerWhite {
+  background: var(--color-checker-white);
+  border-color: rgba(0,0,0,0.08);
+}
+.checkerBlack {
+  background: var(--color-checker-black);
+  border-color: rgba(0,0,0,0.22);
+}
 .dotWinner {
-  background: #4931d4;
-
-  box-shadow: 0 0 8px rgba(92, 67, 255, 0.8);
+  /* keep dot color by player, winner just via stronger ring is handled on avatar */
+}
+.checkerWhite.dotWinner {
+  box-shadow: 0 0 0 2px rgba(229,180,77,0.18);
+}
+.checkerBlack.dotWinner {
+  box-shadow: 0 0 0 2px rgba(229,180,77,0.22);
 }
 
-/* =========================================================
-   SCORE
-   ========================================================= */
+/* keep legacy dotWinner for compatibility if used */
+.winnerHighlight {}
 
+/* Score column */
 .scoreColumn {
   display: flex;
   flex-direction: column;
   align-items: center;
-
   min-width: 0;
-
-  padding-bottom: 0;
+  gap: 0;
 }
-
 .resultTitle {
-  margin: 0 0 16px;
-
-  color: #f5f6ff;
-
-  font-size: clamp(30px, 4vw, 40px);
-  font-weight: 800;
-
-  line-height: 1;
-
+  margin: 0 0 10px;
+  color: var(--color-parchment);
+  font-family: var(--font-display);
+  font-size: clamp(22px, 3.2vw, 28px);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
   text-align: center;
+  text-wrap: balance;
 }
-
 .scoreRow {
   display: flex;
   align-items: center;
   justify-content: center;
-
-  gap: 20px;
+  gap: 12px;
 }
-
 .scoreBox {
-  width: 70px;
-  height: 70px;
-
+  width: 68px;
+  height: 68px;
   display: grid;
   place-items: center;
-
-  background: #eef0ff;
-  color: #050a18;
-
-  border-radius: 1px;
-
-  font-size: 40px;
-  font-weight: 800;
-
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(240,227,205,0.14);
+  border-radius: 11px;
+  color: var(--color-parchment);
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 700;
   line-height: 1;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
 }
-
+.scoreBoxWinner {
+  border-color: rgba(229,180,77,0.42);
+  background: rgba(229,180,77,0.10);
+  color: #fff8e7;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 6px 16px rgba(0,0,0,0.18);
+}
 .scoreSeparator {
-  color: #e9eaff;
-
-  font-size: 30px;
-  font-weight: 400;
+  color: var(--color-text-muted);
+  font-size: 18px;
+  font-weight: 300;
+  opacity: 0.9;
 }
-
 .subtitle {
-  margin-top: 8px;
-
-  color: #8f96aa;
-
+  margin-top: 6px;
+  color: var(--color-text-soft);
   font-size: 12px;
+  font-weight: 500;
   text-align: center;
 }
-
-/* =========================================================
-   ANALYSIS META
-   ========================================================= */
-
-.heroMeta {
-  width: 100%;
-
-  margin-top: 15px;
+.subtitle + .subtitle {
+  margin-top: 2px;
 }
 
+/* hero meta */
+.heroMeta {
+  width: 100%;
+  margin-top: 12px;
+}
 .analysisMeta {
   width: 100%;
-
   display: flex;
   flex-direction: column;
   align-items: center;
-
   gap: 4px;
 }
-
 .analysisLabel {
-  color: #777e91;
-
-  font-size: 9px;
+  color: var(--color-text-muted);
+  font-size: 10px;
   font-weight: 600;
-
-  letter-spacing: 0.02em;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
-
 .memberBar {
   width: min(240px, 100%);
-
-  min-height: 27px;
-
+  min-height: 28px;
   display: flex;
   align-items: center;
   justify-content: center;
-
-  gap: 5px;
-
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(190, 195, 210, 0.2) 18%,
-    rgba(225, 228, 236, 0.34) 50%,
-    rgba(190, 195, 210, 0.2) 82%,
-    transparent 100%
-  );
-
-  color: #d8dae2;
-
-  font-size: 16px;
-  font-weight: 400;
+  gap: 6px;
+  border: 1px solid rgba(240,227,205,0.10);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.03);
+  color: var(--color-text-soft);
+  font-size: 13px;
+  font-weight: 500;
 }
-
 .infoPill {
-  padding: 1px 5px;
-
-  border: 1px solid rgba(235, 237, 244, 0.45);
-  border-radius: 4px;
-
-  background: rgba(255, 255, 255, 0.08);
-
-  color: #dadce4;
-
+  padding: 1px 6px;
+  border: 1px solid rgba(240,227,205,0.16);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: var(--color-parchment-2);
   font-size: 10px;
+  font-weight: 600;
 }
 
-/* =========================================================
-   COMPARISON TABLE
-   ========================================================= */
-
+/* Comparison table — premium score sheet */
 .resultTable {
-  width: min(100%, 620px);
-
+  width: min(100%, 560px);
   align-self: center;
-
   display: flex;
   flex-direction: column;
-
-  gap: 3px;
-
-  margin-top: 0;
-
+  gap: 0;
+  margin-top: 18px;
+  border: 1px solid rgba(240,227,205,0.08);
+  border-radius: 12px;
   overflow: hidden;
-
-  border-radius: 3px;
+  background: rgba(0,0,0,0.14);
 }
-
 .resultRow {
-  min-height: 34px;
-
+  min-height: 40px;
   display: grid;
-  grid-template-columns: 1fr minmax(140px, 0.9fr) 1fr;
+  grid-template-columns: 1fr minmax(120px, 0.85fr) 1fr;
   align-items: center;
-
-  padding: 0 18px;
-
-  background: linear-gradient(
-    90deg,
-    #347de0 0%,
-    #163c76 29%,
-    #091528 50%,
-    #163c76 71%,
-    #347de0 100%
-  );
-
-  color: #f7f8ff;
-
-  font-size: 14px;
+  padding: 0 16px;
+  background: transparent;
+  border-bottom: 1px solid rgba(240,227,205,0.06);
+  color: var(--color-parchment);
+  font-size: 13px;
 }
-
+.resultRow:last-child {
+  border-bottom: 0;
+}
+.resultRow:nth-child(even) {
+  background: rgba(255,255,255,0.015);
+}
 .playerValue {
   text-align: left;
-
   white-space: nowrap;
+  color: var(--color-parchment);
+  font-weight: 500;
 }
-
 .metricLabel {
-  color: #ffffff;
-
-  font-size: 13px;
-  font-weight: 800;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   text-align: center;
-
   white-space: nowrap;
 }
-
 .opponentValue {
   text-align: right;
-
   white-space: nowrap;
+  color: var(--color-parchment);
+  font-weight: 500;
 }
 
-/* =========================================================
-   RATING
-   ========================================================= */
-
+/* Rating */
 .ratingChange {
   display: inline-flex;
   align-items: center;
-
-  gap: 7px;
+  gap: 6px;
 }
-
 .opponentValue .ratingChange {
   justify-content: flex-end;
 }
-
 .ratingDelta {
   font-weight: 700;
+  font-size: 12px;
 }
-
+.adv {
+  color: #6fbf8a;
+}
+.elim {
+  color: #d98a7a;
+}
 .ratingTransition {
-  color: #e4e6f1;
+  color: var(--color-text-muted);
 }
 
-/* =========================================================
-   ACTIONS
-   ========================================================= */
-
-.resultActions {
+/* Detail centered rows */
+.resultRowCentered {
+  min-height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-
-  gap: 12px;
-
-  margin-top: 16px;
+  padding: 8px 16px;
+  border-bottom: 1px solid rgba(240,227,205,0.06);
+  background: transparent;
+}
+.resultRowCentered:last-child {
+  border-bottom: 0;
+}
+.resultCenteredValue {
+  color: var(--color-text-soft);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.4;
 }
 
-.resultActions button {
-  min-width: 130px;
-  min-height: 46px;
-
+/* Actions */
+.resultActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.primaryAction,
+.secondaryAction,
+.rematchButton {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-
-  gap: 7px;
-
-  padding: 0 20px;
-
-  border: 0;
-  border-radius: 999px;
-
-  background: linear-gradient(180deg, #384fff, #2538e8);
-
-  color: white;
-
-  font-size: 14px;
-  font-weight: 800;
-
-  cursor: pointer;
-
-  box-shadow: 0 4px 14px rgba(37, 56, 232, 0.22);
-
-  transition:
-    transform 0.15s ease,
-    filter 0.15s ease,
-    opacity 0.15s ease;
+  gap: 6px;
+  transition: transform 0.12s ease, background 0.16s ease, border-color 0.16s ease, filter 0.16s ease, opacity 0.16s ease;
+  text-decoration: none;
+  white-space: nowrap;
 }
-
-.resultActions button:hover:not(:disabled) {
-  filter: brightness(1.08);
+.primaryAction {
+  min-width: 148px;
+  border: 1px solid rgba(229,180,77,0.42);
+  background: linear-gradient(180deg, var(--color-brand-gold-light) 0%, var(--color-brand-gold) 100%);
+  color: #1a1206;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 8px 18px rgba(0,0,0,0.22);
+}
+.primaryAction:hover:not(:disabled) {
+  filter: brightness(1.04);
   transform: translateY(-1px);
 }
-
-.resultActions button:active:not(:disabled) {
-  transform: scale(0.96);
+.primaryAction:active:not(:disabled) {
+  transform: scale(0.98);
 }
-
-.resultActions button:disabled {
-  cursor: default;
-
-  opacity: 0.42;
+.secondaryAction {
+  min-width: 132px;
+  border: 1px solid var(--color-border);
+  background: rgba(255,255,255,0.04);
+  color: var(--color-parchment);
 }
-
+.secondaryAction:hover:not(:disabled) {
+  background: rgba(255,255,255,0.07);
+  border-color: rgba(240,227,205,0.18);
+  transform: translateY(-1px);
+}
+.secondaryAction:active:not(:disabled) {
+  transform: scale(0.98);
+}
 .rematchButton {
-  background: linear-gradient(180deg, #51eba0, #38dc84) !important;
-
-  color: #06160d !important;
-
-  box-shadow: 0 4px 15px rgba(56, 220, 132, 0.18) !important;
+  min-width: 148px;
+  border: 1px solid rgba(229,180,77,0.42);
+  background: linear-gradient(180deg, var(--color-brand-gold-light) 0%, var(--color-brand-gold) 100%);
+  color: #1a1206;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.22) inset, 0 8px 18px rgba(0,0,0,0.22);
+}
+.rematchButton:hover:not(:disabled) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+}
+.rematchButton:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.primaryAction:disabled,
+.secondaryAction:disabled,
+.rematchButton:disabled {
+  opacity: 0.44;
+  cursor: default;
+  transform: none;
+}
+.rematchMessage {
+  width: 100%;
+  text-align: center;
+  color: var(--color-text-soft);
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 2px;
 }
 
-/* =========================================================
-   TEST / ACCESSIBILITY
-   ========================================================= */
 
+/* hidden canonical */
 .hiddenScoreRows {
   position: absolute;
-
   width: 1px;
   height: 1px;
-
   overflow: hidden;
-
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
 
-/* =========================================================
-   MOBILE
-   ========================================================= */
+/* Variant hooks — subtle, same family */
+.card[data-result-variant="tournament"] {
+  border-color: rgba(229,180,77,0.28);
+}
+.card[data-result-variant="quick"] {
+}
+.card[data-result-variant="private"] {
+}
 
+/* Responsive */
 @media (max-width: 640px) {
+  .backdrop {
+    align-items: flex-start;
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
   .card {
-    width: calc(100vw - 24px);
+    width: calc(100vw - 16px);
+    padding: 18px 14px 16px;
+    border-radius: 16px;
   }
-
+  .card::after { display: none; }
   .closeButton {
-    top: max(18px, env(safe-area-inset-top));
-    right: 18px;
-
-    width: 48px;
-    height: 48px;
-
-    font-size: 36px;
+    top: 10px;
+    right: 10px;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
   }
-
   .resultHero {
-    grid-template-columns:
-      minmax(74px, 1fr)
-      minmax(138px, 1.35fr)
-      minmax(74px, 1fr);
-
+    grid-template-columns: minmax(76px, 1fr) minmax(140px, 1.35fr) minmax(76px, 1fr);
     gap: 8px;
-
-    margin-bottom: 10px;
-  }
-
-  .playerRole {
-    font-size: 11px;
-  }
-
-  .playerAvatarWrap {
-    width: 62px;
-    height: 62px;
-  }
-
-  .playerAvatar {
-    width: 54px;
-    height: 54px;
-
-    font-size: 23px;
-  }
-
-  .playerName {
-    max-width: 90px;
-
-    gap: 5px;
-
-    font-size: 12px;
-  }
-
-  .dot {
-    width: 9px;
-    height: 9px;
-
-    flex-basis: 9px;
-  }
-
-  .resultTitle {
+    padding-top: 6px;
     margin-bottom: 8px;
-
-    font-size: 23px;
   }
-
-  .scoreRow {
-    gap: 12px;
-  }
-
-  .scoreBox {
-    width: 48px;
-    height: 48px;
-
-    font-size: 28px;
-  }
-
-  .memberBar {
-    min-height: 23px;
-
-    font-size: 14px;
-  }
-
-  .resultTable {
-    width: 100%;
-  }
-
-  .resultRow {
-    min-height: 27px;
-
-    grid-template-columns: 1fr 112px 1fr;
-
-    padding: 0 8px;
-
-    font-size: 11px;
-  }
-
-  .metricLabel {
-    font-size: 11px;
-  }
-
-  .resultActions {
-    margin-top: 9px;
-  }
-
-  .resultActions button {
-    min-height: 40px;
-  }
+  .playerAvatarWrap { width: 64px; height: 64px; }
+  .playerAvatar { width: 56px; height: 56px; font-size: 20px; }
+  .playerName { max-width: 92px; font-size: 12px; }
+  .dot { width: 9px; height: 9px; flex-basis: 9px; }
+  .resultTitle { font-size: 22px; margin-bottom: 8px; }
+  .scoreBox { width: 50px; height: 50px; font-size: 26px; border-radius: 10px; }
+  .scoreSeparator { font-size: 16px; }
+  .resultTable { width: 100%; margin-top: 14px; }
+  .resultRow { min-height: 34px; grid-template-columns: 1fr 100px 1fr; padding: 0 10px; font-size: 12px; }
+  .metricLabel { font-size: 10px; }
+  .resultRowCentered { min-height: 32px; padding: 6px 10px; }
+  .resultActions { margin-top: 14px; gap: 8px; }
+  .primaryAction, .secondaryAction, .rematchButton { min-height: 44px; font-size: 13px; }
 }
 
 @media (max-width: 390px) {
-  .resultHero {
-    grid-template-columns: 72px 1fr 72px;
-  }
-
-  .playerAvatarWrap {
-    width: 58px;
-    height: 58px;
-  }
-
-  .playerAvatar {
-    width: 52px;
-    height: 52px;
-  }
-
-  .playerName {
-    max-width: 72px;
-
-    font-size: 11px;
-  }
-
-  .resultRow {
-    grid-template-columns: 1fr 105px 1fr;
-
-    padding-inline: 6px;
-
-    font-size: 11px;
-  }
-
-  .resultActions button {
-    font-size: 11px;
-  }
+  .resultHero { grid-template-columns: 72px 1fr 72px; }
+  .playerAvatarWrap { width: 58px; height: 58px; }
+  .playerAvatar { width: 50px; height: 50px; }
+  .playerName { max-width: 72px; font-size: 11px; }
+  .resultRow { grid-template-columns: 1fr 94px 1fr; padding-inline: 8px; }
 }
 
 @media (max-height: 620px) and (orientation: landscape) {
@@ -711,209 +578,31 @@
     padding-top: max(6px, env(safe-area-inset-top));
     padding-bottom: max(6px, env(safe-area-inset-bottom));
   }
-
   .card {
-    width: min(86vw, 820px);
-    max-height: calc(100dvh - 12px);
-    justify-content: center;
+    width: min(88vw, 760px);
+    padding: 14px 16px 12px;
   }
-
-  .closeButton {
-    top: max(10px, env(safe-area-inset-top));
-    right: max(12px, env(safe-area-inset-right));
-
-    width: 42px;
-    height: 42px;
-
-    font-size: 30px;
-  }
-
+  .closeButton { width: 40px; height: 40px; font-size: 20px; top: 8px; right: 8px; }
   .resultHero {
-    grid-template-columns:
-      minmax(110px, 1fr)
-      minmax(185px, 240px)
-      minmax(110px, 1fr);
-
-    align-items: center;
-
-    gap: clamp(12px, 3vw, 34px);
-
-    margin-bottom: 7px;
+    grid-template-columns: minmax(110px, 1fr) minmax(180px, 220px) minmax(110px, 1fr);
+    gap: 12px;
+    margin-bottom: 6px;
   }
-
-  .playerCard {
-    gap: 4px;
-  }
-
-  .playerRole {
-    font-size: 11px;
-  }
-
-  .playerAvatarWrap {
-    width: 64px;
-    height: 64px;
-  }
-
-  .winnerHighlight::before {
-    inset: -7px;
-  }
-
-  .playerAvatar {
-    width: 56px;
-    height: 56px;
-
-    border-width: 2px;
-
-    font-size: 23px;
-  }
-
-  .playerName {
-    max-width: 115px;
-
-    gap: 4px;
-
-    font-size: 12px;
-  }
-
-  .dot {
-    width: 8px;
-    height: 8px;
-    flex-basis: 8px;
-  }
-
-  .resultTitle {
-    margin-bottom: 7px;
-
-    font-size: 24px;
-  }
-
-  .scoreRow {
-    gap: 11px;
-  }
-
-  .scoreBox {
-    width: 46px;
-    height: 46px;
-
-    font-size: 27px;
-  }
-
-  .scoreSeparator {
-    font-size: 21px;
-  }
-
-  .subtitle {
-    margin-top: 3px;
-
-    font-size: 9px;
-  }
-
-  .heroMeta {
-    margin-top: 5px;
-  }
-
-  .memberBar {
-    min-height: 20px;
-
-    font-size: 12px;
-  }
-
-  .resultTable {
-    width: min(100%, 570px);
-
-    gap: 1px;
-  }
-
-  .resultRow {
-    min-height: 23px;
-
-    grid-template-columns: 1fr 120px 1fr;
-
-    padding: 0 9px;
-
-    font-size: 10px;
-  }
-
-  .metricLabel {
-    font-size: 10px;
-  }
-
-  .resultActions {
-    gap: 8px;
-
-    margin-top: 7px;
-  }
-
-  .resultActions button {
-    min-width: 105px;
-    min-height: 36px;
-
-    padding: 0 13px;
-
-    font-size: 11px;
-  }
+  .playerAvatarWrap { width: 60px; height: 60px; }
+  .playerAvatar { width: 52px; height: 52px; font-size: 19px; }
+  .resultTitle { font-size: 20px; margin-bottom: 6px; }
+  .scoreBox { width: 44px; height: 44px; font-size: 24px; }
+  .resultRow { min-height: 30px; font-size: 11px; }
+  .resultActions { margin-top: 10px; }
+  .primaryAction, .secondaryAction, .rematchButton { min-height: 40px; }
 }
 
 @media (max-height: 480px) and (orientation: landscape) {
-  .card {
-    width: min(82vw, 760px);
-  }
-
-  .resultHero {
-    margin-bottom: 4px;
-  }
-
-  .playerAvatarWrap {
-    width: 54px;
-    height: 54px;
-  }
-
-  .playerAvatar {
-    width: 48px;
-    height: 48px;
-
-    font-size: 20px;
-  }
-
-  .playerRole,
-  .playerName {
-    font-size: 10px;
-  }
-
-  .resultTitle {
-    margin-bottom: 5px;
-
-    font-size: 21px;
-  }
-
-  .scoreBox {
-    width: 40px;
-    height: 40px;
-
-    font-size: 24px;
-  }
-
-  .subtitle {
-    font-size: 8px;
-  }
-
-  .resultRow {
-    min-height: 20px;
-
-    font-size: 9px;
-  }
-
-  .metricLabel {
-    font-size: 9px;
-  }
-
-  .resultActions {
-    margin-top: 5px;
-  }
-
-  .resultActions button {
-    min-height: 32px;
-
-    font-size: 10px;
-  }
+  .card { padding: 12px 14px 10px; }
+  .playerAvatarWrap { width: 52px; height: 52px; }
+  .playerAvatar { width: 44px; height: 44px; font-size: 18px; }
+  .resultTitle { font-size: 18px; }
+  .scoreBox { width: 40px; height: 40px; font-size: 22px; }
+  .resultRow { min-height: 28px; }
 }
+

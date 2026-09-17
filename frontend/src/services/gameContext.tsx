@@ -31,6 +31,7 @@ import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
+import { buildRematchEntryUrl } from "./rematchUrl";
 import { parseTimeControl, type TimeControl } from "../lib/clock";
 
 export const GameContext = createContext<GameContextType | undefined>(
@@ -119,6 +120,10 @@ export function GameProvider({
   const lifecycleGenRef = useRef(0);
   const autoConfirmRequestRef = useRef<AutoConfirmRequest | null>(null);
   const endTurnInFlightRef = useRef(false);
+  const rematchRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rematchRetryCountRef = useRef(0);
+  const REMATCH_RETRY_MAX = 5;
+  const REMATCH_RETRY_DELAY_MS = 1000;
   useEffect(() => {
     gameTypeRef.current = gameType;
   }, [gameType]);
@@ -180,6 +185,11 @@ export function GameProvider({
     autoConfirmRequestRef.current = null;
     setAutoConfirmPending(false);
     endTurnInFlightRef.current = false;
+    if (rematchRetryTimerRef.current) {
+      clearTimeout(rematchRetryTimerRef.current);
+      rematchRetryTimerRef.current = null;
+    }
+    rematchRetryCountRef.current = 0;
   }, []);
 
   // Lifecycle: room change / unmount clears pending auto-confirm
@@ -961,14 +971,59 @@ export function GameProvider({
           const payload = (message as Record<string, unknown>).payload as Record<string, unknown> | undefined;
           const status = (payload?.status as string) ?? "idle";
           const reason = payload?.reason as string | undefined;
+          const isSettlementPending =
+            status === "creating" &&
+            (reason === "source_not_settled" || reason === "settlement_pending");
+          if (isSettlementPending) {
+            setRematchState({ status: "creating" as RematchState["status"], reason: "source_not_settled" });
+            if (
+              rematchRetryCountRef.current < REMATCH_RETRY_MAX &&
+              rematchRetryTimerRef.current === null
+            ) {
+              rematchRetryTimerRef.current = setTimeout(() => {
+                rematchRetryTimerRef.current = null;
+                if (rematchRetryCountRef.current >= REMATCH_RETRY_MAX) {
+                  setRematchState({ status: "available", reason: "source_not_settled" });
+                  return;
+                }
+                rematchRetryCountRef.current += 1;
+                socket.send("rematch_request", {});
+              }, REMATCH_RETRY_DELAY_MS);
+            } else if (rematchRetryCountRef.current >= REMATCH_RETRY_MAX) {
+              if (rematchRetryTimerRef.current) {
+                clearTimeout(rematchRetryTimerRef.current);
+                rematchRetryTimerRef.current = null;
+              }
+              setRematchState({ status: "available", reason: "source_not_settled" });
+            }
+            return;
+          }
+          // Any non-settlement status clears pending retry
+          if (rematchRetryTimerRef.current) {
+            clearTimeout(rematchRetryTimerRef.current);
+            rematchRetryTimerRef.current = null;
+          }
+          if (status === "offered" || status === "available" || status === "idle" || (status === "unavailable" && reason !== "source_not_settled")) {
+            rematchRetryCountRef.current = 0;
+          }
           setRematchState({ status: status as RematchState["status"], reason: reason ?? null });
         });
 
         socket.on("rematch_ready", (message) => {
           const payload = (message as Record<string, unknown>).payload as Record<string, unknown> | undefined;
           if (!payload) return;
+          if (rematchRetryTimerRef.current) {
+            clearTimeout(rematchRetryTimerRef.current);
+            rematchRetryTimerRef.current = null;
+          }
+          rematchRetryCountRef.current = 0;
           if (typeof payload.ticket === "string" && payload.ticket) {
-            const finalUrl = serverUrl ? `${serverUrl.replace(/\/$/, "")}/api/link/enter/?ticket=${encodeURIComponent(payload.ticket as string)}` : `${window.location.origin}/backgammon/api/link/enter/?ticket=${encodeURIComponent(payload.ticket as string)}`;
+            const finalUrl = buildRematchEntryUrl(
+              serverUrl,
+              window.location.origin,
+              payload.ticket,
+            );
+
             window.location.href = finalUrl;
             return;
           }
@@ -1212,21 +1267,41 @@ export function GameProvider({
   }, []);
 
   const requestRematch = useCallback(() => {
+    if (rematchRetryTimerRef.current) {
+      clearTimeout(rematchRetryTimerRef.current);
+      rematchRetryTimerRef.current = null;
+    }
+    rematchRetryCountRef.current = 0;
     setRematchState({ status: "requested" });
     socket.send("rematch_request", {});
   }, [socket]);
 
   const acceptRematch = useCallback(() => {
+    if (rematchRetryTimerRef.current) {
+      clearTimeout(rematchRetryTimerRef.current);
+      rematchRetryTimerRef.current = null;
+    }
+    rematchRetryCountRef.current = 0;
     setRematchState({ status: "creating" });
     socket.send("rematch_accept", {});
   }, [socket]);
 
   const declineRematch = useCallback(() => {
+    if (rematchRetryTimerRef.current) {
+      clearTimeout(rematchRetryTimerRef.current);
+      rematchRetryTimerRef.current = null;
+    }
+    rematchRetryCountRef.current = 0;
     socket.send("rematch_decline", {});
     setRematchState({ status: "available" });
   }, [socket]);
 
   const cancelRematch = useCallback(() => {
+    if (rematchRetryTimerRef.current) {
+      clearTimeout(rematchRetryTimerRef.current);
+      rematchRetryTimerRef.current = null;
+    }
+    rematchRetryCountRef.current = 0;
     socket.send("rematch_cancel", {});
     setRematchState({ status: "available" });
   }, [socket]);

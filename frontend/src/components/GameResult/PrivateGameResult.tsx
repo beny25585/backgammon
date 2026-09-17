@@ -1,6 +1,7 @@
 import GameResult from "./GameResult";
 import { MatchDetailRow } from "./ResultComparison";
 import { useI18n } from "../../i18n/I18nProvider";
+import styles from "./GameResult.module.css";
 import type { Color } from "../../lib/backgammon/engine";
 import type { RematchState } from "../../types/context";
 
@@ -78,21 +79,21 @@ export default function PrivateGameResult({
     rematchNode = null;
   } else if (status === "creating") {
     rematchNode = (
-      <button type="button" disabled style={{ minWidth: 140, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f" }}>{t("game.rematchStarting")}</button>
+      <button type="button" disabled className={styles.primaryAction}>{t("game.rematchStarting")}</button>
     );
   } else if (status === "requested" || rematchPending) {
     rematchNode = (
       <>
-        <button type="button" onClick={onCancelRematch} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{t("game.cancel")}</button>
-        <button type="button" disabled style={{ minWidth: 140, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f" }}>⏳ {t("game.rematchWaiting")}</button>
+        <button type="button" onClick={onCancelRematch} className={styles.secondaryAction}>{t("game.cancel")}</button>
+        <button type="button" disabled className={styles.primaryAction}>⏳ {t("game.rematchWaiting")}</button>
       </>
     );
   } else if (status === "offered") {
     rematchNode = (
       <>
-        <div style={{ width: "100%", textAlign: "center", marginBottom: 8 }}>{t("game.rematchOffer")}</div>
-        <button type="button" onClick={onCancelRematch} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{t("game.rematchDecline")}</button>
-        <button type="button" onClick={onRematch} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", border: "1px solid #e7bd72" }}>{t("game.rematchAccept")}</button>
+        <div className={styles.rematchMessage}>{t("game.rematchOffer")}</div>
+        <button type="button" onClick={onCancelRematch} className={styles.secondaryAction}>{t("game.rematchDecline")}</button>
+        <button type="button" onClick={onRematch} className={styles.primaryAction}>{t("game.rematchAccept")}</button>
       </>
     );
   } else if (status === "unavailable") {
@@ -101,37 +102,38 @@ export default function PrivateGameResult({
     } else if (rematchReason === "opponent_left") {
       rematchNode = (
         <>
-          <button type="button" disabled style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", opacity: 0.5 }}>↻ {t("game.rematch")}</button>
-          <div>{t("game.rematchOpponentLeft")}</div>
+          <button type="button" disabled className={styles.primaryAction}>↻ {t("game.rematch")}</button>
+          <div className={styles.rematchMessage}>{t("game.rematchOpponentLeft")}</div>
         </>
       );
     } else if (rematchReason === "requester_not_eligible") {
       rematchNode = (
         <>
-          <button type="button" disabled style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", opacity: 0.5 }}>↻ {t("game.rematch")}</button>
-          <div>{t("game.rematchNoCoins")}</div>
+          <button type="button" disabled className={styles.primaryAction}>↻ {t("game.rematch")}</button>
+          <div className={styles.rematchMessage}>{t("game.rematchNoCoins")}</div>
         </>
       );
     } else if (rematchReason === "opponent_not_eligible") {
       rematchNode = (
         <>
-          <button type="button" disabled style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", opacity: 0.5 }}>↻ {t("game.rematch")}</button>
-          <div>{t("game.rematchOpponentIneligible")}</div>
+          <button type="button" disabled className={styles.primaryAction}>↻ {t("game.rematch")}</button>
+          <div className={styles.rematchMessage}>{t("game.rematchOpponentIneligible")}</div>
         </>
       );
     } else {
       rematchNode = (
-        <button type="button" disabled style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", opacity: 0.5 }}>↻ {t("game.rematch")}</button>
+        <button type="button" disabled className={styles.primaryAction}>↻ {t("game.rematch")}</button>
       );
     }
   } else {
     rematchNode = (
-      <button type="button" onClick={onRematch} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, background: "#e7bd72", color: "#0f2a2f", border: "1px solid #e7bd72" }}>↻ {t("game.rematch")}</button>
+      <button type="button" onClick={onRematch} className={styles.primaryAction}>↻ {t("game.rematch")}</button>
     );
   }
 
   return (
     <GameResult
+      variant="private"
       winner={winner}
       whiteScore={whiteScore}
       blackScore={blackScore}
@@ -144,11 +146,11 @@ export default function PrivateGameResult({
       onClose={onClose}
       actions={
         !showRematch ? (
-          <button type="button" onClick={onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{closeLabel ?? t("common.backHome")}</button>
+          <button type="button" onClick={onClose} className={styles.secondaryAction}>{closeLabel ?? t("common.backHome")}</button>
         ) : (
           <>
             {rematchNode}
-            <button type="button" onClick={onClose} style={{ minWidth: 120, padding: "8px 16px", borderRadius: 999, border: "1px solid rgba(229,180,77,0.2)", background: "rgba(255,255,255,0.06)", color: "#f0e3cd" }}>{closeLabel ?? t("common.backHome")}</button>
+            <button type="button" onClick={onClose} className={styles.secondaryAction}>{closeLabel ?? t("common.backHome")}</button>
           </>
         )
       }

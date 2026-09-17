@@ -6,7 +6,10 @@ import type { Color } from "../../lib/backgammon/engine";
 
 import styles from "./GameResult.module.css";
 
+export type GameResultVariant = "private" | "quick" | "tournament";
+
 export interface BaseGameResultProps {
+  variant?: GameResultVariant;
   winner: Color;
 
   whiteScore: number;
@@ -155,6 +158,7 @@ export default function GameResult({
 
   actions,
   children,
+  variant = "private",
 }: BaseGameResultProps) {
   const { t, direction } = useI18n();
 
@@ -199,6 +203,8 @@ export default function GameResult({
     >
       <motion.main
         className={styles.card}
+        data-testid="game-result-card"
+        data-result-variant={variant}
         initial={{
           opacity: 0,
           scale: 0.98,
@@ -274,6 +280,7 @@ export default function GameResult({
               <span
                 className={[
                   styles.dot,
+                  leftColor === "white" ? styles.checkerWhite : styles.checkerBlack,
                   leftIsWinner ? styles.dotWinner : "",
                 ].join(" ")}
                 aria-hidden="true"
@@ -294,7 +301,13 @@ export default function GameResult({
               aria-label={t("match.score")}
               dir="ltr"
             >
-              <span className={styles.scoreBox} data-testid="score-left">
+              <span
+                className={[
+                  styles.scoreBox,
+                  leftIsWinner ? styles.scoreBoxWinner : "",
+                ].join(" ")}
+                data-testid="score-left"
+              >
                 {leftScore}
               </span>
 
@@ -302,7 +315,13 @@ export default function GameResult({
                 –
               </span>
 
-              <span className={styles.scoreBox} data-testid="score-right">
+              <span
+                className={[
+                  styles.scoreBox,
+                  rightIsWinner ? styles.scoreBoxWinner : "",
+                ].join(" ")}
+                data-testid="score-right"
+              >
                 {rightScore}
               </span>
             </div>
@@ -366,6 +385,7 @@ export default function GameResult({
               <span
                 className={[
                   styles.dot,
+                  rightColor === "white" ? styles.checkerWhite : styles.checkerBlack,
                   rightIsWinner ? styles.dotWinner : "",
                 ].join(" ")}
                 aria-hidden="true"

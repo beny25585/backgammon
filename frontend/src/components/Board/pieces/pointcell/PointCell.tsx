@@ -79,6 +79,7 @@ function PointCell({
         className={`${styles.pointNumber} ${
           top ? styles.pointNumberTop : styles.pointNumberBottom
         }`}
+        data-testid="point-number"
       >
         {pointNumber}
       </span>
