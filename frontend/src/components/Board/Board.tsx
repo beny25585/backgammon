@@ -490,6 +490,7 @@ export function Board({
     if (inputDisabled) return;
     if (myColor === null) return;
     if (state.phase !== "moving" || state.turn !== myColor || state.winner) return;
+    if (drag) return;
     const currentKey = getGameplayKey(state);
     if (currentKey !== autoMove.fromPositionKey) {
       forcedExecRef.current = null;
@@ -513,7 +514,7 @@ export function Board({
     if (flyChecker) return;
     forcedExecRef.current = { id: autoMove.id, posKey: currentKey, from: autoMove.move.from, to: autoMove.move.to };
     triggerFly(autoMove.move.from, autoMove.move.to, undefined, { origin: "forced" });
-  }, [autoMove, autoPointSequenceActive, flyChecker, state, myColor, inputDisabled, triggerFly]);
+  }, [autoMove, autoPointSequenceActive, flyChecker, state, myColor, inputDisabled, triggerFly, drag]);
 
   const handleUndo = useCallback(() => {
     if (autoPointRunRef.current) {

@@ -32,7 +32,11 @@ for (const scenario of ["legal", "blocked", "outside", "source", "escape", "bar"
       from = 3; to = "off";
     }
     if (scenario === "black") {
-      state.turn = "black"; from = 18; to = 21;
+      state.turn = "black";
+      // Keep this generic drag fixture out of automatic deterministic-turn
+      // handling: the extra checker makes the position non-forced.
+      state.points[10] = -1;
+      from = 18; to = 21;
     }
     if (scenario === "opponent") from = 18;
     if (scenario === "wrong-turn") state.turn = "black";
@@ -92,6 +96,34 @@ for (const cancel of [false, true]) {
     await session.detach();
   });
 }
+
+test("active black drag wins over the delayed forced autoMove", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2024-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2024-01-01T00:00:00Z"));
+  const state = position();
+  state.turn = "black";
+  const moves: [Source, Target][] = [];
+  const component = await mount(
+    <div className={styles.container}><MockGameWrapper state={state} playerColor="black">
+      <GameBoard state={state} playerColor="black" makeMove={(a, b) => moves.push([a, b])} />
+    </MockGameWrapper></div>,
+  );
+  const source = component.locator('[data-point-idx="18"] [data-checker]').last();
+  const start = await center(source);
+  const end = await center(component.locator('[data-point-idx="21"]'));
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 10, start.y + 10);
+  await expect(component.getByTestId("dragging-checker")).toHaveCount(1);
+  // Forced command reaches its 350ms delay while the manual drag is active.
+  await page.clock.runFor(400);
+  expect(moves).toHaveLength(0);
+  await expect(component.getByTestId("dragging-checker")).toHaveCount(1);
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  await page.mouse.up();
+  await expect(component.getByTestId("dragging-checker")).toHaveCount(0);
+  await expect.poll(() => moves).toEqual([[18, 21]]);
+});
 
 test("a new game position cancels an in-progress drag", async ({ mount, page }) => {
   const state = position();

@@ -148,6 +148,7 @@ export default function GameBoard({
     setAutoMove(null);
     const t = setTimeout(() => {
       if (autoPointSequenceActive) return;
+      if (forcedCommandIdRef.current !== id) return;
       setAutoMove(command);
     }, FORCED_MOVE_DELAY_MS);
     return () => clearTimeout(t);
@@ -203,6 +204,10 @@ export default function GameBoard({
     const from =
       explicitFrom ?? selected ?? (autoMove?.move.to === to ? autoMove.move.from : null);
     if (from === null) return;
+    if (options?.origin !== "forced") {
+      forcedCommandIdRef.current += 1;
+      setAutoMove(null);
+    }
     makeMove(from, to, options);
     setSelected(null);
   }

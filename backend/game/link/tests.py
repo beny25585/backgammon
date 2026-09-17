@@ -168,6 +168,28 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(
             TournamentLink.objects.get().room.time_control, "fast")
 
+    def test_a_legacy_ticket_without_time_control_keeps_normal_fallback(self):
+        token = make_ticket()
+        payload = signing.loads(
+            token,
+            key=TICKET_SECRET,
+            salt=TICKET_SALT,
+        )
+        payload.pop('tc')
+        without_tc = signing.dumps(
+            payload,
+            key=TICKET_SECRET,
+            salt=TICKET_SALT,
+            compress=False,
+        )
+        response = self.enter(without_tc)
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            TournamentLink.objects.get().room.time_control,
+            'normal',
+        )
+
     def test_a_new_ticket_updates_a_waiting_linked_room_settings(self):
         self.enter(make_ticket(sub=str(uuid.uuid4()),
                    seat="p1", tc="normal", tp=5, dbl=True))
@@ -420,6 +442,30 @@ class TicketRejectionTests(LinkTestBase):
 
     def test_a_non_positive_target(self):
         self.assertRefused(make_ticket(tp=0))
+
+    def test_a_format_ticket_requires_explicit_time_control(self):
+        token = make_ticket(
+            format='match',
+            cube_max=64,
+            jacoby=False,
+            stake='100.00',
+            loss_limit='100.00',
+            tp=5,
+            dbl=True,
+        )
+        payload = signing.loads(
+            token,
+            key=TICKET_SECRET,
+            salt=TICKET_SALT,
+        )
+        payload.pop('tc')
+        without_tc = signing.dumps(
+            payload,
+            key=TICKET_SECRET,
+            salt=TICKET_SALT,
+            compress=False,
+        )
+        self.assertRefused(without_tc)
 
 
 class TicketSecretRotationTests(LinkTestBase):

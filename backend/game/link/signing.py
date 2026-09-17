@@ -125,6 +125,9 @@ def _validate_claims(payload):
     if payload['tp'] < 1:
         raise TicketError('target points must be positive')
 
+    if 'format' in payload and 'tc' not in payload:
+        raise TicketError('missing time control')
+
     time_control = payload.get('tc', 'normal')
     if time_control not in TIME_CONTROLS:
         raise TicketError('unknown time control')

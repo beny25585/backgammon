@@ -1406,8 +1406,9 @@ test("forced autoMove resumes after animation without duplicate", async ({ mount
   // trigger a manual move to create flyChecker, then schedule forced autoMove while animating
   await comp.locator('[data-point-idx="23"]').dispatchEvent("click");
   await expect(comp.getByTestId("flying-checker")).toHaveCount(1);
-  // Flying checker: 220ms animation + 600ms committed timeout = 820ms
-  await page.clock.runFor(1000);
+  // Flying checker needs fake-clock/rAF flushing margin under Playwright
+  // (Motion/React scheduling); 1400ms covers the visual flight.
+  await page.clock.runFor(1400);
   await expect(comp.getByTestId("flying-checker")).toHaveCount(0);
   expect(calls.length).toBe(1);
 });
