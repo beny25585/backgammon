@@ -121,6 +121,12 @@ function getGameplayKey(s: GameState): string {
   return `${s.points.join(",")}|${s.bar.white},${s.bar.black}|${s.home.white},${s.home.black}|${s.remaining.join(",")}|${s.turn}|${s.phase}|${JSON.stringify(s.lastMove)}`;
 }
 
+// Deliberate vertical clearance (CSS px) kept free inside each point so the
+// top and bottom five-checker stacks never visually touch at the board center
+// on short landscape phones, where fractional-pixel and device-pixel rounding
+// can otherwise close an exact edge-to-edge fit.
+const CHECKER_STACK_CLEARANCE_PX = 8;
+
 export function Board({
   state,
   myColor,
@@ -157,8 +163,11 @@ export function Board({
       const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
       const gaps = 4 * (parseFloat(style.rowGap) || 0);
       // All points have the same height. Reserve space for five full circles,
-      // stack padding and four gaps, even on a short landscape viewport.
-      const size = Math.max(0, (point.clientHeight - padding - gaps) / 5);
+      // stack padding, four gaps and a deliberate safety clearance, even on a
+      // short landscape viewport. The result is floored to a whole CSS pixel
+      // so physical devices never rely on subpixel rounding for the fit.
+      const availableHeight = point.clientHeight - padding - gaps - CHECKER_STACK_CLEARANCE_PX;
+      const size = Math.max(0, Math.floor(availableHeight / 5));
       board.style.setProperty("--checker-height-limit", `${size}px`);
     };
     fitCheckers();
@@ -810,11 +819,12 @@ export function Board({
       <div
         ref={boardRef}
         className={`${styles.frame} ${drag ? dragStyles.dragging : ""}`}
+        data-testid="board-inner-frame"
         {...dragHandlers}
         dir="ltr"
         style={{ touchAction: "none" }}
       >
-        <div className={styles.inner}>
+        <div className={styles.inner} data-testid="board-inner">
           <div className={styles.column12}>
             <div className={styles.row6}>
               {displayTopPoints.slice(0, 6).map((idx) => (

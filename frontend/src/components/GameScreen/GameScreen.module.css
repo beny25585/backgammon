@@ -1233,6 +1233,15 @@
     border-left: 0;
     border-right: 1px solid rgba(32, 62, 130, 0.42);
   }
+
+  .frame {
+    background: #000;
+  }
+
+  .frame::before,
+  .frame::after {
+    display: none;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 430px) {
@@ -1278,12 +1287,7 @@
     border-radius: 0;
     border: 0;
     box-shadow: none;
-    background: var(--lux-rail-bg);
-  }
-
-  .frame::before,
-  .frame::after {
-    display: none;
+    background: #000;
   }
 
   .boardOverlay {

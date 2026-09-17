@@ -174,6 +174,308 @@ const SHORT_LANDSCAPE_VIEWPORTS = [
   { width: 915, height: 350 },
 ];
 
+// Strict head-to-head regression coverage for short landscape phones:
+// opposing five-checker stacks must never visually crowd at the board center,
+// and the point-number gutters must stay solid black.
+const HEAD_TO_HEAD_VIEWPORTS = [
+  { width: 667, height: 375 },
+  { width: 740, height: 360 },
+  { width: 844, height: 390 },
+  { width: 915, height: 350 },
+  { width: 932, height: 430 },
+  // Enters the mobile rule through width < 800 while taller than 430px.
+  { width: 740, height: 500 },
+];
+
+const HEAD_TO_HEAD_POINTS = [12, 11, 18, 5];
+const HEAD_TO_HEAD_PAIRS: Array<[number, number]> = [
+  [12, 11],
+  [18, 5],
+];
+const MIN_OPPOSING_STACK_GAP_PX = 4;
+const STACK_OVERLAP_TOLERANCE_PX = 0.5;
+
+function headToHeadFiveStackState(): GameState {
+  const state = busyState();
+  state.points = new Array(24).fill(0);
+
+  state.points[12] = 5;
+  state.points[11] = -5;
+
+  state.points[18] = 5;
+  state.points[5] = -5;
+
+  return state;
+}
+
+type BoardComponent = Awaited<ReturnType<typeof mountBoard>>;
+
+interface RectBox {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+  width: number;
+  height: number;
+}
+
+async function checkerBoxes(
+  component: BoardComponent,
+  pointIdx: number,
+): Promise<RectBox[]> {
+  return component
+    .locator(`[data-point-idx="${pointIdx}"] [data-checker]`)
+    .evaluateAll((els: HTMLElement[]) =>
+      els.map((el) => {
+        const rect = el.getBoundingClientRect();
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          height: rect.height,
+        };
+      }),
+    );
+}
+
+async function pointBox(
+  component: BoardComponent,
+  pointIdx: number,
+): Promise<RectBox> {
+  return component
+    .locator(`[data-point-idx="${pointIdx}"]`)
+    .evaluate((el: HTMLElement) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+}
+
+async function opposingStackGap(
+  component: BoardComponent,
+  topIdx: number,
+  bottomIdx: number,
+): Promise<number> {
+  const topBoxes = await checkerBoxes(component, topIdx);
+  const bottomBoxes = await checkerBoxes(component, bottomIdx);
+  const topBottom = Math.max(...topBoxes.map((box) => box.bottom));
+  const bottomTop = Math.min(...bottomBoxes.map((box) => box.top));
+  return bottomTop - topBottom;
+}
+
+async function assertHeadToHeadGeometry(
+  component: BoardComponent,
+  label: string,
+) {
+  for (const index of HEAD_TO_HEAD_POINTS) {
+    const point = component.locator(`[data-point-idx="${index}"]`);
+    await expect(point.locator("[data-checker]")).toHaveCount(5);
+    const bounds = await pointBox(component, index);
+    const boxes = await checkerBoxes(component, index);
+    expect(
+      boxes,
+      `point ${index} must render five checkers (${label})`,
+    ).toHaveLength(5);
+    for (const box of boxes) {
+      expect(
+        box.width,
+        `checker width must be positive on point ${index} (${label})`,
+      ).toBeGreaterThan(0);
+      expect(
+        box.height,
+        `checker height must be positive on point ${index} (${label})`,
+      ).toBeGreaterThan(0);
+      expect(
+        box.width,
+        `checker must stay usable (>= ${MIN_CHECKER_PX}px) on point ${index} (${label})`,
+      ).toBeGreaterThanOrEqual(MIN_CHECKER_PX);
+      expect(
+        Math.abs(box.width - box.height),
+        `checker must stay circular on point ${index} (${label})`,
+      ).toBeLessThan(1);
+      expect(
+        box.top,
+        `checker must stay inside point ${index} (${label})`,
+      ).toBeGreaterThanOrEqual(bounds.top - STACK_OVERLAP_TOLERANCE_PX);
+      expect(
+        box.bottom,
+        `checker must stay inside point ${index} (${label})`,
+      ).toBeLessThanOrEqual(bounds.bottom + STACK_OVERLAP_TOLERANCE_PX);
+      expect(
+        box.left,
+        `checker must stay inside point ${index} (${label})`,
+      ).toBeGreaterThanOrEqual(bounds.left - STACK_OVERLAP_TOLERANCE_PX);
+      expect(
+        box.right,
+        `checker must stay inside point ${index} (${label})`,
+      ).toBeLessThanOrEqual(bounds.right + STACK_OVERLAP_TOLERANCE_PX);
+    }
+    const sorted = [...boxes].sort((a, b) => a.top - b.top);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(
+        sorted[i]!.top,
+        `checkers on point ${index} must not overlap (${label})`,
+      ).toBeGreaterThanOrEqual(
+        sorted[i - 1]!.bottom - STACK_OVERLAP_TOLERANCE_PX,
+      );
+    }
+  }
+
+  for (const [topIdx, bottomIdx] of HEAD_TO_HEAD_PAIRS) {
+    const gap = await opposingStackGap(component, topIdx, bottomIdx);
+    expect(
+      gap,
+      `opposing stacks ${topIdx}/${bottomIdx} need >= ${MIN_OPPOSING_STACK_GAP_PX}px center clearance (${label}, got ${gap.toFixed(2)})`,
+    ).toBeGreaterThanOrEqual(MIN_OPPOSING_STACK_GAP_PX);
+  }
+}
+
+for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
+  test(
+    `head-to-head five-stacks keep clearance at ${vp.width}x${vp.height}`,
+    async ({ mount, page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      const component = await mountBoard(mount, headToHeadFiveStackState());
+      await expect(
+        component.locator('[data-point-idx="12"] [data-checker]'),
+      ).toHaveCount(5);
+      await assertHeadToHeadGeometry(component, `${vp.width}x${vp.height}`);
+    },
+  );
+
+  test(
+    `point-number gutters stay black at ${vp.width}x${vp.height}`,
+    async ({ mount, page }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      const component = await mountBoard(mount, headToHeadFiveStackState());
+
+      const frame = component.getByTestId("board-inner-frame");
+      await expect(frame).toHaveCount(1);
+
+      const frameBg = await frame.evaluate((el: HTMLElement) => {
+        const computed = getComputedStyle(el);
+        return {
+          color: computed.backgroundColor,
+          image: computed.backgroundImage,
+        };
+      });
+      expect(
+        frameBg.color,
+        `frame gutter must be black (${vp.width}x${vp.height}, got ${frameBg.color})`,
+      ).toBe("rgb(0, 0, 0)");
+      expect(
+        frameBg.image,
+        `frame must not paint a theme gradient over the gutter (${vp.width}x${vp.height})`,
+      ).toBe("none");
+
+      const framePseudo = await frame.evaluate((el: HTMLElement) => {
+        const before = getComputedStyle(el, "::before");
+        const after = getComputedStyle(el, "::after");
+        return {
+          beforeDisplay: before.display,
+          afterDisplay: after.display,
+        };
+      });
+      expect(
+        framePseudo.beforeDisplay,
+        `frame::before must not paint over the black gutter (${vp.width}x${vp.height})`,
+      ).toBe("none");
+      expect(
+        framePseudo.afterDisplay,
+        `frame::after must not paint over the black gutter (${vp.width}x${vp.height})`,
+      ).toBe("none");
+
+      const pointNumbers = component.getByTestId("point-number");
+      await expect(pointNumbers).toHaveCount(24);
+
+      const wrapperBox = await component.getByTestId("board-wrapper").boundingBox();
+      expect(wrapperBox).not.toBeNull();
+      const outOfBounds = await pointNumbers.evaluateAll(
+        (elements, bounds) =>
+          elements
+            .map((element) => {
+              const rect = element.getBoundingClientRect();
+              return {
+                text: element.textContent,
+                inside:
+                  rect.top >= bounds.top - 1 &&
+                  rect.bottom <= bounds.bottom + 1,
+              };
+            })
+            .filter((result) => !result.inside),
+        { top: wrapperBox!.y, bottom: wrapperBox!.y + wrapperBox!.height },
+      );
+      expect(
+        outOfBounds,
+        `all 24 point numbers must stay inside the visible wrapper at ${vp.width}x${vp.height}`,
+      ).toEqual([]);
+
+      const innerBox = await component
+        .getByTestId("board-inner")
+        .evaluate((el: HTMLElement) => {
+          const rect = el.getBoundingClientRect();
+          return { top: rect.top, bottom: rect.bottom };
+        });
+      const topCenters = await component
+        .locator('[class*="pointNumberTop"]')
+        .evaluateAll((els: HTMLElement[]) =>
+          els.map((el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.top + rect.height / 2;
+          }),
+        );
+      const bottomCenters = await component
+        .locator('[class*="pointNumberBottom"]')
+        .evaluateAll((els: HTMLElement[]) =>
+          els.map((el) => {
+            const rect = el.getBoundingClientRect();
+            return rect.top + rect.height / 2;
+          }),
+        );
+      expect(topCenters).toHaveLength(12);
+      expect(bottomCenters).toHaveLength(12);
+      for (const centerY of topCenters) {
+        expect(
+          centerY,
+          `top point number must sit above the playing field (${vp.width}x${vp.height})`,
+        ).toBeLessThan(innerBox.top);
+      }
+      for (const centerY of bottomCenters) {
+        expect(
+          centerY,
+          `bottom point number must sit below the playing field (${vp.width}x${vp.height})`,
+        ).toBeGreaterThan(innerBox.bottom);
+      }
+    },
+  );
+}
+
+test("head-to-head stacks keep clearance across viewport resize without remount", async ({
+  mount,
+  page,
+}) => {
+  await page.setViewportSize({ width: 844, height: 430 });
+  const component = await mountBoard(mount, headToHeadFiveStackState());
+  await expect(
+    component.locator('[data-point-idx="12"] [data-checker]'),
+  ).toHaveCount(5);
+
+  await page.setViewportSize({ width: 844, height: 350 });
+
+  await expect
+    .poll(() => opposingStackGap(component, 12, 11), { timeout: 5000 })
+    .toBeGreaterThanOrEqual(MIN_OPPOSING_STACK_GAP_PX);
+  await assertHeadToHeadGeometry(component, "844x350 after resize");
+});
+
 for (const vp of SHORT_LANDSCAPE_VIEWPORTS) {
   test(
     `point numbers stay inside visible board on short landscape ${vp.width}x${vp.height}`,
