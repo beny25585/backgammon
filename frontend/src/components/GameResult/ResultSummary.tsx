@@ -45,8 +45,8 @@ export default function ResultSummary(props: Props) {
   const [unavailable, setUnavailable] = useState(false);
   const { roomId } = props;
   const base = new URL(import.meta.env.VITE_TOURNAMENTS_URL || "/tournaments/", window.location.origin);
-  const api = new URL("/tournaments-api/api/analyses", base);
-  const apiOrigin = api.origin;
+  const api = new URL("/tournaments-api/analyses", base);
+  const apiOrigin = import.meta.env.DEV ? window.location.origin : api.origin;
 
   useEffect(() => {
     if (!roomId) return;
@@ -56,7 +56,7 @@ export default function ResultSummary(props: Props) {
     async function load() {
       attempts += 1;
       try {
-        const response = await fetch(`${apiOrigin}/tournaments-api/api/analyses?room=${encodeURIComponent(roomId!)}`, {
+        const response = await fetch(`${apiOrigin}/tournaments-api/analyses?room=${encodeURIComponent(roomId!)}`, {
           credentials: "include", signal: controller.signal,
         });
         if (!response.ok) throw new Error("Analysis unavailable");

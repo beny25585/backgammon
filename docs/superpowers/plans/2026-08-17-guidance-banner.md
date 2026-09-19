@@ -1,5 +1,9 @@
 # Unified Player Guidance Banner Implementation Plan
 
+> **עדכון תיעוד 19.09.2026 — מסמך היסטורי/בדיקה מתוארכת.** GuidanceBanner כבר משולב ב־GameBoard. משימות התוכנית הן רקע היסטורי ואינן הוראת ביצוע חדשה; התלויות הנוכחיות מצהירות React 18.2, ולא React 19 כפי שנכתב בתוכנית.
+>
+> [מצב המערכת](<../../../../CURRENT_STATE.he.md>) · [תיעוד העיצוב](<../../../../docs/UI_DESIGN.he.md>). לא הורצו בדיקות חדשות במסגרת עדכון זה.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add a single always-visible guidance banner over the board felt that consolidates all player prompts (roll, move, respond-to-double, opening roll, no-moves) into one state-driven component.

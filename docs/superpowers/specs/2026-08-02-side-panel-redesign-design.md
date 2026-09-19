@@ -1,5 +1,9 @@
 # Side Panel Redesign — "Balanced Two Rows"
 
+> **עדכון תיעוד 19.09.2026 — מסמך היסטורי/בדיקה מתוארכת.** SidePanel ו־PlayerRow קיימים בקוד, ותצוגת המשחק משתמשת בטוקנים של global.css וב־CSS Modules. הסקיצה להלן אינה מפרט מחייב לכל המסכים; המקור המתוחזק הוא frontend/UI_GUIDELINES.md.
+>
+> [מצב המערכת](<../../../../CURRENT_STATE.he.md>) · [תיעוד העיצוב](<../../../../docs/UI_DESIGN.he.md>). לא הורצו בדיקות חדשות במסגרת עדכון זה.
+
 Date: 2026-08-02
 Status: Approved design
 

@@ -22,6 +22,9 @@ class PracticeGameConsumer(GameConsumer):
         self._ai_disconnected = False
         room = await get_room(self.scope['url_route']['kwargs']['room_id'])
         self.is_ai = bool(room and (room.state or {}).get('ai'))
+        if self.is_ai and room.status == 'waiting':
+            await self.close(code=4003)
+            return
         await super().connect()
         if self.is_ai and getattr(self, 'player_color', None):
             await self.send(json.dumps({'type': 'player_joined', 'payload': {
@@ -54,6 +57,8 @@ class PracticeGameConsumer(GameConsumer):
             self._ai_failed = False
             if data.get('type') != 'ai_retry':
                 await super().receive(text_data)
+            else:
+                await self.send(json.dumps({'type': 'ai_status', 'payload': {'status': 'thinking'}}))
         finally:
             await database_sync_to_async(ai.release)(self.room_id, lease)
         self._kick_bot()
@@ -75,8 +80,13 @@ class PracticeGameConsumer(GameConsumer):
         if self.is_ai:
             self._kick_bot()
 
+    async def ai_status(self, event):
+        await self.send(json.dumps({'type': 'ai_status', 'payload': event['payload']}))
+
     async def disconnect(self, close_code):
         self._ai_disconnected = True
+        if not hasattr(self, 'room_group_name'):
+            return
         # Let an already-started authoritative turn finish; reconnect loads it.
         await super().disconnect(close_code)
 
@@ -108,6 +118,16 @@ class PracticeGameConsumer(GameConsumer):
                 if not room or room.status != 'playing':
                     return
                 state = (await get_game_state(room)).state_data
+                match = {'target_points': room.target_points,
+                         'scores': {'white': room.white_score, 'black': room.black_score}}
+                if state['phase'] == 'doubling_offered':
+                    if state.get('doubleOfferedBy') != 'white':
+                        return
+                    decision = await ai.request_decision(state, 'hard', match, 'cube')
+                    if type(decision.get('should_take')) is not bool:
+                        raise ValueError('Invalid cube response')
+                    await GameConsumer._handle_intent(actor, {'action': 'double_response', 'accept': decision['should_take']})
+                    continue
                 if state['phase'] == 'opening_result':
                     await GameConsumer._opening_result_watch(actor)
                     continue
@@ -115,6 +135,13 @@ class PracticeGameConsumer(GameConsumer):
                     return
                 if state['phase'] in ('opening_roll', 'rolling'):
                     await database_sync_to_async(AiSession.objects.filter(room_id=self.room_id).update)(target_board=None)
+                    if (state['phase'] == 'rolling' and state.get('doublingEnabled')
+                            and state.get('cubeOwner') in ('center', 'black')
+                            and state.get('cube', 1) < state.get('maxCube', 64)):
+                        decision = await ai.request_decision(state, 'hard', match, 'cube')
+                        if decision.get('should_double') is True:
+                            await GameConsumer._handle_intent(actor, {'action': 'double'})
+                            return
                     intents = [{'action': 'roll'}]
                 elif state['phase'] == 'moving' and not state['remaining']:
                     intents = [{'action': 'end_turn'}]
@@ -122,7 +149,7 @@ class PracticeGameConsumer(GameConsumer):
                     session = await database_sync_to_async(AiSession.objects.get)(room_id=self.room_id)
                     target = session.target_board
                     if target is None:
-                        target = await ai.request_board(state, session.difficulty)
+                        target = await ai.request_board(state, session.difficulty, match)
                         await database_sync_to_async(AiSession.objects.filter(room_id=self.room_id).update)(target_board=target)
                     intents = ai.executable_turn(state, target)
                     if not intents:
@@ -143,6 +170,9 @@ class PracticeGameConsumer(GameConsumer):
             self._ai_failed = True
             await self.channel_layer.group_send(self.room_group_name, {
                 'type': 'game_message', 'event_type': 'error', 'playerColor': None,
-                'payload': {'message': 'Open Sage is unavailable. Reconnect to retry.'}})
+                'payload': {'message': 'Open Sage is unavailable. Please retry.', 'action': 'ai_retry'}})
         finally:
             await database_sync_to_async(ai.release)(self.room_id, lease)
+            if not self._ai_failed:
+                await self.channel_layer.group_send(self.room_group_name, {
+                    'type': 'ai_status', 'payload': {'status': 'ready'}})

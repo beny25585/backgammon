@@ -101,4 +101,7 @@ export interface GameContextType {
   giveUp: () => void;
   leaveGame: () => void;
   noMovesMessage: NoMovesMessage | null;
+  aiFailed?: boolean;
+  aiRetrying?: boolean;
+  retryAi?: () => void;
 }

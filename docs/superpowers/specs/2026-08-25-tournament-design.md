@@ -1,5 +1,9 @@
 # Tournament System — Design Spec
 
+> **עדכון תיעוד 19.09.2026 — מסמך היסטורי/בדיקה מתוארכת.** המסלול הראשי הנוכחי של המועדון משתמש בשרת הטורנירים הנפרד ובכרטיסי GameLink. מודלי טורניר ישנים בשרת המשחק אינם לבדם תיאור התהליך הפעיל. ראו GAME_MODES_AND_RULES.he.md ברמת סביבת העבודה.
+>
+> [מצב המערכת](<../../../../CURRENT_STATE.he.md>) · [תיעוד העיצוב](<../../../../docs/UI_DESIGN.he.md>). לא הורצו בדיקות חדשות במסגרת עדכון זה.
+
 **Date:** 2026-08-25  
 **Status:** Approved  
 **Scope:** Backend only (v1) — single elimination, scheduled/auto-start, PostgreSQL

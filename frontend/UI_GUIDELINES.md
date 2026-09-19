@@ -1,60 +1,28 @@
-# UI Guidelines
+# Game UI — current design conventions
 
-## Visual Direction
+Reviewed: 2026-09-19 against styles and routing, without new browser screenshots.
 
-- The app should feel warm, elegant, and game-focused.
-- Use deep greens, parchment surfaces, and gold accents.
-- Prefer layered backgrounds over flat fills.
-- Keep decorative motion subtle and purposeful.
+## Scope and sources
 
-## Typography
+This document covers the React board app. The Vue club and admin have separate component systems and tokens; see [system design](../../docs/UI_DESIGN.he.md). Source of truth: [global.css](src/styles/global.css), component CSS Modules and [router.tsx](src/router.tsx).
 
-- Use `Playfair Display` for large headlines and key callouts.
-- Use `Assistant` for body text, buttons, forms, and labels.
-- Headlines should be expressive; body text should stay clear and compact.
+## Visual language
 
-## Layout
+- Dark app surfaces, gold actions, wood/felt board treatments and selectable board themes.
+- --font-body and --font-display both use Assistant, Heebo, Arial, sans-serif. Playfair Display is a package dependency, not the active global heading font.
+- Brand gold is #d4941a, soft gold #e7bd72; board and checker colors have their own variables. Use the existing tokens and theme mechanism rather than duplicating board colors.
+- Global radius tokens are 4, 6, 8 and 12px. Component styles may set their own geometry.
 
-- Each screen should have a single clear primary action.
-- Content screens should use cards, panels, and consistent spacing.
-- Large decorative heroes are for showcase pages only.
-- Functional screens should stay calm and readable.
+## Layout and active screens
 
-## Responsiveness
+GameScreen gives priority to the board, visible dice, clocks, cube offers, confirmation and result state. The document uses a full-height layout with overflow hidden; scrolling content belongs inside its designated panels. Verify short landscape viewports as well as portrait/mobile and desktop. Touch targets, drag destinations and bear-off controls must remain reachable.
 
-- The app must work cleanly on mobile, tablet, and desktop.
-- Design mobile-first when adding new layout rules.
-- Prefer stacking content vertically on narrow screens instead of shrinking it too much.
-- Keep tap targets large enough for touch, especially buttons and tabs.
-- Avoid fixed widths for key containers unless there is a mobile fallback.
-- Reduce decoration and side-by-side layouts when the screen gets narrow.
-- Test the main flows on small screens: auth, home, waiting room, match settings, and gameplay.
+WaitingRoom is status-focused. MatchHistory and MatchDetail are data-focused. / and /home redirect to the Vue club; HomeScreen/AuthScreen are retained components, not the live primary navigation. The full analysis library belongs to the club application.
 
-## Shared Components
+## Component and interaction rules
 
-- `PageShell` for full-screen framing and background treatment.
-- `SectionCard` for reusable content blocks.
-- `PrimaryButton` and `SecondaryButton` for consistent actions.
-- `StatusBadge` for states such as waiting, active, or completed.
+Reuse the actual shared components found under src/components; do not assume PageShell, SectionCard or StatusBadge APIs exist merely because older guidelines named them. Keep board motion synchronized with accepted state. Visual animation must not authorize a move or delay the next legal input unnecessarily. Preserve focus indication, disabled states, translated labels, reduced-motion behavior and error recovery.
 
-## Screen Rules
+Clock display uses the shared clock logic, including per-turn delay rather than increment. Game-format labels and financial terms must reflect the server contract. Local TypeScript AI and server Open Sage are separate modes and must be described accordingly.
 
-- `HomeScreen`: the strongest visual expression of the brand.
-- `AuthScreen`: welcoming, focused, and conversion-friendly.
-- `WaitingRoom`: status-first, minimal, and easy to scan.
-- `MatchHistory` and `MatchDetail`: simple, structured, and content-led.
-- `GameScreen`: functional first, with the least decoration.
-
-## Do
-
-- Reuse the same colors, spacing, and button styles.
-- Keep responsive behavior simple and predictable.
-- Use motion to support state changes, not to distract.
-- Make sure every new component has a mobile behavior, not just a desktop one.
-
-## Don't
-
-- Create a new visual language for every page.
-- Mix too many font families or button styles.
-- Put heavy decoration on gameplay screens.
-- Leave controls clipped, tiny, or overlapping on smaller screens.
+[PWA deployment](PWA_DEPLOYMENT.he.md), [frontend architecture](README.md), [historical performance review](../PERFORMANCE_AUDIT.md).

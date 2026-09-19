@@ -233,7 +233,7 @@ for (const [theme, expectedAccent] of [
 
     const menuColor = await component
       .getByRole("button", { name: "Match control" })
-      .evaluate((element) => getComputedStyle(element).backgroundColor);
+      .evaluate((element) => getComputedStyle(element).color);
     const rollColor = await component
       .getByTitle("Tap to roll")
       .evaluate((element) => getComputedStyle(element).backgroundColor);

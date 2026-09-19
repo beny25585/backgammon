@@ -98,6 +98,8 @@ export function GameProvider({
   const [blackName, setBlackName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [aiFailed, setAiFailed] = useState(false);
+  const [aiRetrying, setAiRetrying] = useState(false);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
   const [noMovesMessage, setNoMovesMessage] = useState<NoMovesMessage | null>(
@@ -410,6 +412,14 @@ export function GameProvider({
           setOpponentConnected(data.connected >= 2);
         });
 
+        socket.on("ai_status", (message) => {
+          const status = (message as { payload?: { status?: string } }).payload?.status;
+          setAiRetrying(status === "thinking");
+          if (status === "ready") {
+            setAiFailed(false);
+            setError(previous => previous?.startsWith('Open Sage') ? null : previous);
+          }
+        });
         socket.on("error", (message) => {
           const m = message as Record<string, unknown>;
           const payload = m.payload as
@@ -447,6 +457,8 @@ export function GameProvider({
           if (msg === "Cannot roll now") return;
           if (msg === "Unknown action: reorder_dice") return;
           setError(msg);
+          setAiRetrying(false);
+          if (failedAction === "ai_retry") setAiFailed(true);
         });
 
         socket.on("game_ended", (message) => {
@@ -827,6 +839,13 @@ export function GameProvider({
   return (
     <GameContext.Provider
       value={{
+        aiFailed,
+        aiRetrying,
+        retryAi: () => {
+          if (aiRetrying) return;
+          const sent = getSocketService(serverUrl).send("ai_retry", {});
+          setAiRetrying(sent);
+        },
         roomId,
         state,
         playerColor,

@@ -52,20 +52,26 @@ def _rules_payload(match, room, state):
                 state.get("doublingEnabled", True),
             )
         ),
-        "max_cube_value": int(state.get("maxCube") or 0),
+        "max_cube_value": max(2, int(state["maxCube"])) if state.get("maxCube") else 0,
         "jacoby": bool(state.get("jacoby", False)),
         "beaver": False,
     }
 
 
-def _serialize_event(event):
+def _serialize_event(event, *, ai=False):
+    actor = (event.payload or {}).get("actorColor")
+    # Historical bot events have no RoomPlayer; system events stay unattributed.
+    if actor not in ("white", "black"):
+        actor = "black" if ai and event.event_type in {
+            "roll", "move", "undo", "end_turn", "double", "double_response",
+        } else None
     return {
         "sequence": event.sequence,
         "event_type": event.event_type,
         "player_color": (
             event.player.color
             if event.player_id
-            else None
+            else actor
         ),
         "payload": event.payload or {},
         "created_at": event.created_at.isoformat(),
@@ -91,7 +97,7 @@ def _games_payload(match, room):
     for game in ordered:
         game_id = str(game["game_id"])
         events = [
-            _serialize_event(event)
+            _serialize_event(event, ai=match.match_type == "ai")
             for event in GameEvent.objects.filter(
                 room=room,
                 game_id=game_id,
@@ -147,7 +153,7 @@ def build_match_analysis_payload(match) -> dict:
     room = match.room
     if room is None:
         raise AnalysisPayloadError("Match has no room.")
-    if match.white_player_id is None or match.black_player_id is None:
+    if match.white_player_id is None or (match.black_player_id is None and match.match_type != "ai"):
         raise AnalysisPayloadError("Match is missing players.")
     if not match.games:
         raise AnalysisPayloadError("Match has no games.")
@@ -162,10 +168,10 @@ def build_match_analysis_payload(match) -> dict:
         "schema_version": SCHEMA_VERSION,
         "match_id": str(match.id),
         "room_id": str(room.id),
-        "source": _source_payload(room),
+        "source": {"type": "ai", "tournament_id": None, "fixture_id": None} if match.match_type == "ai" else _source_payload(room),
         "players": {
             "white": {"player_id": match.white_player_id, "name": str(match.white_player)},
-            "black": {"player_id": match.black_player_id, "name": str(match.black_player)},
+            "black": {"player_id": None, "name": "Open Sage", "kind": "ai"} if match.match_type == "ai" else {"player_id": match.black_player_id, "name": str(match.black_player)},
         },
         "rules": _rules_payload(match, room, state),
         "result": {

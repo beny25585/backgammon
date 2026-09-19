@@ -82,7 +82,7 @@ make_move; all dice-use obligations remain with BackgammonEngine.
     return result
 
 
-async def request_board(state, difficulty):
+async def request_decision(state, difficulty, match=None, action='move'):
     base = getattr(settings, 'AI_SERVICE_URL', '').rstrip('/')
     token = getattr(settings, 'ANALYSIS_API_TOKEN', '')
     if not base or not token:
@@ -90,8 +90,12 @@ async def request_board(state, difficulty):
     async with httpx.AsyncClient(timeout=8.0) as client:
         response = await client.post(base + '/api/v1/internal/bot/move/',
             headers={'Authorization': f'Bearer {token}'},
-            json={'state': state, 'difficulty': difficulty})
+            json={'state': state, 'difficulty': difficulty, 'match': match or {}, 'action': action})
         response.raise_for_status()
-    target = response.json().get('board')
+    return response.json()
+
+
+async def request_board(state, difficulty, match=None):
+    target = (await request_decision(state, difficulty, match)).get('board')
     executable_turn(state, target)
     return target

@@ -1,264 +1,52 @@
-# Backgammon — Online Multiplayer & AI
+# 6B — משחק שש־בש
 
-A real-time Backgammon game with online multiplayer (WebSocket), local AI opponent, match scoring, and full rules including the doubling cube.
+עודכן: 19.09.2026 לפי הקוד המקומי. הפרויקט מספק את לוח המשחק, השרת הסמכותי ושירות הקוביות; אתר המועדון והניתוח הם פרויקטים נפרדים.
 
-```
-Frontend:  React 19 + TypeScript + Vite + Tailwind CSS 4 + CSS Modules + Motion  →  :5173
-Backend:   Django 5 + Channels 4 + Daphne + SimpleJWT + SQLite     →  :8000
-```
+| רכיב | תלויות מוצהרות | תפקיד |
+|---|---|---|
+| frontend | React 18.2, TypeScript, Vite 8, Tailwind 4, Motion | לוח, WebSocket, מצב מקומי והיסטוריה |
+| backend | Django 4.2.7, Channels 4, Daphne, DRF, SimpleJWT | מנוע סמכותי, חדרים, קישור ותורים |
+| dice_service | Elixir, Plug/Cowboy | מקור קוביות HTTP למשחק מקוון |
 
----
+הגרסאות מתארות קובצי תלויות, לא בדיקה של חבילות מותקנות. SQLite היא ברירת מחדל מקומית; ערכי מסד ו־Redis תלויים בהגדרות הסביבה.
 
-## Quick Start
+## הפעלה
 
-```bash
-# Terminal 1 — Backend
-cd backend
-python -m venv .venv
-source .venv/bin/activate          # Linux/WSL
-# source .venv/Scripts/activate    # Git Bash
-pip install -r requirements.txt && python manage.py migrate
-python manage.py runserver 8000
+מתוך backend, בסביבת Python נפרדת:
 
-# Terminal 2 — Frontend
-cd frontend
-pnpm install && pnpm dev          # → http://localhost:5173
-```
+~~~sh
+pip install -r requirements.txt
+python manage.py migrate
+daphne -b 127.0.0.1 -p 8000 backgammon_project.asgi:application
+~~~
 
----
+מתוך dice_service:
 
-## Play vs AI (no backend needed)
+~~~sh
+mix deps.get
+mix run --no-halt
+~~~
 
-Click **🤖 Play vs AI** on the home screen, configure match settings, and play against a 1-ply heuristic bot. The game runs entirely client-side — no server needed.
+מתוך frontend:
 
----
+~~~sh
+pnpm install
+pnpm dev
+~~~
 
-## Architecture
+המשחק זמין ב־http://localhost:5173/backgammon/. / ו־/home מפנים ל־VITE_TOURNAMENTS_URL או /tournaments/. בהפעלה של המועדון בפורט נפרד יש להגדיר כתובת מתאימה. שירות הקוביות משתמש כברירת מחדל ב־127.0.0.1:4000. שרת המשחק בוחר Redis כברירת מחדל; CHANNEL_LAYER_BACKEND=memory מתאים לפיתוח חד־תהליכי בלבד.
 
-```
-Client Action  ──WebSocket──►  Django Consumer  ──►  Game Engine (validate + apply)
-                                   │                       │
-                                   │                  State Update
-                                   │                       │
-                                   ◄────── Broadcast to room ──────►
-                                                                  All Clients
-```
+## מסלולי המשחק
 
-**Server-authoritative** for multiplayer — the server validates every move.
-**Client-side engine** for AI/local mode — same pure logic, no server required.
+- משחק מקושר: המועדון מנפיק כרטיס, השרת מאמת ויוצר הרשאת משחק, /link מסיר את נתוני הכניסה מה־fragment ומעביר לחדר. כללי המשחק והניצחון נקבעים בשרת.
+- משחק מקומי: /backgammon/local?bot=black&target=1 מפעיל מנוע ובוט TypeScript בדפדפן. שמירה, קוביות ושירותים מחוברים אינם מובטחים ללא Backend; זה אינו Open Sage.
+- Open Sage: בוט שרת המשתמש בשירות הניתוח. מסך המועדון טוען מחיר והגדרות; חוזה השרת כולל הכנה/חיוב/כניסה. לא בוצעה כאן בדיקת מסלול מלאה. [מצב התרגול](OPEN_SAGE_PRACTICE.he.md).
+- תוצאות מקושרות מועברות בתור חזרה למועדון; ניתוחים נשלחים לשירות Open Sage. עובדים נפרדים נדרשים להשלמת העיבוד.
 
----
+## תחזוקה
 
-## CSS Module Migration
+[Frontend ונתיבים](frontend/README.md), [Backend וחוזים](backend/README.md), [עיצוב המשחק](frontend/UI_GUIDELINES.md), [קוביות](dice_service/README.md), [PWA](frontend/PWA_DEPLOYMENT.he.md), [משימות רקע](backend/DJANGO_Q.md).
 
-All component styles use CSS Modules with the project's [CSS custom properties](frontend/src/styles/global.css) (`--checker-white`, `--checker-black`, `--gold`, etc.) for the board theme palette.
+בדיקות מתבצעות בכל רכיב בנפרד: pnpm build / pnpm lint / pnpm test בממשק, python manage.py test בשרת ו־mix test בקוביות. בדיקות מנוע המקבלות קוביות HTTP דורשות שירות או fixture מתאים. הפקודות לא הורצו במסגרת עדכון התיעוד.
 
-| Component | CSS Module | Status |
-|-----------|-----------|--------|
-| `MatchSettings` | `MatchSettings.module.css` | Converted from Tailwind + inline styles |
-| `Dice` | `Dice.module.css` | Converted from Tailwind + inline styles |
-| `GameScreen` | `GameScreen.module.css` | Overlay classes added |
-| `Controls` | `Controls.module.css` | Cleaned up unused sections |
-| `DoublingCube` | `DoublingCube.module.css` | Redesigned — compact vertical layout |
-| `Board` (pieces) | `*Piece*.module.css` | Existing modules, imported |
-| `HomeScreen`, `AuthScreen`, `WaitingRoom` | `*.module.css` | Already using CSS Modules |
-
-Motion animation props (`initial`, `animate`, `transition`, `whileHover`, `whileTap`) stay inline. Only static styling (layout, colors, gradients, borders, shadows) lives in CSS. Dynamic values (pip positions, 3D transforms, `backfaceVisibility`) remain inline.
-
----
-
-## Project Structure
-
-```
-Backgammon Game/
-├── README.md                     ← This file
-├── .gitignore                    # Root gitignore
-├── CODE_REVIEW.md                # Best-practices code review
-├── TODO.md                       # Roadmap with Backgammon Galaxy comparison
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Board/            # Board frame + pieces (points, checkers, bar, bear-off)
-│   │   │   ├── Dice/             # 3D rolling cube animation + dice display (CSS Module)
-│   │   │   ├── GameScreen/       # Game container + board overlays (CSS Module)
-│   │   │   ├── HomeScreen/       # Room creation, match settings, active rooms (CSS Module)
-│   │   │   ├── WaitingRoom/      # Room code, copy, wait for opponent (CSS Module)
-│   │   │   ├── AuthScreen/       # Login / Register (CSS Module)
-│   │   │   ├── Controls/         # Double, double-response prompts (CSS Module)
-│   │   │   ├── MatchSettings/    # Pre-game config: color, target points (CSS Module)
-│   │   │   ├── GameResultOverlay/ # Post-game result + match score + auto-advance
-│   │   │   ├── DoublingCube/     # Compact cube face + owner label (CSS Module)
-│   │   │   ├── OpponentBar/      # Opponent info + WINNER badge (CSS Module)
-│   │   │   └── TurnIndicator/    # Current turn display (CSS Module)
-│   │   ├── services/
-│   │   │   ├── gameContext.tsx    # WebSocket game state provider
-│   │   │   ├── localGameContext.tsx  # Local + AI game state + match scoring
-│   │   │   ├── socket.ts         # WebSocket singleton with reconnect
-│   │   │   ├── auth.ts           # JWT storage + helpers
-│   │   │   ├── api.ts            # REST API client
-│   │   │   └── roomStorage.ts    # localStorage room tracking + rejoin
-│   │   ├── lib/
-│   │   │   ├── backgammon/
-│   │   │   │   └── engine.ts     # Pure TypeScript engine (BAR, OFF constants)
-│   │   │   └── bot/
-│   │   │       ├── evaluate.ts   # Position scoring (pip count, blot exposure, structure)
-│   │   │       └── chooseMove.ts  # 1-ply best-move search (adapted from MIT)
-│   │   ├── router.tsx            # React Router with auth guards
-│   │   ├── types/
-│   │   │   ├── game.ts           # GameState, Color, Move, GameMessage types
-│   │   │   └── context.ts        # GameContextType, OpeningRollResult
-│   │   └── styles/global.css     # CSS variables, fonts, dark theme
-│   └── ...
-│
-└── backend/
-    ├── backgammon_project/        # Django settings, ASGI, URLs
-    ├── game/
-    │   ├── engine.py             # Pure Python game engine
-    │   ├── consumers.py          # WebSocket handlers
-    │   ├── models.py             # Player, RoomPlayer, GameRoom, Match, GameEvent, GameState
-    │   ├── views.py              # REST endpoints
-    │   └── serializers.py        # DRF serializers
-    └── ...
-```
-
----
-
-## Features
-
-| Feature | Multiplayer (WebSocket) | Local / AI |
-|---------|------------------------|------------|
-| Full rules engine | ✅ Server-authoritative | ✅ Client-side |
-| Bot opponent | ❌ | ✅ 1-ply heuristic |
-| Match scoring (first to N) | ⚠️ Backend tracks scores | ✅ Fully wired |
-| Game result overlay | ❌ | ✅ + auto-advance |
-| 3D rolling dice | ✅ | ✅ |
-| Doubling cube | ✅ | ✅ |
-| Room codes + waiting | ✅ | N/A |
-| Reconnection | ✅ (5 retries, 2s linear) | N/A |
-| Local storage rejoin | ✅ | N/A |
-| Opening roll | ✅ | ✅ |
-| Bear-off, bar, blot capture | ✅ | ✅ |
-
----
-
-## Multiplayer Protocol (WebSocket)
-
-The frontend `gameContext` is the authoritative client engine. Each player's `state_update` sends `{ state, action }`; the server records the action as a `GameEvent` with an atomic `sequence` (bumped on `GameRoom.last_sequence`), stamps `state.version`, persists `GameState`, and broadcasts to the room.
-
-- **Client → Server** `state_update`: `{ "type": "state_update", "payload": { "state": {...}, "action": "roll|move|end_turn|undo|double|double_response" } }`
-- **Server → Client** `state_update` (on connect): `{ type, payload, playerColor, initial: true }` — the connecting player's own color and current saved state.
-- **Server → Client** `state_update` (broadcast): `{ type, payload: { ...state, version }, playerColor: <sender> }`
-- **Versioning / stale-drop:** clients drop broadcasts with `version <=` their last applied version; the server drops incoming payloads whose `version` is behind `last_sequence`. A player's own echo only stamps the new version (no re-apply).
-- **Reconnect:** on abnormal WS close (1006/1011) the client retries up to 5× with a 2s delay; the server re-sends the initial snapshot so state resyncs.
-
-### Redis requirement (critical)
-
-`channels-redis` relies on blocking `BZPOPMIN`, which redis-py 8.0.0+ breaks by defaulting `socket_timeout=5` (→ WS `1011` + `TimeoutError`). **Pin `redis==4.5.5`** (4.5.4 has a separate `asyncio.shield()` cancellation bug). `requirements.txt` pins both `channels-redis==4.5.5` and `redis==4.5.5`.
-
-### Data model
-
-`User → Player → RoomPlayer (sit + color) → Match (game) → GameEvent (actions) + GameState (snapshot)`. `Match.room` is nullable (`SET_NULL`) so local/AI matches have no room. The `0003` migration backfills Players/RoomPlayers from the old User-based `white_player`/`black_player` fields.
-
----
-
-## Routing
-
-| Route | Component | Auth |
-|-------|-----------|------|
-| `/` | AuthScreen | Redirect to `/home` if logged in |
-| `/home` | HomeScreen | Required |
-| `/waiting/:roomId` | WaitingRoom | Required |
-| `/game/:roomId?color=` | GameProvider + GameScreen | Required |
-| `/local?bot=&target=` | LocalGameProvider + GameScreen | None |
-
-Powered by `react-router-dom` v6 with `RequireAuth` and `RedirectIfAuthed` guards.
-
----
-
-## Key Design Decisions
-
-- **Pure engine**: Frontend and backend engines are independent implementations of the same rules. No shared code, no drift.
-- **Named constants**: `BAR` / `OFF` instead of string literals. `Source` / `Target` types instead of `number | "bar"`.
-- **3D dice**: Six-face CSS cube with `preserve-3d`, `rotateX/Y/Z` animation, `backfaceVisibility: hidden`. Rolling animation uses 1.2s ease-out via motion's `onAnimationComplete` (no setTimeout).
-- **Dice on board**: In-play dice display renders as an overlay centered on the board felt, not in the side panel. Doubling cube shows compactly with owner label.
-- **Opening roll sequence**: Player rolls first (2.2s to see result), then bot auto-rolls, winner announced for 4.5s before game starts.
-- **Bot AI**: Adapted from [backgammon-baddie](https://github.com/devensimonson/backgammon-baddie) (MIT). 1-ply search with heuristic evaluation (pip count, blot exposure, structure).
-- **Match system**: After each game, points are scored (single/gammon/backgammon × cube). Next game auto-advances after 30s or on click. Match ends when target reached.
-- **CSS Modules + CSS custom properties**: Components use CSS Modules with `var(--checker-white)`, `var(--checker-black)`, `var(--gold)` theme variables from `global.css`. Tailwind v4 powers the `@theme` block.
-
----
-
-## Commands
-
-```bash
-# Frontend
-pnpm dev         # Dev server (:5173, HMR)
-pnpm build       # TypeScript check + production build
-pnpm preview     # Serve production build
-
-# Backend
-python manage.py runserver       # Dev server (:8000, auto-reload)
-python manage.py test            # Tests
-daphne -b 0.0.0.0 -p 8000 backgammon_project.asgi:application  # ASGI server
-```
-
----
-
-## Production
-
-- PostgreSQL instead of SQLite
-- Redis for channel layers (`channels_redis`)
-- Daphne behind nginx
-- HTTPS/WSS via Certbot + nginx
-- `DEBUG=False`, secure `SECRET_KEY`
-
-### Nginx Config (served under `/backgammon/`)
-
-```nginx
-location /backgammon/api/ {
-    proxy_pass http://127.0.0.1:8005/api/;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-
-location /backgammon/ws/ {
-    proxy_pass http://127.0.0.1:8005/ws/;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-
-location /backgammon/ {
-    alias /home/dev/backgammon/frontend/dist/;
-    index index.html;
-    try_files $uri $uri/ /backgammon/index.html;
-}
-
-location /backgammon/static/ {
-    alias /home/dev/backgammon/backend/staticfiles/;
-}
-```
-
-### Deployment Checklist
-
-| Step | Details |
-|------|---------|
-| 1. `.env` | `SECRET_KEY`, `DEBUG=False`, `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, `DATABASE_URL` |
-| 2. Database | PostgreSQL — `pip install psycopg2-binary dj-database-url` |
-| 3. Redis | `sudo apt install redis-server` |
-| 4. Frontend | `VITE_SERVER_URL=/backgammon`, `base: '/backgammon/'` in `vite.config.ts`, `BrowserRouter basename="/backgammon"` |
-| 5. ASGI | Daphne systemd service with `DJANGO_SETTINGS_MODULE` + `Environment=` |
-| 6. Logging | Django log config → `/var/log/backgammon/django.log` → Alloy → Loki → Grafana |
-
----
-
-## License
-
-MIT (bot AI adapted from [backgammon-baddie](https://github.com/devensimonson/backgammon-baddie), also MIT)
+לפריסה נדרשים API ו־WebSocket לשרת ASGI, נכסי frontend תחת /backgammon/, שירות קוביות פנימי, Redis ותזמון run_tasks. [נוהל המערכת](../backgammon-tournaments-backend/DEPLOY_GAME_AND_CLUB.he.md), [מצב קיים](../CURRENT_STATE.he.md).

@@ -1,5 +1,9 @@
 # Frontend Intent Migration — Design
 
+> **עדכון תיעוד 19.09.2026 — מסמך היסטורי/בדיקה מתוארכת.** פרוטוקול הכוונות כבר פעיל. הלקוח שולח roll/move/undo/double ועוד, והשרת קובע את המצב והתוצאה. זו היסטוריית המעבר ולא משימה שטרם התחילה; החוזה המעודכן ב־backend/README.md וב־game/consumers.py.
+>
+> [מצב המערכת](<../../../../CURRENT_STATE.he.md>) · [תיעוד העיצוב](<../../../../docs/UI_DESIGN.he.md>). לא הורצו בדיקות חדשות במסגרת עדכון זה.
+
 Date: 2026-08-07
 Status: Approved design
 

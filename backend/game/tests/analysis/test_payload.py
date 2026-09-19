@@ -102,6 +102,24 @@ def add_event(room, game_id, sequence, event_type='roll', payload=None,
 
 
 class AnalysisPayloadSourceTests(TestCase):
+    def test_ai_payload_preserves_bot_moves_without_attributing_system_events(self):
+        white, black = make_players('AI')
+        room, white_rp, black_rp = make_room('AI01', white, black)
+        black_rp.delete()
+        make_state(room, ai={'difficulty': 'medium'}, maxCube=1, doublingAllowed=False)
+        match = make_match(room, white, None, [game_entry('g1', 1)])
+        match.match_type = 'ai'
+        add_event(room, 'g1', 1, 'opening_result_done', {'turn': 'white'})
+        add_event(room, 'g1', 2, 'roll', {'turn': 'white'}, player=white_rp)
+        add_event(room, 'g1', 3, 'roll', {'turn': 'black'})
+        add_event(room, 'g1', 4, 'end_turn', {'turn': 'white', 'actorColor': 'black'})
+        payload = build_match_analysis_payload(match)
+        self.assertEqual(payload['source']['type'], 'ai')
+        self.assertEqual(payload['players']['black'], {'player_id': None, 'name': 'Open Sage', 'kind': 'ai'})
+        self.assertEqual([e['player_color'] for e in payload['games'][0]['events']], [None, 'white', 'black', 'black'])
+        self.assertFalse(payload['rules']['doubling_enabled'])
+        self.assertGreaterEqual(payload['rules']['max_cube_value'], 2)
+
     def test_private_source_without_link(self):
         white_player, black_player = make_players('PRIV')
         room, _, _ = make_room('PRIV01', white_player, black_player)

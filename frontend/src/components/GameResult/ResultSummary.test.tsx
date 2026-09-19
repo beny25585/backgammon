@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/experimental-ct-react";
 import QuickGameResult from "./QuickGameResult";
 
 test("result maps analysis to black self, preserves zero coins, and links to this analysis", async ({ mount, page }) => {
-  await page.route("**/tournaments-api/api/analyses?room=room-1", route => route.fulfill({ json: { matches: [{
+  await page.route("**/tournaments-api/analyses?room=room-1", route => route.fulfill({ json: { matches: [{
     id: "analysis-1", room_id: "room-1", created_at: "2026-09-19", status: "completed",
     players: [{ color: "white", pr: "8.5", luck: "-0.12" }, { color: "black", pr: "2.1", luck: "0.12" }],
   }] } }));
@@ -20,7 +20,7 @@ test("result maps analysis to black self, preserves zero coins, and links to thi
 });
 
 test("pending analysis hides partial metrics until completed", async ({ mount, page }) => {
-  await page.route("**/tournaments-api/api/analyses?room=pending", route => route.fulfill({ json: { matches: [{
+  await page.route("**/tournaments-api/analyses?room=pending", route => route.fulfill({ json: { matches: [{
     id: "pending-id", room_id: "pending", created_at: "2026-09-19", status: "processing",
     players: [{ color: "white", pr: 0, luck: 0 }],
   }] } }));

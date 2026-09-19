@@ -125,11 +125,12 @@
   .strip {
     display: grid;
     grid-template-columns: 1fr;
-    width: clamp(46px, 72cqw, 68px);
+    width: min(100%, clamp(54px, 82cqw, 88px));
     margin: 0 auto;
     border-color: var(--ui-accent-border, rgba(42, 91, 255, 0.45));
-    border-radius: 4px;
-    background: var(--ui-accent, #2448ff);
+    border-radius: 10px;
+    background: #101615;
+    box-shadow: inset 0 1px 0 #ffffff0d, 0 4px 12px #00000033;
   }
 
   .side {
@@ -145,10 +146,14 @@
     font-size: clamp(13px, 4.6dvh, 19px);
   }
 
-  .idle,
+  .idle {
+    background: rgba(255, 255, 255, 0.025);
+  }
+
   .myActive,
   .oppActive {
-    background: transparent;
+    background: var(--ui-accent-faint, rgba(229, 180, 77, 0.14));
+    box-shadow: inset 3px 0 var(--ui-accent, #e3be61);
   }
 
   .idle .label,
@@ -157,7 +162,15 @@
   .myActive .time,
   .oppActive .label,
   .oppActive .time {
-    color: var(--ui-on-accent, #f5f8ff);
+    color: var(--ui-accent, #e3be61);
+  }
+
+  .idle .time {
+    color: rgba(247, 241, 231, 0.65);
+  }
+
+  .low .time {
+    color: #ff8798;
   }
 
   .delay {
@@ -165,16 +178,12 @@
     padding: 2px 4px;
     border-block: 1px solid rgba(255, 255, 255, 0.18);
     border-inline: 0;
-    background: rgba(0, 0, 0, 0.68);
+    background: rgba(0, 0, 0, 0.24);
   }
 
   .delayLabel {
-    font-size: 0;
-  }
-
-  .delayLabel::after {
-    content: "Delay";
-    font-size: clamp(7px, 1.8dvh, 8px);
+    font-size: clamp(7px, 1.8dvh, 9px);
+    font-weight: 600;
     color: rgba(255, 255, 255, 0.62);
   }
 

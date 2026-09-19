@@ -314,9 +314,7 @@ def finalize_room(room, state, winner, win_type, reason):
             winner,
         )
 
-        # The analysis ingestion contract currently requires two human players.
-        if match.match_type != 'ai':
-            enqueue_match_analysis(match)
+        enqueue_match_analysis(match)
 
     return match
 
@@ -417,8 +415,7 @@ def record_game_end(room, state, winner, win_type, reason):
             # Only the end of the *match* is a fixture result. Individual games inside a
             # longer match end here too and must not be reported.
             _report_to_tournament(locked, result['match'], winner)
-            if result['match'].match_type != 'ai':
-                enqueue_match_analysis(result['match'])
+            enqueue_match_analysis(result['match'])
         else:
             locked.save()
         return result

@@ -77,6 +77,8 @@ def get_room_player_usernames(room_id):
         room_id=room_id).select_related('player__user')
     for rp in rps:
         names[rp.color] = str(rp.player) if rp.player else None
+    if GameRoom.objects.filter(pk=room_id, state__ai__isnull=False).exists():
+        names["black"] = "Open Sage"
     return names
 
 
@@ -99,7 +101,7 @@ def record_event_and_advance(room, player_color, event_type, payload):
         game_id=event_game_id(payload),
         sequence=sequence,
         event_type=event_type,
-        payload=payload,
+        payload={**payload, "actorColor": player_color},
     )
     return sequence
 
@@ -135,7 +137,7 @@ def record_event(room_id, player_color, event_type, payload, sequence):
         game_id=event_game_id(payload),
         sequence=sequence,
         event_type=event_type,
-        payload=payload,
+        payload={**payload, "actorColor": player_color},
     )
 
 

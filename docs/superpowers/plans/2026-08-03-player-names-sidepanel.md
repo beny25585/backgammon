@@ -1,5 +1,9 @@
 # Player Names in Side Panel Implementation Plan
 
+> **עדכון תיעוד 19.09.2026 — מסמך היסטורי/בדיקה מתוארכת.** שמות שחקנים ותצוגת הצד כבר משולבים בממשק. זו תוכנית יישום היסטורית, לא הוראה להפעלה חוזרת או להקצאת אגנטים. ראו frontend/README.md לתיאור הרכיבים והמסלולים הנוכחיים.
+>
+> [מצב המערכת](<../../../../CURRENT_STATE.he.md>) · [תיעוד העיצוב](<../../../../docs/UI_DESIGN.he.md>). לא הורצו בדיקות חדשות במסגרת עדכון זה.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Show both players' usernames in the game side panel (online mode only), falling back to the current generic labels when a name is missing.

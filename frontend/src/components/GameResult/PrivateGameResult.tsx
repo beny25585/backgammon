@@ -32,6 +32,7 @@ interface Props {
   onClose: () => void;
   onRematch: () => void;
   showRematch?: boolean;
+  onPracticeAgain?: () => void;
   rematchPending?: boolean;
   onCancelRematch?: () => void;
 }
@@ -58,10 +59,11 @@ export default function PrivateGameResult({
   onClose,
   onRematch,
   showRematch = true,
+  onPracticeAgain,
   rematchPending,
   onCancelRematch,
 }: Props) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   return (
     <GameResult
       variant="private"
@@ -107,6 +109,10 @@ export default function PrivateGameResult({
           </>
         ) : (
           <>
+            {onPracticeAgain && <button type="button" onClick={onPracticeAgain}
+              style={{ minHeight: 44, padding: '8px 16px', borderRadius: 999, background: '#e7bd72', color: '#0f2a2f', border: '1px solid #e7bd72' }}>
+              {locale === 'he' ? 'משחק נוסף · בחירת רמה והגדרות' : 'Play again · Level & settings'}
+            </button>}
             {showRematch && <button
               type="button"
               onClick={onRematch}

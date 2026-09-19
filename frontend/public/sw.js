@@ -1,4 +1,4 @@
-const CACHE_NAME = "backgammon-app-v3";
+const CACHE_NAME = "backgammon-app-v4";
 const APP_SHELL = [
   "/backgammon/",
   "/backgammon/pwa-icon-192.png",
@@ -35,6 +35,8 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  // Development source and Vite runtime URLs must always come from the server.
+  if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return;
   // Chrome must see the current shared installation scope, not an old app-shell copy.
   if (url.pathname === "/backgammon/manifest.webmanifest") return;
   if (
@@ -72,6 +74,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Only fingerprinted build assets and app icons are safe for cache-first.
+  if (!url.pathname.startsWith("/backgammon/assets/") &&
+      !APP_SHELL.includes(url.pathname)) return;
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;

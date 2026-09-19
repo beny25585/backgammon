@@ -63,6 +63,7 @@ class AiSession(models.Model):
     """Server-owned practice configuration and cross-worker command lease."""
     room = models.OneToOneField(GameRoom, on_delete=models.CASCADE, related_name='ai_session')
     difficulty = models.CharField(max_length=10, default='hard')
+    purchase_id = models.UUIDField(null=True, blank=True, unique=True)
     target_board = models.JSONField(null=True, blank=True)
     lease_token = models.CharField(max_length=36, default='', blank=True)
     lease_until = models.DateTimeField(null=True, blank=True)

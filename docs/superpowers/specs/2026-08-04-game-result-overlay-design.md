@@ -1,5 +1,9 @@
 # Game-Result Overlay Redesign — Design
 
+> **עדכון תיעוד 19.09.2026 — מסמך היסטורי/בדיקה מתוארכת.** תצוגות התוצאה הקיימות נמצאות ב־frontend/src/components/GameResult ומחוברות למסך ולמצב המשחק. יש לבדוק את הקוד הנוכחי לפני שימוש בשמות הקבצים ובבעיות Current State של מפרט אוגוסט.
+>
+> [מצב המערכת](<../../../../CURRENT_STATE.he.md>) · [תיעוד העיצוב](<../../../../docs/UI_DESIGN.he.md>). לא הורצו בדיקות חדשות במסגרת עדכון זה.
+
 Date: 2026-08-04
 Status: Approved design
 

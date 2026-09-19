@@ -1,5 +1,9 @@
 # Gameplay performance audit — 2026-09-06
 
+> **עדכון תיעוד 19.09.2026 — תכנון או ביקורת היסטורית.** מדידות, צילומים ותוצאות בדיקה בגוף המסמך שייכים ל־6 בספטמבר. כללי העיצוב העדכניים ב־frontend/UI_GUIDELINES.md. עדכון התיעוד לא ביצע פרופיילינג או בדיקת מכשיר חוזרת, ולכן אין להחיל את המדידות אוטומטית על קוד העבודה הנוכחי.
+>
+> [מצב המערכת העדכני](<../CURRENT_STATE.he.md>) · [מפתח התיעוד](<../docs/README.md>). עדכון זה מבוסס על קוד מקומי; בדיקות וספירות בגוף המסמך נשארות מתוארכות למועד ביצוען.
+
 The reported symptom was a checker pausing or jumping near the end of a move in online play. The target browsers are Chrome, Microsoft Edge and Safari, with priority on Android phones and iPhones.
 
 ## Changes

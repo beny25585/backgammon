@@ -1,7 +1,11 @@
-1. match setings need to add double cube anaibale or disable
+# המשך עבודה — משחק
 
-2. create dubling offer ned to be visualy better
+עודכן: 19.09.2026 לפי סקירת קוד, ללא הרצת בדיקות.
 
-3. setttings in game need auto roll the dice only show the resulte
+- לאמת את חיבור מסך התרגול לחוזה השרת החדש: מחיר, request_id, יעד, שעון והכפלות. החיבור קיים בקוד; נדרשת בדיקת מסלול. [פירוט](../docs/open-sage-practice.he.md).
+- ליישר את טווח ההכפלות הדינמי עם אימות תוצאות הכספים, כולל קובייה מעל 64. [פורמטים](../backgammon-tournaments-backend/GAME_FORMATS.md).
+- לבדוק מסלול מלא בין שני חשבונות: כניסה, משחק, חיבור מחדש, סיום, מסירת תוצאה, ארנק והיסטוריה; אין להסיק הצלחה מביקורת קוד.
+- לבדוק תרגול וחיוב/חידוש ללא כפילות בממשק המחובר, בנפרד מהבוט המקומי.
+- לבצע בדיקת מכשיר לעיצוב הלוח, קוביות, בקשת הכפלה, PWA ו־Push.
 
-4. check why i dont see the history of the games in game
+אפשרות הכפלה, Auto Roll, הגדרות והיסטוריית משחק כבר קיימות בקוד; הרשימה הישנה לא הוכיחה שהן חסרות. אין לשנות אותן על סמך ניסוח ה־TODO הישן בלבד. [מצב המערכת](../CURRENT_STATE.he.md).

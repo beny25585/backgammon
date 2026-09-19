@@ -39,7 +39,7 @@ class PracticeSocketTests(TransactionTestCase):
                 return event
         self.fail('Expected event missing')
 
-    async def fake_board(self, state, difficulty):
+    async def fake_board(self, state, difficulty, match=None):
         engine = BackgammonEngine(copy.deepcopy(state))
         while engine.state['turn'] == 'black' and engine.state['phase'] == 'moving' and engine.state['remaining']:
             move = engine.all_legal_moves('black')[0]
@@ -61,6 +61,7 @@ class PracticeSocketTests(TransactionTestCase):
             initial = await self.receive_until(next_comm, lambda e: e.get('initial'))
             self.assertEqual(initial['payload']['points'], board)
             self.assertEqual(initial['playerColor'], 'white')
+            self.assertEqual(initial['players']['black'], 'Open Sage')
             await next_comm.disconnect()
 
     async def test_stranger_rejected(self):
@@ -71,6 +72,67 @@ class PracticeSocketTests(TransactionTestCase):
         self.assertFalse(connected)
         self.assertEqual(code, 4003)
         await comm.disconnect()
+
+    async def test_unpaid_room_cannot_connect(self):
+        await database_sync_to_async(GameRoom.objects.filter(pk=self.room.pk).update)(status='waiting')
+        comm = self.communicator()
+        connected, code = await comm.connect()
+        self.assertFalse(connected)
+        self.assertEqual(code, 4003)
+        await comm.disconnect()
+
+    async def test_bot_offers_double_and_waits_for_human(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(phase='rolling', turn='black', doublingEnabled=True, maxCube=64)
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        await database_sync_to_async(GameRoom.objects.filter(pk=self.room.pk).update)(target_points=5)
+        with patch('game.ai.request_decision', new=AsyncMock(return_value={'should_double': True, 'should_take': True})):
+            comm = self.communicator()
+            self.assertTrue((await comm.connect())[0])
+            event = await self.receive_until(comm, lambda e: e.get('payload', {}).get('phase') == 'doubling_offered')
+            self.assertEqual(event['payload']['doubleOfferedBy'], 'black')
+            await comm.disconnect()
+
+    async def test_bot_takes_human_double(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(phase='doubling_offered', turn='white', doubleOfferedBy='white', doublingEnabled=True, maxCube=64)
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        with patch('game.ai.request_decision', new=AsyncMock(return_value={'should_take': True})):
+            comm = self.communicator()
+            self.assertTrue((await comm.connect())[0])
+            event = await self.receive_until(comm, lambda e: e.get('payload', {}).get('cube') == 2)
+            self.assertEqual(event['payload']['cubeOwner'], 'black')
+            self.assertEqual(event['payload']['turn'], 'white')
+            await comm.disconnect()
+
+    async def test_retry_after_failure_continues_same_roll(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(phase='moving', turn='black', dice=[2, 2], remaining=[2] * 4, doublingEnabled=False)
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        comm = self.communicator()
+        with patch('game.ai.request_board', new=AsyncMock(side_effect=RuntimeError('offline'))):
+            self.assertTrue((await comm.connect())[0])
+            await self.receive_until(comm, lambda e: e.get('type') == 'error')
+        with patch('game.ai.request_board', side_effect=self.fake_board), patch('game.consumers.fetch_turn_dice') as dice:
+            await comm.send_json_to({'type': 'ai_retry'})
+            await self.receive_until(comm, lambda e: e.get('type') == 'state_update'
+                and e.get('payload', {}).get('turn') == 'white')
+            dice.assert_not_called()
+        await comm.disconnect()
+
+    async def test_bot_declines_double_and_scores_old_cube(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(phase='doubling_offered', turn='white', doubleOfferedBy='white',
+            doublingEnabled=True, maxCube=64, cube=2, gameFormat='match')
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        with patch('game.ai.request_decision', new=AsyncMock(return_value={'should_take': False})):
+            comm = self.communicator()
+            self.assertTrue((await comm.connect())[0])
+            event = await self.receive_until(comm, lambda e: e.get('type') == 'game_ended')
+            self.assertEqual(event['payload']['winner'], 'white')
+            stored = await database_sync_to_async(GameRoom.objects.get)(pk=self.room.pk)
+            self.assertEqual(stored.white_score, 2)
+            await comm.disconnect()
 
     async def test_opening_roll_bot_wins_and_plays_deciding_dice(self):
         initial = BackgammonEngine.get_initial_state()

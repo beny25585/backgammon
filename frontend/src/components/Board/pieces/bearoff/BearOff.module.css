@@ -7,7 +7,7 @@
   height: 100%;
   gap: clamp(34px, 18dvh, 96px);
   padding: clamp(6px, 2.6dvh, 16px) 3px;
-  background: #01030b;
+  background: linear-gradient(90deg, #090d0e, #171b19);
   border: 0;
   box-shadow:
     inset 1px 0 rgba(255, 255, 255, 0.08),
@@ -63,9 +63,9 @@
   padding: 4px 2px;
   overflow: hidden;
   border: 1px solid var(--ui-accent-border, rgba(36, 72, 255, 0.28));
-  border-radius: 2px;
-  background: var(--ui-accent-faint, rgba(36, 72, 255, 0.16));
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.48);
+  border-radius: 8px;
+  background: linear-gradient(90deg, #00000080, #ffffff06);
+  box-shadow: inset 0 2px 6px #00000080, 0 1px 0 #ffffff0d;
 }
 
 .sectionReverse {
@@ -99,6 +99,7 @@
   min-width: clamp(18px, 2cqw, 22px);
   height: clamp(18px, 2cqw, 22px);
   padding: 0 0.2rem;
+  border-radius: 5px;
   border: 1px solid var(--ui-accent-border, rgba(229, 180, 77, 0.42));
   background: var(--ui-accent-faint, rgba(229, 180, 77, 0.12));
   color: var(--ui-accent, #f5d28c);
@@ -107,7 +108,8 @@
 }
 
 .checkerPip {
-  width: calc(var(--checker) - 4px);
+  width: min(calc(var(--checker) - 4px), 100%);
+  flex-shrink: 0;
   height: 0.4rem;
   border-radius: 2px;
 }

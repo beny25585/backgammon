@@ -35,6 +35,7 @@ interface GameScreenProps {
   homeLabel?: string;
   gameType?: GameType;
   showRematch?: boolean;
+  onPracticeAgain?: () => void;
 }
 
 function hasInterruptedOpeningMove(
@@ -62,14 +63,18 @@ export default function GameScreen({
   homeLabel,
   gameType: propGameType,
   showRematch = true,
+  onPracticeAgain,
 }: GameScreenProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const {
     state,
     roomId,
     playerColor,
     isLoading,
     error,
+    aiFailed,
+    aiRetrying,
+    retryAi,
     clearError,
     makeMove,
     rollDice,
@@ -202,8 +207,12 @@ export default function GameScreen({
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
           <span>
-            {t("game.errorPrefix")}: {error}
+            {aiFailed ? (locale === 'he' ? 'המחשב נעצר. אפשר לנסות שוב מאותו מצב.' : 'The computer stopped. Retry from this position.') : `${t("game.errorPrefix")}: ${error}`}
           </span>
+          {aiFailed && retryAi && <button type="button" onClick={retryAi} disabled={aiRetrying}
+            style={{ minHeight: 44, padding: '8px 14px', borderRadius: 12, background: '#e7bd72', color: '#142321', pointerEvents: 'auto', flexShrink: 0 }}>
+            {aiRetrying ? (locale === 'he' ? 'מנסה שוב…' : 'Retrying…') : (locale === 'he' ? 'ניסיון חוזר' : 'Retry')}
+          </button>}
           <button
             type="button"
             className={styles.errorCardClose}
@@ -290,6 +299,7 @@ export default function GameScreen({
           }
           return (
             <PrivateGameResult
+              onPracticeAgain={onPracticeAgain}
               showRematch={showRematch}
               {...common}
               cube={gameResult.cube}

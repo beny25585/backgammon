@@ -6,7 +6,7 @@
   align-items: center;
   gap: clamp(4px, 1.6cqw, 8px);
   padding: clamp(5px, 1.8cqw, 9px);
-  background: #01030b;
+  background: linear-gradient(90deg, #111617, #090d0e);
   border-right: 1px solid var(--ui-accent-border, rgba(47, 82, 201, 0.34));
   overflow: visible;
   container-type: inline-size;
@@ -35,15 +35,16 @@
   z-index: 32;
   display: grid;
   place-items: center;
-  gap: 3px;
+  align-content: center;
+  gap: 4px;
   width: calc(var(--bearoff-w, 40px) - 6px);
   height: calc(var(--bearoff-w, 40px) - 6px);
   margin: 0;
   padding: 0;
   border: 1px solid var(--ui-accent-border, rgba(73, 104, 255, 0.62));
-  border-radius: 5px;
-  background: var(--ui-accent, #2448ff);
-  color: var(--ui-on-accent, #fff);
+  border-radius: 9px;
+  background: linear-gradient(145deg, #252824, #111615);
+  color: var(--ui-accent, #e3be61);
   box-shadow:
     0 12px 24px rgba(0, 0, 0, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
@@ -56,14 +57,15 @@
 .menuButton:hover,
 .menuButtonOpen {
   background: var(--ui-accent-hover, #3156ff);
+  color: var(--ui-on-accent, #fff);
   border-color: var(--ui-accent-border, rgba(182, 197, 255, 0.85));
   box-shadow: 0 0 0 3px var(--ui-accent-faint, rgba(49, 86, 255, 0.18)), 0 12px 24px rgba(0, 0, 0, 0.36);
 }
 
 .menuButton span {
   display: block;
-  width: 56%;
-  height: 3px;
+  width: 48%;
+  height: 2px;
   border-radius: 999px;
   background: currentColor;
 }
@@ -247,7 +249,7 @@
     grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
     gap: clamp(3px, 1dvh, 6px);
     padding: 4px 5px;
-    background: #000;
+    background: linear-gradient(90deg, #111617, #090d0e);
     border-inline-start: 0;
     border-inline-end: 1px solid var(--ui-accent-border, rgba(32, 62, 130, 0.42));
     overflow: visible;
@@ -261,7 +263,7 @@
   }
 
   .menuButton span {
-    height: 3px;
+    height: 2px;
   }
 
   .menuDrawer {

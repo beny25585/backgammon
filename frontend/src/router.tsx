@@ -133,6 +133,10 @@ function GameRoute() {
       }
     >
       <GameScreen
+        onPracticeAgain={params.get('practice') === '1' ? () => {
+          clearRoom();
+          window.location.assign(new URL('/tournaments/practice', returnUrl).toString());
+        } : undefined}
         onLeave={handleLeave}
         homeLabel={
           gameType === "tournament"

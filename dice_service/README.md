@@ -1,5 +1,9 @@
 # Backgammon — Dice Service
 
+> **עדכון תיעוד 19.09.2026 — נוהל מתוחזק.** שירות הקוביות נשאר שירות HTTP פנימי למשחק מקוון; DICE_SERVICE_URL בשרת המשחק קובע את יעדו. הוראות mix והפורט להלן הן הוראות הפעלה בלבד, לא health check שבוצע היום.
+>
+> [מצב המערכת העדכני](<../../CURRENT_STATE.he.md>) · [מפתח התיעוד](<../../docs/README.md>). עדכון זה מבוסס על קוד מקומי; בדיקות וספירות בגוף המסמך נשארות מתוארכות למועד ביצוען.
+
 Elixir + Plug/Cowboy HTTP service that is the **single source of dice values** for online
 games. It wraps the vendored `dice_roller` library, which uses `:crypto.strong_rand_bytes/1`
 for cryptographically secure randomness. Django talks to it through `backend/game/dice.py`

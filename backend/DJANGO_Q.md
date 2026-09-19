@@ -1,58 +1,22 @@
-Django-Q integration guide
+# Background tasks — current operation
 
-This project includes a centralized task function at `game/tasks.py`:
+Reviewed: 2026-09-19. The filename is retained for existing links. Django-Q is **not** listed in backend/requirements.txt and is not the current task runner; older installation instructions described an optional proposal.
 
-- `expire_waiting_rooms(minutes=60)` — expires `GameRoom` rows in status `waiting` older than `minutes`.
+## Current commands
 
-Recommended quickstart (Postgres + Django-Q):
+Run these from the game backend environment:
 
-1. Install:
+~~~sh
+python manage.py run_tasks
+python manage.py expire_waiting_rooms
+python manage.py purge_redeemed_tickets
+python manage.py check_delivery_health
+~~~
 
-```bash
-pip install django-q
-```
+run_tasks processes a batch of up to 50 due Task records and returns. Schedule it repeatedly (the deployment runbook uses one to a few seconds), rather than starting it once and assuming a daemon remains running. game/task_runner.py handles leases, retries and failures requiring review.
 
-2. Add to `settings.py`:
+expire_waiting_rooms calls game/tasks.py. Linked rooms are reported before closure: a single occupied seat may generate a forfeit; other expired-room shapes can cancel without choosing a winner. Do not replace this with a bulk database delete.
 
-```py
-INSTALLED_APPS += ["django_q"]
+The tournament backend separately runs run_push_notifications and deliver_admin_game_commands; the analysis service runs process_analyses. None of these is started automatically by run_tasks. [Deployment](../../backgammon-tournaments-backend/DEPLOY_GAME_AND_CLUB.he.md).
 
-Q_CLUSTER = {
-    "name": "backgammon-q",
-    "workers": 2,
-    "timeout": 60,
-    "retry": 120,
-    "save_limit": 250,
-    "orm": "default",  # use Django ORM/Postgres as broker
-}
-```
-
-3. Run migrations for django-q:
-
-```bash
-python manage.py migrate
-```
-
-4. Start the worker (supervise with systemd/container):
-
-```bash
-python manage.py qcluster
-```
-
-5. Schedule or enqueue the expire task:
-
-```py
-from django_q.tasks import schedule, async_task
-
-# one-off
-async_task('game.tasks.expire_waiting_rooms', 60)
-
-# schedule every 60 minutes
-schedule('game.tasks.expire_waiting_rooms', 60, schedule_type='I', minutes=60)
-```
-
-Notes:
-
-- The management command `python manage.py expire_waiting_rooms [minutes]` now calls the shared `expire_waiting_rooms` function. You can keep using it directly or enqueue it via Django-Q.
-- Monitor queued/scheduled tasks via the `django_q` admin models.
-- For high throughput or advanced routing, consider Celery with Redis instead.
+No scheduler was installed or verified by this documentation update.
