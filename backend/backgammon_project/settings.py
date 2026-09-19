@@ -147,6 +147,8 @@ GAMELINK_TICKET_TTL = 120
 GAMELINK_LINK_TOKEN_TTL = timedelta(hours=2)
 
 # Backgammon Analysis Service
+AI_SERVICE_URL = config('AI_SERVICE_URL', default='')
+ANALYSIS_API_TOKEN = config('ANALYSIS_API_TOKEN', default='')
 ANALYSIS_SERVICE_URL = config(
     "ANALYSIS_SERVICE_URL",
     default="",

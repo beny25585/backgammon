@@ -34,6 +34,7 @@ interface GameScreenProps {
   onLeave?: (outcome?: "won" | "lost") => void;
   homeLabel?: string;
   gameType?: GameType;
+  showRematch?: boolean;
 }
 
 function hasInterruptedOpeningMove(
@@ -60,6 +61,7 @@ export default function GameScreen({
   onLeave,
   homeLabel,
   gameType: propGameType,
+  showRematch = true,
 }: GameScreenProps) {
   const { t } = useI18n();
   const {
@@ -288,6 +290,7 @@ export default function GameScreen({
           }
           return (
             <PrivateGameResult
+              showRematch={showRematch}
               {...common}
               cube={gameResult.cube}
               ratingBefore={gameResult.ratingBefore ?? null}

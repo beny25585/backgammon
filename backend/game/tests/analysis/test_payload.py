@@ -186,6 +186,8 @@ class AnalysisPayloadContentTests(TestCase):
 
         self.assertEqual(
             payload['players']['white']['player_id'], white_player.pk)
+        self.assertEqual(payload['players']['white']['name'], str(white_player))
+        self.assertEqual(payload['players']['black']['name'], str(black_player))
         self.assertEqual(
             payload['players']['black']['player_id'], black_player.pk)
         self.assertNotEqual(

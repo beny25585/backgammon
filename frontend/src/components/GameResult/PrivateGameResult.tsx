@@ -31,6 +31,7 @@ interface Props {
   clockRemaining?: Partial<Record<Color, number>> | null;
   onClose: () => void;
   onRematch: () => void;
+  showRematch?: boolean;
   rematchPending?: boolean;
   onCancelRematch?: () => void;
 }
@@ -56,6 +57,7 @@ export default function PrivateGameResult({
   durationSeconds,
   onClose,
   onRematch,
+  showRematch = true,
   rematchPending,
   onCancelRematch,
 }: Props) {
@@ -73,7 +75,7 @@ export default function PrivateGameResult({
       reason={reason}
       onClose={onClose}
       actions={
-        rematchPending ? (
+        showRematch && rematchPending ? (
           <>
             <button
               type="button"
@@ -105,7 +107,7 @@ export default function PrivateGameResult({
           </>
         ) : (
           <>
-            <button
+            {showRematch && <button
               type="button"
               onClick={onRematch}
               style={{
@@ -118,7 +120,7 @@ export default function PrivateGameResult({
               }}
             >
               ↻ {t("game.rematch")}
-            </button>
+            </button>}
             <button
               type="button"
               onClick={onClose}

@@ -59,6 +59,15 @@ class RoomPlayer(models.Model):
         return f"{self.player} ({self.color}) in {self.room.code}"
 
 
+class AiSession(models.Model):
+    """Server-owned practice configuration and cross-worker command lease."""
+    room = models.OneToOneField(GameRoom, on_delete=models.CASCADE, related_name='ai_session')
+    difficulty = models.CharField(max_length=10, default='hard')
+    target_board = models.JSONField(null=True, blank=True)
+    lease_token = models.CharField(max_length=36, default='', blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+
+
 class GameState(models.Model):
     room = models.OneToOneField(GameRoom, on_delete=models.CASCADE)
     state_data = models.JSONField(default=dict)

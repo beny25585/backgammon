@@ -297,7 +297,7 @@ def finalize_room(room, state, winner, win_type, reason):
 
         match = Match.objects.create(
             room=locked,
-            match_type='online',
+            match_type='ai' if (locked.state or {}).get('ai') else 'online',
             target_points=locked.target_points,
             white_score=locked.white_score,
             black_score=locked.black_score,
@@ -314,9 +314,9 @@ def finalize_room(room, state, winner, win_type, reason):
             winner,
         )
 
-        enqueue_match_analysis(
-            match
-        )
+        # The analysis ingestion contract currently requires two human players.
+        if match.match_type != 'ai':
+            enqueue_match_analysis(match)
 
     return match
 
@@ -404,7 +404,7 @@ def record_game_end(room, state, winner, win_type, reason):
             metadata, _ = _match_metadata(locked, state, reason)
             result['match'] = Match.objects.create(
                 room=locked,
-                match_type='online',
+                match_type='ai' if (locked.state or {}).get('ai') else 'online',
                 target_points=locked.target_points,
                 white_score=locked.white_score,
                 black_score=locked.black_score,
@@ -417,9 +417,8 @@ def record_game_end(room, state, winner, win_type, reason):
             # Only the end of the *match* is a fixture result. Individual games inside a
             # longer match end here too and must not be reported.
             _report_to_tournament(locked, result['match'], winner)
-            enqueue_match_analysis(
-                result["match"]
-            )
+            if result['match'].match_type != 'ai':
+                enqueue_match_analysis(result['match'])
         else:
             locked.save()
         return result

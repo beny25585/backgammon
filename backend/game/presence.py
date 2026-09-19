@@ -191,6 +191,8 @@ def check_room_presence(room_id, now=None):
         room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
         if not room or room.status != 'playing':
             return {'status': 'closed'}
+        if (room.state or {}).get('ai'):
+            return {'status': 'practice'}
         state, presence = _presence(room)
         requires_organizer = _requires_organizer_adjudication(room)
         previous_needs_admin = bool(presence.get('needsAdminAdjudication'))

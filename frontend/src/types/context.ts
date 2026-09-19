@@ -10,6 +10,10 @@ export interface OpeningRollResult {
 
 export type GameType = "tournament" | "1v1" | "quick" | "local";
 
+export interface MakeMoveOptions {
+  origin?: "forced" | "manual";
+}
+
 export interface TournamentProgress {
   roundLabel?: string;
   roundResult?: string;
@@ -71,6 +75,12 @@ export interface GameContextType {
   setOpeningRollResult: (result: OpeningRollResult | null) => void;
   reconnected: boolean;
   opponentConnected: boolean;
+  autoConfirmPending?: boolean;
+  rematchState?: { status: string; reason?: string };
+  requestRematch?: () => void;
+  acceptRematch?: () => void;
+  declineRematch?: () => void;
+  cancelRematch?: () => void;
   timeControl: TimeControl | null;
   clock: Record<Color, number> | null;
   turnStartedAt: number | null;
@@ -81,7 +91,7 @@ export interface GameContextType {
   handleNextGame: () => void;
   handleHome: () => void;
   updateState: (newState: GameState) => void;
-  makeMove: (from: Source, to: Target) => void;
+  makeMove: (from: Source, to: Target, options?: MakeMoveOptions) => void;
   rollDice: () => void;
   reorderDice: () => void;
   offerDouble: () => void;

@@ -164,8 +164,8 @@ def build_match_analysis_payload(match) -> dict:
         "room_id": str(room.id),
         "source": _source_payload(room),
         "players": {
-            "white": {"player_id": match.white_player_id},
-            "black": {"player_id": match.black_player_id},
+            "white": {"player_id": match.white_player_id, "name": str(match.white_player)},
+            "black": {"player_id": match.black_player_id, "name": str(match.black_player)},
         },
         "rules": _rules_payload(match, room, state),
         "result": {

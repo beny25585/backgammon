@@ -362,6 +362,9 @@ def _handoff(user, room, color, frontend_url):
         'color': color,
     }
     link = getattr(room, 'tournament_link', None)
+    if (room.state or {}).get('ai'):
+        fragment_data['practice'] = '1'
+        fragment_data['return'] = tournaments_frontend_url()
     if link:
         # Only propagate a real tournament id. Non-tournament rooms (Head-to-Head)
         # use tournament_id=0 as a placeholder and should not expose a tournament

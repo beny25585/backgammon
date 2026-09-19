@@ -54,6 +54,7 @@ export default function LinkEntry() {
     const params = new URLSearchParams({ color });
     if (tournament) params.set("tournament", tournament);
     if (returnUrl) params.set("return", returnUrl);
+    if (fragment.get("practice") === "1") params.set("practice", "1");
 
     navigate(`/game/${encodeURIComponent(room)}?${params.toString()}`, {
       replace: true,

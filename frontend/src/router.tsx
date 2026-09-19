@@ -141,7 +141,7 @@ function GameRoute() {
               ? "Back to Tournaments"
               : "Back to Lobby"
         }
-        showRematch={!isLinkedOneToOne}
+        showRematch={!isLinkedOneToOne && params.get("practice") !== "1"}
         gameType={gameType}
       />
     </GameProvider>
