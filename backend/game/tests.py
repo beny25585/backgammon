@@ -981,20 +981,24 @@ class FinalizeRoomTests(TestCase):
         self.assertEqual(match.hits, 1)
 
     def test_finalize_room_builds_transcript_from_events(self):
+        state = self._state()
+        game_id = str(state.get("gameId") or "initial")
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=1,
             event_type='roll',
-            payload={'dice': [5, 2], 'turn': 'white'},
+            payload={'dice': [5, 2], 'turn': 'white', 'gameId': game_id},
         )
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=2,
             event_type='move',
-            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white'},
+            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white', 'gameId': game_id},
         )
 
-        match = finalize_room(self.room, self._state(), 'white', 'single', 'bear_off')
+        match = finalize_room(self.room, state, 'white', 'single', 'bear_off')
 
         self.assertEqual(len(match.games[0]['transcript']), 1)
         self.assertEqual(match.games[0]['transcript'][0]['turn'], 'white')
@@ -1179,14 +1183,18 @@ class MatchContinuationTests(TestCase):
     def test_record_game_end_games_include_transcript_and_hits(self):
         self.room.white_score = 4
         self.room.save()
+        state = self._state()
+        game_id = str(state.get("gameId") or "initial")
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=1,
             event_type='roll',
-            payload={'dice': [4, 3], 'turn': 'black'},
+            payload={'dice': [4, 3], 'turn': 'black', 'gameId': game_id},
         )
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=2,
             event_type='move',
             payload={
@@ -1194,10 +1202,12 @@ class MatchContinuationTests(TestCase):
                 'bar': {'white': 0, 'black': 0},
                 'lastMove': [{'from': 5, 'to': 2}],
                 'turn': 'black',
+                'gameId': game_id,
             },
         )
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=3,
             event_type='move',
             payload={
@@ -1205,10 +1215,11 @@ class MatchContinuationTests(TestCase):
                 'bar': {'white': 1, 'black': 0},
                 'lastMove': [{'from': 2, 'to': 5}],
                 'turn': 'black',
+                'gameId': game_id,
             },
         )
 
-        result = record_game_end(self.room, self._state(), 'white', 'single', 'bear_off')
+        result = record_game_end(self.room, state, 'white', 'single', 'bear_off')
 
         match = result['match']
         self.assertEqual(match.hits, 1)
@@ -1235,19 +1246,23 @@ class MatchContinuationTests(TestCase):
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
 
     def test_record_game_end_saves_transcript_from_history(self):
+        state = self._state()
+        game_id = str(state.get("gameId") or "initial")
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=1,
             event_type='roll',
-            payload={'dice': [3, 2], 'turn': 'white'},
+            payload={'dice': [3, 2], 'turn': 'white', 'gameId': game_id},
         )
         GameEvent.objects.create(
             room=self.room,
+            game_id=game_id,
             sequence=2,
             event_type='move',
-            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white'},
+            payload={'lastMove': [{'from': 5, 'to': 2}], 'turn': 'white', 'gameId': game_id},
         )
-        record_game_end(self.room, self._state(), 'white', 'single', 'bear_off')
+        record_game_end(self.room, state, 'white', 'single', 'bear_off')
 
         self.room.refresh_from_db()
         games = self.room.state['match']['games']

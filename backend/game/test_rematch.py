@@ -81,6 +81,6 @@ class RematchGameTests(TestCase):
     def test_old_game_events_not_copied(self):
         room = self._make_room(status='completed')
         from game.models import GameEvent
-        GameEvent.objects.create(room=room, sequence=1, event_type='roll', payload={})
+        GameEvent.objects.create(room=room, game_id="initial", sequence=1, event_type='roll', payload={"gameId": "initial"})
         new_room = create_private_rematch_room(room)
         self.assertEqual(GameEvent.objects.filter(room=new_room).count(), 0)

@@ -4,6 +4,7 @@ Matches frontend engine at src/lib/backgammon/engine.ts
 """
 
 import random
+import uuid
 
 
 class BackgammonEngine:
@@ -25,6 +26,7 @@ class BackgammonEngine:
         p[16] = -3
         p[18] = -5
         return {
+            'gameId': str(uuid.uuid4()),
             'points': p,
             'bar': {'white': 0, 'black': 0},
             'home': {'white': 0, 'black': 0},

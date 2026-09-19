@@ -51,7 +51,8 @@ def is_linked_room(room_id):
 
 @database_sync_to_async
 def get_username(user_id):
-    player = Player.objects.select_related('user').filter(user_id=user_id).first()
+    player = Player.objects.select_related(
+        'user').filter(user_id=user_id).first()
     if player is not None:
         return str(player)
 
@@ -63,7 +64,8 @@ def get_username(user_id):
 
 @database_sync_to_async
 def get_room_player_color(room_id, user_id):
-    rp = RoomPlayer.objects.filter(room_id=room_id, player__user_id=user_id).first()
+    rp = RoomPlayer.objects.filter(
+        room_id=room_id, player__user_id=user_id).first()
     return rp.color if rp else None
 
 
@@ -71,7 +73,8 @@ def get_room_player_color(room_id, user_id):
 def get_room_player_usernames(room_id):
     """Return display names for the room's players keyed by color."""
     names = {"white": None, "black": None}
-    rps = RoomPlayer.objects.filter(room_id=room_id).select_related('player__user')
+    rps = RoomPlayer.objects.filter(
+        room_id=room_id).select_related('player__user')
     for rp in rps:
         names[rp.color] = str(rp.player) if rp.player else None
     return names
@@ -85,13 +88,15 @@ def room_has_both_players(room_group_name):
 @database_sync_to_async
 def record_event_and_advance(room, player_color, event_type, payload):
     """Atomically bump last_sequence and store a GameEvent. Returns the new sequence."""
-    GameRoom.objects.filter(id=room.id).update(last_sequence=models.F('last_sequence') + 1)
+    GameRoom.objects.filter(id=room.id).update(
+        last_sequence=models.F('last_sequence') + 1)
     room.refresh_from_db()
     sequence = room.last_sequence
     rp = room.players.filter(color=player_color).first()
     GameEvent.objects.create(
         room=room,
         player=rp if rp else None,
+        game_id=event_game_id(payload),
         sequence=sequence,
         event_type=event_type,
         payload=payload,
@@ -127,10 +132,25 @@ def record_event(room_id, player_color, event_type, payload, sequence):
     GameEvent.objects.create(
         room_id=room_id,
         player_id=player_id,
+        game_id=event_game_id(payload),
         sequence=sequence,
         event_type=event_type,
         payload=payload,
     )
+
+
+def event_game_id(payload):
+    """Extract the game ID from a persisted state-snapshot payload.
+
+    The authoritative value is the state snapshot stored in the event
+    payload. The "initial" fallback exists only for legacy persisted
+    rooms that predate real game IDs.
+    """
+    if isinstance(payload, dict):
+        value = payload.get('gameId')
+        if value:
+            return str(value)
+    return 'initial'
 
 
 async def record_event_safely(room_id, player_color, event_type, payload, sequence):
@@ -195,7 +215,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not token:
             logger.warning(
                 "WS connect rejected (4001): missing token",
-                extra={"room_id": self.scope.get("url_route", {}).get("kwargs", {}).get("room_id")},
+                extra={"room_id": self.scope.get("url_route", {}).get(
+                    "kwargs", {}).get("room_id")},
             )
             await self.close(code=4001)
             return
@@ -206,19 +227,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
 
-        self.room_id = self.scope.get('url_route', {}).get('kwargs', {}).get('room_id')
+        self.room_id = self.scope.get('url_route', {}).get(
+            'kwargs', {}).get('room_id')
 
         # Validate room and user assignment BEFORE accepting
         try:
             room = await get_room(self.room_id)
             if not room:
-                logger.warning(f"WS connect rejected (4004): room not found room={self.room_id}")
+                logger.warning(
+                    f"WS connect rejected (4004): room not found room={self.room_id}")
                 await self.close(code=4004)
                 return
 
             self.player_color = await get_room_player_color(self.room_id, self.user_id)
             if not self.player_color:
-                logger.warning(f"WS connect rejected (4003): user {self.user_id} not assigned to room {self.room_id}")
+                logger.warning(
+                    f"WS connect rejected (4003): user {self.user_id} not assigned to room {self.room_id}")
                 await self.close(code=4003)
                 return
 
@@ -244,9 +268,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                 if clock is not None:
                     normalized_state = dict(state_data)
                     normalized_state.setdefault('clock', clock)
-                    normalized_state.setdefault('turnStartedAt', turn_started_at)
+                    normalized_state.setdefault(
+                        'turnStartedAt', turn_started_at)
                     if (
-                        normalized_state.get('clock') != state_data.get('clock')
+                        normalized_state.get(
+                            'clock') != state_data.get('clock')
                         or normalized_state.get('turnStartedAt') != state_data.get('turnStartedAt')
                     ):
                         normalized_state['clock'] = clock
@@ -258,11 +284,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                     timed_out_color = clock_active
 
             username = await get_username(self.user_id)
-            logger.info(f"WebSocket connected: {self.player_color} ({username}) room={self.room_id} phase={state_data.get('phase')}")
+            logger.info(
+                f"WebSocket connected: {self.player_color} ({username}) room={self.room_id} phase={state_data.get('phase')}")
             if not state_data:
                 logger.warning(f"Empty state_data for room {self.room_id}")
         except Exception as exc:
-            logger.exception("WS connect failed", extra={"room_id": self.room_id})
+            logger.exception("WS connect failed", extra={
+                             "room_id": self.room_id})
             await self.close()
             return
 
@@ -285,7 +313,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         await database_sync_to_async(mark_connected)(
             room.id, self.channel_name, self.player_color
         )
-        self._presence_heartbeat_task = asyncio.create_task(self._presence_heartbeat())
+        self._presence_heartbeat_task = asyncio.create_task(
+            self._presence_heartbeat())
 
         username = await get_username(self.user_id)
 
@@ -319,7 +348,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         # Mid-game reconnect: resume the active player's deadline.
         if room.status == 'playing' and not admin_review_pending:
             active = active_player(state_data)
-            deadline = deadline_for(state_data, room.time_control, room.target_points)
+            deadline = deadline_for(
+                state_data, room.time_control, room.target_points)
             if deadline is not None and active and state_data.get('phase') != 'game_over':
                 await self._schedule_timeout(deadline, active)
 
@@ -338,7 +368,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             else:
                 # Legacy stale room: close it so it doesn't stay a dead room.
                 await self._finalize_and_broadcast(
-                    state_data, state_data['winner'], state_data.get('winType', 'single'), 'state_update',
+                    state_data, state_data['winner'], state_data.get(
+                        'winType', 'single'), 'state_update',
                     force_close=True,
                 )
         elif (
@@ -358,7 +389,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'username': username,
             }
         )
-        asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state_data))
+        asyncio.create_task(database_sync_to_async(
+            publish_snapshot)(room.id, state_data))
 
         await self._broadcast_room_status()
 
@@ -376,7 +408,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self._arm_opening_result_watch()
 
     async def disconnect(self, close_code):
-        logger.info(f"WS disconnect: {getattr(self, 'player_color', '?')} room={getattr(self, 'room_id', '?')} code={close_code}")
+        logger.info(
+            f"WS disconnect: {getattr(self, 'player_color', '?')} room={getattr(self, 'room_id', '?')} code={close_code}")
         if getattr(self, '_timeout_task', None):
             self._timeout_task.cancel()
         if getattr(self, '_opening_watch_task', None):
@@ -392,7 +425,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             user_channels.discard(self.channel_name)
             if not user_channels and self.user_id in connected:
                 connected.pop(self.user_id, None)
-                _connected_user_colors.get(self.room_group_name, {}).pop(self.user_id, None)
+                _connected_user_colors.get(
+                    self.room_group_name, {}).pop(self.user_id, None)
                 if hasattr(self, 'player_color') and self.player_color:
                     await self.channel_layer.group_send(
                         self.room_group_name,
@@ -431,7 +465,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     other = 'black' if self.player_color == 'white' else 'white'
                     await self.channel_layer.group_send(
                         self.room_group_name,
-                        {'type': 'rematch_status_targeted_msg', 'targetColor': other, 'payload': {'status': 'unavailable', 'reason': 'opponent_left'}}
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other, 'payload': {
+                            'status': 'unavailable', 'reason': 'opponent_left'}}
                     )
                 elif link is None:
                     def _clear_private_rematch():
@@ -449,7 +484,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     other = 'black' if self.player_color == 'white' else 'white'
                     await self.channel_layer.group_send(
                         self.room_group_name,
-                        {'type': 'rematch_status_targeted_msg', 'targetColor': other, 'payload': {'status': 'unavailable', 'reason': 'opponent_left'}}
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other, 'payload': {
+                            'status': 'unavailable', 'reason': 'opponent_left'}}
                     )
         except Exception:
             pass
@@ -469,7 +505,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             message_type = data.get('type')
             payload = data.get('payload', {})
 
-            logger.info(f"WS receive: type={message_type} player={self.player_color} room={self.room_id}")
+            logger.info(
+                f"WS receive: type={message_type} player={self.player_color} room={self.room_id}")
 
             room = await get_room(self.room_id)
             if room:
@@ -503,7 +540,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             elif message_type == 'rematch_cancel':
                 await self._handle_rematch_cancel()
             else:
-                logger.warning(f"WS unknown message type: {message_type} player={self.player_color}")
+                logger.warning(
+                    f"WS unknown message type: {message_type} player={self.player_color}")
                 await self._send_error(f'Unknown message type: {message_type}')
         except Exception as exc:
             logger.exception("WS receive error")
@@ -524,9 +562,11 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.warning(f"WS intent for missing room: {self.room_id}")
             return await self._send_error('Room not found')
 
-        payload = data.get('payload') if isinstance(data.get('payload'), dict) else {}
+        payload = data.get('payload') if isinstance(
+            data.get('payload'), dict) else {}
         intent = dict(payload)
-        intent.update({k: v for k, v in data.items() if k not in ('type', 'payload')})
+        intent.update({k: v for k, v in data.items()
+                      if k not in ('type', 'payload')})
 
         # Legacy clients that still ship the full state are rejected outright.
         if isinstance(intent.get('state'), dict):
@@ -539,11 +579,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         state = dict(gs.state_data or {})
         engine = BackgammonEngine(state)
 
-        logger.info(f"WS intent: {self.player_color} room={self.room_id} action={action} phase={state.get('phase')} turn={state.get('turn')}")
+        logger.info(
+            f"WS intent: {self.player_color} room={self.room_id} action={action} phase={state.get('phase')} turn={state.get('turn')}")
 
         if action == 'roll':
             result = await self._handle_roll_intent(engine)
-            logger.info(f"[roll] result success={result.get('success')} msg={result.get('message')}")
+            logger.info(
+                f"[roll] result success={result.get('success')} msg={result.get('message')}")
         elif action == 'move':
             result = engine.make_move(
                 intent.get('from'), intent.get('to'), self.player_color
@@ -575,13 +617,15 @@ class GameConsumer(AsyncWebsocketConsumer):
             return await self._send_error(f'Unknown action: {action}')
 
         if not result.get('success'):
-            logger.info(f"[intent] FAILED action={action} msg={result.get('message')}")
+            logger.info(
+                f"[intent] FAILED action={action} msg={result.get('message')}")
             return await self._send_error(
                 result.get('message', 'Action rejected'), action=action
             )
 
         state = engine.state
-        logger.info(f"[intent] OK action={action} phase={state.get('phase')} turn={state.get('turn')} dice={state.get('dice')} remaining={state.get('remaining')}")
+        logger.info(
+            f"[intent] OK action={action} phase={state.get('phase')} turn={state.get('turn')} dice={state.get('dice')} remaining={state.get('remaining')}")
 
         # Server-owned clock: recompute from our wall clock, never trust the client.
         now_ms = int(time_module.time() * 1000)
@@ -662,7 +706,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     'playerColor': self.player_color,
                 }
             )
-        asyncio.create_task(database_sync_to_async(publish_snapshot)(room.id, state))
+        asyncio.create_task(database_sync_to_async(
+            publish_snapshot)(room.id, state))
 
     async def _handle_roll_intent(self, engine):
         """Roll during the opening or a normal turn.
@@ -686,7 +731,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 try:
                     white, black = await fetch_opening_dice()
                 except DiceServiceError as exc:
-                    logger.error("Dice service failed for opening roll: %s", exc)
+                    logger.error(
+                        "Dice service failed for opening roll: %s", exc)
                     return {'success': False, 'message': f'Dice service error: {exc}'}
                 seed = [white, black]
                 engine.state['openingDice'] = seed
@@ -705,7 +751,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         """(Re)arm the countdown from opening_result to the first move."""
         if getattr(self, '_opening_watch_task', None):
             self._opening_watch_task.cancel()
-        self._opening_watch_task = asyncio.create_task(self._opening_result_watch())
+        self._opening_watch_task = asyncio.create_task(
+            self._opening_result_watch())
 
     async def _opening_result_watch(self):
         await asyncio.sleep(GameConsumer.OPENING_RESULT_DELAY)
@@ -762,18 +809,21 @@ class GameConsumer(AsyncWebsocketConsumer):
         """Handle player giving up voluntarily, routed through finalize_room."""
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
-            logger.warning(f"WS give_up on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
+            logger.warning(
+                f"WS give_up on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
             return await self._send_error('No active game')
 
         winner = 'black' if self.player_color == 'white' else 'white'
-        logger.info(f"WS give_up: {self.player_color} forfeits, winner={winner} room={self.room_id}")
+        logger.info(
+            f"WS give_up: {self.player_color} forfeits, winner={winner} room={self.room_id}")
 
         game_state = await get_game_state(room)
         state = dict(game_state.state_data or {})
         loser_home = (state.get('home') or {}).get(self.player_color, 0)
         win_type = 'gammon' if loser_home == 0 else 'single'
         from .formats import forfeit_win_type
-        win_type = forfeit_win_type(state, self.player_color, win_type, reason='give_up')
+        win_type = forfeit_win_type(
+            state, self.player_color, win_type, reason='give_up')
         state['phase'] = 'game_over'
         state['winner'] = winner
         state['winType'] = win_type
@@ -789,18 +839,21 @@ class GameConsumer(AsyncWebsocketConsumer):
         """
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
-            logger.warning(f"WS leave on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
+            logger.warning(
+                f"WS leave on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
             return await self._send_error('No active game')
 
         winner = 'black' if self.player_color == 'white' else 'white'
-        logger.info(f"WS leave: {self.player_color} quits, winner={winner} room={self.room_id}")
+        logger.info(
+            f"WS leave: {self.player_color} quits, winner={winner} room={self.room_id}")
 
         game_state = await get_game_state(room)
         state = dict(game_state.state_data or {})
         state['phase'] = 'game_over'
         state['winner'] = winner
         from .formats import forfeit_win_type
-        state['winType'] = forfeit_win_type(state, self.player_color, reason='leave')
+        state['winType'] = forfeit_win_type(
+            state, self.player_color, reason='leave')
         state['gameEndReason'] = 'leave'
 
         await self._finalize_and_broadcast(state, winner, state['winType'], 'leave', force_close=True)
@@ -818,7 +871,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             # Linked legacy rooms also require server intents and clock outcomes.
             return await self._send_error('Results are determined by the server')
         winner = payload.get('winner') or state.get('winner')
-        win_type = payload.get('winType', 'single') or state.get('winType', 'single')
+        win_type = payload.get('winType', 'single') or state.get(
+            'winType', 'single')
         reason = payload.get('reason', 'game_ended')
         if payload.get('cube') is not None:
             state['cube'] = payload['cube']
@@ -831,7 +885,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['winType'] = win_type
             await self._finalize_and_broadcast(state, winner, win_type, reason)
         else:
-            logger.warning(f"WS game_ended without winner: room={self.room_id} payload={payload}")
+            logger.warning(
+                f"WS game_ended without winner: room={self.room_id} payload={payload}")
 
     async def _handle_next_game(self, engine):
         """Start the next game of a match after a finished game.
@@ -858,7 +913,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             return {'success': False, 'message': 'No active game'}
         doubling_enabled = state.get('doublingEnabled', True)
         engine.state = BackgammonEngine.get_initial_state()
-        engine.state['gameId'] = str(uuid.uuid4())
         engine.state['doublingEnabled'] = doubling_enabled
         from .formats import carry_contract
         carry_contract(state, engine.state, room)
@@ -880,7 +934,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if extra:
             payload.update(extra)
         await self.channel_layer.group_send(
-            self.room_group_name, {'type': 'rematch_status_msg', 'payload': payload}
+            self.room_group_name, {
+                'type': 'rematch_status_msg', 'payload': payload}
         )
 
     async def _send_rematch_status_to_self(self, status, extra=None):
@@ -954,19 +1009,22 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
         # plain private
         # store pending marker in room.state
+
         def _set_pending():
             with transaction.atomic():
                 r = GameRoom.objects.select_for_update().get(pk=room.id)
                 s = dict(r.state or {})
                 if s.get('rematch') and s['rematch'].get('status') == 'pending':
                     return s['rematch']
-                s['rematch'] = {'status': 'pending', 'requester': self.player_color}
+                s['rematch'] = {'status': 'pending',
+                                'requester': self.player_color}
                 r.state = s
                 r.save(update_fields=['state'])
                 return s['rematch']
         await database_sync_to_async(_set_pending)()
         await self.channel_layer.group_send(
-            self.room_group_name, {'type': 'rematch_offer_msg', 'requesterColor': self.player_color}
+            self.room_group_name, {
+                'type': 'rematch_offer_msg', 'requesterColor': self.player_color}
         )
 
     async def _handle_rematch_accept(self):
@@ -988,22 +1046,26 @@ class GameConsumer(AsyncWebsocketConsumer):
                     # acceptor is requester_not_eligible
                     await self.channel_layer.group_send(
                         self.room_group_name,
-                        {'type': 'rematch_status_targeted_msg', 'targetColor': self.player_color, 'payload': {'status': 'unavailable', 'reason': 'requester_not_eligible'}}
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': self.player_color, 'payload': {
+                            'status': 'unavailable', 'reason': 'requester_not_eligible'}}
                     )
                     other_color = 'black' if self.player_color == 'white' else 'white'
                     await self.channel_layer.group_send(
                         self.room_group_name,
-                        {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {'status': 'unavailable', 'reason': 'opponent_not_eligible'}}
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {
+                            'status': 'unavailable', 'reason': 'opponent_not_eligible'}}
                     )
                 elif code == "opponent_not_eligible":
                     await self.channel_layer.group_send(
                         self.room_group_name,
-                        {'type': 'rematch_status_targeted_msg', 'targetColor': self.player_color, 'payload': {'status': 'unavailable', 'reason': 'opponent_not_eligible'}}
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': self.player_color, 'payload': {
+                            'status': 'unavailable', 'reason': 'opponent_not_eligible'}}
                     )
                     other_color = 'black' if self.player_color == 'white' else 'white'
                     await self.channel_layer.group_send(
                         self.room_group_name,
-                        {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {'status': 'unavailable', 'reason': 'requester_not_eligible'}}
+                        {'type': 'rematch_status_targeted_msg', 'targetColor': other_color, 'payload': {
+                            'status': 'unavailable', 'reason': 'requester_not_eligible'}}
                     )
                 elif code in ('source_not_settled', 'settlement_pending'):
                     await self._send_rematch_status_to_self('unavailable', {'reason': 'source_not_settled'})
@@ -1013,7 +1075,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                     await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
                 return
             # expect tickets
-            tickets = result.get('tickets') if isinstance(result, dict) else None
+            tickets = result.get('tickets') if isinstance(
+                result, dict) else None
             if not tickets or 'p1' not in tickets or 'p2' not in tickets:
                 await self._send_rematch_status_to_self('unavailable', {'reason': 'service_error'})
                 return
@@ -1025,11 +1088,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                 target_color = p1_color if color == 'p1' else p2_color
                 await self.channel_layer.group_send(
                     self.room_group_name,
-                    {'type': 'rematch_ready_msg', 'targetColor': target_color, 'ticket': ticket}
+                    {'type': 'rematch_ready_msg',
+                        'targetColor': target_color, 'ticket': ticket}
                 )
             return
         # plain private
         # verify pending exists and requester is opponent
+
         def _check_and_create():
             with transaction.atomic():
                 r = GameRoom.objects.select_for_update().get(pk=room.id)
@@ -1057,7 +1122,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             col = rp.color
             payload = {'roomId': str(new_room.id), 'color': col}
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_ready_msg', 'roomId': payload['roomId'], 'color': col, 'targetColor': col}
+                self.room_group_name, {
+                    'type': 'rematch_ready_msg', 'roomId': payload['roomId'], 'color': col, 'targetColor': col}
             )
 
     async def _handle_rematch_decline(self):
@@ -1073,14 +1139,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             except RematchServiceError:
                 pass
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'declined'}}
+                self.room_group_name, {
+                    'type': 'rematch_status_msg', 'payload': {'status': 'declined'}}
             )
             await asyncio.sleep(0.5)
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+                self.room_group_name, {
+                    'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
             )
             return
         # plain
+
         def _clear():
             with transaction.atomic():
                 r = GameRoom.objects.select_for_update().get(pk=room.id)
@@ -1090,11 +1159,13 @@ class GameConsumer(AsyncWebsocketConsumer):
                 r.save(update_fields=['state'])
         await database_sync_to_async(_clear)()
         await self.channel_layer.group_send(
-            self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'declined'}}
+            self.room_group_name, {
+                'type': 'rematch_status_msg', 'payload': {'status': 'declined'}}
         )
         await asyncio.sleep(0.5)
         await self.channel_layer.group_send(
-            self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+            self.room_group_name, {
+                'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
         )
 
     async def _handle_rematch_cancel(self):
@@ -1110,13 +1181,16 @@ class GameConsumer(AsyncWebsocketConsumer):
             except RematchServiceError:
                 pass
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'cancelled'}}
+                self.room_group_name, {
+                    'type': 'rematch_status_msg', 'payload': {'status': 'cancelled'}}
             )
             await asyncio.sleep(0.3)
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+                self.room_group_name, {
+                    'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
             )
             return
+
         def _clear_if_requester():
             with transaction.atomic():
                 r = GameRoom.objects.select_for_update().get(pk=room.id)
@@ -1131,11 +1205,13 @@ class GameConsumer(AsyncWebsocketConsumer):
         cleared = await database_sync_to_async(_clear_if_requester)()
         if cleared:
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'cancelled'}}
+                self.room_group_name, {
+                    'type': 'rematch_status_msg', 'payload': {'status': 'cancelled'}}
             )
             await asyncio.sleep(0.3)
             await self.channel_layer.group_send(
-                self.room_group_name, {'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
+                self.room_group_name, {
+                    'type': 'rematch_status_msg', 'payload': {'status': 'available'}}
             )
 
     async def rematch_status_msg(self, event):
@@ -1179,7 +1255,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         gs = await get_game_state(room)
         stored = gs.state_data or {}
         if stored.get('matchScored') and not (
-            force_close and reason == 'leave' and stored.get('gameFormat') == 'match'
+            force_close and reason == 'leave' and stored.get(
+                'gameFormat') == 'match'
         ):
             return
         if force_close:
@@ -1210,7 +1287,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not match_over:
             payload['nextGameIn'] = int(GameConsumer.NEXT_GAME_DELAY)
             await self._arm_auto_next_game()
-        logger.info(f"WS game_ended: room={self.room_id} winner={winner} win_type={win_type} reason={reason} match_over={match_over}")
+        logger.info(
+            f"WS game_ended: room={self.room_id} winner={winner} win_type={win_type} reason={reason} match_over={match_over}")
         await self.channel_layer.group_send(
             self.room_group_name,
             {'type': 'game_ended', 'payload': payload},
@@ -1253,7 +1331,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         payload['nextGame'] = False
         if reason == 'admin':
             payload['adminReason'] = state.get('adminEndReason', '')
-        logger.info(f"WS replay finalized game_ended: room={self.room_id} winner={winner} reason={reason}")
+        logger.info(
+            f"WS replay finalized game_ended: room={self.room_id} winner={winner} reason={reason}")
         await self.channel_layer.group_send(
             self.room_group_name,
             {'type': 'game_ended', 'payload': payload},
@@ -1287,7 +1366,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             await asyncio.sleep(delay)
             await self._start_next_game()
         except Exception:
-            logger.exception("WS auto next game failed", extra={"room_id": self.room_id})
+            logger.exception("WS auto next game failed",
+                             extra={"room_id": self.room_id})
         finally:
             _auto_next_tasks.pop(self.room_group_name, None)
             _auto_next_deadlines.pop(self.room_group_name, None)
@@ -1380,7 +1460,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             self._timeout_task.cancel()
         if deadline_ms is None or deadline_ms <= 0:
             return
-        self._timeout_task = asyncio.create_task(self._timeout_watch(deadline_ms / 1000.0, active_color))
+        self._timeout_task = asyncio.create_task(
+            self._timeout_watch(deadline_ms / 1000.0, active_color))
 
     async def _timeout_watch(self, deadline, active_color):
         delay = deadline - time_module.time()
@@ -1441,7 +1522,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             stored['clock'] = clock
         stored['turnStartedAt'] = None
         stored['message'] = f'{loser} ran out of time'
-        logger.info(f"WS timeout forfeit: loser={loser} winner={winner} room={self.room_id}")
+        logger.info(
+            f"WS timeout forfeit: loser={loser} winner={winner} room={self.room_id}")
         await self._finalize_and_broadcast(
             stored, winner, stored['winType'], 'time', force_close=True
         )
@@ -1458,7 +1540,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _broadcast_room_status(self):
         """Broadcast the number of connected users to the room."""
         connected = _connected_users.get(self.room_group_name, {})
-        colors = list(_connected_user_colors.get(self.room_group_name, {}).values())
+        colors = list(_connected_user_colors.get(
+            self.room_group_name, {}).values())
         count = len(connected)
         await self.channel_layer.group_send(
             self.room_group_name,

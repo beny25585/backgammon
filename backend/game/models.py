@@ -107,6 +107,8 @@ class GameEvent(models.Model):
         ('double_response', 'Double response'),
         ('resign', 'Resign'),
         ('next_game', 'Next game'),
+        ('reorder_dice', 'Reorder dice'),
+        ('opening_result_done', 'Opening result done'),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -114,6 +116,10 @@ class GameEvent(models.Model):
         GameRoom, on_delete=models.CASCADE, related_name='events')
     player = models.ForeignKey(
         RoomPlayer, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
+    game_id = models.CharField(
+        max_length=64,
+        db_index=True,
+    )
     sequence = models.IntegerField(default=0)
     event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
     payload = models.JSONField(default=dict)
@@ -121,6 +127,12 @@ class GameEvent(models.Model):
 
     class Meta:
         ordering = ['sequence']
+        indexes = [
+            models.Index(
+                fields=['room', 'game_id', 'sequence'],
+                name='game_event_game_seq_idx',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.event_type} #{self.sequence} in {self.room.code}"

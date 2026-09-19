@@ -117,10 +117,23 @@ def _doubles_from_events(events):
     return offered, accepted
 
 
+def _game_id_for_state(state):
+    """Return the game ID for a state snapshot, with legacy fallback."""
+    value = (state or {}).get('gameId')
+    return str(value) if value else 'initial'
+
+
+def _events_for_game(all_events, game_id):
+    """Filter an already-loaded event list to a single game."""
+    return [event for event in all_events if event.game_id == game_id]
+
+
 def _match_metadata(room, state, reason):
     """Derive saved Match metadata from the room's GameEvent log and final state."""
     events = list(GameEvent.objects.filter(room=room).order_by('sequence'))
-    transcript = _transcript_from_events(events)
+    transcript = _transcript_from_events(
+        _events_for_game(events, _game_id_for_state(state))
+    )
     hits = _hits_from_events(events)
     doubles_offered, doubles_accepted = _doubles_from_events(events)
 
@@ -158,7 +171,8 @@ def _pips_for(state, color):
     return total + bar.get('black', 0) * 25
 
 
-def _game_entry(state, winner, win_type, points, game_number, transcript):
+def _game_entry(state, winner, win_type, points, game_number, transcript,
+                score_before, score_after):
     """Build one game entry, enriching it with end-of-game board stats."""
     entry = {
         'game_number': game_number,
@@ -167,6 +181,15 @@ def _game_entry(state, winner, win_type, points, game_number, transcript):
         'winner': winner,
         'win_type': win_type,
         'points_awarded': points,
+        'score_before': {
+            'white': int(score_before.get('white', 0)),
+            'black': int(score_before.get('black', 0)),
+        },
+        'score_after': {
+            'white': int(score_after.get('white', 0)),
+            'black': int(score_after.get('black', 0)),
+        },
+        'is_crawford': bool(state.get('crawfordGame', False)),
         'transcript': transcript,
     }
     loser = 'black' if winner == 'white' else 'white'
@@ -228,16 +251,35 @@ def finalize_room(room, state, winner, win_type, reason):
 
         points = 0 if between_games else _points_for(state, win_type)
         state['gameEndPoints'] = points
+        score_before = {
+            'white': locked.white_score,
+            'black': locked.black_score,
+        }
         if winner == 'white':
             locked.white_score += points
         elif winner == 'black':
             locked.black_score += points
+        score_after = {
+            'white': locked.white_score,
+            'black': locked.black_score,
+        }
         metadata, transcript = _match_metadata(locked, state, reason)
         meta = dict(locked.state or {})
         series = meta.get('match') if isinstance(meta.get('match'), dict) else {}
         games_data = list(series.get('games', []))
         if not between_games:
-            games_data.append(_game_entry(state, winner, win_type, points, len(games_data) + 1, transcript))
+            games_data.append(
+                _game_entry(
+                    state,
+                    winner,
+                    win_type,
+                    points,
+                    len(games_data) + 1,
+                    transcript,
+                    score_before,
+                    score_after,
+                )
+            )
         meta['match'] = {'active': False, 'games': games_data}
         locked.state = meta
         locked.status = 'completed'
@@ -286,18 +328,42 @@ def record_game_end(room, state, winner, win_type, reason):
         _save_scored_state(locked, state, winner, win_type, reason)
 
         points = _points_for(state, win_type)
+        score_before = {
+            'white': locked.white_score,
+            'black': locked.black_score,
+        }
         if winner == 'white':
             locked.white_score += points
         elif winner == 'black':
             locked.black_score += points
+        score_after = {
+            'white': locked.white_score,
+            'black': locked.black_score,
+        }
 
         meta = dict(locked.state or {})
         match = meta.get('match') if isinstance(meta.get('match'), dict) else {}
         games = list(match.get('games', []))
         transcript = _transcript_from_events(
-            list(GameEvent.objects.filter(room=locked).order_by('sequence'))
+            list(
+                GameEvent.objects.filter(
+                    room=locked,
+                    game_id=_game_id_for_state(state),
+                ).order_by('sequence')
+            )
         )
-        games.append(_game_entry(state, winner, win_type, points, len(games) + 1, transcript))
+        games.append(
+            _game_entry(
+                state,
+                winner,
+                win_type,
+                points,
+                len(games) + 1,
+                transcript,
+                score_before,
+                score_after,
+            )
+        )
         meta['match'] = {'active': True, 'games': games}
         locked.state = meta
 
