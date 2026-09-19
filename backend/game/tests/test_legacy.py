@@ -17,7 +17,7 @@ from game.game_service import finalize_room, record_game_end
 from game.models import GameRoom, GameState, GameEvent, Match, Player, RoomPlayer
 from unittest.mock import AsyncMock, patch
 
-from .dice import DiceServiceError, fetch_dice, fetch_opening_dice, fetch_turn_dice
+from game.dice import DiceServiceError, fetch_dice, fetch_opening_dice, fetch_turn_dice
 
 
 
@@ -2607,3 +2607,4 @@ class BackgammonEngineTests(TestCase):
         with patch("game.engine.BackgammonEngine._roll_die", return_value=5):
             result = engine.roll_opening_die("white")
         self.assertEqual(engine.state["openingRoll"], {"white": 5, "black": None})
+

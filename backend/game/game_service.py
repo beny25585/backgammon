@@ -17,6 +17,10 @@ from .link.models import TournamentLink
 from .link.outbox import enqueue_result
 from .models import GameEvent, GameRoom, GameState, Match, RoomPlayer
 
+from .analysis.outbox import (
+    enqueue_match_analysis,
+)
+
 # Multiplier applied per win type before the doubling cube value.
 POINTS_MULTIPLIER = {'single': 1, 'gammon': 2, 'backgammon': 3}
 
@@ -73,7 +77,8 @@ def _transcript_from_events(events):
                 }
             moves = payload.get('lastMove')
             if isinstance(moves, list):
-                current['moves'] = [dict(m) for m in moves if isinstance(m, dict)]
+                current['moves'] = [dict(m)
+                                    for m in moves if isinstance(m, dict)]
         elif event.event_type in ('end_turn', 'next_game', 'opening_result_done'):
             if current:
                 transcript.append(current)
@@ -223,7 +228,8 @@ def _save_scored_state(room, state, winner, win_type, reason):
     stored.update(phase='game_over', winner=winner, winType=win_type,
                   matchScored=True, gameEndReason=reason,
                   gameEndPoints=state.get('gameEndPoints', _points_for(state, win_type)))
-    GameState.objects.update_or_create(room=room, defaults={'state_data': stored})
+    GameState.objects.update_or_create(
+        room=room, defaults={'state_data': stored})
 
 
 def finalize_room(room, state, winner, win_type, reason):
@@ -242,7 +248,8 @@ def finalize_room(room, state, winner, win_type, reason):
         # the request; do not resurrect or score an earlier board a second time.
         between_games = False
         if state.get('gameFormat') == 'match' and reason == 'leave':
-            current = GameState.objects.filter(room=locked).values_list('state_data', flat=True).first()
+            current = GameState.objects.filter(room=locked).values_list(
+                'state_data', flat=True).first()
             if current:
                 state = dict(current)
             between_games = _game_already_scored(locked, state)
@@ -265,7 +272,8 @@ def finalize_room(room, state, winner, win_type, reason):
         }
         metadata, transcript = _match_metadata(locked, state, reason)
         meta = dict(locked.state or {})
-        series = meta.get('match') if isinstance(meta.get('match'), dict) else {}
+        series = meta.get('match') if isinstance(
+            meta.get('match'), dict) else {}
         games_data = list(series.get('games', []))
         if not between_games:
             games_data.append(
@@ -299,8 +307,18 @@ def finalize_room(room, state, winner, win_type, reason):
             games=games_data,
             **metadata,
         )
-        _report_to_tournament(locked, match, winner)
-        return match
+
+        _report_to_tournament(
+            locked,
+            match,
+            winner,
+        )
+
+        enqueue_match_analysis(
+            match
+        )
+
+    return match
 
 
 def record_game_end(room, state, winner, win_type, reason):
@@ -342,7 +360,8 @@ def record_game_end(room, state, winner, win_type, reason):
         }
 
         meta = dict(locked.state or {})
-        match = meta.get('match') if isinstance(meta.get('match'), dict) else {}
+        match = meta.get('match') if isinstance(
+            meta.get('match'), dict) else {}
         games = list(match.get('games', []))
         transcript = _transcript_from_events(
             list(
@@ -398,6 +417,9 @@ def record_game_end(room, state, winner, win_type, reason):
             # Only the end of the *match* is a fixture result. Individual games inside a
             # longer match end here too and must not be reported.
             _report_to_tournament(locked, result['match'], winner)
+            enqueue_match_analysis(
+                result["match"]
+            )
         else:
             locked.save()
         return result
@@ -455,5 +477,6 @@ def create_private_rematch_room(source_room):
     # Ensure board reset: fresh already has board/bar/home
     GameState.objects.create(room=new_room, state_data=fresh)
     for rp in rps:
-        RoomPlayer.objects.create(room=new_room, player=rp.player, color=rp.color)
+        RoomPlayer.objects.create(
+            room=new_room, player=rp.player, color=rp.color)
     return new_room

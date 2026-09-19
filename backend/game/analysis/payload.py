@@ -8,8 +8,8 @@ This module performs no I/O beyond local ORM reads: no HTTP requests,
 no task enqueueing, no Open Sage calls.
 """
 
-from .link.models import TournamentLink
-from .models import GameEvent, GameState
+from ..link.models import TournamentLink
+from ..models import GameEvent, GameState
 
 SCHEMA_VERSION = 1
 

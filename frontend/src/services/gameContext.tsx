@@ -15,14 +15,12 @@ import type {
   GameType,
   NoMovesMessage,
   OpeningRollResult,
-  RematchState,
-  MakeMoveOptions,
 } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
 import {
   allLegalMoves,
   applyMove,
-  isWholeTurnDeterministic,
+  undoLastMove,
   reorderDice as reorderGameDice,
   type Source,
   type Target,
@@ -31,7 +29,6 @@ import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
-import { buildRematchEntryUrl } from "./rematchUrl";
 import { parseTimeControl, type TimeControl } from "../lib/clock";
 
 export const GameContext = createContext<GameContextType | undefined>(
@@ -47,17 +44,26 @@ interface GameProviderProps {
 }
 
 interface PendingMove {
-  id: number;
+  action: "move";
   from: Source;
   to: Target;
   sentAt: number;
-  origin: "manual" | "forced";
 }
 
-interface AutoConfirmRequest {
-  gen: number;
-  pendingId: number;
-  stage: "awaiting_move_ack" | "awaiting_end_turn_ack";
+type PendingAction = PendingMove | { action: "undo"; sentAt: number };
+
+function applyOptimisticAction(
+  state: GameState,
+  pending: PendingAction,
+  color: Color,
+): GameState | null {
+  if (pending.action === "move") return applyOptimisticMove(state, pending, color);
+  if (state.phase !== "moving" || state.turn !== color) return null;
+  const restored = undoLastMove(state);
+  // Undo board/dice only; server versions and clocks must never run backwards.
+  return restored
+    ? { ...restored, version: state.version, clock: state.clock, turnStartedAt: state.turnStartedAt }
+    : null;
 }
 
 function applyOptimisticMove(
@@ -105,9 +111,6 @@ export function GameProvider({
   const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
     null,
   );
-  const [rematchState, setRematchState] = useState<RematchState>({
-    status: "idle",
-  });
   const [matchScore, setMatchScore] = useState<Record<Color, number>>({
     white: 0,
     black: 0,
@@ -115,15 +118,6 @@ export function GameProvider({
   const [gameType, setGameType] = useState<GameType>(initialGameType);
   const gameTypeRef = useRef(gameType);
   const autoNextGameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [autoConfirmPending, setAutoConfirmPending] = useState(false);
-  const nextLocalIdRef = useRef(1);
-  const lifecycleGenRef = useRef(0);
-  const autoConfirmRequestRef = useRef<AutoConfirmRequest | null>(null);
-  const endTurnInFlightRef = useRef(false);
-  const rematchRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const rematchRetryCountRef = useRef(0);
-  const REMATCH_RETRY_MAX = 5;
-  const REMATCH_RETRY_DELAY_MS = 1000;
   useEffect(() => {
     gameTypeRef.current = gameType;
   }, [gameType]);
@@ -132,23 +126,6 @@ export function GameProvider({
       if (autoNextGameRef.current) clearTimeout(autoNextGameRef.current);
     };
   }, [roomId]);
-
-  // Auto-confirm: clear on game end or turn change
-  useEffect(() => {
-    if (!state) return;
-    if (state.phase === "game_over" || state.winner) {
-      autoConfirmRequestRef.current = null;
-      setAutoConfirmPending(false);
-      endTurnInFlightRef.current = false;
-      return;
-    }
-    if (autoConfirmRequestRef.current && state.turn !== playerColorRef.current) {
-      // Turn changed (auto-pass or opponent turn) - clear without sending
-      autoConfirmRequestRef.current = null;
-      setAutoConfirmPending(false);
-      endTurnInFlightRef.current = false;
-    }
-  }, [state]);
 
   // Backend is source of truth for quick vs 1v1 via state.gameFormat.
   // Tournament stays tournament only when URL had a real id; otherwise correct
@@ -164,7 +141,9 @@ export function GameProvider({
   const lastVersionRef = useRef(0);
   const stateRef = useRef(state);
   const authoritativeStateRef = useRef<GameState | null>(null);
-  const pendingMovesRef = useRef<PendingMove[]>([]);
+  // Replay moves and undo in send order so an earlier acknowledgement cannot
+  // temporarily put back a checker the player has already undone.
+  const pendingActionsRef = useRef<PendingAction[]>([]);
   const playerColorRef = useRef(playerColor);
 
   useLayoutEffect(() => {
@@ -175,31 +154,6 @@ export function GameProvider({
     playerColorRef.current = playerColor;
   }, [playerColor]);
 
-  const clearAutoConfirm = useCallback(() => {
-    autoConfirmRequestRef.current = null;
-    setAutoConfirmPending(false);
-  }, []);
-
-  const bumpLifecycleAndClear = useCallback(() => {
-    lifecycleGenRef.current += 1;
-    autoConfirmRequestRef.current = null;
-    setAutoConfirmPending(false);
-    endTurnInFlightRef.current = false;
-    if (rematchRetryTimerRef.current) {
-      clearTimeout(rematchRetryTimerRef.current);
-      rematchRetryTimerRef.current = null;
-    }
-    rematchRetryCountRef.current = 0;
-  }, []);
-
-  // Lifecycle: room change / unmount clears pending auto-confirm
-  useEffect(() => {
-    bumpLifecycleAndClear();
-    return () => {
-      bumpLifecycleAndClear();
-    };
-  }, [roomId, bumpLifecycleAndClear]);
-
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
       const sent = socket.send("state_update", payload);
@@ -207,228 +161,6 @@ export function GameProvider({
       return sent;
     },
     [socket],
-  );
-
-  const fetchFinalizedResult = useCallback(
-    async function fetchFinalizedResultImpl(
-      attempt = 0,
-    ): Promise<void> {
-      if (!roomId) {
-        console.warn("[FINAL RESULT] missing roomId");
-        return;
-      }
-
-      const token = getAccessToken();
-
-      if (!token) {
-        console.warn("[FINAL RESULT] missing access token");
-        return;
-      }
-
-      const url = `/backgammon/api/rooms/${roomId}/result/`;
-
-      console.log("[FINAL RESULT] request", {
-        attempt,
-        roomId,
-        url,
-      });
-
-      try {
-        const res = await fetch(url, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const rawBody = await res.text();
-
-        console.log("[FINAL RESULT] response", {
-          attempt,
-          status: res.status,
-          statusText: res.statusText,
-          body: rawBody,
-        });
-
-        if (res.status === 202) {
-          if (attempt < 8) {
-            const delay = Math.min(500 * 2 ** attempt, 4000);
-
-            console.log(
-              `[FINAL RESULT] still processing, retrying in ${delay}ms`,
-            );
-
-            setTimeout(
-              () => void fetchFinalizedResultImpl(attempt + 1),
-              delay,
-            );
-          } else {
-            console.warn("[FINAL RESULT] processing timeout");
-          }
-
-          return;
-        }
-
-        if (!res.ok) {
-          console.error("[FINAL RESULT] request failed", {
-            status: res.status,
-            body: rawBody,
-          });
-
-          return;
-        }
-
-        let data: Record<string, unknown>;
-
-        try {
-          data = JSON.parse(rawBody) as Record<string, unknown>;
-        } catch {
-          console.error("[FINAL RESULT] invalid JSON", rawBody);
-
-          return;
-        }
-
-        console.log("[FINAL RESULT] parsed data", data);
-
-        const rating = data.rating as
-          | {
-              self: {
-                before: number;
-                after: number;
-                change: number;
-              };
-              opponent: {
-                before: number;
-                after: number;
-                change: number;
-              };
-            }
-          | null
-          | undefined;
-
-        const money = data.money as
-          | {
-              stake?: string;
-              selfChange?: number;
-              opponentChange?: number;
-            }
-          | null
-          | undefined;
-
-        const stats = data.stats as
-          | {
-              hits?: number | null;
-              doublesOffered?: number | null;
-              doublesAccepted?: number | null;
-              openingRoll?: Partial<Record<Color, number>> | null;
-              firstPlayer?: Color | null;
-              durationSeconds?: number | null;
-              clockRemaining?: Partial<Record<Color, number>> | null;
-            }
-          | null
-          | undefined;
-
-        const result = data.result as
-          | {
-              endReason?: string | null;
-            }
-          | null
-          | undefined;
-
-        const finalizedGameType =
-          data.gameType === "quick" ||
-          data.gameType === "1v1" ||
-          data.gameType === "tournament"
-            ? (data.gameType as GameType)
-            : undefined;
-
-        console.log("[FINAL RESULT] extracted", {
-          rating,
-          money,
-          stats,
-          result,
-          finalizedGameType,
-        });
-
-        if (
-          finalizedGameType ||
-          rating ||
-          money ||
-          stats ||
-          result?.endReason
-        ) {
-          setGameResult((prev) => {
-            if (!prev) {
-              console.warn(
-                "[FINAL RESULT] gameResult disappeared before merge",
-              );
-
-              return prev;
-            }
-
-            const next = {
-              ...prev,
-
-              gameType: finalizedGameType ?? prev.gameType,
-
-              reason: result?.endReason ?? prev.reason,
-
-              /*
-               * rating.self already means the current player.
-               * Do not swap it according to white/black.
-               */
-              ratingBefore: rating?.self.before ?? prev.ratingBefore,
-
-              ratingAfter: rating?.self.after ?? prev.ratingAfter,
-
-              opponentRatingBefore:
-                rating?.opponent.before ?? prev.opponentRatingBefore,
-
-              opponentRatingAfter:
-                rating?.opponent.after ?? prev.opponentRatingAfter,
-
-              ratingChange: rating?.self.change ?? prev.ratingChange,
-
-              opponentRatingChange:
-                rating?.opponent.change ?? prev.opponentRatingChange,
-
-              coinsChange: money?.selfChange ?? prev.coinsChange,
-
-              opponentCoinsChange:
-                money?.opponentChange ?? prev.opponentCoinsChange,
-
-              stakeAmount:
-                money?.stake != null ? Number(money.stake) : prev.stakeAmount,
-
-              hits: stats?.hits ?? prev.hits,
-
-              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
-
-              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
-
-              openingRoll: stats?.openingRoll ?? prev.openingRoll,
-
-              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
-
-              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
-
-              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
-            };
-
-            console.log("[FINAL RESULT] merged GameResult", next);
-
-            return next;
-          });
-        } else {
-          console.warn(
-            "[FINAL RESULT] 200 response but no enrichment data",
-            data,
-          );
-        }
-      } catch (error) {
-        console.error("[FINAL RESULT] exception", error);
-      }
-    },
-    [roomId],
   );
 
   useEffect(() => {
@@ -511,14 +243,9 @@ export function GameProvider({
             }
             hasReceivedState = true;
             const initialState = raw as unknown as GameState;
-            pendingMovesRef.current = [];
+            pendingActionsRef.current = [];
             authoritativeStateRef.current = initialState;
             stateRef.current = initialState;
-            // Lifecycle: initial snapshot clears auto-confirm
-            lifecycleGenRef.current += 1;
-            autoConfirmRequestRef.current = null;
-            setAutoConfirmPending(false);
-            endTurnInFlightRef.current = false;
             setState(initialState);
 
             const players = (msg as Record<string, unknown>).players as
@@ -573,198 +300,41 @@ export function GameProvider({
           const acknowledgedAction =
             typeof msg.action === "string" ? msg.action : undefined;
 
-          const prevAuthoritative = authoritativeStateRef.current;
-          const pendingSnapshotIds = pendingMovesRef.current.map((p) => p.id);
-          const autoReqBefore = autoConfirmRequestRef.current ? { ...autoConfirmRequestRef.current } : null;
-
-          const isRealProgression = (
-            prevAuth: GameState | null,
-            nxt: GameState,
-            pend: PendingMove,
-            color: Color,
-          ): boolean => {
-            if (!prevAuth) return false;
-            const expected = applyOptimisticMove(prevAuth, pend, color);
-            if (!expected) return false;
-            if (expected.phase !== nxt.phase) return false;
-            if (expected.turn !== nxt.turn) return false;
-            if (expected.winner !== nxt.winner) return false;
-            if (expected.winType !== nxt.winType) return false;
-            if (expected.points.length !== nxt.points.length) return false;
-            for (let i = 0; i < expected.points.length; i++) {
-              if (expected.points[i] !== nxt.points[i]) return false;
-            }
-            if (expected.bar.white !== nxt.bar.white) return false;
-            if (expected.bar.black !== nxt.bar.black) return false;
-            if (expected.home.white !== nxt.home.white) return false;
-            if (expected.home.black !== nxt.home.black) return false;
-            const expDice = [...expected.dice].sort((a, b) => a - b);
-            const nxtDice = [...nxt.dice].sort((a, b) => a - b);
-            if (expDice.length !== nxtDice.length) return false;
-            for (let i = 0; i < expDice.length; i++) {
-              if (expDice[i] !== nxtDice[i]) return false;
-            }
-            const expRem = [...expected.remaining].sort((a, b) => a - b);
-            const nxtRem = [...nxt.remaining].sort((a, b) => a - b);
-            if (expRem.length !== nxtRem.length) return false;
-            for (let i = 0; i < expRem.length; i++) {
-              if (expRem[i] !== nxtRem[i]) return false;
-            }
-            const expLast = expected.lastMove;
-            const nxtLast = nxt.lastMove;
-            if (expLast === null && nxtLast === null) {
-              // no lastMove on either, continue
-            } else {
-              if (!expLast || !nxtLast) return false;
-              if (expLast.length !== nxtLast.length) return false;
-              for (let i = 0; i < expLast.length; i++) {
-                if (expLast[i].from !== nxtLast[i].from || expLast[i].to !== nxtLast[i].to) return false;
-              }
-            }
-            if (expected.moveHistory && nxt.moveHistory) {
-              if (expected.moveHistory.length !== nxt.moveHistory.length) return false;
-            } else if ((expected.moveHistory === null) !== (nxt.moveHistory === null)) {
-              // allow null vs null, but mismatch in presence without length check handled above
-            }
-            return true;
-          };
-
           if (
             sourceColor === playerColorRef.current &&
-            pendingMovesRef.current.length > 0
+            pendingActionsRef.current.length > 0
           ) {
-            const pending = pendingMovesRef.current[0];
-            const acknowledgesMove =
-              acknowledgedAction === "move" ||
+            const pending = pendingActionsRef.current[0];
+            const serverMove = next.lastMove?.[next.lastMove.length - 1];
+            const acknowledgesAction =
+              acknowledgedAction === pending.action ||
               (acknowledgedAction === undefined &&
-                isRealProgression(prevAuthoritative, next, pending, playerColorRef.current));
-            if (acknowledgesMove) {
-              pendingMovesRef.current.shift();
-              clientLogger.debug("[move] server acknowledgement", {
+                pending.action === "move" &&
+                serverMove?.from === pending.from &&
+                serverMove?.to === pending.to);
+            if (acknowledgesAction) {
+              pendingActionsRef.current.shift();
+              clientLogger.debug(`[${pending.action}] server acknowledgement`, {
                 latencyMs: Math.round(performance.now() - pending.sentAt),
                 version,
               });
             }
           }
 
-          const pendingAfterAckIds = pendingMovesRef.current.map((p) => p.id);
-
           authoritativeStateRef.current = next;
           let displayedState = next;
-          const replayedMoves: PendingMove[] = [];
-          for (const pending of pendingMovesRef.current) {
-            const replayed = applyOptimisticMove(
+          const replayedActions: PendingAction[] = [];
+          for (const pending of pendingActionsRef.current) {
+            const replayed = applyOptimisticAction(
               displayedState,
               pending,
               playerColorRef.current,
             );
             if (!replayed) break;
-            replayedMoves.push(pending);
+            replayedActions.push(pending);
             displayedState = replayed;
           }
-          const hadDiscard = pendingMovesRef.current.length !== replayedMoves.length;
-          pendingMovesRef.current = replayedMoves;
-          const pendingAfterReplayIds = replayedMoves.map((p) => p.id);
-
-          // Auto-confirm: two stages
-          const req = autoReqBefore;
-          if (req) {
-            if (req.gen !== lifecycleGenRef.current) {
-              autoConfirmRequestRef.current = null;
-              setAutoConfirmPending(false);
-            } else if (req.stage === "awaiting_move_ack") {
-              const wasAcknowledged =
-                pendingSnapshotIds.includes(req.pendingId) &&
-                !pendingAfterAckIds.includes(req.pendingId);
-              const wasDiscarded =
-                pendingAfterAckIds.includes(req.pendingId) &&
-                !pendingAfterReplayIds.includes(req.pendingId);
-              const isCurrentRequest =
-                autoConfirmRequestRef.current?.gen === req.gen &&
-                autoConfirmRequestRef.current?.pendingId === req.pendingId &&
-                autoConfirmRequestRef.current?.stage === "awaiting_move_ack";
-              if (!isCurrentRequest) {
-                // newer request superseded this one, do not touch
-              } else if (hadDiscard || wasDiscarded) {
-                autoConfirmRequestRef.current = null;
-                setAutoConfirmPending(false);
-                endTurnInFlightRef.current = false;
-              } else if (wasAcknowledged) {
-                if (pendingMovesRef.current.length === 0) {
-                  const isMoving = next.phase === "moving";
-                  const isOurTurn = next.turn === playerColorRef.current;
-                  const noWinner = !next.winner;
-                  const noLegal = allLegalMoves(next, playerColorRef.current).length === 0;
-                  if (isMoving && isOurTurn && noWinner && noLegal && !endTurnInFlightRef.current) {
-                    autoConfirmRequestRef.current = {
-                      gen: req.gen,
-                      pendingId: req.pendingId,
-                      stage: "awaiting_end_turn_ack",
-                    };
-                    endTurnInFlightRef.current = true;
-                    const sent = socket.send("state_update", { action: "end_turn" });
-                    if (!sent) {
-                      endTurnInFlightRef.current = false;
-                      if (
-                        autoConfirmRequestRef.current?.gen === req.gen &&
-                        autoConfirmRequestRef.current?.pendingId === req.pendingId
-                      ) {
-                        autoConfirmRequestRef.current = null;
-                        setAutoConfirmPending(false);
-                      }
-                      setError("Connection lost. Please wait for reconnection.");
-                    }
-                  } else {
-                    // Not eligible for automatic completion (legal moves remain, turn passed, game over, not moving) – retire matching request
-                    autoConfirmRequestRef.current = null;
-                    setAutoConfirmPending(false);
-                    endTurnInFlightRef.current = false;
-                  }
-                } else {
-                  // Doubles: still pending, keep awaiting_move_ack
-                }
-              } else {
-                const stillPending = pendingAfterReplayIds.includes(req.pendingId);
-                if (!wasAcknowledged && !stillPending && !pendingSnapshotIds.includes(req.pendingId)) {
-                  autoConfirmRequestRef.current = null;
-                  setAutoConfirmPending(false);
-                }
-              }
-            } else if (req.stage === "awaiting_end_turn_ack") {
-              // Keep pending UI locked, do not send again, do not clear on pendingId absence
-              // Will be cleared on end_turn ack, turn change, game over, or lifecycle bump
-            }
-          }
-          // Clear in-flight on authoritative turn transition even without request (manual end_turn)
-          if (endTurnInFlightRef.current) {
-            if (
-              next.phase === "game_over" ||
-              next.winner ||
-              next.turn !== playerColorRef.current
-            ) {
-              endTurnInFlightRef.current = false;
-              if (autoConfirmRequestRef.current?.stage === "awaiting_end_turn_ack") {
-                autoConfirmRequestRef.current = null;
-                setAutoConfirmPending(false);
-              }
-            }
-          }
-          if (acknowledgedAction === "end_turn" && endTurnInFlightRef.current) {
-            endTurnInFlightRef.current = false;
-            autoConfirmRequestRef.current = null;
-            setAutoConfirmPending(false);
-          }
-          // Also handle action-less end_turn response (no action field but turn switched)
-          if (
-            endTurnInFlightRef.current &&
-            autoConfirmRequestRef.current?.stage === "awaiting_end_turn_ack" &&
-            next.turn !== playerColorRef.current &&
-            next.phase === "rolling"
-          ) {
-            endTurnInFlightRef.current = false;
-            autoConfirmRequestRef.current = null;
-            setAutoConfirmPending(false);
-          }
+          pendingActionsRef.current = replayedActions;
 
           // Server auto-pass: we rolled, but no legal moves existed. Show the
           // "No moves available" overlay briefly with the rolled dice.
@@ -862,21 +432,13 @@ export function GameProvider({
                   typeof payload.action === "string"
                 ? payload.action
                 : undefined;
-          if (failedAction === "move" && pendingMovesRef.current.length > 0) {
-            pendingMovesRef.current = [];
-            autoConfirmRequestRef.current = null;
-            setAutoConfirmPending(false);
-            endTurnInFlightRef.current = false;
+          if ((failedAction === "move" || failedAction === "undo") && pendingActionsRef.current.length > 0) {
+            pendingActionsRef.current = [];
             const authoritative = authoritativeStateRef.current;
             if (authoritative) {
               stateRef.current = authoritative;
               setState(authoritative);
             }
-          }
-          if (failedAction === "end_turn") {
-            endTurnInFlightRef.current = false;
-            autoConfirmRequestRef.current = null;
-            setAutoConfirmPending(false);
           }
           // The server auto-resolves the opening once both sockets connect, so
           // a roll intent still in flight can hit a resolved opening. That
@@ -965,74 +527,6 @@ export function GameProvider({
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
           );
-        });
-
-        socket.on("rematch_status", (message) => {
-          const payload = (message as Record<string, unknown>).payload as Record<string, unknown> | undefined;
-          const status = (payload?.status as string) ?? "idle";
-          const reason = payload?.reason as string | undefined;
-          const isSettlementPending =
-            status === "creating" &&
-            (reason === "source_not_settled" || reason === "settlement_pending");
-          if (isSettlementPending) {
-            setRematchState({ status: "creating" as RematchState["status"], reason: "source_not_settled" });
-            if (
-              rematchRetryCountRef.current < REMATCH_RETRY_MAX &&
-              rematchRetryTimerRef.current === null
-            ) {
-              rematchRetryTimerRef.current = setTimeout(() => {
-                rematchRetryTimerRef.current = null;
-                if (rematchRetryCountRef.current >= REMATCH_RETRY_MAX) {
-                  setRematchState({ status: "available", reason: "source_not_settled" });
-                  return;
-                }
-                rematchRetryCountRef.current += 1;
-                socket.send("rematch_request", {});
-              }, REMATCH_RETRY_DELAY_MS);
-            } else if (rematchRetryCountRef.current >= REMATCH_RETRY_MAX) {
-              if (rematchRetryTimerRef.current) {
-                clearTimeout(rematchRetryTimerRef.current);
-                rematchRetryTimerRef.current = null;
-              }
-              setRematchState({ status: "available", reason: "source_not_settled" });
-            }
-            return;
-          }
-          // Any non-settlement status clears pending retry
-          if (rematchRetryTimerRef.current) {
-            clearTimeout(rematchRetryTimerRef.current);
-            rematchRetryTimerRef.current = null;
-          }
-          if (status === "offered" || status === "available" || status === "idle" || (status === "unavailable" && reason !== "source_not_settled")) {
-            rematchRetryCountRef.current = 0;
-          }
-          setRematchState({ status: status as RematchState["status"], reason: reason ?? null });
-        });
-
-        socket.on("rematch_ready", (message) => {
-          const payload = (message as Record<string, unknown>).payload as Record<string, unknown> | undefined;
-          if (!payload) return;
-          if (rematchRetryTimerRef.current) {
-            clearTimeout(rematchRetryTimerRef.current);
-            rematchRetryTimerRef.current = null;
-          }
-          rematchRetryCountRef.current = 0;
-          if (typeof payload.ticket === "string" && payload.ticket) {
-            const finalUrl = buildRematchEntryUrl(
-              serverUrl,
-              window.location.origin,
-              payload.ticket,
-            );
-
-            window.location.href = finalUrl;
-            return;
-          }
-          if (typeof payload.roomId === "string" && typeof payload.color === "string") {
-            const roomId = payload.roomId as string;
-            const color = payload.color as string;
-            const url = `${window.location.origin}/backgammon/game/${roomId}?color=${color}&mode=1v1`;
-            window.location.href = url;
-          }
         });
 
         socket.on("admin_review_required", (message) => {
@@ -1132,56 +626,27 @@ export function GameProvider({
   }, [sendIntent]);
 
   const makeMove = useCallback(
-    (from: Source, to: Target, options?: MakeMoveOptions) => {
-      if (
-        autoConfirmRequestRef.current !== null ||
-        endTurnInFlightRef.current
-      )
-        return;
+    (from: Source, to: Target) => {
       const current = stateRef.current;
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
-      const wholeTurnDeterministic =
-        isWholeTurnDeterministic(current, playerColorRef.current);
-      const origin: "manual" | "forced" = options?.origin === "forced" ? "forced" : "manual";
-      const id = nextLocalIdRef.current++;
-      const pending: PendingMove = { id, from, to, sentAt: performance.now(), origin };
+      const pending: PendingMove = { action: "move", from, to, sentAt: performance.now() };
       const optimistic = applyOptimisticMove(
         current,
         pending,
         playerColorRef.current,
       );
-      if (!optimistic) return;
       if (!sendIntent({ action: "move", from, to })) return;
-      // Only clear prior auto request after manual move is validated and sent
-      if (origin === "manual" && autoConfirmRequestRef.current) {
-        clearAutoConfirm();
+      if (optimistic) {
+        pendingActionsRef.current.push(pending);
+        stateRef.current = optimistic;
+        setState(optimistic);
       }
-      pendingMovesRef.current.push(pending);
-      const isTerminal =
-        optimistic.phase === "moving" &&
-        optimistic.turn === playerColorRef.current &&
-        !optimistic.winner &&
-        allLegalMoves(optimistic, playerColorRef.current).length === 0;
-      if (wholeTurnDeterministic && isTerminal) {
-        autoConfirmRequestRef.current = { gen: lifecycleGenRef.current, pendingId: id, stage: "awaiting_move_ack" };
-        setAutoConfirmPending(true);
-      } else {
-        autoConfirmRequestRef.current = null;
-        setAutoConfirmPending(false);
-      }
-      stateRef.current = optimistic;
-      setState(optimistic);
     },
-    [sendIntent, clearAutoConfirm],
+    [sendIntent],
   );
 
   const reorderDice = useCallback(() => {
-    if (
-      autoConfirmRequestRef.current !== null ||
-      endTurnInFlightRef.current
-    )
-      return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
@@ -1206,37 +671,26 @@ export function GameProvider({
   );
 
   const endTurn = useCallback(() => {
-    if (
-      autoConfirmRequestRef.current !== null ||
-      endTurnInFlightRef.current
-    )
-      return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
     if (allLegalMoves(current, current.turn).length > 0) return;
-    endTurnInFlightRef.current = true;
-    const sent = sendIntent({ action: "end_turn" });
-    if (!sent) {
-      endTurnInFlightRef.current = false;
-      setError("Connection lost. Please wait for reconnection.");
-    }
+    sendIntent({ action: "end_turn" });
   }, [sendIntent]);
 
   const undoMove = useCallback(() => {
-    if (
-      autoConfirmRequestRef.current !== null ||
-      endTurnInFlightRef.current
-    )
-      return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
-    if (current.phase !== "moving") return;
-    clearAutoConfirm();
-    endTurnInFlightRef.current = false;
-    sendIntent({ action: "undo" });
-  }, [sendIntent, clearAutoConfirm]);
+    const pending: PendingAction = { action: "undo", sentAt: performance.now() };
+    const optimistic = applyOptimisticAction(current, pending, playerColorRef.current);
+    if (!sendIntent({ action: "undo" })) return;
+    if (optimistic) {
+      pendingActionsRef.current.push(pending);
+      stateRef.current = optimistic;
+      setState(optimistic);
+    }
+  }, [sendIntent]);
 
   const giveUp = useCallback(() => {
     const current = stateRef.current;
@@ -1254,75 +708,126 @@ export function GameProvider({
 
   const clearError = useCallback(() => setError(null), []);
 
+  const fetchFinalizedResult = useCallback(
+    async (attempt = 0): Promise<void> => {
+      if (!roomId) return;
+      const token = getAccessToken();
+      if (!token) return;
+      try {
+        const res = await fetch(`/backgammon/api/rooms/${roomId}/result/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 202) {
+          if (attempt < 5) {
+            const delay = Math.min(500 * 2 ** attempt, 4000);
+            setTimeout(() => void fetchFinalizedResult(attempt + 1), delay);
+          }
+          return;
+        }
+        if (!res.ok) return;
+        const data = (await res.json()) as Record<string, unknown>;
+        // Merge authoritative finalized room result data into GameResult if present.
+        const rating = data.rating as
+          | {
+              self: { before: number; after: number; change: number };
+              opponent: { before: number; after: number; change: number };
+            }
+          | null
+          | undefined;
+        const money = data.money as
+          | { stake?: string; selfChange?: number; opponentChange?: number }
+          | null
+          | undefined;
+        const stats = data.stats as
+          | {
+              hits?: number | null;
+              doublesOffered?: number | null;
+              doublesAccepted?: number | null;
+              openingRoll?: Partial<Record<Color, number>> | null;
+              firstPlayer?: Color | null;
+              durationSeconds?: number | null;
+              clockRemaining?: Partial<Record<Color, number>> | null;
+            }
+          | null
+          | undefined;
+        const result = data.result as
+          | { endReason?: string | null }
+          | null
+          | undefined;
+        if (rating || money || stats || result?.endReason) {
+          setGameResult((prev) => {
+            if (!prev) return prev;
+            const isSelfWhite = playerColorRef.current === "white";
+            return {
+              ...prev,
+              reason: result?.endReason ?? prev.reason,
+              ratingBefore: rating
+                ? isSelfWhite
+                  ? rating.self.before
+                  : rating.opponent.before
+                : prev.ratingBefore,
+              ratingAfter: rating
+                ? isSelfWhite
+                  ? rating.self.after
+                  : rating.opponent.after
+                : prev.ratingAfter,
+              opponentRatingBefore: rating
+                ? isSelfWhite
+                  ? rating.opponent.before
+                  : rating.self.before
+                : prev.opponentRatingBefore,
+              opponentRatingAfter: rating
+                ? isSelfWhite
+                  ? rating.opponent.after
+                  : rating.self.after
+                : prev.opponentRatingAfter,
+              ratingChange: rating
+                ? isSelfWhite
+                  ? rating.self.change
+                  : rating.opponent.change
+                : prev.ratingChange,
+              opponentRatingChange: rating
+                ? isSelfWhite
+                  ? rating.opponent.change
+                  : rating.self.change
+                : prev.opponentRatingChange,
+              coinsChange: money ? money.selfChange : prev.coinsChange,
+              opponentCoinsChange: money
+                ? money.opponentChange
+                : prev.opponentCoinsChange,
+              stakeAmount: money?.stake
+                ? Number(money.stake)
+                : prev.stakeAmount,
+              hits: stats?.hits ?? prev.hits,
+              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
+              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
+              openingRoll: stats?.openingRoll ?? prev.openingRoll,
+              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
+              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
+              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
+            };
+          });
+        }
+      } catch {
+        // ignore, will retry on next game_ended if needed
+      }
+    },
+    [roomId],
+  );
+
   const handleNextGame = useCallback(() => {
-    // next_game is ONLY for non-final games of same match; final rematch uses separate flow
-    if (gameResult?.matchOver) return;
     setGameResult(null);
     sendIntent({ action: "next_game" });
-  }, [sendIntent, gameResult]);
+  }, [sendIntent]);
 
   const handleHome = useCallback(() => {
     setGameResult(null);
-    setRematchState({ status: "idle" });
   }, []);
-
-  const requestRematch = useCallback(() => {
-    if (rematchRetryTimerRef.current) {
-      clearTimeout(rematchRetryTimerRef.current);
-      rematchRetryTimerRef.current = null;
-    }
-    rematchRetryCountRef.current = 0;
-    setRematchState({ status: "requested" });
-    socket.send("rematch_request", {});
-  }, [socket]);
-
-  const acceptRematch = useCallback(() => {
-    if (rematchRetryTimerRef.current) {
-      clearTimeout(rematchRetryTimerRef.current);
-      rematchRetryTimerRef.current = null;
-    }
-    rematchRetryCountRef.current = 0;
-    setRematchState({ status: "creating" });
-    socket.send("rematch_accept", {});
-  }, [socket]);
-
-  const declineRematch = useCallback(() => {
-    if (rematchRetryTimerRef.current) {
-      clearTimeout(rematchRetryTimerRef.current);
-      rematchRetryTimerRef.current = null;
-    }
-    rematchRetryCountRef.current = 0;
-    socket.send("rematch_decline", {});
-    setRematchState({ status: "available" });
-  }, [socket]);
-
-  const cancelRematch = useCallback(() => {
-    if (rematchRetryTimerRef.current) {
-      clearTimeout(rematchRetryTimerRef.current);
-      rematchRetryTimerRef.current = null;
-    }
-    rematchRetryCountRef.current = 0;
-    socket.send("rematch_cancel", {});
-    setRematchState({ status: "available" });
-  }, [socket]);
-
-  // When final result arrives, make rematch available for non-tournament
-  useEffect(() => {
-    if (gameResult?.matchOver) {
-      const isTournament = gameResult.gameType === "tournament" || gameType === "tournament";
-      if (isTournament) {
-        setRematchState({ status: "unavailable", reason: "tournament" });
-      } else {
-        setRematchState((prev) => (prev.status === "idle" ? { status: "available" } : prev));
-      }
-    } else if (!gameResult) {
-      setRematchState({ status: "idle" });
-    }
-  }, [gameResult, gameType]);
 
   return (
     <GameContext.Provider
       value={{
+        roomId,
         state,
         playerColor,
         whiteName,
@@ -1333,7 +838,6 @@ export function GameProvider({
         openingRollResult,
         setOpeningRollResult,
         noMovesMessage,
-        autoConfirmPending,
         reconnected,
         opponentConnected,
         timeControl,
@@ -1355,11 +859,6 @@ export function GameProvider({
         undoMove,
         giveUp,
         leaveGame,
-        rematchState,
-        requestRematch,
-        acceptRematch,
-        declineRematch,
-        cancelRematch,
       }}
     >
       {children}

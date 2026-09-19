@@ -4,9 +4,9 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from .engine import BackgammonEngine
-from .models import GameRoom, GameState, Match, Player, RoomPlayer, Task
-from .presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat, needs_admin_adjudication
+from ...engine import BackgammonEngine
+from ...models import GameRoom, GameState, Match, Player, RoomPlayer, Task
+from ...presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat, needs_admin_adjudication
 from game.link.models import TournamentLink
 
 
@@ -33,7 +33,8 @@ class PresenceForfeitTests(TestCase):
     def test_first_player_waiting_is_never_penalized(self):
         mark_connected(self.room.id, 'white-1', 'white', 1000)
         mark_disconnected(self.room.id, 'white-1', 1001)
-        self.assertEqual(check_room_presence(self.room.id, 1100)['status'], 'not_started')
+        self.assertEqual(check_room_presence(
+            self.room.id, 1100)['status'], 'not_started')
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
 
@@ -41,11 +42,14 @@ class PresenceForfeitTests(TestCase):
         self.connect_both()
         mark_disconnected(self.room.id, 'white-1', 1001)
         mark_heartbeat(self.room.id, 'black-1', 1040)
-        self.assertEqual(check_room_presence(self.room.id, 1040)['status'], 'waiting')
+        self.assertEqual(check_room_presence(
+            self.room.id, 1040)['status'], 'waiting')
         mark_heartbeat(self.room.id, 'black-1', 1042)
         result = check_room_presence(self.room.id, 1042)
-        self.assertEqual(result, {'status': 'forfeited', 'loser': 'white', 'winner': 'black'})
-        self.assertEqual(check_room_presence(self.room.id, 1100)['status'], 'closed')
+        self.assertEqual(
+            result, {'status': 'forfeited', 'loser': 'white', 'winner': 'black'})
+        self.assertEqual(check_room_presence(
+            self.room.id, 1100)['status'], 'closed')
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'completed')
         self.assertEqual(Match.objects.filter(room=self.room).count(), 1)
@@ -55,7 +59,8 @@ class PresenceForfeitTests(TestCase):
         mark_disconnected(self.room.id, 'white-1', 1001)
         mark_connected(self.room.id, 'white-2', 'white', 1035)
         mark_heartbeat(self.room.id, 'black-1', 1045)
-        self.assertEqual(check_room_presence(self.room.id, 1045)['status'], 'waiting')
+        self.assertEqual(check_room_presence(
+            self.room.id, 1045)['status'], 'waiting')
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
 
@@ -101,7 +106,8 @@ class PresenceForfeitTests(TestCase):
         mark_connected(self.room.id, 'white-2', 'white', 1110)
         mark_heartbeat(self.room.id, 'white-2', 1200)
         result = check_room_presence(self.room.id, 1200)
-        self.assertEqual(result, {'status': 'admin_required', 'missing': ['black']})
+        self.assertEqual(
+            result, {'status': 'admin_required', 'missing': ['black']})
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
@@ -154,7 +160,8 @@ class PresenceForfeitTests(TestCase):
         self.assertFalse(self.room.state['presence']['needsAdminAdjudication'])
         self.assertFalse(needs_admin_adjudication(self.room))
         result = check_room_presence(self.room.id, 1100)
-        self.assertEqual(result, {'status': 'waiting', 'missing': ['black', 'white']})
+        self.assertEqual(result, {'status': 'waiting',
+                         'missing': ['black', 'white']})
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
@@ -227,9 +234,11 @@ class PresenceForfeitTests(TestCase):
         self.assertFalse(needs_admin_adjudication(self.room))
         mark_connected(self.room.id, 'white-1', 'white', 1200)
         self.room.refresh_from_db()
-        self.assertFalse(self.room.state['presence'].get('needsAdminAdjudication'))
+        self.assertFalse(self.room.state['presence'].get(
+            'needsAdminAdjudication'))
         self.assertEqual(self.room.state['presence'].get('absentSince'), {})
         # Also via check path
         result = check_room_presence(self.room.id, 1201)
         self.room.refresh_from_db()
-        self.assertFalse(self.room.state['presence'].get('needsAdminAdjudication'))
+        self.assertFalse(self.room.state['presence'].get(
+            'needsAdminAdjudication'))

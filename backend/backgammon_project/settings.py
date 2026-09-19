@@ -1,3 +1,4 @@
+from datetime import timedelta
 import os
 import sys
 from pathlib import Path
@@ -28,7 +29,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware', 
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -116,7 +117,6 @@ REST_FRAMEWORK = {
     ),
 }
 
-from datetime import timedelta
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
@@ -135,14 +135,24 @@ GAMELINK_TOURNAMENTS_FRONTEND_URL = config(
 )
 GAMELINK_FRONTEND_URL = config('GAMELINK_FRONTEND_URL', default='')
 # Verifier takes a list and signer uses the first, so secrets rotate without downtime.
-GAMELINK_TICKET_SECRETS = [s for s in config('GAMELINK_TICKET_SECRETS', default='').split(',') if s]
+GAMELINK_TICKET_SECRETS = [s for s in config(
+    'GAMELINK_TICKET_SECRETS', default='').split(',') if s]
 GAMELINK_RESULT_SECRET = config('GAMELINK_RESULT_SECRET', default='')
-GAMELINK_COMMAND_SECRETS = [s for s in config('GAMELINK_COMMAND_SECRETS', default='').split(',') if s]
+GAMELINK_COMMAND_SECRETS = [s for s in config(
+    'GAMELINK_COMMAND_SECRETS', default='').split(',') if s]
 GAMELINK_COMMAND_CLOCK_SKEW = 300
 # Must match the issuer's GAMELINK_TICKET_TTL; a ticket older than this is refused.
 GAMELINK_TICKET_TTL = 120
 # Deliberately not the 24 h SIMPLE_JWT default: a linked session is scoped to the match.
 GAMELINK_LINK_TOKEN_TTL = timedelta(hours=2)
+
+# Backgammon Analysis Service
+ANALYSIS_SERVICE_URL = config(
+    "ANALYSIS_SERVICE_URL",
+    default="",
+)
+if "test" in sys.argv:
+    ANALYSIS_SERVICE_URL = ""
 
 LOGGING = {
     'version': 1,

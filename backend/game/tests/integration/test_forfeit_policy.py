@@ -36,29 +36,36 @@ class ForfeitPolicyTests(SimpleTestCase):
             for result in ('single', 'gammon', 'backgammon'):
                 for reason in ('give_up', 'leave', 'time', 'disconnect'):
                     with self.subTest(loser=loser, result=result, reason=reason):
-                        self.assertEqual(forfeit_win_type(board(loser, result), loser, reason=reason), result)
+                        self.assertEqual(forfeit_win_type(
+                            board(loser, result), loser, reason=reason), result)
 
     def test_checker_in_winners_home_counts_even_without_a_checker_on_bar(self):
         for loser, index, sign in (('white', 18, 1), ('black', 5, -1)):
             state = board(loser, 'gammon')
             state['points'][10] -= sign
             state['points'][index] = sign
-            self.assertEqual(forfeit_win_type(state, loser, reason='disconnect'), 'backgammon')
+            self.assertEqual(forfeit_win_type(
+                state, loser, reason='disconnect'), 'backgammon')
             state['points'][index] = -sign
-            self.assertEqual(forfeit_win_type(state, loser, reason='disconnect'), 'gammon')
+            self.assertEqual(forfeit_win_type(
+                state, loser, reason='disconnect'), 'gammon')
 
     def test_match_give_up_uses_board_but_series_abandonment_retains_fallback(self):
         state = board(game_format='match')
         state.update(crawfordGame=True, doublingEnabled=False, cube=1)
-        self.assertEqual(forfeit_win_type(state, 'white', 'gammon', reason='give_up'), 'backgammon')
+        self.assertEqual(forfeit_win_type(
+            state, 'white', 'gammon', reason='give_up'), 'backgammon')
         self.assertEqual(_points_for(state, 'backgammon'), 3)
         self.assertTrue(state['crawfordGame'])
         self.assertFalse(state['doublingEnabled'])
         for reason in ('leave', 'time', 'disconnect'):
-            self.assertEqual(forfeit_win_type(state, 'white', reason=reason), 'single')
+            self.assertEqual(forfeit_win_type(
+                state, 'white', reason=reason), 'single')
         state.pop('gameFormat')
-        self.assertEqual(forfeit_win_type(state, 'white', 'gammon', reason='give_up'), 'gammon')
-        self.assertEqual(forfeit_win_type(state, 'white', reason='disconnect'), 'single')
+        self.assertEqual(forfeit_win_type(
+            state, 'white', 'gammon', reason='give_up'), 'gammon')
+        self.assertEqual(forfeit_win_type(
+            state, 'white', reason='disconnect'), 'single')
 
     def test_drop_and_jacoby_are_separate_from_board_classification(self):
         state = board()
@@ -67,7 +74,8 @@ class ForfeitPolicyTests(SimpleTestCase):
             result = forfeit_win_type(state, 'white', reason='disconnect')
             self.assertEqual(result, 'backgammon')
             self.assertEqual(_points_for(state, result), expected_points)
-            self.assertEqual(forfeit_win_type(state, 'white', 'backgammon', reason='drop'), 'single')
+            self.assertEqual(forfeit_win_type(
+                state, 'white', 'backgammon', reason='drop'), 'single')
         state.update(phase='rolling', turn='black', cube=2)
         engine = BackgammonEngine(state)
         self.assertTrue(engine.offer_double('black')['success'])
@@ -83,8 +91,19 @@ class ForfeitPolicyTests(SimpleTestCase):
             consumer._finalize_and_broadcast = AsyncMock()
             consumer._send_error = AsyncMock()
             room = SimpleNamespace(status='playing', state={})
-            with patch('game.consumers.get_room', AsyncMock(return_value=room)), patch(
-                'game.consumers.get_game_state', AsyncMock(return_value=SimpleNamespace(state_data=board()))
+            with patch(
+                "game.consumers.get_room",
+                AsyncMock(return_value=room),
+            ), patch(
+                "game.consumers.get_game_state",
+                AsyncMock(
+                    return_value=SimpleNamespace(
+                        state_data=board()
+                    )
+                ),
+            ), patch(
+                "game.consumers.needs_admin_adjudication",
+                return_value=False,
             ):
                 if reason == 'time':
                     async_to_sync(consumer._forfeit_on_time)('black', 'white')
@@ -92,7 +111,8 @@ class ForfeitPolicyTests(SimpleTestCase):
                     async_to_sync(getattr(consumer, '_handle_' + reason))()
             args, kwargs = consumer._finalize_and_broadcast.await_args
             self.assertEqual(args[1:], ('black', 'backgammon', reason))
-            self.assertEqual(kwargs.get('force_close', False), reason != 'give_up')
+            self.assertEqual(kwargs.get('force_close', False),
+                             reason != 'give_up')
 
 
 class DisconnectMoneySettlementTests(TestCase):
@@ -100,7 +120,8 @@ class DisconnectMoneySettlementTests(TestCase):
         for loser in ('white', 'black'):
             with self.subTest(loser=loser):
                 winner = 'black' if loser == 'white' else 'white'
-                room = GameRoom.objects.create(code='EXIT' + loser, status='playing', target_points=1)
+                room = GameRoom.objects.create(
+                    code='EXIT' + loser, status='playing', target_points=1)
                 GameState.objects.create(room=room, state_data=board(loser))
                 link = TournamentLink.objects.create(
                     issuer='tournaments', fixture_id=-1 if loser == 'white' else -2,
@@ -110,11 +131,13 @@ class DisconnectMoneySettlementTests(TestCase):
                 mark_connected(room.id, 'black', 'black', 1000)
                 mark_disconnected(room.id, loser, 1001)
                 mark_heartbeat(room.id, winner, 1040)
-                self.assertEqual(check_room_presence(room.id, 1040)['status'], 'waiting')
+                self.assertEqual(check_room_presence(
+                    room.id, 1040)['status'], 'waiting')
                 mark_heartbeat(room.id, winner, 1041)
                 with patch('game.presence.get_channel_layer') as layer:
                     layer.return_value.group_send = AsyncMock()
-                    self.assertEqual(check_room_presence(room.id, 1041)['status'], 'forfeited')
+                    self.assertEqual(check_room_presence(
+                        room.id, 1041)['status'], 'forfeited')
                 payload = layer.return_value.group_send.await_args.args[1]['payload']
                 self.assertEqual(payload['winType'], 'backgammon')
                 self.assertTrue(payload['matchOver'])
@@ -123,7 +146,8 @@ class DisconnectMoneySettlementTests(TestCase):
                 self.assertEqual(saved['winType'], 'backgammon')
                 match = Match.objects.get(room=room)
                 self.assertEqual(getattr(match, winner + '_score'), 6)
-                self.assertEqual(check_room_presence(room.id, 1100)['status'], 'closed')
+                self.assertEqual(check_room_presence(
+                    room.id, 1100)['status'], 'closed')
                 self.assertEqual(Match.objects.filter(room=room).count(), 1)
                 link.refresh_from_db()
                 self.assertEqual(link.result_body['financial_result'], {
@@ -135,11 +159,13 @@ class DisconnectMoneySettlementTests(TestCase):
 class MatchForfeitConsumerTests(TransactionTestCase):
     @patch('game.link.outbox.try_deliver_now')
     def test_give_up_then_leave_between_games_closes_series_without_rescoring(self, deliver):
-        room = GameRoom.objects.create(code='SEREXIT', status='playing', target_points=9)
+        room = GameRoom.objects.create(
+            code='SEREXIT', status='playing', target_points=9)
         state = board(game_format='match')
         state['gameId'] = 'first-game'
         GameState.objects.create(room=room, state_data=state)
-        link = TournamentLink.objects.create(issuer='tournaments', fixture_id=-3, tournament_id=0, room=room)
+        link = TournamentLink.objects.create(
+            issuer='tournaments', fixture_id=-3, tournament_id=0, room=room)
         consumer = GameConsumer()
         consumer.room_id = str(room.id)
         consumer.room_group_name = f'game_{room.id}'
@@ -172,14 +198,16 @@ class MatchForfeitConsumerTests(TransactionTestCase):
         link.refresh_from_db()
         self.assertEqual(link.result_body['end_reason'], 'leave')
         self.assertEqual(link.result_body['score']['p2'], 6)
-        self.assertEqual(link.result_body['financial_result']['format'], 'match')
+        self.assertEqual(
+            link.result_body['financial_result']['format'], 'match')
         deliver.assert_called_once()
 
     @patch('game.link.outbox.try_deliver_now')
     def test_money_consumer_endings_freeze_board_multiplier_before_jacoby(self, deliver):
         for index, reason in enumerate(('give_up', 'leave', 'time')):
             with self.subTest(reason=reason):
-                room = GameRoom.objects.create(code='OUT' + str(index), status='playing', target_points=1)
+                room = GameRoom.objects.create(
+                    code='OUT' + str(index), status='playing', target_points=1)
                 state = board()
                 state['cube'] = 1
                 GameState.objects.create(room=room, state_data=state)
@@ -190,7 +218,8 @@ class MatchForfeitConsumerTests(TransactionTestCase):
                 consumer.room_id = str(room.id)
                 consumer.room_group_name = f'game_{room.id}'
                 consumer.player_color = 'white'
-                consumer.channel_layer = SimpleNamespace(group_send=AsyncMock())
+                consumer.channel_layer = SimpleNamespace(
+                    group_send=AsyncMock())
                 if reason == 'time':
                     async_to_sync(consumer._forfeit_on_time)('black', 'white')
                 else:

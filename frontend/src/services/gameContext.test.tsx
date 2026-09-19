@@ -18,6 +18,7 @@ import {
   BAR,
   OFF,
   newGame,
+  applyMove,
 } from "../lib/backgammon/engine";
 
 interface FakeSocket {
@@ -419,6 +420,113 @@ test("four quick moves stay stable through delayed and stale acknowledgements", 
     await expect(component.getByTestId("point-23")).toHaveText("0");
     await expect(component.getByTestId("remaining")).toHaveText("[]");
   }
+});
+
+test("profiles undo response with a delayed server", async ({ mount, page }, testInfo) => {
+  const component = await mountProbe(mount, page);
+  const initial = midGameState();
+  const moved = { ...applyMove(initial, { from: 23, to: 19, die: 4 }, "white"), version: 2 };
+  await emitInitialState(page, moved);
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  const duration = await page.evaluate((restored) => new Promise<number>(resolve => {
+    const started = performance.now();
+    const point = document.querySelector('[data-testid="point-19"]')!;
+    const observer = new MutationObserver(() => {
+      if (point.textContent === "0") {
+        observer.disconnect();
+        resolve(performance.now() - started);
+      }
+    });
+    observer.observe(point, { subtree: true, childList: true, characterData: true });
+    setTimeout(() => {
+      (window as unknown as Record<string, FakeSocket>).__fakeWs.emit({
+        type: "state_update", payload: restored, playerColor: "white", action: "undo",
+      });
+    }, 800);
+    (document.querySelector('[data-testid="undo"]') as HTMLButtonElement).click();
+  }), { ...initial, version: 3 });
+  console.log(JSON.stringify({ undoResponseMs: duration, simulatedServerDelayMs: 800 }));
+  expect(duration).toBeLessThan(400);
+  await testInfo.attach("undo-response", { body: JSON.stringify({ undoResponseMs: duration, simulatedServerDelayMs: 800 }), contentType: "application/json" });
+  await expect(component.getByTestId("version")).toHaveText("3");
+});
+
+test("move undo move stays stable through ordered acknowledgements", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  const initial = midGameState();
+  const moved = { ...applyMove(initial, { from: 23, to: 19, die: 4 }, "white"), version: 2 };
+  await emitInitialState(page, initial);
+  await component.getByTestId("move").click();
+  await component.getByTestId("undo").click();
+  await expect(component.getByTestId("point-19")).toHaveText("0");
+  await expect(component.getByTestId("remaining")).toHaveText("[4]");
+  await component.getByTestId("move").click();
+  await emitBroadcast(page, moved, "white", "move");
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await emitBroadcast(page, { ...initial, version: 3 }, "white", "undo");
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await emitBroadcast(page, { ...moved, version: 4 }, "white", "move");
+  await expect(component.getByTestId("remaining")).toHaveText("[]");
+  await expect(component.getByTestId("version")).toHaveText("4");
+});
+
+test("repeated undo preserves server metadata and rejection restores the board", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  const initial = { ...midGameState(), dice: [4, 4], remaining: [4, 4, 4, 4] };
+  initial.points[23] = 4;
+  const first = applyMove(initial, { from: 23, to: 19, die: 4 }, "white");
+  const second = { ...applyMove(first, { from: 23, to: 19, die: 4 }, "white"), version: 8 };
+  await emitInitialState(page, second);
+  await component.getByTestId("undo").click();
+  await component.getByTestId("undo").click();
+  await expect(component.getByTestId("point-19")).toHaveText("0");
+  await expect(component.getByTestId("version")).toHaveText("8");
+  await emitBroadcast(page, { ...first, version: 9 }, "white", "undo");
+  await expect(component.getByTestId("point-19")).toHaveText("0");
+  await page.evaluate(() => (window as unknown as Record<string, FakeSocket>).__fakeWs.emit({
+    type: "error", action: "undo", payload: "Cannot undo now",
+  }));
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await expect(component.getByTestId("version")).toHaveText("9");
+  await expect(component.getByTestId("error")).toHaveText("Cannot undo now");
+});
+
+test("undo does not change the board when disconnected or on the opponent turn", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  const initial = midGameState();
+  const moved = applyMove(initial, { from: 23, to: 19, die: 4 }, "white");
+  await emitInitialState(page, { ...moved, turn: "black" });
+  await component.getByTestId("undo").click();
+  expect((await sentMessages(page)).filter(m => m.payload?.action === "undo")).toHaveLength(0);
+  await emitInitialState(page, moved);
+  await page.evaluate(() => { (window as unknown as { __fakeWs: { readyState: number } }).__fakeWs.readyState = 3; });
+  await component.getByTestId("undo").click();
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await expect(component.getByTestId("error")).toContainText("Connection lost");
+});
+
+test("undo keeps current server clocks and reconnect discards pending undo", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="undo-clock-room" playerColor="white">
+      <GameProbe from={23} to={19} />
+      <OnlineClockProbe />
+    </GameProvider>,
+  );
+  const initial = { ...midGameState(), clock: { white: 10000, black: 10000 }, turnStartedAt: 100 };
+  const moved = {
+    ...applyMove(initial, { from: 23, to: 19, die: 4 }, "white"),
+    version: 7, clock: { white: 8000, black: 10000 }, turnStartedAt: 200,
+  };
+  await emitInitialState(page, moved);
+  await component.getByTestId("undo").click();
+  await expect(component.getByTestId("point-19")).toHaveText("0");
+  await expect(component.getByTestId("online-clock")).toHaveText(JSON.stringify(moved.clock));
+  await expect(component.getByTestId("online-started")).toHaveText("200");
+  await emitInitialState(page, moved);
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await emitBroadcast(page, { ...moved, version: 8 }, "black");
+  await expect(component.getByTestId("point-19")).toHaveText("1");
 });
 
 test("undo sends an undo intent", async ({ mount, page }) => {

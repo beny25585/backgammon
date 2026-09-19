@@ -1,7 +1,7 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
 import { GameProvider } from "../../services/gameContext";
-import { newGame, type GameState } from "../../lib/backgammon/engine";
+import { applyMove, newGame, type GameState } from "../../lib/backgammon/engine";
 import { GameProbe } from "../../test-utils/probes";
 import GameScreen from "./GameScreen";
 
@@ -166,15 +166,23 @@ for (const profile of profiles) {
     const optimisticResponseMs = Date.now() - interactionStarted;
 
     const acknowledged = {
-      ...initial,
-      points: [...initial.points],
-      remaining: [3],
-      lastMove: [{ from: 23, to: 19 }],
+      ...applyMove(initial, { from: 23, to: 19, die: 4 }, "white"),
       version: 2,
     };
-    acknowledged.points[23] -= 1;
-    acknowledged.points[19] += 1;
     await emitState(page, acknowledged, profile.latencyMs + profile.jitterMs);
+
+    // Exercise the actual board button, including the reverse checker animation.
+    const undoStarted = Date.now();
+    await component.locator('button[title="Undo last move"]').click();
+    await expect(component.getByTestId("point-19")).toHaveText("0");
+    const undoResponseMs = Date.now() - undoStarted;
+    await page.evaluate(async ({ restored, delay }) => {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      (window as unknown as Record<string, FakeSocket>).__lowEndFakeWs.emit({
+        type: "state_update", payload: restored, playerColor: "white", action: "undo",
+      });
+    }, { restored: { ...initial, version: 3 }, delay: profile.latencyMs + profile.jitterMs });
+    await expect(component.getByTestId("point-19")).toHaveText("0");
 
     for (let update = 0; update < 8; update++) {
       const remoteState: GameState = {
@@ -183,7 +191,7 @@ for (const profile of profiles) {
         dice: [update % 6 + 1, (update + 2) % 6 + 1],
         remaining: [update % 6 + 1],
         message: `Delayed online update ${update + 1}`,
-        version: update + 3,
+        version: update + 4,
       };
       const startsSecondBurst = update === 4;
       await emitState(
@@ -192,7 +200,7 @@ for (const profile of profiles) {
         startsSecondBurst ? profile.latencyMs + profile.jitterMs : 35,
       );
     }
-    await expect(component.getByTestId("version")).toHaveText("10");
+    await expect(component.getByTestId("version")).toHaveText("11");
     await page.waitForTimeout(500);
 
     const metrics = await page.evaluate(() => {
@@ -213,7 +221,7 @@ for (const profile of profiles) {
         ),
       };
     });
-    const result = { profile, optimisticResponseMs, ...metrics };
+    const result = { profile, optimisticResponseMs, undoResponseMs, ...metrics };
     console.log(JSON.stringify(result));
     await testInfo.attach("low-end-online-metrics", {
       body: JSON.stringify(result, null, 2),
@@ -221,6 +229,7 @@ for (const profile of profiles) {
     });
 
     expect(optimisticResponseMs).toBeLessThan(500);
+    expect(undoResponseMs).toBeLessThan(500);
     expect(metrics.frames).toBeGreaterThan(30);
     expect(metrics.frameGapP95ms).toBeLessThan(80);
     expect(metrics.maxFrameGapMs).toBeLessThan(180);

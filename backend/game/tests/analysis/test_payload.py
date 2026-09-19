@@ -6,7 +6,7 @@ import uuid
 from django.contrib.auth.models import User
 from django.test import TestCase
 
-from game.analysis_payload import (
+from game.analysis.payload import (
     SCHEMA_VERSION,
     AnalysisPayloadError,
     build_match_analysis_payload,
@@ -402,3 +402,4 @@ class AnalysisPayloadInvalidTests(TestCase):
         )
         with self.assertRaises(AnalysisPayloadError):
             build_match_analysis_payload(lonely_match)
+

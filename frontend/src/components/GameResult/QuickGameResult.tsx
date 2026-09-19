@@ -1,286 +1,148 @@
+import ResultSummary from "./ResultSummary";
 import GameResult from "./GameResult";
-
-import { RatingChange, ResultMetricRow } from "./ResultComparison";
-
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color } from "../../lib/backgammon/engine";
-import type { RematchState } from "../../types/context";
-
-import styles from "./GameResult.module.css";
 
 interface Props {
+  roomId?: string;
   winner: Color;
-
   whiteScore: number;
   blackScore: number;
-
   whiteName?: string | null;
   blackName?: string | null;
-
   playerColor?: Color;
-
   winType?: string | null;
   reason?: string;
-
   cube: number;
   stakeAmount?: number | null;
-
   ratingBefore?: number | null;
   ratingAfter?: number | null;
-
   opponentRatingBefore?: number | null;
   opponentRatingAfter?: number | null;
-
   ratingChange?: number | null;
   opponentRatingChange?: number | null;
-
+  hits?: number | null;
   doublesOffered?: number | null;
   doublesAccepted?: number | null;
-
   openingRoll?: Partial<Record<Color, number>> | null;
   firstPlayer?: Color | null;
-
   durationSeconds?: number | null;
-
   clockRemaining?: Partial<Record<Color, number>> | null;
-
   coinsDelta?: number | null;
   opponentCoinsDelta?: number | null;
-
   onClose: () => void;
-
   onRematch: () => void;
   rematchPending?: boolean;
   onCancelRematch?: () => void;
-  rematchState?: RematchState;
-
-  onAnalysis?: () => void;
-  onStats?: () => void;
-}
-
-function formatCoins(value?: number | null): string {
-  if (value == null) {
-    return "—";
-  }
-
-  const prefix = value > 0 ? "+" : "";
-
-  return `${prefix}${value}`;
 }
 
 export default function QuickGameResult({
+  roomId,
   winner,
-
   whiteScore,
   blackScore,
-
   whiteName,
   blackName,
-
   playerColor,
-
   winType,
-  reason: gameReason,
-
-  cube,
-
+  reason,
   ratingBefore,
   ratingAfter,
-
   opponentRatingBefore,
   opponentRatingAfter,
-
   ratingChange,
   opponentRatingChange,
-
+  durationSeconds,
   coinsDelta,
   opponentCoinsDelta,
-
   onClose,
-
   onRematch,
   rematchPending,
   onCancelRematch,
-  rematchState,
-
-  onAnalysis,
-  onStats,
 }: Props) {
   const { t } = useI18n();
-  const status = rematchState?.status;
-  const rematchReason = rematchState?.reason;
-
-  const hasSelfRating = ratingBefore != null && ratingAfter != null;
-
-  const hasOpponentRating =
-    opponentRatingBefore != null && opponentRatingAfter != null;
-
-  const selfRatingChange =
-    ratingChange ?? (hasSelfRating ? ratingAfter! - ratingBefore! : 0);
-
-  const opponentRatingChangeValue =
-    opponentRatingChange ??
-    (hasOpponentRating ? opponentRatingAfter! - opponentRatingBefore! : 0);
-
-  // Rematch UI per spec Part 12
-  let rematchActions: React.ReactNode;
-  if (status === "creating") {
-    rematchActions = (
-      <button type="button" disabled className={styles.primaryAction}>
-        {t("game.rematchStarting")}
-      </button>
-    );
-  } else if (status === "requested" || rematchPending) {
-    rematchActions = (
-      <>
-        <button type="button" onClick={onCancelRematch} className={styles.secondaryAction}>
-          {t("game.cancel")}
-        </button>
-        <button type="button" disabled className={styles.primaryAction}>
-          ⏳ {t("game.rematchWaiting")}
-        </button>
-      </>
-    );
-  } else if (status === "offered") {
-    rematchActions = (
-      <>
-        <div className={styles.rematchMessage}>{t("game.rematchOffer")}</div>
-        <button type="button" onClick={onCancelRematch} className={styles.secondaryAction}>
-          {t("game.rematchDecline")}
-        </button>
-        <button
-          type="button"
-          className={styles.rematchButton}
-          onClick={onRematch}
-        >
-          {t("game.rematchAccept")}
-        </button>
-      </>
-    );
-  } else if (status === "unavailable") {
-    if (rematchReason === "tournament") {
-      rematchActions = null;
-    } else if (rematchReason === "opponent_left") {
-      rematchActions = (
-        <>
-          <button type="button" disabled className={styles.primaryAction}>
-            {t("game.rematch")}
-          </button>
-          <div className={styles.rematchMessage}>{t("game.rematchOpponentLeft")}</div>
-        </>
-      );
-    } else if (rematchReason === "requester_not_eligible") {
-      rematchActions = (
-        <>
-          <button type="button" disabled className={styles.primaryAction}>
-            {t("game.rematch")}
-          </button>
-          <div className={styles.rematchMessage}>{t("game.rematchNoCoins")}</div>
-        </>
-      );
-    } else if (rematchReason === "opponent_not_eligible") {
-      rematchActions = (
-        <>
-          <button type="button" disabled className={styles.primaryAction}>
-            {t("game.rematch")}
-          </button>
-          <div className={styles.rematchMessage}>{t("game.rematchOpponentIneligible")}</div>
-        </>
-      );
-    } else {
-      rematchActions = (
-        <button type="button" disabled className={styles.rematchButton}>
-          {t("game.rematch")}
-        </button>
-      );
-    }
-  } else {
-    rematchActions = (
-      <button
-        type="button"
-        className={styles.rematchButton}
-        onClick={onRematch}
-      >
-        <span aria-hidden="true">↻</span>
-        {t("game.rematch")}
-      </button>
-    );
-  }
-
   return (
     <GameResult
       variant="quick"
+      playerColor={playerColor}
       winner={winner}
       whiteScore={whiteScore}
       blackScore={blackScore}
       whiteName={whiteName}
       blackName={blackName}
-      playerColor={playerColor}
       winType={winType}
-      reason={gameReason}
+      reason={reason}
       onClose={onClose}
       actions={
-        <>
-          <button type="button" onClick={onClose} className={styles.secondaryAction}>
-            <span aria-hidden="true">←</span>
-            {t("common.backHome")}
-          </button>
-          {onAnalysis && (
-            <button type="button" onClick={onAnalysis} className={styles.secondaryAction}>
-              <span aria-hidden="true">🔍</span>
-              {t("game.analysis")}
+        rematchPending ? (
+          <>
+            <button
+              type="button"
+              onClick={onCancelRematch}
+              style={{
+                minWidth: 120,
+                padding: "8px 16px",
+                borderRadius: 999,
+                border: "1px solid rgba(229,180,77,0.2)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#f0e3cd",
+              }}
+            >
+              {t("game.cancel")}
             </button>
-          )}
-          {onStats && (
-            <button type="button" onClick={onStats} className={styles.secondaryAction}>
-              <span aria-hidden="true">▮▮</span>
-              {t("game.stats")}
+            <button
+              type="button"
+              disabled
+              style={{
+                minWidth: 140,
+                padding: "8px 16px",
+                borderRadius: 999,
+                background: "#e7bd72",
+                color: "#0f2a2f",
+              }}
+            >
+              ⏳ {t("game.waitingForOpponent")}
             </button>
-          )}
-          {rematchActions}
-        </>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              onClick={onRematch}
+              style={{
+                minWidth: 120,
+                padding: "8px 16px",
+                borderRadius: 999,
+                background: "#e7bd72",
+                color: "#0f2a2f",
+                border: "1px solid #e7bd72",
+              }}
+            >
+              ↻ {t("game.rematch")}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              style={{
+                minWidth: 120,
+                padding: "8px 16px",
+                borderRadius: 999,
+                border: "1px solid rgba(229,180,77,0.2)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#f0e3cd",
+              }}
+            >
+              {t("common.backHome")}
+            </button>
+          </>
+        )
       }
     >
-      <ResultMetricRow
-        left={
-          ratingBefore != null &&
-          ratingAfter != null &&
-          selfRatingChange != null ? (
-            <RatingChange
-              before={ratingBefore}
-              change={selfRatingChange}
-              after={ratingAfter}
-            />
-          ) : (
-            "-"
-          )
-        }
-        label={t("game.rating")}
-        right={
-          opponentRatingBefore != null &&
-          opponentRatingAfter != null &&
-          opponentRatingChangeValue != null ? (
-            <RatingChange
-              before={opponentRatingBefore}
-              change={opponentRatingChangeValue}
-              after={opponentRatingAfter}
-            />
-          ) : (
-            "-"
-          )
-        }
-      />
-
-      <ResultMetricRow
-        left={coinsDelta != null ? formatCoins(coinsDelta) : "-"}
-        label={t("game.coins")}
-        right={opponentCoinsDelta != null ? formatCoins(opponentCoinsDelta) : "-"}
-      />
-
-      <ResultMetricRow
-        left={String(cube)}
-        label={t("common.doublingCube")}
-        right={String(cube)}
+      <ResultSummary key={roomId ?? "local"} roomId={roomId} playerColor={playerColor}
+        ratingBefore={ratingBefore} ratingAfter={ratingAfter} ratingChange={ratingChange}
+        opponentRatingBefore={opponentRatingBefore} opponentRatingAfter={opponentRatingAfter}
+        opponentRatingChange={opponentRatingChange} durationSeconds={durationSeconds}
+        coinsDelta={coinsDelta} opponentCoinsDelta={opponentCoinsDelta}
       />
     </GameResult>
   );

@@ -2,10 +2,6 @@ import type { GameState, Color } from "./game";
 import type { Source, Target } from "../lib/backgammon/engine";
 import type { TimeControl } from "../lib/clock";
 
-export interface MakeMoveOptions {
-  origin?: "manual" | "forced";
-}
-
 export interface OpeningRollResult {
   myDie: number | null;
   opponentDie: number | null;
@@ -62,20 +58,8 @@ export interface NoMovesMessage {
   noticeVisible?: boolean;
 }
 
-export type RematchStatus =
-  | "idle"
-  | "available"
-  | "requested"
-  | "offered"
-  | "creating"
-  | "unavailable";
-
-export interface RematchState {
-  status: RematchStatus;
-  reason?: string | null;
-}
-
 export interface GameContextType {
+  roomId?: string;
   state: GameState | null;
   playerColor: Color;
   whiteName: string | null;
@@ -93,12 +77,11 @@ export interface GameContextType {
   gameResult: GameResult | null;
   nextGameCountdown: number | null;
   matchScore: Record<Color, number> | null;
-  autoConfirmPending: boolean;
   gameType: GameType;
   handleNextGame: () => void;
   handleHome: () => void;
   updateState: (newState: GameState) => void;
-  makeMove: (from: Source, to: Target, options?: MakeMoveOptions) => void;
+  makeMove: (from: Source, to: Target) => void;
   rollDice: () => void;
   reorderDice: () => void;
   offerDouble: () => void;
@@ -108,9 +91,4 @@ export interface GameContextType {
   giveUp: () => void;
   leaveGame: () => void;
   noMovesMessage: NoMovesMessage | null;
-  rematchState: RematchState;
-  requestRematch: () => void;
-  acceptRematch: () => void;
-  declineRematch: () => void;
-  cancelRematch: () => void;
 }
