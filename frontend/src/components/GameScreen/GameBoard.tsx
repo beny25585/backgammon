@@ -53,7 +53,7 @@ function getGameplayKey(s: GameState): string {
 
 const FORCED_MOVE_DELAY_MS = 350;
 // Visual lifetime only; automatic moves and turn transitions keep their own timers.
-const TURN_NOTICE_DURATION_MS = 6000;
+const TURN_NOTICE_DURATION_MS = 3000;
 
 export default function GameBoard({
   state,
@@ -156,7 +156,7 @@ export default function GameBoard({
 
   useEffect(() => {
     let notice: GuidanceMessage | null = null;
-    if (noMovesMessage && noMovesMessage.noticeVisible !== false) {
+    if (noMovesMessage?.color === playerColor && noMovesMessage.noticeVisible !== false) {
       notice = {
         variant: "no-moves",
         textKey: "guidance.noMoves",
@@ -177,7 +177,7 @@ export default function GameBoard({
       setVisibleTurnNotice(null);
       turnNoticeTimerRef.current = null;
     }, TURN_NOTICE_DURATION_MS);
-  }, [noMovesMessage, isMyTurn, state.remaining.length, forcedMove, autoPointSequenceActive]);
+  }, [noMovesMessage, playerColor, isMyTurn, state.remaining.length, forcedMove, autoPointSequenceActive]);
 
   useEffect(
     () => () => {

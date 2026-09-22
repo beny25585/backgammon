@@ -89,10 +89,13 @@ def register(request):
 
 
 @api_view(['POST'])
+@transaction.atomic
 def create_room(request):
     user = request.user
     logger.info(f"Create room attempt: user={user.username}")
     player = get_or_create_player(user)
+    from .entry_lifecycle import active_room_for
+    active_room_for(player)
     active_rooms = GameRoom.objects.filter(
         players__player=player,
         status__in=['waiting', 'playing']
@@ -152,13 +155,19 @@ def create_room(request):
 
 
 @api_view(['POST'])
+@transaction.atomic
 def join_room(request):
     code = request.data.get('code', '').upper().strip()
     user = request.user
     logger.info(f"Join room attempt: code={code} user={user.username}")
     player = get_or_create_player(user)
+    from .entry_lifecycle import active_room_for, expire_unstarted_room
+    if active_room_for(player):
+        return Response({'error': 'Already in a room'}, status=409)
     try:
-        room = GameRoom.objects.get(code=code, status='waiting')
+        room = GameRoom.objects.select_for_update().get(code=code, status='waiting')
+        if expire_unstarted_room(room.pk) == 'cancelled':
+            return Response({'error': 'Room expired'}, status=410)
     except GameRoom.DoesNotExist:
         logger.warning(f"Room not found: code={code}")
         return Response({'error': 'Room not found or already full'}, status=status.HTTP_404_NOT_FOUND)

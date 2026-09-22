@@ -19,6 +19,7 @@ import type {
 import type { GameState, Color, Move } from "../types/game";
 import {
   allLegalMoves,
+  isWholeTurnDeterministic,
   applyMove,
   undoLastMove,
   reorderDice as reorderGameDice,
@@ -98,6 +99,8 @@ export function GameProvider({
   const [blackName, setBlackName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const autoConfirmArmedRef = useRef(false);
+  const [autoConfirmPending, setAutoConfirmPending] = useState(false);
   const [aiFailed, setAiFailed] = useState(false);
   const [aiRetrying, setAiRetrying] = useState(false);
   const [openingRollResult, setOpeningRollResult] =
@@ -185,6 +188,7 @@ export function GameProvider({
           message: Omit<NoMovesMessage, "noticeVisible">,
           revealAfterMs = 350,
         ) => {
+          if (message.color !== playerColorRef.current) return;
           const noticeId = ++noMovesNoticeIdRef.current;
           setNoMovesMessage({ ...message, noticeVisible: false });
           setTimeout(() => {
@@ -226,6 +230,8 @@ export function GameProvider({
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
+            autoConfirmArmedRef.current = false;
+            setAutoConfirmPending(false);
             setError(null);
             clientLogger.debug("Initial state update received", {
               phase: raw.phase,
@@ -299,6 +305,7 @@ export function GameProvider({
           const prev = stateRef.current;
           const next = raw as unknown as GameState;
           const sourceColor = msg.playerColor as Color | undefined;
+          let moveAcknowledged = false;
           const acknowledgedAction =
             typeof msg.action === "string" ? msg.action : undefined;
 
@@ -315,6 +322,7 @@ export function GameProvider({
                 serverMove?.from === pending.from &&
                 serverMove?.to === pending.to);
             if (acknowledgesAction) {
+              moveAcknowledged = pending.action === "move";
               pendingActionsRef.current.shift();
               clientLogger.debug(`[${pending.action}] server acknowledgement`, {
                 latencyMs: Math.round(performance.now() - pending.sentAt),
@@ -337,6 +345,14 @@ export function GameProvider({
             displayedState = replayed;
           }
           pendingActionsRef.current = replayedActions;
+          if (next.phase !== "moving" || next.turn !== playerColorRef.current) {
+            autoConfirmArmedRef.current = false;
+            setAutoConfirmPending(false);
+          } else if (moveAcknowledged && autoConfirmArmedRef.current && replayedActions.length === 0 &&
+            !next.winner && allLegalMoves(next, next.turn).length === 0) {
+            autoConfirmArmedRef.current = false;
+            setAutoConfirmPending(sendIntent({ action: "end_turn" }));
+          }
 
           // Server auto-pass: we rolled, but no legal moves existed. Show the
           // "No moves available" overlay briefly with the rolled dice.
@@ -434,6 +450,8 @@ export function GameProvider({
                 : (payload as Record<string, unknown> | undefined)?.message;
           const msg = typeof rawMsg === "string" ? rawMsg : undefined;
           if (!msg) return;
+          autoConfirmArmedRef.current = false;
+          setAutoConfirmPending(false);
           const failedAction =
             typeof m.action === "string"
               ? m.action
@@ -578,6 +596,13 @@ export function GameProvider({
           revealNoMoves({ dice, remaining, color }, revealAfterMs);
         });
 
+        socket.on("room_expired", () => {
+          setIsLoading(false);
+          setError("המשחק נסגר: שני השחקנים לא התחברו בתוך 10 דקות.");
+          clearRoom();
+          setState(null);
+        });
+
         socket.on("admin_score_updated", (message) => {
           const payload = (message as Record<string, unknown>).payload as
             | Record<string, unknown>
@@ -612,7 +637,7 @@ export function GameProvider({
     return () => {
       socket.removeAllListeners();
     };
-  }, [roomId, socket]);
+  }, [roomId, socket, sendIntent]);
 
   // Tick down the server-authoritative next-game countdown shown in the result
   // overlay. The server owns the actual timer; this is display-only.
@@ -650,6 +675,10 @@ export function GameProvider({
       );
       if (!sendIntent({ action: "move", from, to })) return;
       if (optimistic) {
+        autoConfirmArmedRef.current = isWholeTurnDeterministic(current, current.turn);
+        setAutoConfirmPending(autoConfirmArmedRef.current &&
+          optimistic.phase === "moving" && !optimistic.winner &&
+          allLegalMoves(optimistic, current.turn).length === 0);
         pendingActionsRef.current.push(pending);
         stateRef.current = optimistic;
         setState(optimistic);
@@ -691,6 +720,8 @@ export function GameProvider({
   }, [sendIntent]);
 
   const undoMove = useCallback(() => {
+    autoConfirmArmedRef.current = false;
+    setAutoConfirmPending(false);
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
@@ -857,6 +888,7 @@ export function GameProvider({
         openingRollResult,
         setOpeningRollResult,
         noMovesMessage,
+        autoConfirmPending,
         reconnected,
         opponentConnected,
         timeControl,

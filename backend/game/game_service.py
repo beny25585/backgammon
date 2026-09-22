@@ -451,6 +451,12 @@ def create_private_rematch_room(source_room):
     colors = {rp.color for rp in rps}
     if colors != {'white', 'black'}:
         raise ValueError('rematch requires white and black')
+    from django.contrib.auth import get_user_model
+    from .entry_lifecycle import active_room_for
+    list(get_user_model().objects.select_for_update().filter(
+        pk__in=[rp.player.user_id for rp in rps]).order_by('pk'))
+    if any(active_room_for(rp.player) for rp in rps):
+        raise ValueError('a player already has an active room')
     # fresh engine state
     fresh = BackgammonEngine.get_initial_state()
     # ensure fresh fields

@@ -64,6 +64,11 @@ export default function WaitingRoom() {
     };
 
     const handleRoomStarted = () => startGame();
+    const handleRoomExpired = () => {
+      clearRoom();
+      socket.disconnect();
+      navigate("/home", { replace: true });
+    };
 
     const handleError = (message: unknown) => {
       const payload = (message as { payload?: unknown }).payload;
@@ -80,6 +85,7 @@ export default function WaitingRoom() {
     socket.on("player_joined", handlePlayerJoined);
     socket.on("room_status", handleRoomStatus);
     socket.on("room_started", handleRoomStarted);
+    socket.on("room_expired", handleRoomExpired);
     socket.on("error", handleError);
 
     const connectAndWait = async () => {
@@ -97,6 +103,7 @@ export default function WaitingRoom() {
       socket.off("player_joined", handlePlayerJoined);
       socket.off("room_status", handleRoomStatus);
       socket.off("room_started", handleRoomStarted);
+      socket.off("room_expired", handleRoomExpired);
       socket.off("error", handleError);
     };
   }, [roomId, socket, navigate, playerColor, t]);

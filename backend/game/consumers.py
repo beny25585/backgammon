@@ -208,6 +208,10 @@ class GameConsumer(AsyncWebsocketConsumer):
     # auto-starts the next game of the match.
     NEXT_GAME_DELAY = 30.0
 
+    async def room_expired(self, event):
+        await self.send(json.dumps({'type': 'room_expired', 'payload': {'reason': 'entry_timeout'}}))
+        await self.close(code=4004)
+
     async def connect(self):
         # Validate JWT from query string
         query_string = self.scope.get('query_string', b'').decode()
@@ -312,9 +316,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
         _connected_user_colors[self.room_group_name][self.user_id] = self.player_color
-        await database_sync_to_async(mark_connected)(
+        connected = await database_sync_to_async(mark_connected)(
             room.id, self.channel_name, self.player_color
         )
+        if connected is False:
+            await self.room_expired({})
+            return
         self._presence_heartbeat_task = asyncio.create_task(
             self._presence_heartbeat())
 

@@ -1,3 +1,4 @@
+import { boardRect, boardPoint } from "./boardCoordinates";
 import {
   useMemo,
   useRef,
@@ -56,7 +57,7 @@ interface BoardProps {
 function getCheckerSize(board: HTMLElement): number {
   const checkerEl = board.querySelector<HTMLElement>("[data-checker]");
   if (!checkerEl) return 30;
-  return checkerEl.getBoundingClientRect().width;
+  return boardRect(checkerEl).width;
 }
 
 function checkerCountAt(
@@ -267,7 +268,7 @@ export function Board({
       boardTop: number,
       checkerPx: number,
     ) => {
-      const rect = el.getBoundingClientRect();
+      const rect = boardRect(el);
       const gap = 2;
       const pad = 8; // 0.5rem top/bottom padding on the checker stack
       // Returns the checker's TOP-LEFT corner so the flyer's translateY aligns.
@@ -288,7 +289,7 @@ export function Board({
       pointerOrigin?: { x: number; y: number },
       options?: MakeMoveOptions,
     ) => {
-      const origin = pointerOrigin;
+      const origin = pointerOrigin && boardRef.current ? boardPoint(boardRef.current, pointerOrigin) : pointerOrigin;
       humanMoveRef.current = { from, to };
       const board = boardRef.current;
       if (!board) {
@@ -314,9 +315,9 @@ export function Board({
       }
 
       // The flyer is positioned inside the wrapper, outside the inset frame.
-      const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
-      const fRect = fromEl.getBoundingClientRect();
-      const tRect = toEl.getBoundingClientRect();
+      const bRect = boardRect(wrapperRef.current ?? board);
+      const fRect = boardRect(fromEl);
+      const tRect = boardRect(toEl);
       const checkerPx = getCheckerSize(board);
 
       // The checker being moved leaves from the TOP of the source stack.
@@ -407,9 +408,9 @@ export function Board({
           : board.querySelector<HTMLElement>(`[data-point-idx="${to}"]`);
       if (!fromEl || !toEl) return;
 
-      const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
-      const fRect = fromEl.getBoundingClientRect();
-      const tRect = toEl.getBoundingClientRect();
+      const bRect = boardRect(wrapperRef.current ?? board);
+      const fRect = boardRect(fromEl);
+      const tRect = boardRect(toEl);
       const checkerPx = getCheckerSize(board);
 
       // The move is already applied to the state, so the checker flew from the
@@ -554,9 +555,9 @@ export function Board({
       return;
     }
 
-    const bRect = (wrapperRef.current ?? board).getBoundingClientRect();
-    const tRect = toEl.getBoundingClientRect();
-    const fRect = fromEl.getBoundingClientRect();
+    const bRect = boardRect(wrapperRef.current ?? board);
+    const tRect = boardRect(toEl);
+    const fRect = boardRect(fromEl);
     const checkerPx = getCheckerSize(board);
 
     // Start from the TOP of the destination stack (the checker just moved there).

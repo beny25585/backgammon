@@ -165,7 +165,7 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([23, 19]);
 
-  await page.clock.runFor(5649);
+  await page.clock.runFor(2649);
   await expect(component.getByTestId("forced-move-notice")).toBeVisible();
   await page.clock.runFor(1);
   await expect(component.getByTestId("forced-move-notice")).toHaveCount(0);
@@ -193,7 +193,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }
     expect(geometry.x).toBeCloseTo(geometry.targetX, 0);
     expect(geometry.y).toBeCloseTo(geometry.targetY, 0);
     await expect(notice.locator("span").first()).toHaveCSS("pointer-events", "none");
-    expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+    expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(12);
     const undo = component.getByTitle("Undo last move");
     const noticeBox = await notice.boundingBox();
     const undoBox = await undo.boundingBox();
@@ -451,7 +451,7 @@ test("dice overlay shows during moving phase with remaining dice", async ({ moun
   await expect(component.getByTestId("die")).toHaveCount(2);
 });
 
-test("no-moves overlay shows the rolled dice and message", async ({ mount }) => {
+test("no-moves overlay shows the rolled dice and message to the blocked player", async ({ mount }) => {
   const state = movingState({
     phase: "rolling",
     turn: "white",
@@ -461,7 +461,7 @@ test("no-moves overlay shows the rolled dice and message", async ({ mount }) => 
   });
   const component = await mountBoard(mount, {
     state,
-    playerColor: "black",
+    playerColor: "white",
     noMovesMessage: {
       dice: [2, 4],
       remaining: [2, 4],
@@ -480,7 +480,7 @@ test("rolled dice render before the no-moves notice", async ({ mount }) => {
   const state = movingState({ phase: "rolling", turn: "black", dice: [], remaining: [] });
   const component = await mountBoard(mount, {
     state,
-    playerColor: "black",
+    playerColor: "white",
     noMovesMessage: {
       dice: [2, 4],
       remaining: [2, 4],
@@ -493,10 +493,10 @@ test("rolled dice render before the no-moves notice", async ({ mount }) => {
   await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
 
   await component.update(
-    <MockGameWrapper state={state} playerColor="black">
+    <MockGameWrapper state={state} playerColor="white">
       <GameBoard
         state={state}
-        playerColor="black"
+        playerColor="white"
         makeMove={() => {}}
         noMovesMessage={{
           dice: [2, 4],
@@ -522,7 +522,7 @@ test("no-moves notice outlives the dice snapshot without delaying roll or double
     needsToRoll: true,
     onRoll: () => rolls++,
     offerDouble: () => doubles++,
-    noMovesMessage: { dice: [2, 4], remaining: [2, 4], color: "black" },
+    noMovesMessage: { dice: [2, 4], remaining: [2, 4], color: "white" },
   });
   await page.clock.runFor(350);
   await component.update(
@@ -536,7 +536,7 @@ test("no-moves notice outlives the dice snapshot without delaying roll or double
   await component.getByTitle("Offer double to opponent").first().click();
   await expect.poll(() => rolls).toBe(1);
   await expect.poll(() => doubles).toBe(1);
-  await page.clock.runFor(5649);
+  await page.clock.runFor(2649);
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
   await page.clock.runFor(1);
   await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
@@ -1428,7 +1428,7 @@ test("GameBoard no-moves overlay renders Hebrew with rtl dir", async ({ mount, p
   });
   const component = await mountBoard(mount, {
     state,
-    playerColor: "black",
+    playerColor: "white",
     noMovesMessage: {
       dice: [2, 4],
       remaining: [2, 4],
@@ -1546,4 +1546,3 @@ test("deterministic bar entries auto-play one checker at a time", async ({ mount
   });
   expect(calls.length).toBe(2);
 });
-

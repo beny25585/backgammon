@@ -109,6 +109,11 @@ def enter_link(request):
             user = resolve_user(issuer, ticket['sub'], ticket.get('name', ''))
             player = user.player
 
+            from game.entry_lifecycle import active_room_for
+            existing_link = TournamentLink.objects.filter(issuer=issuer, fixture_id=ticket['fix']).first()
+            if active_room_for(player, exclude=existing_link.room_id if existing_link else None):
+                raise _ActiveRoom()
+
             link, room = _link_for_fixture(issuer, ticket)
             if room.status in ('completed', 'cancelled'):
                 # A terminal room is still viewable by its participants so a
@@ -118,9 +123,6 @@ def enter_link(request):
                     raise _RoomClosed()
             color = link.color_for_seat(seat)
 
-            # Tournament rooms are independent. A player may have a live fixture in several
-            # tournaments and use the tournaments UI to choose which one to enter, so membership
-            # in another active room must neither block this ticket nor cancel that other match.
             # A well-behaved issuer never mints two tickets for the same seat of one fixture, so
             # reaching this means the issuer is confused or forged. Refuse it cleanly: without the
             # check the unique constraint on (room, colour) turns it into a 500.
@@ -133,6 +135,8 @@ def enter_link(request):
             seated, _ = RoomPlayer.objects.get_or_create(
                 room=room, player=player, defaults={'color': color})
             started = _start_if_full(room)
+    except _ActiveRoom:
+        return Response({'error': 'יש לך כבר משחק פעיל. יש לחזור אליו לפני פתיחת משחק נוסף.'}, status=409)
     except _AlreadyRedeemed:
         logger.warning(
             f"link enter rejected: ticket already redeemed jti={ticket['jti']}")
@@ -186,6 +190,15 @@ def admin_command(request):
         return Response({'error': 'Unauthorized'}, status=status.HTTP_401_UNAUTHORIZED)
     try:
         body = json.loads(raw)
+        if not isinstance(body, dict):
+            raise ValueError()
+        if body.get('action') == 'expire_unstarted':
+            fixture = body.get('fixture_id')
+            if body.get('v') != 1 or type(fixture) is not int or fixture >= 0:
+                raise ValueError()
+            from game.entry_lifecycle import expire_unstarted_room
+            link = TournamentLink.objects.filter(issuer=issuer, fixture_id=fixture, tournament_id=0).first()
+            return Response({'status': expire_unstarted_room(link.room_id) if link else 'missing'})
         command_id = str(uuid.UUID(body['command_id']))
         room_id = str(uuid.UUID(body['room_id']))
         fixture_id = int(body['fixture_id'])
@@ -276,6 +289,11 @@ def _link_for_fixture(issuer, ticket):
         return link, room
 
     initial = BackgammonEngine.get_initial_state()
+    deadline = ticket.get('entry_deadline')
+    if deadline is not None:
+        if type(deadline) not in (int, float) or deadline <= time.time():
+            raise _RoomClosed()
+        initial['entryDeadline'] = deadline
     from game.formats import apply_ticket
     apply_ticket(initial, ticket)
     try:
@@ -377,6 +395,10 @@ def _handoff(user, room, color, frontend_url):
     response['Referrer-Policy'] = 'no-referrer'
     response['Cache-Control'] = 'no-store'
     return response
+
+
+class _ActiveRoom(Exception):
+    pass
 
 
 class _AlreadyRedeemed(Exception):

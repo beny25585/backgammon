@@ -3,6 +3,7 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher/LanguageSwitcher
 import { useI18n } from "./i18n/I18nProvider";
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import styles from "./App.module.css";
 
 export default function App() {
   const { direction } = useI18n();
@@ -55,7 +56,7 @@ export default function App() {
           <LanguageSwitcher />
         </div>
       )}
-      <Router />
+      <div data-game-viewport={isGameRoute ? "true" : undefined} className={isGameRoute ? styles.gameContent : undefined}><Router /></div>
     </div>
   );
 }

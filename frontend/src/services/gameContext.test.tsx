@@ -669,6 +669,19 @@ test("server no-moves notice after a partial turn reaches the UI", async ({
   await expect(component.getByTestId("no-moves")).toHaveText("true");
 });
 
+test("opponent no-moves notices stay hidden for both server event formats", async ({ mount, page }) => {
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, { ...rollingState(), turn: "black", version: 1 });
+  await emitBroadcast(page, {
+    ...rollingState(), turn: "white", version: 2, dice: [2, 4], remaining: [], message: "No legal moves",
+  });
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "turn_notice", payload: { kind: "no_moves", dice: [2, 4], remaining: [2, 4], color: "black" } });
+  });
+  await expect(component.getByTestId("no-moves")).toHaveText("false");
+});
+
 test("opening result broadcast populates the opening result", async ({
   mount,
   page,

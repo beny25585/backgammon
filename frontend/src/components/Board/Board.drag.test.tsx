@@ -4,6 +4,7 @@ import GameBoard from "../GameScreen/GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { newGame, type GameState, type Source, type Target } from "@/lib/backgammon/engine";
 import styles from "../GameScreen/GameScreen.module.css";
+import appStyles from "../../App.module.css";
 
 function position(): GameState {
   const points = new Array(24).fill(0);
@@ -70,6 +71,29 @@ for (const scenario of ["legal", "blocked", "outside", "source", "escape", "bar"
     }
   });
 }
+
+test("drag follows the pointer and lands correctly on a rotated portrait board", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = position();
+  const moves: [Source, Target][] = [];
+  const component = await mount(
+    <div className={appStyles.gameContent}>
+      <div className={styles.container}><MockGameWrapper state={state}>
+        <GameBoard state={state} playerColor="white" makeMove={(a, b) => moves.push([a, b])} />
+      </MockGameWrapper></div>
+    </div>,
+  );
+  const start = await center(component.locator('[data-point-idx="23"] [data-checker]').last());
+  const end = await center(component.locator('[data-point-idx="20"]'));
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(end.x, end.y, { steps: 8 });
+  const dragged = await center(component.getByTestId("dragging-checker"));
+  expect(dragged.x).toBeCloseTo(end.x, 0);
+  expect(dragged.y).toBeCloseTo(end.y, 0);
+  await page.mouse.up();
+  await expect.poll(() => moves).toEqual([[23, 20]]);
+});
 
 for (const cancel of [false, true]) {
   test(`touch checker drag ${cancel ? "cancels" : "moves once"} on mobile`, async ({ mount, page }) => {

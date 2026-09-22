@@ -101,13 +101,17 @@ def _publish_admin_transition(room):
 def mark_connected(room_id, channel_name, color, now=None):
     now = time.time() if now is None else now
     room = GameRoom.objects.select_for_update().get(pk=room_id)
+    from .entry_lifecycle import expire_unstarted_room
+    if expire_unstarted_room(room_id) in ('cancelled', 'missing'):
+        return False
     state, presence = _presence(room)
     requires_organizer = _requires_organizer_adjudication(room)
     if not requires_organizer and presence.get('needsAdminAdjudication'):
         presence['needsAdminAdjudication'] = False
         presence['absentSince'] = {}
     presence['connections'][channel_name] = {'color': color, 'lastSeen': now}
-    colors = _colors(presence)
+    colors = {entry.get('color') for entry in presence['connections'].values()
+              if now - float(entry.get('lastSeen', 0)) <= STALE_SECONDS}
     if {'white', 'black'} <= colors:
         first_full_presence = not presence.get('everBothConnected', False)
         presence['everBothConnected'] = True
@@ -120,6 +124,7 @@ def mark_connected(room_id, channel_name, color, now=None):
     state['presence'] = presence
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
+    return True
 
 
 @transaction.atomic

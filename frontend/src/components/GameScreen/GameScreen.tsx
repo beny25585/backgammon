@@ -195,6 +195,7 @@ export default function GameScreen({
       return (
         <div className={styles.error}>
           {t("game.errorPrefix")}: {error}
+          {onLeave && <button type="button" onClick={() => onLeave()}>{t("common.backHome")}</button>}
         </div>
       );
     }

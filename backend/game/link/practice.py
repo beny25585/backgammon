@@ -63,6 +63,10 @@ def prepare_practice(request):
     with transaction.atomic():
         user = resolve_user(data['iss'], data['sub'], data.get('name', ''))
         get_user_model().objects.select_for_update().get(pk=user.pk)
+        from game.entry_lifecycle import active_room_for
+        active = active_room_for(user.player)
+        if active and not (active.state or {}).get('ai'):
+            return Response({'error': 'יש לך כבר משחק פעיל.'}, status=409)
         session = AiSession.objects.select_related('room').filter(purchase_id=data['purchase_id']).first()
         if session and not session.room.players.filter(player=user.player).exists():
             return Response(status=403)

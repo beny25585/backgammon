@@ -3,6 +3,8 @@ import type { PointerEvent, MouseEvent, RefObject } from "react";
 import { BAR, OFF, legalMovesFrom } from "@/lib/backgammon/engine";
 import type { Color, GameState, Source, Target } from "@/lib/backgammon/engine";
 
+import { boardPoint, boardRect } from "./boardCoordinates";
+
 interface Drag {
   pointerId: number;
   from: Source;
@@ -79,11 +81,12 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
         if (location === OFF || location === undefined) return;
         const from: Source = location === BAR ? BAR : Number(location);
         if (!legalFromPoints.includes(from)) return;
-        const bounds = wrapperRef.current!.getBoundingClientRect();
+        const bounds = boardRect(wrapperRef.current!);
+        const point = boardPoint(wrapperRef.current!, { x: event.clientX, y: event.clientY });
         pending.current = {
           pointerId: event.pointerId, from, color: myColor,
           startX: event.clientX, startY: event.clientY,
-          x: event.clientX, y: event.clientY,
+          x: point.x, y: point.y,
           size: checker.getBoundingClientRect().width, active: false, state,
           boardLeft: bounds.left, boardTop: bounds.top,
         };
@@ -98,7 +101,8 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
           event.currentTarget.setPointerCapture(event.pointerId);
           suppressClick.current = true;
         }
-        pending.current = { ...current, active: true, x: event.clientX, y: event.clientY };
+        const point = boardPoint(wrapperRef.current!, { x: event.clientX, y: event.clientY });
+        pending.current = { ...current, active: true, x: point.x, y: point.y };
         setDrag(pending.current);
       },
       onPointerUp(event: PointerEvent<HTMLDivElement>) {
