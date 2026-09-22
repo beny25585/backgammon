@@ -28,3 +28,11 @@
   letter-spacing: 0;
   opacity: 0.82;
 }
+
+.recovery { display: grid; gap: 14px; text-align: start; line-height: 1.6; }
+.recovery h1 { font-size: 21px; margin: 0; }
+.recovery p { margin: 0; color: #c9d2d4; }
+.recovery button { min-height: 44px; border: 1px solid #e7bd7240; border-radius: 10px; background: #183136; color: #fff; padding: 10px 16px; cursor: pointer; }
+.recovery button:first-of-type { background: #e7bd72; color: #142321; }
+.recovery button:disabled { opacity: .5; cursor: wait; }
+.recovery a { color: #e7bd72; text-align: center; }

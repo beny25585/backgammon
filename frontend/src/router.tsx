@@ -133,6 +133,7 @@ function GameRoute() {
       }
     >
       <GameScreen
+        closeExisting={params.get('closeExisting') === '1'}
         onPracticeAgain={params.get('practice') === '1' ? () => {
           clearRoom();
           window.location.assign(new URL('/tournaments/practice', returnUrl).toString());

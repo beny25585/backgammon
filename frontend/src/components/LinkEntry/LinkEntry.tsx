@@ -1,4 +1,5 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { cancelRoom } from '../../services/api';
 import { useNavigate } from "react-router-dom";
 import { storeTokens } from "../../services/auth";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -24,6 +25,9 @@ export default function LinkEntry() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const consumed = useRef(false);
+  const [conflict, setConflict] = useState<{ path: string; room: string; waiting: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     // A fragment can only be consumed once. Without this guard React's development-mode double
@@ -55,17 +59,41 @@ export default function LinkEntry() {
     if (tournament) params.set("tournament", tournament);
     if (returnUrl) params.set("return", returnUrl);
     if (fragment.get("practice") === "1") params.set("practice", "1");
+    if (fragment.get('conflict') === '1') {
+      setConflict({ path: `/game/${encodeURIComponent(room)}?${params.toString()}`, room, waiting: fragment.get('waiting') === '1' });
+      return;
+    }
 
     navigate(`/game/${encodeURIComponent(room)}?${params.toString()}`, {
       replace: true,
     });
   }, [navigate]);
 
+  async function closeExisting() {
+    if (!conflict || busy) return;
+    if (!conflict.waiting) { navigate(`${conflict.path}&closeExisting=1`, { replace: true }); return; }
+    setBusy(true);
+    setError('');
+    try {
+      await cancelRoom(conflict.room);
+      window.location.assign('/tournaments/my-games');
+    } catch (caught) { setError(caught instanceof Error ? caught.message : 'לא ניתן לסגור כרגע. נסה שוב.'); }
+    finally { setBusy(false); }
+  }
+
   return (
     <div className={styles.container}>
       <div className={styles.card}>
         <BrandLockup subtitle={t("common.room")} size="md" />
-        <p className={styles.message}>{t("game.takingToGame")}</p>
+        {conflict ? <div dir="rtl" className={styles.recovery}>
+          <h1>יש לך משחק שעדיין פתוח</h1>
+          <p>אפשר לחזור אליו, או לסיים אותו ואז לבחור משחק חדש.</p>
+          <p>{conflict.waiting ? 'המשחק עדיין ממתין. הסגירה תבטל אותו.' : 'סיום משחק שהתחיל נחשב לפרישה והפסד, בהתאם לכללי המשחק וההימור.'}</p>
+          <button disabled={busy} onClick={() => navigate(conflict.path, { replace: true })}>חזרה למשחק הקיים</button>
+          <button disabled={busy} onClick={() => void closeExisting()}>{busy ? 'סוגר…' : conflict.waiting ? 'סגירת המשחק הממתין' : 'סיום המשחק הקיים'}</button>
+          {error && <p role="alert">{error}</p>}
+          <a href="/tournaments/my-games">חזרה למשחקים שלי</a>
+        </div> : <p className={styles.message}>{t("game.takingToGame")}</p>}
       </div>
     </div>
   );

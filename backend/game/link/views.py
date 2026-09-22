@@ -24,7 +24,9 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.http import HttpResponseRedirect
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, renderer_classes
+from rest_framework.renderers import JSONRenderer
+from .renderers import EntryHTMLRenderer
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -65,6 +67,7 @@ def tournaments_frontend_url():
 
 @api_view(['GET'])
 @permission_classes([AllowAny])
+@renderer_classes([JSONRenderer, EntryHTMLRenderer])
 def enter_link(request):
     """
     Redeem the ticket in `?ticket=` and send the player into their game.
@@ -111,8 +114,17 @@ def enter_link(request):
 
             from game.entry_lifecycle import active_room_for
             existing_link = TournamentLink.objects.filter(issuer=issuer, fixture_id=ticket['fix']).first()
-            if active_room_for(player, exclude=existing_link.room_id if existing_link else None):
-                raise _ActiveRoom()
+            returning = existing_link is not None and RoomPlayer.objects.filter(
+                room_id=existing_link.room_id, player=player).exists()
+            # Admission limits apply to a new seat, never to reconnecting to an
+            # existing one. Older rooms may still be open after a failed settlement.
+            if not returning:
+                blocking_room = active_room_for(player, exclude=existing_link.room_id if existing_link else None)
+                if blocking_room:
+                    logger.warning(
+                        'link admission blocked: player=%s requested_fixture=%s blocking_room=%s',
+                        player.pk, ticket['fix'], blocking_room.pk)
+                    raise _ActiveRoom(blocking_room)
 
             link, room = _link_for_fixture(issuer, ticket)
             if room.status in ('completed', 'cancelled'):
@@ -135,7 +147,11 @@ def enter_link(request):
             seated, _ = RoomPlayer.objects.get_or_create(
                 room=room, player=player, defaults={'color': color})
             started = _start_if_full(room)
-    except _ActiveRoom:
+    except _ActiveRoom as conflict:
+        if 'text/html' in request.headers.get('Accept', ''):
+            room = conflict.room
+            color = RoomPlayer.objects.get(room=room, player=player).color
+            return _handoff(user, room, color, frontend_url, conflict=True)
         return Response({'error': 'יש לך כבר משחק פעיל. יש לחזור אליו לפני פתיחת משחק נוסף.'}, status=409)
     except _AlreadyRedeemed:
         logger.warning(
@@ -358,7 +374,7 @@ def _start_if_full(room):
     return True
 
 
-def _handoff(user, room, color, frontend_url):
+def _handoff(user, room, color, frontend_url, conflict=False):
     """
     Redirect into the SPA with a session in the URL *fragment*.
 
@@ -379,6 +395,10 @@ def _handoff(user, room, color, frontend_url):
         'room': str(room.id),
         'color': color,
     }
+    if conflict:
+        fragment_data['conflict'] = '1'
+        fragment_data['waiting'] = '1' if room.status == 'waiting' else '0'
+        fragment_data['return'] = tournaments_frontend_url()
     link = getattr(room, 'tournament_link', None)
     if (room.state or {}).get('ai'):
         fragment_data['practice'] = '1'
@@ -398,7 +418,8 @@ def _handoff(user, room, color, frontend_url):
 
 
 class _ActiveRoom(Exception):
-    pass
+    def __init__(self, room):
+        self.room = room
 
 
 class _AlreadyRedeemed(Exception):

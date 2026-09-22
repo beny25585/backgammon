@@ -246,14 +246,21 @@ def cancel_room(request):
     """Cancel the current player's active room."""
     user = request.user
     player = get_or_create_player(user)
-    room = GameRoom.objects.filter(
-        players__player=player,
-        status__in=['waiting', 'playing']
-    ).first()
-    if not room:
-        return Response({'error': 'No active room'}, status=status.HTTP_404_NOT_FOUND)
-
     with transaction.atomic():
+        rooms = GameRoom.objects.select_for_update().filter(
+            players__player=player, status__in=['waiting', 'playing'])
+        room_id = request.data.get('roomId')
+        if room_id:
+            try:
+                room_id = uuid.UUID(str(room_id))
+            except ValueError:
+                return Response({'error': 'Invalid room'}, status=400)
+            rooms = rooms.filter(pk=room_id)
+        room = rooms.first()
+        if not room:
+            return Response({'error': 'No active room'}, status=status.HTTP_404_NOT_FOUND)
+        if room_id and room.status != 'waiting':
+            return Response({'error': 'המשחק כבר התחיל. יש להיכנס אליו ולבחור סיום משחק.'}, status=409)
         room.status = 'cancelled'
         room.save()
         link = TournamentLink.objects.filter(room=room).first()

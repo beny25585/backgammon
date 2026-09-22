@@ -215,3 +215,29 @@ test("a refused link still leaves nothing in the address bar", async ({
   expect(location).not.toContain(ACCESS);
   expect(location).not.toContain("nonsense");
 });
+
+test('an active-room conflict offers recovery without automatically closing it', async ({ mount, page }) => {
+  await arriveWith(page, fragment({access: ACCESS, refresh: REFRESH, room: ROOM, color: 'black', conflict: '1', waiting: '0'}));
+  await mount(<MemoryRouter initialEntries={['/link']}><Routes>
+    <Route path="/link" element={<LinkEntry />} />
+    <Route path="/game/:roomId" element={<LocationProbe />} />
+  </Routes></MemoryRouter>);
+  await expect(page.getByRole('heading', {name: 'יש לך משחק שעדיין פתוח'})).toBeVisible();
+  await expect(page).not.toHaveURL(/access-payload/);
+  await page.getByRole('button', {name: 'סיום המשחק הקיים', exact: true}).click();
+  await expect(page.getByTestId('location')).toHaveText(`/game/${ROOM}?color=black&closeExisting=1`);
+});
+
+test('failed waiting-room cancellation stays on the recovery screen and targets the right room', async ({ mount, page }) => {
+  await arriveWith(page, fragment({access: ACCESS, refresh: REFRESH, room: ROOM, color: 'black', conflict: '1', waiting: '1'}));
+  let cancelledRoom = '';
+  await page.route('**/api/rooms/cancel/', async route => {
+    cancelledRoom = route.request().postDataJSON().roomId;
+    await route.fulfill({status: 409, contentType: 'application/json', body: JSON.stringify({error: 'המשחק כבר התחיל'})});
+  });
+  await mount(<MemoryRouter initialEntries={['/link']}><LinkEntry /></MemoryRouter>);
+  await page.getByRole('button', {name: 'סגירת המשחק הממתין', exact: true}).click();
+  await expect(page.getByRole('alert')).toHaveText('המשחק כבר התחיל');
+  expect(cancelledRoom).toBe(ROOM);
+  await expect(page.getByRole('button', {name: 'חזרה למשחק הקיים'})).toBeEnabled();
+});

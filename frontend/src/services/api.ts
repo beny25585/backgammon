@@ -41,8 +41,8 @@ export async function getRoomDetail(code: string) {
   return apiFetch(`/api/rooms/${code}/`);
 }
 
-export async function cancelRoom() {
-  return apiFetch("/api/rooms/cancel/", { method: "POST" });
+export async function cancelRoom(roomId?: string) {
+  return apiFetch("/api/rooms/cancel/", { method: "POST", body: roomId ? JSON.stringify({ roomId }) : undefined });
 }
 
 export async function getActiveRoom() {

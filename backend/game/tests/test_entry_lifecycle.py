@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from rest_framework.test import APIClient
 from game.entry_lifecycle import expire_unstarted_room
-from game.models import GameRoom, Player
+from game.models import GameRoom, Player, RoomPlayer
 from game.presence import mark_connected, mark_disconnected
 from django.test import override_settings
 import hashlib
@@ -15,6 +15,34 @@ from game.link.signing import command_signature_base
 
 
 class EntryLifecycleTests(TestCase):
+    def test_targeted_cancel_only_closes_owned_waiting_room(self):
+        user = User.objects.create_user('cancel-player')
+        player = Player.objects.create(user=user)
+        first = GameRoom.objects.create(code='FIRST1', status='waiting')
+        second = GameRoom.objects.create(code='SECOND', status='waiting')
+        for room in (first, second):
+            RoomPlayer.objects.create(room=room, player=player, color='white')
+        client = APIClient()
+        client.force_authenticate(user)
+        response = client.post('/api/rooms/cancel/', {'roomId': str(second.pk)}, format='json')
+        self.assertEqual(response.status_code, 200)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, 'waiting')
+        self.assertEqual(second.status, 'cancelled')
+
+    def test_targeted_cancel_cannot_cancel_started_or_unowned_room(self):
+        user = User.objects.create_user('safe-cancel')
+        player = Player.objects.create(user=user)
+        room = self.room()
+        client = APIClient()
+        client.force_authenticate(user)
+        self.assertEqual(client.post('/api/rooms/cancel/', {'roomId': str(room.pk)}, format='json').status_code, 404)
+        RoomPlayer.objects.create(room=room, player=player, color='white')
+        self.assertEqual(client.post('/api/rooms/cancel/', {'roomId': str(room.pk)}, format='json').status_code, 409)
+        room.refresh_from_db()
+        self.assertEqual(room.status, 'playing')
+
     @override_settings(GAMELINK_ENABLED=True, GAMELINK_ACCEPTED_ISSUERS=['club'], GAMELINK_COMMAND_SECRETS=['entry-test-secret'])
     def test_expiry_command_requires_valid_signature(self):
         client = APIClient()

@@ -31,6 +31,7 @@ function initialBoardTheme(): BoardTheme {
 import type { GameType } from "../../types/context";
 
 interface GameScreenProps {
+  closeExisting?: boolean;
   onLeave?: (outcome?: "won" | "lost") => void;
   homeLabel?: string;
   gameType?: GameType;
@@ -59,12 +60,14 @@ function hasInterruptedOpeningMove(
 }
 
 export default function GameScreen({
+  closeExisting = false,
   onLeave,
   homeLabel,
   gameType: propGameType,
   showRematch = true,
   onPracticeAgain,
 }: GameScreenProps) {
+  const [showCloseExisting, setShowCloseExisting] = useState(closeExisting);
   const { t, locale } = useI18n();
   const {
     state,
@@ -185,6 +188,18 @@ export default function GameScreen({
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
     state.turn === playerColor;
+
+  if (showCloseExisting && !gameResult?.matchOver) {
+    return <div className={styles.loading} dir="rtl">
+      <div style={{ maxWidth: 420, maxHeight: '100%', overflowY: 'auto', padding: 20, display: 'grid', gap: 16 }} role="region" aria-label="סיום המשחק הקיים">
+        <h2>לסיים את המשחק הקיים?</h2>
+        <p>הסיום נחשב לפרישה והפסד לפי כללי המשחק וההימור. לאחר אישור הסיום מהשרת תחזור למועדון ותוכל לבחור משחק חדש.</p>
+        {error && <p role="alert">{error}</p>}
+        <button style={{ minHeight: 44, background: '#e7bd72', color: '#142321', borderRadius: 10, padding: '8px 16px' }} disabled={isLoading || !state} onClick={requestLeave}>אישור פרישה וסיום המשחק</button>
+        <button style={{ minHeight: 44, border: '1px solid #e7bd72', borderRadius: 10, padding: '8px 16px' }} onClick={() => setShowCloseExisting(false)}>להמשיך במשחק</button>
+      </div>
+    </div>;
+  }
 
   if (isLoading) {
     return <div className={styles.loading}>{t("game.connecting")}</div>;

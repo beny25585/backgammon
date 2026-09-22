@@ -131,6 +131,47 @@ class LinkTestBase(TestCase):
 @link_settings
 class EnterLinkTests(LinkTestBase):
 
+    def test_browser_conflict_redirects_to_recovery_for_owned_room(self):
+        subject = str(uuid.uuid4())
+        self.enter(make_ticket(sub=subject))
+        original = TournamentLink.objects.get(fixture_id=482)
+        response = self.client.get(ENTER_URL, {'ticket': make_ticket(sub=subject, fix=483)}, HTTP_ACCEPT='text/html')
+        self.assertEqual(response.status_code, 302)
+        fragment = parse_qs(response['Location'].split('#', 1)[1])
+        self.assertEqual(fragment['room'], [str(original.room_id)])
+        self.assertEqual(fragment['conflict'], ['1'])
+        self.assertEqual(fragment['waiting'], ['1'])
+        self.assertEqual(RedeemedTicket.objects.count(), 1)
+        self.assertEqual(GameRoom.objects.count(), 1)
+
+    def test_browser_invalid_ticket_shows_player_page_without_api_details(self):
+        response = self.client.get(ENTER_URL, {'ticket': 'bad-ticket'}, HTTP_ACCEPT='text/html')
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, 'חזרה למועדון', status_code=400)
+        self.assertNotContains(response, 'Django REST framework', status_code=400)
+        self.assertNotContains(response, 'bad-ticket', status_code=400)
+
+    def test_reentry_is_allowed_even_with_a_legacy_active_room(self):
+        subject = str(uuid.uuid4())
+        self.assertEqual(self.enter(make_ticket(sub=subject)).status_code, 302)
+        link = TournamentLink.objects.get(fixture_id=482)
+        player = link.room.players.get().player
+        legacy = GameRoom.objects.create(code='LEGACY', status='playing')
+        RoomPlayer.objects.create(room=legacy, player=player, color='white')
+
+        self.assertEqual(self.enter(make_ticket(sub=subject)).status_code, 302)
+        self.assertEqual(GameRoom.objects.count(), 2)
+        self.assertEqual(link.room.players.count(), 1)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, 'playing')
+
+    def test_new_fixture_is_still_blocked_when_another_room_is_active(self):
+        subject = str(uuid.uuid4())
+        self.assertEqual(self.enter(make_ticket(sub=subject)).status_code, 302)
+        self.assertEqual(self.enter(make_ticket(sub=subject, fix=483)).status_code, 409)
+        self.assertEqual(GameRoom.objects.count(), 1)
+        self.assertEqual(RedeemedTicket.objects.count(), 1)
+
     def test_a_valid_ticket_provisions_user_room_and_seat(self):
         response = self.enter(make_ticket(
             sub=str(uuid.uuid4()), seat="p1", tp=5))
@@ -319,9 +360,10 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(RedeemedTicket.objects.count(), 1)
         self.assertEqual(RoomPlayer.objects.count(), 1)
 
-    def test_a_player_may_enter_matches_in_multiple_tournaments(self):
+    def test_a_player_may_enter_another_tournament_after_finishing(self):
         subject = str(uuid.uuid4())
         first = self.enter(make_ticket(sub=subject, trn=11, fix=1, seat="p1"))
+        GameRoom.objects.update(status='completed')
 
         second = self.enter(make_ticket(sub=subject, trn=12, fix=2, seat="p1"))
 
