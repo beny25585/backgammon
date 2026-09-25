@@ -41,7 +41,7 @@ def verify_practice_ticket(token, purpose='enter'):
                 or any(not isinstance(data.get(k), str) or not data[k] for k in ('jti', 'sub'))):
             break
         uuid.UUID(data['purchase_id'])
-        if purpose == 'enter':
+        if purpose in ('enter', 'status'):
             uuid.UUID(data['room_id'])
         return data
     raise ValueError('Invalid practice ticket')
@@ -119,3 +119,22 @@ def enter_practice(request):
     except IntegrityError:
         return Response({'error': 'This link has already been used. Open practice again.'}, status=409)
     return _handoff(user, room, 'white', settings.GAMELINK_FRONTEND_URL.rstrip('/'))
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def practice_status(request):
+    """Validate a short-lived club ticket before exposing practice-room status."""
+    if not configured():
+        return Response({'error': 'Practice unavailable'}, status=503)
+    try:
+        data = verify_practice_ticket(request.data.get('ticket', ''), 'status')
+        user = resolve_user(data['iss'], data['sub'], data.get('name', ''))
+        room = GameRoom.objects.filter(
+            id=data['room_id'],
+            ai_session__purchase_id=data['purchase_id'],
+            players__player=user.player,
+        ).first()
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return Response({'error': 'Invalid practice request'}, status=400)
+    return Response({'active': bool(room and room.status in ('waiting', 'playing'))})

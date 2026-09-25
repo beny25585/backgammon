@@ -7,10 +7,11 @@ tournaments server redirects to.
 from django.urls import path
 
 from . import views
-from .practice import enter_practice, prepare_practice
+from .practice import enter_practice, practice_status, prepare_practice
 
 urlpatterns = [
     path('practice/prepare/', prepare_practice, name='link_practice_prepare'),
+    path('practice/status/', practice_status, name='link_practice_status'),
     path('practice/', enter_practice, name='link_practice'),
     path('enter/', views.enter_link, name='link_enter'),
     path('admin-command/', views.admin_command, name='link_admin_command'),

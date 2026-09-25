@@ -26,6 +26,20 @@ test("pending analysis hides partial metrics until completed", async ({ mount, p
   }] } }));
   const component = await mount(<QuickGameResult roomId="pending" winner="white" whiteScore={1} blackScore={0}
     cube={1} onClose={() => {}} onRematch={() => {}} />);
-  await expect(component.getByRole("status")).toContainText("Analysis in progress");
-  await expect(component.getByText("Game rating (PR)").locator("..").locator("span").first()).toHaveText("—");
+  await expect(component.getByRole("status").filter({ hasText: "Loading game results" })).toBeVisible();
+  await expect(component.getByText("Game rating (PR)")).toHaveCount(0);
+  await expect(component.getByText("Analysis in progress —")).toBeVisible();
+});
+
+test("result card fits a narrow phone viewport", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.route("**/tournaments-api/analyses?room=mobile", route => route.fulfill({ json: { matches: [{
+    id: "mobile-analysis", room_id: "mobile", created_at: "2026-09-19", status: "completed",
+    players: [{ color: "white", pr: 1.2, luck: 0.1 }, { color: "black", pr: 2.3, luck: -0.1 }],
+  }] } }));
+  const component = await mount(<QuickGameResult roomId="mobile" winner="white" whiteScore={5} blackScore={3}
+    whiteName="Alexandria" blackName="Maximilian" cube={1} onClose={() => {}} onRematch={() => {}} />);
+  const card = component.getByTestId("game-result-card");
+  await expect(component.getByText("Game rating (PR)")).toBeVisible();
+  expect(await card.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
 });

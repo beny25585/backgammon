@@ -610,3 +610,34 @@
 .summaryNote { margin: 10px 0; text-align: center; font-size: 12px; color: var(--color-text-soft); }
 .analysisLink { display: flex; align-items: center; justify-content: center; width: fit-content; margin: 12px auto 0; text-decoration: none; min-height: 44px; }
 .analysisLink:focus-visible { outline: 2px solid #e7bd72; outline-offset: 3px; }
+.summaryLoading {
+  min-height: 168px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  color: var(--color-text-soft);
+  font-size: 14px;
+  text-align: center;
+}
+.loadingSpinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(229,180,77,0.2);
+  border-top-color: var(--color-brand-gold-light);
+  border-radius: 50%;
+  animation: result-loading-spin 0.8s linear infinite;
+}
+@keyframes result-loading-spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingSpinner { animation: none; border-right-color: var(--color-brand-gold-light); }
+}
+
+@media (max-width: 480px) {
+  .resultActions > button,
+  .resultActions > a { flex: 1 1 100%; width: 100%; }
+  .summaryLoading { min-height: 138px; padding: 16px; }
+}

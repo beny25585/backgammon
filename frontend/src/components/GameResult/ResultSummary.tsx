@@ -81,6 +81,7 @@ export default function ResultSummary(props: Props) {
   const players = analysis?.status === "completed" ? analysis.players : [];
   const self = players.find(p => p.color === (props.playerColor ?? "white"));
   const opponent = players.find(p => p.color !== (props.playerColor ?? "white"));
+  const isAnalysisLoading = Boolean(roomId) && !unavailable && analysis?.status !== "completed";
   base.pathname = `${base.pathname.replace(/\/$/, "")}/analysis${analysis ? `/${encodeURIComponent(analysis.id)}` : ""}`;
   base.search = "";
   base.hash = "";
@@ -90,11 +91,18 @@ export default function ResultSummary(props: Props) {
   const time = seconds == null ? "—" : `${Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)}:` : ""}${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 
   return <>
-    <ResultMetricRow label={he ? "דירוג המשחק (PR)" : "Game rating (PR)"} left={metric(self?.pr, 2)} right={metric(opponent?.pr, 2)} />
-    <ResultMetricRow label="Rating" left={rating(props.ratingBefore, props.ratingAfter, props.ratingChange)} right={rating(props.opponentRatingBefore, props.opponentRatingAfter, props.opponentRatingChange)} />
-    <ResultMetricRow label="Coins" left={<bdi>{props.coinsDelta == null ? "—" : signed(props.coinsDelta)}</bdi>} right={<bdi>{props.opponentCoinsDelta == null ? "—" : signed(props.opponentCoinsDelta)}</bdi>} />
-    <ResultMetricRow label={he ? "מזל" : "Luck"} left={<bdi>{metric(self?.luck, 3)}</bdi>} right={<bdi>{metric(opponent?.luck, 3)}</bdi>} />
-    <div dir={direction}><MatchDetailRow label={he ? "זמן המשחק" : "Game duration"} value={<bdi dir="ltr">{time}</bdi>} /></div>
+    {isAnalysisLoading ? (
+      <div className={styles.summaryLoading} dir={direction} role="status" aria-live="polite" aria-busy="true">
+        <span className={styles.loadingSpinner} aria-hidden="true" />
+        <span>{he ? "טוענים את נתוני המשחק…" : "Loading game results…"}</span>
+      </div>
+    ) : <>
+      <ResultMetricRow label={he ? "דירוג המשחק (PR)" : "Game rating (PR)"} left={metric(self?.pr, 2)} right={metric(opponent?.pr, 2)} />
+      <ResultMetricRow label="Rating" left={rating(props.ratingBefore, props.ratingAfter, props.ratingChange)} right={rating(props.opponentRatingBefore, props.opponentRatingAfter, props.opponentRatingChange)} />
+      <ResultMetricRow label="Coins" left={<bdi>{props.coinsDelta == null ? "—" : signed(props.coinsDelta)}</bdi>} right={<bdi>{props.opponentCoinsDelta == null ? "—" : signed(props.opponentCoinsDelta)}</bdi>} />
+      <ResultMetricRow label={he ? "מזל" : "Luck"} left={<bdi>{metric(self?.luck, 3)}</bdi>} right={<bdi>{metric(opponent?.luck, 3)}</bdi>} />
+      <div dir={direction}><MatchDetailRow label={he ? "זמן המשחק" : "Game duration"} value={<bdi dir="ltr">{time}</bdi>} /></div>
+    </>}
     <p className={styles.summaryNote} dir={direction} role="status">
       {analysis?.status === "completed"
         ? (he ? "PR נמוך יותר מעיד על משחק מדויק יותר." : "Lower PR means more accurate play.")

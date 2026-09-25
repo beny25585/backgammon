@@ -135,6 +135,10 @@ class PracticeTests(TestCase):
         self.assertEqual(prepared.status_code, 200)
         room_id = prepared.json()['room_id']
         self.assertEqual(GameRoom.objects.get(pk=room_id).status, 'waiting')
+        self.assertEqual(
+            self.client.post('/api/link/practice/status/', {'ticket': issue('status')}).json(),
+            {'active': True},
+        )
         self.assertEqual(self.client.get('/api/link/practice/', {'ticket': issue('prepare')}).status_code, 400)
         repeated = self.client.post('/api/link/practice/prepare/', {'ticket': issue('prepare')})
         self.assertEqual(repeated.json()['room_id'], room_id)
@@ -150,3 +154,9 @@ class PracticeTests(TestCase):
         self.assertEqual((room.target_points, room.time_control, room.status), (5, 'fast', 'playing'))
         self.assertEqual(self.client.get('/api/link/practice/', {'ticket': issue()}).status_code, 302)
         self.assertEqual(GameRoom.objects.filter(players__player__user=identity.user).count(), 1)
+        room.status = 'completed'
+        room.save(update_fields=['status'])
+        self.assertEqual(
+            self.client.post('/api/link/practice/status/', {'ticket': issue('status')}).json(),
+            {'active': False},
+        )
