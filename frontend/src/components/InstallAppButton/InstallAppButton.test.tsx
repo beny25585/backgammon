@@ -21,7 +21,7 @@ test("uses the browser's native installation prompt when it is available", async
 }) => {
   await mount(<InstallAppButton />);
   await expect(page.getByRole("button", { name: "Install app" })).toBeVisible();
-  await page.evaluate(() => {
+  const defaultPrevented = await page.evaluate(() => {
     const event = new Event("beforeinstallprompt", { cancelable: true });
     Object.defineProperties(event, {
       prompt: {
@@ -34,8 +34,10 @@ test("uses the browser's native installation prompt when it is available", async
       },
     });
     window.dispatchEvent(event);
+    return event.defaultPrevented;
   });
 
+  expect(defaultPrevented).toBe(false);
   await page.getByRole("button", { name: "Install app" }).click();
 
   await expect(page.locator("body")).toHaveAttribute(

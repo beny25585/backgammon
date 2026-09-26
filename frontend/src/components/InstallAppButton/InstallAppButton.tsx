@@ -35,7 +35,7 @@ export default function InstallAppButton() {
   useEffect(() => {
     const displayMode = window.matchMedia("(display-mode: standalone)");
     const handlePrompt = (event: Event) => {
-      event.preventDefault();
+      // Keep the browser's automatic installation promotion enabled.
       setInstallPrompt(event as BeforeInstallPromptEvent);
     };
     const handleInstalled = () => {
