@@ -247,14 +247,18 @@ export default function GameScreen({
             gameResult.gameType ??
             contextGameType ??
             "1v1") as string;
+          // Cap only the presentation; keep the authoritative score and game points intact.
+          const scoreLimit = gt !== "quick" && gameResult.targetPoints > 0
+            ? gameResult.targetPoints
+            : Infinity;
           const common = {
             coinsDelta: gameResult.coinsChange,
             opponentCoinsDelta: gameResult.opponentCoinsChange,
             roomId,
             playerColor,
             winner: gameResult.winner,
-            whiteScore: gameResult.matchScore.white,
-            blackScore: gameResult.matchScore.black,
+            whiteScore: Math.min(gameResult.matchScore.white, scoreLimit),
+            blackScore: Math.min(gameResult.matchScore.black, scoreLimit),
             whiteName,
             blackName,
             winType: gameResult.winType,

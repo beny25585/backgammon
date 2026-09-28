@@ -1,6 +1,8 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
+import { MemoryRouter } from "react-router-dom";
 import { GameProvider } from "./gameContext";
+import GameScreen from "../components/GameScreen/GameScreen";
 import { MatchScoreProbe } from "../test-utils/probes";
 import { newGame } from "../lib/backgammon/engine";
 import type { GameState } from "../lib/backgammon/engine";
@@ -134,3 +136,47 @@ test("online matchScore hydrates from the initial reconnect snapshot", async ({ 
 
   await expect(page.getByTestId("score")).toHaveText('{"white":2,"black":1}');
 });
+
+for (const playerColor of ["white", "black"] as const) {
+  test(`one-point gammon displays 1-0 for ${playerColor} while preserving the server score`, async ({ mount, page }) => {
+    await seedFakeSocket(page);
+    await mount(
+      <MemoryRouter>
+        <GameProvider roomId="test-room" playerColor={playerColor}>
+          <MatchScoreProbe />
+          <GameScreen />
+        </GameProvider>
+      </MemoryRouter>,
+    );
+
+    await page.waitForFunction(() => {
+      const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+      return !!ws;
+    });
+    await emitSocket(page, {
+      type: "state_update",
+      payload: { ...freshState(), phase: "game_over", winner: "white" },
+      playerColor,
+      initial: true,
+    });
+    await emitSocket(page, {
+      type: "game_ended",
+      payload: {
+        winner: "white",
+        winType: "gammon",
+        points: 2,
+        cube: 1,
+        whiteScore: 2,
+        blackScore: 0,
+        targetPoints: 1,
+        matchOver: true,
+        gameFormat: "match",
+      },
+    });
+
+    await expect(page.getByTestId("score-left")).toHaveText(playerColor === "white" ? "1" : "0");
+    await expect(page.getByTestId("score-right")).toHaveText(playerColor === "white" ? "0" : "1");
+    await expect(page.getByTestId("score")).toHaveText('{"white":2,"black":0}');
+    await expect(page.getByTestId("game-result")).toHaveText('{"winner":"white"}');
+  });
+}

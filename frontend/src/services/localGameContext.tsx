@@ -651,6 +651,7 @@ export function LocalGameProvider({
   }, [matchScore, MATCH_TARGET]);
 
   const localClock = useLocalClock(state, timeControl ?? null, handleTimeout);
+  const scoreLimit = gameType !== "quick" && MATCH_TARGET > 0 ? MATCH_TARGET : Infinity;
 
   return (
     <GameContext.Provider
@@ -699,8 +700,8 @@ export function LocalGameProvider({
       {gameResult?.matchOver && (
         <PrivateGameResult
           winner={gameResult.winner}
-          whiteScore={matchScore.white}
-          blackScore={matchScore.black}
+          whiteScore={Math.min(matchScore.white, scoreLimit)}
+          blackScore={Math.min(matchScore.black, scoreLimit)}
           whiteName={botColor === "white" ? "Bot" : null}
           blackName={botColor === "black" ? "Bot" : null}
           winType={gameResult.winType}

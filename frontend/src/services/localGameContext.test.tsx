@@ -89,6 +89,32 @@ test("local give up with no borne-off checker awards gammon times cube", async (
   await expect(component.getByTestId("local-score")).toHaveText('{"white":0,"black":4}');
 });
 
+test("one-point local result caps the displayed score while saving all awarded points", async ({ mount, page }) => {
+  await page.route("**/api/matches/", (route) => route.fulfill({ json: { id: 1 } }));
+  const component = await mount(
+    <LocalGameProvider matchTarget={1}>
+      <LocalGiveUpProbe />
+    </LocalGameProvider>,
+  );
+  await component.getByTestId("seed-resignation").click();
+  await expect(component.getByTestId("local-phase")).toHaveText("moving");
+  const savedMatch = page.waitForRequest((request) =>
+    request.url().endsWith("/api/matches/") && request.method() === "POST",
+  );
+  await component.getByTestId("local-give-up").click();
+
+  await expect(component.getByTestId("score-left")).toHaveText("0");
+  await expect(component.getByTestId("score-right")).toHaveText("1");
+  await expect(component.getByTestId("local-score")).toHaveText('{"white":0,"black":4}');
+  await expect(component.getByTestId("local-result")).toContainText('"points":4');
+  expect((await savedMatch).postDataJSON()).toMatchObject({
+    target_points: 1,
+    white_score: 0,
+    black_score: 4,
+    winner: "black",
+  });
+});
+
 test("opening roll fetches a dice pair from the Django server", async ({ mount, page }) => {
   const requests: string[] = [];
   await page.route("**/api/dice/roll/**", async (route) => {
