@@ -15,6 +15,11 @@ from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
 from .game_service import finalize_room, game_ended_payload, record_game_end
+from .server_actions import (
+    apply_server_game_action,
+    event_game_id,
+    run_in_background,
+)
 from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
                        mark_disconnected, mark_heartbeat, needs_admin_adjudication,
                        both_players_connected, connected_colors,
@@ -110,67 +115,6 @@ def record_event_and_advance(room, player_color, event_type, payload):
 
 
 @database_sync_to_async
-def persist_state_and_advance(room_id, state):
-    """Persist the authoritative state with one serialized room transaction."""
-    with transaction.atomic():
-        room = GameRoom.objects.select_for_update().get(id=room_id)
-        room.last_sequence += 1
-        room.save(update_fields=['last_sequence'])
-        sequence = room.last_sequence
-        state['version'] = sequence
-        GameState.objects.filter(room_id=room_id).update(
-            state_data=state,
-            updated_at=timezone.now(),
-        )
-    return sequence
-
-
-@database_sync_to_async
-def record_event(room_id, player_color, event_type, payload, sequence):
-    player_id = None
-    if player_color:
-        player_id = (
-            RoomPlayer.objects.filter(room_id=room_id, color=player_color)
-            .values_list('id', flat=True)
-            .first()
-        )
-    GameEvent.objects.create(
-        room_id=room_id,
-        player_id=player_id,
-        game_id=event_game_id(payload),
-        sequence=sequence,
-        event_type=event_type,
-        payload={**payload, "actorColor": player_color},
-    )
-
-
-def event_game_id(payload):
-    """Extract the game ID from a persisted state-snapshot payload.
-
-    The authoritative value is the state snapshot stored in the event
-    payload. The "initial" fallback exists only for legacy persisted
-    rooms that predate real game IDs.
-    """
-    if isinstance(payload, dict):
-        value = payload.get('gameId')
-        if value:
-            return str(value)
-    return 'initial'
-
-
-async def record_event_safely(room_id, player_color, event_type, payload, sequence):
-    try:
-        await record_event(room_id, player_color, event_type, payload, sequence)
-    except Exception:
-        logger.exception(
-            "Background event persistence failed: room=%s action=%s sequence=%s",
-            room_id,
-            event_type,
-            sequence,
-        )
-
-
-@database_sync_to_async
 def get_game_state(room):
     state, _ = GameState.objects.get_or_create(room=room)
     return state
@@ -192,15 +136,6 @@ _auto_next_tasks: dict = {}
 # Epoch ms deadlines keyed by room_group_name, used to report remaining seconds
 # to a reconnecting player.
 _auto_next_deadlines: dict = {}
-# Keep strong references until background persistence finishes.
-_background_tasks: set[asyncio.Task] = set()
-
-
-def run_in_background(coroutine):
-    task = asyncio.create_task(coroutine)
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-    return task
 
 
 class GameConsumer(AsyncWebsocketConsumer):
@@ -640,73 +575,33 @@ class GameConsumer(AsyncWebsocketConsumer):
         logger.info(
             f"[intent] OK action={action} phase={state.get('phase')} turn={state.get('turn')} dice={state.get('dice')} remaining={state.get('remaining')}")
 
-        # Server-owned clock: recompute from our wall clock, never trust the client.
-        now_ms = int(time_module.time() * 1000)
-        stored = gs.state_data or {}
-        clock, turn_started_at, new_active, timed_out, _deadline = compute_clock(
-            stored, state, now_ms, room.time_control, room.target_points
-        )
-        if clock is not None:
-            state['clock'] = clock
-            state['turnStartedAt'] = turn_started_at
+        async def _on_timeout(winner, loser):
+            await self._forfeit_on_time(winner, loser)
 
-        if timed_out and new_active:
-            sequence = await persist_state_and_advance(room.id, state)
-            state['version'] = sequence
-            await record_event(
-                room.id,
-                self.player_color,
-                action,
-                copy.deepcopy(state),
-                sequence,
-            )
-            winner = 'black' if new_active == 'white' else 'white'
-            return await self._forfeit_on_time(winner, new_active)
-
-        sequence = await persist_state_and_advance(room.id, state)
-        state['version'] = sequence
-
-        if clock is not None and new_active:
+        async def _on_reschedule_timeout():
             await self._reschedule_timeout_from_state()
 
-        # Opening result is only shown briefly; then the winner plays the two
-        # dice that decided the opening roll.
-        if state.get('phase') == 'opening_result':
+        async def _on_opening_result():
             await self._arm_opening_result_watch()
 
-        # Centralized game-end: any game_over state the engine reports finalizes
-        # the room (idempotent) and broadcasts game_ended to everyone.
-        if state.get('phase') == 'game_over' and state.get('winner'):
-            await record_event(
-                room.id,
-                self.player_color,
-                action,
-                copy.deepcopy(state),
-                sequence,
-            )
-            return await self._finalize_and_broadcast(
-                state, state['winner'], state.get('winType', 'single'), action
+        async def _on_game_over(state, winner, win_type, reason):
+            await self._finalize_and_broadcast(
+                state, winner, win_type, reason
             )
 
-        run_in_background(record_event_safely(
-            room.id,
-            self.player_color,
-            action,
-            copy.deepcopy(state),
-            sequence,
-        ))
-        await self.channel_layer.group_send(
-            self.room_group_name,
-            {
-                'type': 'game_message',
-                'event_type': 'state_update',
-                'payload': state,
-                'playerColor': self.player_color,
-                'action': action,
-            }
-        )
-        turn_notice = result.get('turn_notice')
-        if turn_notice:
+        async def _on_state_update(*, state, player_color, action):
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'game_message',
+                    'event_type': 'state_update',
+                    'payload': state,
+                    'playerColor': player_color,
+                    'action': action,
+                }
+            )
+
+        async def _on_turn_notice(*, turn_notice, player_color):
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
@@ -716,11 +611,25 @@ class GameConsumer(AsyncWebsocketConsumer):
                         **turn_notice,
                         'revealAfterMs': self.NO_MOVES_REVEAL_MS,
                     },
-                    'playerColor': self.player_color,
+                    'playerColor': player_color,
                 }
             )
-        asyncio.create_task(database_sync_to_async(
-            publish_snapshot)(room.id, state))
+
+        stored = gs.state_data or {}
+        await apply_server_game_action(
+            room=room,
+            stored_state=stored,
+            new_state=state,
+            player_color=self.player_color,
+            action=action,
+            result=result,
+            on_timeout=_on_timeout,
+            on_reschedule_timeout=_on_reschedule_timeout,
+            on_opening_result=_on_opening_result,
+            on_game_over=_on_game_over,
+            on_state_update=_on_state_update,
+            on_turn_notice=_on_turn_notice,
+        )
 
     async def _handle_roll_intent(self, engine):
         """Roll during the opening or a normal turn.
