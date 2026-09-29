@@ -38,13 +38,15 @@ def expire_unstarted_room(room_id, now=None):
     meta = room.state or {}
     if meta.get('ai') or (meta.get('presence') or {}).get('everBothConnected'):
         return 'started'
+    from .link.models import TournamentLink
+    link = TournamentLink.objects.filter(room=room).first()
+    if link is not None and link.tournament_id > 0:
+        return 'waiting'
     if now.timestamp() < entry_deadline(room):
         return 'waiting'
     room.status = 'cancelled'
     room.save(update_fields=['status', 'updated_at'])
-    from .link.models import TournamentLink
     from .link.outbox import enqueue_result, STATUS_CANCELLED
-    link = TournamentLink.objects.filter(room=room).first()
     if link:
         enqueue_result(link, None, room, STATUS_CANCELLED, end_reason='entry_timeout')
     def notify():
@@ -57,7 +59,9 @@ def expire_unstarted_room(room_id, now=None):
 
 def expire_unstarted_rooms():
     now = timezone.now()
-    ids = GameRoom.objects.filter(status__in=['waiting', 'playing']).filter(
+    ids = GameRoom.objects.filter(status__in=['waiting', 'playing']).exclude(
+        tournament_link__tournament_id__gt=0
+    ).filter(
         Q(created_at__lte=now - ENTRY_TIMEOUT) | Q(state__entryDeadline__lte=now.timestamp())
     ).values_list('pk', flat=True)
     return sum(expire_unstarted_room(pk, now) == 'cancelled' for pk in list(ids))

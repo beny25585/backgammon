@@ -75,20 +75,26 @@ export default function GameBoard({
   noMovesMessage,
   autoConfirmPending = false,
 }: GameBoardProps) {
-  const [selected, setSelected] = useState<Source | null>(null);
-  const [autoMove, setAutoMove] = useState<{ id: number; fromPositionKey: string; move: Move } | null>(null);
+  const [selection, setSelection] = useState<{
+    from: Source | null;
+    version: number;
+  }>({
+    from: null,
+    version: state.version ?? 0,
+  });
+  const [autoMove, setAutoMove] = useState<{
+    id: number;
+    fromPositionKey: string;
+    move: Move;
+  } | null>(null);
   const forcedCommandIdRef = useRef(0);
   const [autoPointSequenceActive, setAutoPointSequenceActive] = useState(false);
-  const [visibleTurnNotice, setVisibleTurnNotice] =
+  const [hiddenTurnNotice, setHiddenTurnNotice] =
     useState<GuidanceMessage | null>(null);
-  const turnNoticeTimerRef = useRef<number | null>(null);
 
   const isMyTurn = state.turn === playerColor && state.phase === "moving";
   const selectedBoardTheme = boardTheme ?? DEFAULT_BOARD_THEME;
-
-  useEffect(() => {
-    if (!isMyTurn) setSelected(null);
-  }, [isMyTurn]);
+  const stateVersion = state.version ?? 0;
 
   const legalMoves = useMemo(() => {
     if (!isMyTurn || !state || !state.points) return [];
@@ -101,14 +107,21 @@ export default function GameBoard({
     return Array.from(unique);
   }, [legalMoves]);
 
+  const selectedSource =
+    legalFromPoints.length === 1 && legalFromPoints[0] === BAR
+      ? BAR
+      : selection.version === stateVersion
+        ? selection.from
+        : null;
+
   const legalTargets = useMemo(() => {
-    if (selected === null) return [];
+    if (selectedSource === null) return [];
     const unique = new Set<Target>();
     for (const move of legalMoves) {
-      if (move.from === selected) unique.add(move.to);
+      if (move.from === selectedSource) unique.add(move.to);
     }
     return Array.from(unique);
-  }, [legalMoves, selected]);
+  }, [legalMoves, selectedSource]);
 
   const forcedMove = useMemo(() => {
     if (!isMyTurn || state.remaining.length === 0) {
@@ -118,98 +131,125 @@ export default function GameBoard({
     return getAutomaticMove(state, playerColor);
   }, [state, playerColor, isMyTurn]);
 
-  useEffect(() => {
+  const turnNotice = useMemo<GuidanceMessage | null>(() => {
     if (
-      legalFromPoints.length === 1 &&
-      legalFromPoints[0] === BAR &&
-      selected !== BAR
+      noMovesMessage?.color === playerColor &&
+      noMovesMessage.noticeVisible !== false
     ) {
-      setSelected(BAR);
-    }
-  }, [legalFromPoints, selected]);
-
-  useEffect(() => {
-    if (autoPointSequenceActive) {
-      setAutoMove(null);
-      return;
-    }
-    if (!isMyTurn || state.remaining.length === 0) {
-      setAutoMove(null);
-      return;
-    }
-    const forced = forcedMove;
-    if (!forced) {
-      setAutoMove(null);
-      return;
-    }
-    const fromPositionKey = getGameplayKey(state);
-    const id = ++forcedCommandIdRef.current;
-    const command = { id, fromPositionKey, move: forced };
-    setAutoMove(null);
-    const t = setTimeout(() => {
-      if (autoPointSequenceActive) return;
-      if (forcedCommandIdRef.current !== id) return;
-      setAutoMove(command);
-    }, FORCED_MOVE_DELAY_MS);
-    return () => clearTimeout(t);
-  }, [state, isMyTurn, forcedMove, autoPointSequenceActive]);
-
-  useEffect(() => {
-    let notice: GuidanceMessage | null = null;
-    if (noMovesMessage?.color === playerColor && noMovesMessage.noticeVisible !== false) {
-      notice = {
+      return {
         variant: "no-moves",
         textKey: "guidance.noMoves",
       };
-    } else if (!autoPointSequenceActive && isMyTurn && state.remaining.length > 0 && forcedMove) {
-      notice = {
+    }
+
+    if (
+      !autoPointSequenceActive &&
+      isMyTurn &&
+      state.remaining.length > 0 &&
+      forcedMove
+    ) {
+      return {
         variant: "forced",
         textKey: "guidance.forced",
       };
     }
-    if (!notice) return;
 
-    setVisibleTurnNotice(notice);
-    if (turnNoticeTimerRef.current !== null) {
-      window.clearTimeout(turnNoticeTimerRef.current);
+    return null;
+  }, [
+    noMovesMessage,
+    playerColor,
+    autoPointSequenceActive,
+    isMyTurn,
+    state.remaining.length,
+    forcedMove,
+  ]);
+
+  const visibleTurnNotice = turnNotice === hiddenTurnNotice ? null : turnNotice;
+
+  useEffect(() => {
+    const id = ++forcedCommandIdRef.current;
+
+    if (
+      autoPointSequenceActive ||
+      !isMyTurn ||
+      state.remaining.length === 0 ||
+      !forcedMove
+    ) {
+      return;
     }
-    turnNoticeTimerRef.current = window.setTimeout(() => {
-      setVisibleTurnNotice(null);
-      turnNoticeTimerRef.current = null;
-    }, TURN_NOTICE_DURATION_MS);
-  }, [noMovesMessage, playerColor, isMyTurn, state.remaining.length, forcedMove, autoPointSequenceActive]);
 
-  useEffect(
-    () => () => {
-      if (turnNoticeTimerRef.current !== null) {
-        window.clearTimeout(turnNoticeTimerRef.current);
-      }
-    },
-    [],
-  );
+    const command = {
+      id,
+      fromPositionKey: getGameplayKey(state),
+      move: forcedMove,
+    };
+
+    const timer = window.setTimeout(() => {
+      if (forcedCommandIdRef.current !== id) return;
+      setAutoMove(command);
+    }, FORCED_MOVE_DELAY_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [state, isMyTurn, forcedMove, autoPointSequenceActive]);
+
+  const activeAutoMove =
+    autoPointSequenceActive ||
+    !isMyTurn ||
+    state.remaining.length === 0 ||
+    !forcedMove ||
+    autoMove?.fromPositionKey !== getGameplayKey(state)
+      ? null
+      : autoMove;
+
+  useEffect(() => {
+    if (!turnNotice) return;
+
+    const timer = window.setTimeout(() => {
+      setHiddenTurnNotice(turnNotice);
+    }, TURN_NOTICE_DURATION_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [turnNotice]);
 
   const displayedDice = noMovesMessage?.dice ?? state.dice;
   const displayedRemaining = noMovesMessage?.remaining ?? state.remaining;
   const displayedDiceColor = noMovesMessage?.color ?? state.turn;
-  const showDice = Boolean(noMovesMessage) ||
+  const showDice =
+    Boolean(noMovesMessage) ||
     (state.phase !== "opening_roll" &&
       state.phase === "moving" &&
       state.remaining.length > 0);
 
   function handleSelect(from: Source | null) {
-    setSelected(from);
+    setSelection({
+      from,
+      version: stateVersion,
+    });
   }
 
-  function handleMove(to: Target, explicitFrom?: Source, options?: MakeMoveOptions) {
+  function handleMove(
+    to: Target,
+    explicitFrom?: Source,
+    options?: MakeMoveOptions,
+  ) {
     const from =
-      explicitFrom ?? selected ?? (autoMove?.move.to === to ? autoMove.move.from : null);
+      explicitFrom ??
+      selectedSource ??
+      (activeAutoMove?.move.to === to ? activeAutoMove.move.from : null);
     if (from === null) return;
     if (options?.origin !== "forced") {
       forcedCommandIdRef.current += 1;
       setAutoMove(null);
     }
     makeMove(from, to, options);
-    setSelected(null);
+    setSelection({
+      from: null,
+      version: stateVersion,
+    });
   }
 
   return (
@@ -221,7 +261,7 @@ export default function GameBoard({
         <Board
           state={state}
           myColor={playerColor}
-          selected={selected}
+          selected={selectedSource}
           legalTargets={legalTargets}
           onSelect={handleSelect}
           onMove={handleMove}
@@ -230,20 +270,24 @@ export default function GameBoard({
           onConfirm={autoConfirmPending ? undefined : endTurn}
           onRoll={needsToRoll ? onRoll : undefined}
           onOfferDouble={offerDouble}
-          autoMove={autoMove}
+          autoMove={activeAutoMove}
           turnNotice={visibleTurnNotice}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
           inputDisabled={autoConfirmPending}
         />
         {showDice && (
-            <div className={styles.boardOverlay} data-testid="dice-overlay">
-              <DiceRow
-                dice={displayedDice}
-                remaining={displayedRemaining}
-                color={displayedDiceColor}
-                onReorder={isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined}
-              />
-            </div>
+          <div className={styles.boardOverlay} data-testid="dice-overlay">
+            <DiceRow
+              dice={displayedDice}
+              remaining={displayedRemaining}
+              color={displayedDiceColor}
+              onReorder={
+                isMyTurn && !autoPointSequenceActive && !autoConfirmPending
+                  ? reorderDice
+                  : undefined
+              }
+            />
+          </div>
         )}
         <GuidanceBanner
           state={state}

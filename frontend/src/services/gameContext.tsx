@@ -114,6 +114,7 @@ export function GameProvider({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const autoConfirmArmedRef = useRef(false);
+  const endTurnInFlightRef = useRef(false);
   const [autoConfirmPending, setAutoConfirmPending] = useState(false);
   const [aiFailed, setAiFailed] = useState(false);
   const [aiRetrying, setAiRetrying] = useState(false);
@@ -182,6 +183,113 @@ export function GameProvider({
     [socket],
   );
 
+  const fetchFinalizedResult = useCallback(
+    async function fetchFinalizedResult(attempt = 0): Promise<void> {
+      if (!roomId) return;
+      const token = getAccessToken();
+      if (!token) return;
+      try {
+        const res = await fetch(`/backgammon/api/rooms/${roomId}/result/`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 202) {
+          if (attempt < 5) {
+            const delay = Math.min(500 * 2 ** attempt, 4000);
+            setTimeout(() => void fetchFinalizedResult(attempt + 1), delay);
+          }
+          return;
+        }
+        if (!res.ok) return;
+        const data = (await res.json()) as Record<string, unknown>;
+        // Merge authoritative finalized room result data into GameResult if present.
+        const rating = data.rating as
+          | {
+              self: { before: number; after: number; change: number };
+              opponent: { before: number; after: number; change: number };
+            }
+          | null
+          | undefined;
+        const money = data.money as
+          | { stake?: string; selfChange?: number; opponentChange?: number }
+          | null
+          | undefined;
+        const stats = data.stats as
+          | {
+              hits?: number | null;
+              doublesOffered?: number | null;
+              doublesAccepted?: number | null;
+              openingRoll?: Partial<Record<Color, number>> | null;
+              firstPlayer?: Color | null;
+              durationSeconds?: number | null;
+              clockRemaining?: Partial<Record<Color, number>> | null;
+            }
+          | null
+          | undefined;
+        const result = data.result as
+          | { endReason?: string | null }
+          | null
+          | undefined;
+        if (rating || money || stats || result?.endReason) {
+          setGameResult((prev) => {
+            if (!prev) return prev;
+            const isSelfWhite = playerColorRef.current === "white";
+            return {
+              ...prev,
+              reason: result?.endReason ?? prev.reason,
+              ratingBefore: rating
+                ? isSelfWhite
+                  ? rating.self.before
+                  : rating.opponent.before
+                : prev.ratingBefore,
+              ratingAfter: rating
+                ? isSelfWhite
+                  ? rating.self.after
+                  : rating.opponent.after
+                : prev.ratingAfter,
+              opponentRatingBefore: rating
+                ? isSelfWhite
+                  ? rating.opponent.before
+                  : rating.self.before
+                : prev.opponentRatingBefore,
+              opponentRatingAfter: rating
+                ? isSelfWhite
+                  ? rating.opponent.after
+                  : rating.self.after
+                : prev.opponentRatingAfter,
+              ratingChange: rating
+                ? isSelfWhite
+                  ? rating.self.change
+                  : rating.opponent.change
+                : prev.ratingChange,
+              opponentRatingChange: rating
+                ? isSelfWhite
+                  ? rating.opponent.change
+                  : rating.self.change
+                : prev.opponentRatingChange,
+              coinsChange: money ? money.selfChange : prev.coinsChange,
+              opponentCoinsChange: money
+                ? money.opponentChange
+                : prev.opponentCoinsChange,
+              stakeAmount: money?.stake
+                ? Number(money.stake)
+                : prev.stakeAmount,
+              hits: stats?.hits ?? prev.hits,
+              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
+              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
+              openingRoll: stats?.openingRoll ?? prev.openingRoll,
+              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
+              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
+              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
+            };
+          });
+        }
+      } catch {
+        // ignore, will retry on next game_ended if needed
+      }
+    },
+    [roomId],
+  );
+
   useEffect(() => {
     const token = getAccessToken();
 
@@ -245,6 +353,7 @@ export function GameProvider({
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
             autoConfirmArmedRef.current = false;
+            endTurnInFlightRef.current = false;
             setAutoConfirmPending(false);
             setError(null);
             clientLogger.debug("Initial state update received", {
@@ -361,6 +470,7 @@ export function GameProvider({
           pendingActionsRef.current = replayedActions;
           if (next.phase !== "moving" || next.turn !== playerColorRef.current) {
             autoConfirmArmedRef.current = false;
+            endTurnInFlightRef.current = false;
             setAutoConfirmPending(false);
           } else if (
             moveAcknowledged &&
@@ -473,6 +583,7 @@ export function GameProvider({
           const msg = typeof rawMsg === "string" ? rawMsg : undefined;
           if (!msg) return;
           autoConfirmArmedRef.current = false;
+          endTurnInFlightRef.current = false;
           setAutoConfirmPending(false);
           const failedAction =
             typeof m.action === "string"
@@ -709,7 +820,7 @@ export function GameProvider({
     return () => {
       socket.removeAllListeners();
     };
-  }, [roomId, socket, sendIntent]);
+  }, [roomId, socket, sendIntent, fetchFinalizedResult]);
 
   // Tick down the server-authoritative next-game countdown shown in the result
   // overlay. The server owns the actual timer; this is display-only.
@@ -799,8 +910,20 @@ export function GameProvider({
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
     if (allLegalMoves(current, current.turn).length > 0) return;
-    sendIntent({ action: "end_turn" });
-  }, [sendIntent]);
+    if (endTurnInFlightRef.current) return;
+    if (autoConfirmPending) return;
+
+    endTurnInFlightRef.current = true;
+    setAutoConfirmPending(true); // NEW — hide Confirm immediately
+
+    const sent = sendIntent({ action: "end_turn" });
+
+    if (!sent) {
+      endTurnInFlightRef.current = false;
+      setAutoConfirmPending(false); // show it again if sending failed
+      setError("Connection lost. Please wait for reconnection.");
+    }
+  }, [sendIntent, autoConfirmPending]);
 
   const undoMove = useCallback(() => {
     autoConfirmArmedRef.current = false;
@@ -842,113 +965,6 @@ export function GameProvider({
   const updateState = useCallback((s: GameState) => setState(s), []);
 
   const clearError = useCallback(() => setError(null), []);
-
-  const fetchFinalizedResult = useCallback(
-    async (attempt = 0): Promise<void> => {
-      if (!roomId) return;
-      const token = getAccessToken();
-      if (!token) return;
-      try {
-        const res = await fetch(`/backgammon/api/rooms/${roomId}/result/`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.status === 202) {
-          if (attempt < 5) {
-            const delay = Math.min(500 * 2 ** attempt, 4000);
-            setTimeout(() => void fetchFinalizedResult(attempt + 1), delay);
-          }
-          return;
-        }
-        if (!res.ok) return;
-        const data = (await res.json()) as Record<string, unknown>;
-        // Merge authoritative finalized room result data into GameResult if present.
-        const rating = data.rating as
-          | {
-              self: { before: number; after: number; change: number };
-              opponent: { before: number; after: number; change: number };
-            }
-          | null
-          | undefined;
-        const money = data.money as
-          | { stake?: string; selfChange?: number; opponentChange?: number }
-          | null
-          | undefined;
-        const stats = data.stats as
-          | {
-              hits?: number | null;
-              doublesOffered?: number | null;
-              doublesAccepted?: number | null;
-              openingRoll?: Partial<Record<Color, number>> | null;
-              firstPlayer?: Color | null;
-              durationSeconds?: number | null;
-              clockRemaining?: Partial<Record<Color, number>> | null;
-            }
-          | null
-          | undefined;
-        const result = data.result as
-          | { endReason?: string | null }
-          | null
-          | undefined;
-        if (rating || money || stats || result?.endReason) {
-          setGameResult((prev) => {
-            if (!prev) return prev;
-            const isSelfWhite = playerColorRef.current === "white";
-            return {
-              ...prev,
-              reason: result?.endReason ?? prev.reason,
-              ratingBefore: rating
-                ? isSelfWhite
-                  ? rating.self.before
-                  : rating.opponent.before
-                : prev.ratingBefore,
-              ratingAfter: rating
-                ? isSelfWhite
-                  ? rating.self.after
-                  : rating.opponent.after
-                : prev.ratingAfter,
-              opponentRatingBefore: rating
-                ? isSelfWhite
-                  ? rating.opponent.before
-                  : rating.self.before
-                : prev.opponentRatingBefore,
-              opponentRatingAfter: rating
-                ? isSelfWhite
-                  ? rating.opponent.after
-                  : rating.self.after
-                : prev.opponentRatingAfter,
-              ratingChange: rating
-                ? isSelfWhite
-                  ? rating.self.change
-                  : rating.opponent.change
-                : prev.ratingChange,
-              opponentRatingChange: rating
-                ? isSelfWhite
-                  ? rating.opponent.change
-                  : rating.self.change
-                : prev.opponentRatingChange,
-              coinsChange: money ? money.selfChange : prev.coinsChange,
-              opponentCoinsChange: money
-                ? money.opponentChange
-                : prev.opponentCoinsChange,
-              stakeAmount: money?.stake
-                ? Number(money.stake)
-                : prev.stakeAmount,
-              hits: stats?.hits ?? prev.hits,
-              doublesOffered: stats?.doublesOffered ?? prev.doublesOffered,
-              doublesAccepted: stats?.doublesAccepted ?? prev.doublesAccepted,
-              openingRoll: stats?.openingRoll ?? prev.openingRoll,
-              firstPlayer: stats?.firstPlayer ?? prev.firstPlayer,
-              durationSeconds: stats?.durationSeconds ?? prev.durationSeconds,
-              clockRemaining: stats?.clockRemaining ?? prev.clockRemaining,
-            };
-          });
-        }
-      } catch {
-        // ignore, will retry on next game_ended if needed
-      }
-    },
-    [roomId],
-  );
 
   const handleNextGame = useCallback(() => {
     setGameResult(null);
