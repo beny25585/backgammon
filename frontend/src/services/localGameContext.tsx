@@ -32,7 +32,6 @@ import {
 } from "@/lib/backgammon/engine";
 import { chooseMove } from "@/lib/bot/chooseMove";
 import { GameContext } from "./gameContext";
-import PrivateGameResult from "../components/GameResult/PrivateGameResult";
 import { useLocalClock } from "../hooks/useLocalClock";
 import type { TimeControl } from "../lib/clock";
 import { clientLogger } from "./logger";
@@ -93,8 +92,9 @@ export function LocalGameProvider({
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] =
-    useState<NoMovesMessage | null>(null);
+  const [noMovesMessage, setNoMovesMessage] = useState<NoMovesMessage | null>(
+    null,
+  );
   const noMovesNoticeIdRef = useRef(0);
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
@@ -214,7 +214,12 @@ export function LocalGameProvider({
   useEffect(() => {
     const phaseChanged = prevPhaseRef.current !== state.phase;
     prevPhaseRef.current = state.phase;
-    if (!phaseChanged || state.phase !== "game_over" || !state.winner || gameResult) {
+    if (
+      !phaseChanged ||
+      state.phase !== "game_over" ||
+      !state.winner ||
+      gameResult
+    ) {
       return;
     }
 
@@ -368,7 +373,14 @@ export function LocalGameProvider({
     }, BOT_DELAY);
 
     return () => clearTimeout(timer);
-  }, [state, botColor, getOpeningDie, getTurnDice, setTurnColor, advanceToOpeningMove]);
+  }, [
+    state,
+    botColor,
+    getOpeningDie,
+    getTurnDice,
+    setTurnColor,
+    advanceToOpeningMove,
+  ]);
 
   // ── Human actions ──────────────────────────────────────────────
 
@@ -467,7 +479,13 @@ export function LocalGameProvider({
         rollingRef.current = false;
       }
     })();
-  }, [getOpeningDie, getTurnDice, setTurnColor, advanceToOpeningMove, revealNoMoves]);
+  }, [
+    getOpeningDie,
+    getTurnDice,
+    setTurnColor,
+    advanceToOpeningMove,
+    revealNoMoves,
+  ]);
 
   const reorderDice = useCallback(() => {
     setState((prev) => {
@@ -499,8 +517,7 @@ export function LocalGameProvider({
       if (!cur || cur.phase !== "moving") return;
       if (cur.turn !== playerColorRef.current) return;
       const actor = playerColorRef.current;
-      const wholeTurnDeterministic =
-        isWholeTurnDeterministic(cur, actor);
+      const wholeTurnDeterministic = isWholeTurnDeterministic(cur, actor);
       const dest = to === OFF ? OFF : to;
       const moves = allLegalMoves(cur, cur.turn);
       const matchingMoves = moves.filter(
@@ -514,7 +531,11 @@ export function LocalGameProvider({
       if (!match) return;
       let next = applyMove(cur, match, cur.turn);
       let shouldReveal = false;
-      let revealPayload: { dice: number[]; remaining: number[]; color: Color } | null = null;
+      let revealPayload: {
+        dice: number[];
+        remaining: number[];
+        color: Color;
+      } | null = null;
       if (
         next.phase === "rolling" &&
         next.turn !== cur.turn &&
@@ -588,36 +609,39 @@ export function LocalGameProvider({
 
   const clearError = useCallback(() => setError(null), []);
 
-  const handleTimeout = useCallback((color: Color) => {
-    const current = stateRef.current;
-    if (!current || current.phase === "game_over") return;
-    const winner: Color = color === "white" ? "black" : "white";
-    const points = current.cube || 1;
-    const nextScore = {
-      ...matchScore,
-      [winner]: matchScore[winner] + points,
-    };
-    setMatchScore(nextScore);
-    setMatchWinner(winner);
-    setGameResult({
-      winner,
-      winType: "single",
-      points,
-      cube: current.cube || 1,
-      matchScore: nextScore,
-      targetPoints: MATCH_TARGET,
-      matchOver: true,
-      reason: "time",
-      gameType,
-    });
-    setState({
-      ...current,
-      phase: "game_over",
-      winner,
-      winType: "single",
-      message: `${color} ran out of time`,
-    });
-  }, [matchScore, MATCH_TARGET]);
+  const handleTimeout = useCallback(
+    (color: Color) => {
+      const current = stateRef.current;
+      if (!current || current.phase === "game_over") return;
+      const winner: Color = color === "white" ? "black" : "white";
+      const points = current.cube || 1;
+      const nextScore = {
+        ...matchScore,
+        [winner]: matchScore[winner] + points,
+      };
+      setMatchScore(nextScore);
+      setMatchWinner(winner);
+      setGameResult({
+        winner,
+        winType: "single",
+        points,
+        cube: current.cube || 1,
+        matchScore: nextScore,
+        targetPoints: MATCH_TARGET,
+        matchOver: true,
+        reason: "time",
+        gameType,
+      });
+      setState({
+        ...current,
+        phase: "game_over",
+        winner,
+        winType: "single",
+        message: `${color} ran out of time`,
+      });
+    },
+    [matchScore, MATCH_TARGET],
+  );
 
   const handleGiveUp = useCallback(() => {
     const current = stateRef.current;
@@ -651,7 +675,6 @@ export function LocalGameProvider({
   }, [matchScore, MATCH_TARGET]);
 
   const localClock = useLocalClock(state, timeControl ?? null, handleTimeout);
-  const scoreLimit = gameType !== "quick" && MATCH_TARGET > 0 ? MATCH_TARGET : Infinity;
 
   return (
     <GameContext.Provider
@@ -696,22 +719,6 @@ export function LocalGameProvider({
       }}
     >
       {children}
-
-      {gameResult?.matchOver && (
-        <PrivateGameResult
-          winner={gameResult.winner}
-          whiteScore={Math.min(matchScore.white, scoreLimit)}
-          blackScore={Math.min(matchScore.black, scoreLimit)}
-          whiteName={botColor === "white" ? "Bot" : null}
-          blackName={botColor === "black" ? "Bot" : null}
-          winType={gameResult.winType}
-          reason={gameResult.reason}
-          cube={gameResult.cube}
-          onClose={handleHome}
-          onRematch={handleNextGame}
-          playerColor={playerColor}
-        />
-      )}
     </GameContext.Provider>
   );
 }

@@ -15,13 +15,16 @@ from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
 from .game_service import finalize_room, game_ended_payload, record_game_end
-from .presence import (HEARTBEAT_SECONDS, STALE_SECONDS, check_room_presence, mark_connected,
+from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
                        mark_disconnected, mark_heartbeat, needs_admin_adjudication,
-                       both_players_connected, connected_colors)
+                       both_players_connected, connected_colors,
+                       STALE_SECONDS)
 from .link.live import publish_snapshot
 from .link.rematch import RematchServiceError, send_direct_play_rematch_action
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
+
+from .game_service import RoomCancellationError, cancel_waiting_room
 
 logger = logging.getLogger(__name__)
 
@@ -525,7 +528,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             else:
                 admin_review_pending = False
 
-            if room and admin_review_pending:
+            # Keep gameplay paused, but allow an explicit match forfeit.
+            if room and admin_review_pending and message_type != 'leave':
                 await self.send(json.dumps({
                     'type': 'admin_review_required',
                     'payload': {'message': 'Match paused pending organizer decision'},
@@ -840,32 +844,86 @@ class GameConsumer(AsyncWebsocketConsumer):
         await self._finalize_and_broadcast(state, winner, win_type, 'give_up')
 
     async def _handle_leave(self):
-        """Handle a player quitting the match: forfeit and close the room.
-
-        Unlike `give_up` (which only costs the current game of the match),
-        leaving abandons the whole match: the leaver is scored a loss, the
-        opponent wins, and the room is closed immediately.
-        """
+        """Cancel a waiting room or forfeit the entire active match."""
         room = await get_room(self.room_id)
-        if not room or room.status != 'playing':
-            logger.warning(
-                f"WS leave on non-active game: room={self.room_id} status={getattr(room, 'status', '?')}")
-            return await self._send_error('No active game')
 
+        if room is None:
+            await self._send_leave_error('room_not_found')
+            return
+
+        if room.status in ('waiting', 'cancelled'):
+            try:
+                result = await database_sync_to_async(cancel_waiting_room)(
+                    room_id=self.room_id,
+                    user_id=self.user_id,
+                )
+            except RoomCancellationError as exc:
+                # A rejected cancellation must not become a forfeit.
+                await self._send_leave_error(exc.code)
+                return
+
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'room_cancelled',
+                    'payload': result,
+                },
+            )
+            return
+
+        if room.status != 'playing':
+            await self._send_leave_error('room_not_active')
+            return
+
+        # The opponent does not need to be connected to accept a forfeit.
         winner = 'black' if self.player_color == 'white' else 'white'
+
         logger.info(
-            f"WS leave: {self.player_color} quits, winner={winner} room={self.room_id}")
+            "WS leave: %s quits, winner=%s room=%s",
+            self.player_color,
+            winner,
+            self.room_id,
+        )
 
         game_state = await get_game_state(room)
         state = dict(game_state.state_data or {})
+
+        from .formats import forfeit_win_type
+
         state['phase'] = 'game_over'
         state['winner'] = winner
-        from .formats import forfeit_win_type
         state['winType'] = forfeit_win_type(
-            state, self.player_color, reason='leave')
+            state,
+            self.player_color,
+            reason='leave',
+        )
         state['gameEndReason'] = 'leave'
 
-        await self._finalize_and_broadcast(state, winner, state['winType'], 'leave', force_close=True)
+        await self._finalize_and_broadcast(
+            state,
+            winner,
+            state['winType'],
+            'leave',
+            force_close=True,
+        )
+
+    async def _send_leave_error(self, code):
+        """Send a stable error code for client-side translation."""
+        await self.send(json.dumps({
+            'type': 'error',
+            'payload': {
+                'action': 'leave',
+                'code': code,
+                'message': code,
+            },
+        }))
+
+    async def room_cancelled(self, event):
+        """Forward a confirmed cancellation to this connection."""
+        await self.send(json.dumps({
+            'type': 'room_cancelled',
+            'payload': event['payload'],
+        }))
 
     async def _handle_game_ended(self, payload):
         """Receive a client game_ended signal and finalize the room."""

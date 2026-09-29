@@ -14,7 +14,7 @@ import uuid
 from django.db import transaction
 
 from .link.models import TournamentLink
-from .link.outbox import enqueue_result
+from .link.outbox import enqueue_result, STATUS_CANCELLED
 from .models import GameEvent, GameRoom, GameState, Match, RoomPlayer
 
 from .analysis.outbox import (
@@ -23,6 +23,75 @@ from .analysis.outbox import (
 
 # Multiplier applied per win type before the doubling cube value.
 POINTS_MULTIPLIER = {'single': 1, 'gammon': 2, 'backgammon': 3}
+
+
+class RoomCancellationError(Exception):
+    """A waiting-room cancellation was rejected."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
+
+
+def cancel_waiting_room(*, room_id, user_id):
+    """Cancel a waiting room belonging to the requesting user.
+
+    An already-cancelled room returns the same successful response.
+    Playing or completed rooms must never be cancelled through this path.
+    """
+    try:
+        normalized_room_id = uuid.UUID(str(room_id))
+    except (TypeError, ValueError) as exc:
+        raise RoomCancellationError('invalid_room') from exc
+
+    with transaction.atomic():
+        room = (
+            GameRoom.objects
+            .select_for_update()
+            .filter(pk=normalized_room_id)
+            .first()
+        )
+
+        if room is None:
+            raise RoomCancellationError('room_not_found')
+
+        # Check membership before returning any room status.
+        is_participant = RoomPlayer.objects.filter(
+            room_id=room.pk,
+            player__user_id=user_id,
+        ).exists()
+
+        if not is_participant:
+            raise RoomCancellationError('room_not_found')
+
+        # A retry must not enqueue another cancellation report.
+        if room.status == 'cancelled':
+            return {
+                'status': 'cancelled',
+                'roomId': str(room.id),
+            }
+
+        # Recheck the current status while holding the room lock.
+        if room.status != 'waiting':
+            raise RoomCancellationError('room_not_waiting')
+
+        room.status = 'cancelled'
+        room.save(update_fields=['status', 'updated_at'])
+
+        link = TournamentLink.objects.filter(room=room).first()
+        if link is not None:
+            enqueue_result(
+                link,
+                None,
+                room,
+                STATUS_CANCELLED,
+                end_reason='cancelled',
+            )
+
+        return {
+            'status': 'cancelled',
+            'roomId': str(room.id),
+        }
 
 
 def get_room_sync(room_id):
@@ -402,7 +471,8 @@ def record_game_end(room, state, winner, win_type, reason):
             metadata, _ = _match_metadata(locked, state, reason)
             result['match'] = Match.objects.create(
                 room=locked,
-                match_type='ai' if (locked.state or {}).get('ai') else 'online',
+                match_type='ai' if (locked.state or {}).get(
+                    'ai') else 'online',
                 target_points=locked.target_points,
                 white_score=locked.white_score,
                 black_score=locked.black_score,

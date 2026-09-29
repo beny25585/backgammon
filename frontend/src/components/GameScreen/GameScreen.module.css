@@ -1216,7 +1216,11 @@
     --bearoff-control-right: calc(
       clamp(7px, 0.7vw, 11px) + clamp(8px, 0.9vw, 13px) + 3px
     );
-    grid-template-columns: clamp(92px, calc(var(--app-width, 100dvw) * 0.21), 116px) minmax(0, 1fr);
+    grid-template-columns: clamp(
+        92px,
+        calc(var(--app-width, 100dvw) * 0.21),
+        116px
+      ) minmax(0, 1fr);
     width: 100%;
     height: 100%;
     border-width: 0;
@@ -1254,8 +1258,16 @@
     /* Android PWAs do not always expose the navigation-bar inset through
        safe-area-inset-*. Reserve a small edge gutter in every display mode
        so the board never sits underneath a system control. */
-    --game-viewport-gutter-block: clamp(5px, calc(var(--app-height, 100dvh) * 0.015), 7px);
-    --game-viewport-gutter-inline: clamp(7px, calc(var(--app-width, 100dvw) * 0.015), 12px);
+    --game-viewport-gutter-block: clamp(
+      5px,
+      calc(var(--app-height, 100dvh) * 0.015),
+      7px
+    );
+    --game-viewport-gutter-inline: clamp(
+      7px,
+      calc(var(--app-width, 100dvw) * 0.015),
+      12px
+    );
     padding-top: calc(
       var(--game-safe-top, env(safe-area-inset-top, 0px)) +
         var(--game-viewport-gutter-block)
@@ -1279,7 +1291,11 @@
       var(--game-safe-right, env(safe-area-inset-right, 0px)) +
         var(--game-viewport-gutter-inline) + 3px
     );
-    grid-template-columns: clamp(88px, calc(var(--app-width, 100dvw) * 0.21), 108px) minmax(0, 1fr);
+    grid-template-columns: clamp(
+        88px,
+        calc(var(--app-width, 100dvw) * 0.21),
+        108px
+      ) minmax(0, 1fr);
   }
 
   .frame {
@@ -1322,4 +1338,62 @@
   .boardOverlay {
     left: 75%;
   }
+}
+
+.closeExistingCard {
+  box-sizing: border-box;
+  max-width: 420px;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 20px;
+  display: grid;
+  gap: 16px;
+  text-align: start;
+}
+
+.closeExistingForfeitButton,
+.closeExistingContinueButton {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.closeExistingForfeitButton {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+.closeExistingForfeitButton:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.closeExistingContinueButton {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #f7f1e7;
+}
+
+.closeExistingContinueButton:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.closeExistingForfeitButton:focus-visible,
+.closeExistingContinueButton:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+.closeExistingForfeitButton:disabled,
+.closeExistingContinueButton:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }

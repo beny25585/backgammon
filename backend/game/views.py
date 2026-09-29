@@ -1,29 +1,25 @@
+from django.db import transaction
+
+from .link.models import TournamentLink as LinkModel
+from .dice import fetch_dice, fetch_opening_dice,  DiceServiceError
+from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
+from .models import GameRoom, GameState, Match, Player, RoomPlayer
+
+from .game_service import finalize_room, RoomCancellationError, cancel_waiting_room
+from .engine import BackgammonEngine
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+from django.db.models import Q
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework import status
 import uuid
 import logging
 
-from django.contrib.auth.models import User
 
 logger = logging.getLogger(__name__)
-from django.db import models as db_models, transaction
-from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
-
-from django.db.models import Q
-from asgiref.sync import async_to_sync
-from channels.layers import get_channel_layer
-
-from .engine import BackgammonEngine
-from .game_service import finalize_room
-from .link.models import TournamentLink
-from .link.outbox import STATUS_CANCELLED, enqueue_result
-from .models import GameRoom, GameState, Match, Player, RoomPlayer
-from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
-from asgiref.sync import async_to_sync
-from .dice import fetch_dice, fetch_opening_dice, fetch_turn_dice, DiceServiceError
-from .link.models import TournamentLink as LinkModel
 
 
 def get_or_create_player(user):
@@ -114,8 +110,10 @@ def create_room(request):
             and state.get('winner')
             and not match_active
         ):
-            finalize_room(active, state, state['winner'], state.get('winType', 'single'), 'state_update')
-            logger.info(f"Stale game-over room finalized on create: room={active.code} user={user.username}")
+            finalize_room(active, state, state['winner'], state.get(
+                'winType', 'single'), 'state_update')
+            logger.info(
+                f"Stale game-over room finalized on create: room={active.code} user={user.username}")
         else:
             logger.warning(f"User already in a room: user={user.username}")
             return Response({'error': 'Already in a room'}, status=status.HTTP_400_BAD_REQUEST)
@@ -175,14 +173,16 @@ def join_room(request):
         logger.warning(f"Room full: code={code}")
         return Response({'error': 'Room is full'}, status=status.HTTP_400_BAD_REQUEST)
     if room.players.filter(player=player).exists():
-        logger.warning(f"User already in room: user={user.username} code={code}")
+        logger.warning(
+            f"User already in room: user={user.username} code={code}")
         return Response({'error': 'You are already in this room'}, status=status.HTTP_400_BAD_REQUEST)
     taken_colors = set(room.players.values_list('color', flat=True))
     color = 'black' if 'white' in taken_colors else 'white'
     RoomPlayer.objects.create(room=room, player=player, color=color)
     room.status = 'playing'
     room.save()
-    logger.info(f"User joined room: user={user.username} code={code} color={color}")
+    logger.info(
+        f"User joined room: user={user.username} code={code} color={color}")
 
     # The room starts when the second player is assigned, not only when that
     # player later opens a WebSocket. This wakes the creator from WaitingRoom.
@@ -243,33 +243,64 @@ def room_detail(request, code):
 
 @api_view(['POST'])
 def cancel_room(request):
-    """Cancel the current player's active room."""
-    user = request.user
-    player = get_or_create_player(user)
-    with transaction.atomic():
-        rooms = GameRoom.objects.select_for_update().filter(
-            players__player=player, status__in=['waiting', 'playing'])
-        room_id = request.data.get('roomId')
-        if room_id:
-            try:
-                room_id = uuid.UUID(str(room_id))
-            except ValueError:
-                return Response({'error': 'Invalid room'}, status=400)
-            rooms = rooms.filter(pk=room_id)
-        room = rooms.first()
-        if not room:
-            return Response({'error': 'No active room'}, status=status.HTTP_404_NOT_FOUND)
-        if room_id and room.status != 'waiting':
-            return Response({'error': 'המשחק כבר התחיל. יש להיכנס אליו ולבחור סיום משחק.'}, status=409)
-        room.status = 'cancelled'
-        room.save()
-        link = TournamentLink.objects.filter(room=room).first()
-        if link is not None:
-            # A deliberate cancellation is not a forfeit — nobody won anything — so the fixture is
-            # released rather than decided, and stays scorable by hand.
-            enqueue_result(link, None, room, STATUS_CANCELLED, end_reason='cancelled')
+    """Cancel a waiting room assigned to the requesting player."""
+    player = get_or_create_player(request.user)
 
-    return Response({'status': 'cancelled', 'roomId': str(room.id)})
+    if 'roomId' in request.data:
+        # An explicitly supplied invalid ID must not select another room.
+        room_id = request.data['roomId']
+    else:
+        # Preserve compatibility with callers that do not yet send roomId.
+        room_id = (
+            GameRoom.objects
+            .filter(
+                players__player=player,
+                status__in=['waiting', 'playing'],
+            )
+            .values_list('pk', flat=True)
+            .first()
+        )
+
+        if room_id is None:
+            return Response(
+                {
+                    'code': 'room_not_found',
+                    'error': 'No active room',
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+    try:
+        result = cancel_waiting_room(
+            room_id=room_id,
+            user_id=request.user.pk,
+        )
+    except RoomCancellationError as exc:
+        errors = {
+            'invalid_room': (
+                status.HTTP_400_BAD_REQUEST,
+                'Invalid room',
+            ),
+            'room_not_found': (
+                status.HTTP_404_NOT_FOUND,
+                'No active room',
+            ),
+            'room_not_waiting': (
+                status.HTTP_409_CONFLICT,
+                'המשחק כבר התחיל. יש להיכנס אליו ולבחור סיום משחק.',
+            ),
+        }
+        response_status, message = errors[exc.code]
+
+        return Response(
+            {
+                'code': exc.code,
+                'error': message,
+            },
+            status=response_status,
+        )
+
+    return Response(result)
 
 
 @api_view(['POST'])
@@ -333,7 +364,8 @@ def match_detail(request, pk):
 def player_stats(request):
     user = request.user
     player = get_or_create_player(user)
-    matches = Match.objects.filter(Q(white_player=player) | Q(black_player=player))
+    matches = Match.objects.filter(
+        Q(white_player=player) | Q(black_player=player))
     total_matches = matches.count()
     if total_matches == 0:
         return Response({
@@ -364,9 +396,12 @@ def player_stats(request):
             if game.get('winner') == user_color:
                 games_won += 1
                 wt = game.get('win_type', 'single')
-                if wt == 'single': single_wins += 1
-                elif wt == 'gammon': gammon_wins += 1
-                elif wt == 'backgammon': backgammon_wins += 1
+                if wt == 'single':
+                    single_wins += 1
+                elif wt == 'gammon':
+                    gammon_wins += 1
+                elif wt == 'backgammon':
+                    backgammon_wins += 1
 
     current_streak = 0
     longest_streak = 0
@@ -578,13 +613,15 @@ def room_finalized_result(request, room_id):
             'round': None,  # to be enriched via tournaments API if needed
             'status': 'advanced' if result['result']['winner'] and (
                 (result['result']['winner'] == 'white' and white_rp and white_rp.player.user_id == request.user.id) or
-                (result['result']['winner'] == 'black' and black_rp and black_rp.player.user_id == request.user.id)
+                (result['result']['winner'] ==
+                 'black' and black_rp and black_rp.player.user_id == request.user.id)
             ) else 'eliminated',
             'nextOpponent': None,
         }
 
     if game_type == 'quick':
-        stake = remote_money.get('stake') if isinstance(remote_money, dict) and 'stake' in remote_money else state.get('stake')
+        stake = remote_money.get('stake') if isinstance(
+            remote_money, dict) and 'stake' in remote_money else state.get('stake')
         self_change = None
         opponent_change = None
         if isinstance(remote_money, dict) and self_seat and opponent_seat:

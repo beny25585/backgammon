@@ -42,6 +42,7 @@ interface GameProviderProps {
   playerColor: Color;
   gameType?: GameType;
   serverUrl?: string;
+  onRoomCancelled?: () => void;
 }
 
 interface PendingMove {
@@ -58,12 +59,18 @@ function applyOptimisticAction(
   pending: PendingAction,
   color: Color,
 ): GameState | null {
-  if (pending.action === "move") return applyOptimisticMove(state, pending, color);
+  if (pending.action === "move")
+    return applyOptimisticMove(state, pending, color);
   if (state.phase !== "moving" || state.turn !== color) return null;
   const restored = undoLastMove(state);
   // Undo board/dice only; server versions and clocks must never run backwards.
   return restored
-    ? { ...restored, version: state.version, clock: state.clock, turnStartedAt: state.turnStartedAt }
+    ? {
+        ...restored,
+        version: state.version,
+        clock: state.clock,
+        turnStartedAt: state.turnStartedAt,
+      }
     : null;
 }
 
@@ -92,7 +99,14 @@ export function GameProvider({
   playerColor: initialColor,
   gameType: initialGameType = "1v1",
   serverUrl,
+  onRoomCancelled,
 }: GameProviderProps) {
+  const onRoomCancelledRef = useRef(onRoomCancelled);
+
+  useLayoutEffect(() => {
+    onRoomCancelledRef.current = onRoomCancelled;
+  }, [onRoomCancelled]);
+
   const [state, setState] = useState<GameState | null>(null);
   const [playerColor, setPlayerColor] = useState<Color>(initialColor);
   const [whiteName, setWhiteName] = useState<string | null>(null);
@@ -348,8 +362,13 @@ export function GameProvider({
           if (next.phase !== "moving" || next.turn !== playerColorRef.current) {
             autoConfirmArmedRef.current = false;
             setAutoConfirmPending(false);
-          } else if (moveAcknowledged && autoConfirmArmedRef.current && replayedActions.length === 0 &&
-            !next.winner && allLegalMoves(next, next.turn).length === 0) {
+          } else if (
+            moveAcknowledged &&
+            autoConfirmArmedRef.current &&
+            replayedActions.length === 0 &&
+            !next.winner &&
+            allLegalMoves(next, next.turn).length === 0
+          ) {
             autoConfirmArmedRef.current = false;
             setAutoConfirmPending(sendIntent({ action: "end_turn" }));
           }
@@ -429,11 +448,14 @@ export function GameProvider({
         });
 
         socket.on("ai_status", (message) => {
-          const status = (message as { payload?: { status?: string } }).payload?.status;
+          const status = (message as { payload?: { status?: string } }).payload
+            ?.status;
           setAiRetrying(status === "thinking");
           if (status === "ready") {
             setAiFailed(false);
-            setError(previous => previous?.startsWith('Open Sage') ? null : previous);
+            setError((previous) =>
+              previous?.startsWith("Open Sage") ? null : previous,
+            );
           }
         });
         socket.on("error", (message) => {
@@ -460,7 +482,10 @@ export function GameProvider({
                   typeof payload.action === "string"
                 ? payload.action
                 : undefined;
-          if ((failedAction === "move" || failedAction === "undo") && pendingActionsRef.current.length > 0) {
+          if (
+            (failedAction === "move" || failedAction === "undo") &&
+            pendingActionsRef.current.length > 0
+          ) {
             pendingActionsRef.current = [];
             const authoritative = authoritativeStateRef.current;
             if (authoritative) {
@@ -596,6 +621,53 @@ export function GameProvider({
           revealNoMoves({ dice, remaining, color }, revealAfterMs);
         });
 
+        socket.on("room_cancelled", (message) => {
+          if (!message || typeof message !== "object") return;
+
+          const payload = (message as { payload?: unknown }).payload;
+          if (!payload || typeof payload !== "object") return;
+
+          const result = payload as Record<string, unknown>;
+
+          // Only act on a confirmed cancellation of this room.
+          if (result.status !== "cancelled" || result.roomId !== roomId) {
+            return;
+          }
+
+          if (autoNextGameRef.current !== null) {
+            clearTimeout(autoNextGameRef.current);
+            autoNextGameRef.current = null;
+          }
+
+          autoConfirmArmedRef.current = false;
+          pendingActionsRef.current = [];
+          authoritativeStateRef.current = null;
+          stateRef.current = null;
+          noMovesNoticeIdRef.current += 1;
+
+          setAutoConfirmPending(false);
+          setOpeningRollResult(null);
+          setNoMovesMessage(null);
+          setNextGameCountdown(null);
+          setGameResult(null);
+          setState(null);
+          setAiFailed(false);
+          setAiRetrying(false);
+          setIsLoading(false);
+          setError(null);
+
+          clearRoom();
+          socket.disconnect();
+
+          const returnAfterCancellation = onRoomCancelledRef.current;
+
+          if (returnAfterCancellation) {
+            returnAfterCancellation();
+          } else {
+            setError("room_cancelled");
+          }
+        });
+
         socket.on("room_expired", () => {
           setIsLoading(false);
           setError("המשחק נסגר: שני השחקנים לא התחברו בתוך 10 דקות.");
@@ -667,7 +739,12 @@ export function GameProvider({
       const current = stateRef.current;
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
-      const pending: PendingMove = { action: "move", from, to, sentAt: performance.now() };
+      const pending: PendingMove = {
+        action: "move",
+        from,
+        to,
+        sentAt: performance.now(),
+      };
       const optimistic = applyOptimisticMove(
         current,
         pending,
@@ -675,10 +752,16 @@ export function GameProvider({
       );
       if (!sendIntent({ action: "move", from, to })) return;
       if (optimistic) {
-        autoConfirmArmedRef.current = isWholeTurnDeterministic(current, current.turn);
-        setAutoConfirmPending(autoConfirmArmedRef.current &&
-          optimistic.phase === "moving" && !optimistic.winner &&
-          allLegalMoves(optimistic, current.turn).length === 0);
+        autoConfirmArmedRef.current = isWholeTurnDeterministic(
+          current,
+          current.turn,
+        );
+        setAutoConfirmPending(
+          autoConfirmArmedRef.current &&
+            optimistic.phase === "moving" &&
+            !optimistic.winner &&
+            allLegalMoves(optimistic, current.turn).length === 0,
+        );
         pendingActionsRef.current.push(pending);
         stateRef.current = optimistic;
         setState(optimistic);
@@ -725,8 +808,15 @@ export function GameProvider({
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
-    const pending: PendingAction = { action: "undo", sentAt: performance.now() };
-    const optimistic = applyOptimisticAction(current, pending, playerColorRef.current);
+    const pending: PendingAction = {
+      action: "undo",
+      sentAt: performance.now(),
+    };
+    const optimistic = applyOptimisticAction(
+      current,
+      pending,
+      playerColorRef.current,
+    );
     if (!sendIntent({ action: "undo" })) return;
     if (optimistic) {
       pendingActionsRef.current.push(pending);
@@ -742,8 +832,10 @@ export function GameProvider({
   }, [socket]);
 
   const leaveGame = useCallback(() => {
+    setError(null);
+
     if (!socket.send("leave", {})) {
-      setError("Connection lost. Reconnect and try leaving again.");
+      setError("leave_connection_lost");
     }
   }, [socket]);
 

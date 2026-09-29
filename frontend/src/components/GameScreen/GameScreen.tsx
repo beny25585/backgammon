@@ -62,13 +62,12 @@ function hasInterruptedOpeningMove(
 export default function GameScreen({
   closeExisting = false,
   onLeave,
-  homeLabel,
   gameType: propGameType,
   showRematch = true,
   onPracticeAgain,
 }: GameScreenProps) {
   const [showCloseExisting, setShowCloseExisting] = useState(closeExisting);
-  const { t, locale } = useI18n();
+  const { t, direction } = useI18n();
   const {
     state,
     roomId,
@@ -101,24 +100,47 @@ export default function GameScreen({
     leaveGame,
     gameType: contextGameType,
   } = useGame();
+  const displayedError = (() => {
+    switch (error) {
+      case "room_cancelled":
+        return t("game.roomCancelledMessage");
 
-  const leavingRef = useRef(false);
+      case "invalid_room":
+        return t("game.leaveInvalidRoom");
+
+      case "room_not_found":
+        return t("game.leaveRoomNotFound");
+
+      case "room_not_waiting":
+        return t("game.leaveRoomNotWaiting");
+
+      case "room_not_active":
+        return t("game.leaveRoomNotActive");
+
+      case "leave_connection_lost":
+        return t("game.leaveConnectionLost");
+
+      default:
+        return error;
+    }
+  })();
+
   const requestLeave = useCallback(() => {
-    if (gameResult?.matchOver) {
-      if (onLeave) onLeave(gameResult.winner === playerColor ? "won" : "lost");
-      else handleHome();
+    if (!gameResult?.matchOver) {
+      // Request a server-confirmed forfeit without navigating away.
+      leaveGame();
       return;
     }
-    leavingRef.current = true;
-    leaveGame();
-  }, [gameResult, onLeave, playerColor, handleHome, leaveGame]);
 
-  useEffect(() => {
-    if (!leavingRef.current || !gameResult?.matchOver) return;
-    leavingRef.current = false;
-    if (onLeave) onLeave(gameResult.winner === playerColor ? "won" : "lost");
-    else handleHome();
-  }, [gameResult, onLeave, playerColor, handleHome]);
+    // Leave only when the player clicks a result-screen return button.
+    const outcome = gameResult.winner === playerColor ? "won" : "lost";
+
+    if (onLeave) {
+      onLeave(outcome);
+    } else {
+      handleHome();
+    }
+  }, [gameResult, onLeave, playerColor, handleHome, leaveGame]);
 
   const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
   const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(
@@ -188,19 +210,40 @@ export default function GameScreen({
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
     state.turn === playerColor;
-
   if (showCloseExisting && !gameResult?.matchOver) {
-    return <div className={styles.loading} dir="rtl">
-      <div style={{ maxWidth: 420, maxHeight: '100%', overflowY: 'auto', padding: 20, display: 'grid', gap: 16 }} role="region" aria-label="סיום המשחק הקיים">
-        <h2>לסיים את המשחק הקיים?</h2>
-        <p>הסיום נחשב לפרישה והפסד לפי כללי המשחק וההימור. לאחר אישור הסיום מהשרת תחזור למועדון ותוכל לבחור משחק חדש.</p>
-        {error && <p role="alert">{error}</p>}
-        <button style={{ minHeight: 44, background: '#e7bd72', color: '#142321', borderRadius: 10, padding: '8px 16px' }} disabled={isLoading || !state} onClick={requestLeave}>אישור פרישה וסיום המשחק</button>
-        <button style={{ minHeight: 44, border: '1px solid #e7bd72', borderRadius: 10, padding: '8px 16px' }} onClick={() => setShowCloseExisting(false)}>להמשיך במשחק</button>
-      </div>
-    </div>;
-  }
+    return (
+      <div className={styles.loading} dir={direction}>
+        <div
+          className={styles.closeExistingCard}
+          role="region"
+          aria-labelledby="close-existing-title"
+        >
+          <h2 id="close-existing-title">{t("game.closeExistingTitle")}</h2>
 
+          <p>{t("game.closeExistingDescription")}</p>
+
+          {displayedError && <p role="alert">{displayedError}</p>}
+
+          <button
+            type="button"
+            className={styles.closeExistingForfeitButton}
+            disabled={isLoading || !state}
+            onClick={requestLeave}
+          >
+            {t("game.closeExistingConfirm")}
+          </button>
+
+          <button
+            type="button"
+            className={styles.closeExistingContinueButton}
+            onClick={() => setShowCloseExisting(false)}
+          >
+            {t("game.closeExistingContinue")}
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (isLoading) {
     return <div className={styles.loading}>{t("game.connecting")}</div>;
   }
@@ -209,8 +252,12 @@ export default function GameScreen({
     if (error) {
       return (
         <div className={styles.error}>
-          {t("game.errorPrefix")}: {error}
-          {onLeave && <button type="button" onClick={() => onLeave()}>{t("common.backHome")}</button>}
+          {t("game.errorPrefix")}: {displayedError}
+          {onLeave && (
+            <button type="button" onClick={() => onLeave()}>
+              {t("common.backHome")}
+            </button>
+          )}
         </div>
       );
     }
@@ -223,12 +270,30 @@ export default function GameScreen({
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
           <span>
-            {aiFailed ? (locale === 'he' ? 'המחשב נעצר. אפשר לנסות שוב מאותו מצב.' : 'The computer stopped. Retry from this position.') : `${t("game.errorPrefix")}: ${error}`}
+            {aiFailed
+              ? t("game.aiStoppedMessage")
+              : `${t("game.errorPrefix")}: ${displayedError}`}
           </span>
-          {aiFailed && retryAi && <button type="button" onClick={retryAi} disabled={aiRetrying}
-            style={{ minHeight: 44, padding: '8px 14px', borderRadius: 12, background: '#e7bd72', color: '#142321', pointerEvents: 'auto', flexShrink: 0 }}>
-            {aiRetrying ? (locale === 'he' ? 'מנסה שוב…' : 'Retrying…') : (locale === 'he' ? 'ניסיון חוזר' : 'Retry')}
-          </button>}
+          {aiFailed && retryAi && (
+            <button
+              type="button"
+              onClick={retryAi}
+              disabled={aiRetrying}
+              style={{
+                minHeight: 44,
+                padding: "8px 14px",
+                borderRadius: 12,
+                background: "#e7bd72",
+                color: "#142321",
+                pointerEvents: "auto",
+                flexShrink: 0,
+              }}
+            >
+              {aiRetrying
+                ? t("game.aiRetryingButton")
+                : t("game.aiRetryButton")}
+            </button>
+          )}
           <button
             type="button"
             className={styles.errorCardClose}
@@ -248,21 +313,37 @@ export default function GameScreen({
             contextGameType ??
             "1v1") as string;
           // Cap only the presentation; keep the authoritative score and game points intact.
-          const scoreLimit = gt !== "quick" && gameResult.targetPoints > 0
-            ? gameResult.targetPoints
-            : Infinity;
+          const scoreLimit =
+            gt !== "quick" && gameResult.targetPoints > 0
+              ? gameResult.targetPoints
+              : Infinity;
           const common = {
-            coinsDelta: gameResult.coinsChange,
-            opponentCoinsDelta: gameResult.opponentCoinsChange,
             roomId,
-            playerColor,
+
             winner: gameResult.winner,
             whiteScore: Math.min(gameResult.matchScore.white, scoreLimit),
             blackScore: Math.min(gameResult.matchScore.black, scoreLimit),
+
             whiteName,
             blackName,
+            playerColor,
+
             winType: gameResult.winType,
             reason: gameResult.reason,
+
+            ratingBefore: gameResult.ratingBefore ?? null,
+            ratingAfter: gameResult.ratingAfter ?? null,
+            opponentRatingBefore: gameResult.opponentRatingBefore ?? null,
+            opponentRatingAfter: gameResult.opponentRatingAfter ?? null,
+            ratingChange: gameResult.ratingChange ?? null,
+            opponentRatingChange: gameResult.opponentRatingChange ?? null,
+
+            hits: gameResult.hits ?? null,
+            durationSeconds: gameResult.durationSeconds ?? null,
+
+            coinsDelta: gameResult.coinsChange ?? null,
+            opponentCoinsDelta: gameResult.opponentCoinsChange ?? null,
+
             onClose: requestLeave,
           };
           if (gt === "tournament") {
@@ -272,19 +353,6 @@ export default function GameScreen({
                 winnerIsWhite={gameResult.winner === "white"}
                 tournamentRound={gameResult.tournament?.roundLabel}
                 nextOpponent={gameResult.tournament?.nextOpponent ?? null}
-                ratingBefore={gameResult.ratingBefore ?? null}
-                ratingAfter={gameResult.ratingAfter ?? null}
-                opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
-                opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
-                ratingChange={gameResult.ratingChange ?? null}
-                opponentRatingChange={gameResult.opponentRatingChange ?? null}
-                hits={gameResult.hits ?? null}
-                doublesOffered={gameResult.doublesOffered ?? null}
-                doublesAccepted={gameResult.doublesAccepted ?? null}
-                openingRoll={gameResult.openingRoll ?? null}
-                firstPlayer={gameResult.firstPlayer ?? null}
-                durationSeconds={gameResult.durationSeconds ?? null}
-                clockRemaining={gameResult.clockRemaining ?? null}
                 onViewTournament={requestLeave}
                 onViewBracket={requestLeave}
               />
@@ -294,23 +362,6 @@ export default function GameScreen({
             return (
               <QuickGameResult
                 {...common}
-                cube={gameResult.cube}
-                stakeAmount={gameResult.stakeAmount ?? null}
-                ratingBefore={gameResult.ratingBefore ?? null}
-                ratingAfter={gameResult.ratingAfter ?? null}
-                opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
-                opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
-                ratingChange={gameResult.ratingChange ?? null}
-                opponentRatingChange={gameResult.opponentRatingChange ?? null}
-                hits={gameResult.hits ?? null}
-                doublesOffered={gameResult.doublesOffered ?? null}
-                doublesAccepted={gameResult.doublesAccepted ?? null}
-                openingRoll={gameResult.openingRoll ?? null}
-                firstPlayer={gameResult.firstPlayer ?? null}
-                durationSeconds={gameResult.durationSeconds ?? null}
-                clockRemaining={gameResult.clockRemaining ?? null}
-                coinsDelta={gameResult.coinsChange ?? null}
-                opponentCoinsDelta={gameResult.opponentCoinsChange ?? null}
                 onRematch={handleNextGame}
                 rematchPending={false}
                 onCancelRematch={() => {}}
@@ -319,23 +370,9 @@ export default function GameScreen({
           }
           return (
             <PrivateGameResult
+              {...common}
               onPracticeAgain={onPracticeAgain}
               showRematch={showRematch}
-              {...common}
-              cube={gameResult.cube}
-              ratingBefore={gameResult.ratingBefore ?? null}
-              ratingAfter={gameResult.ratingAfter ?? null}
-              opponentRatingBefore={gameResult.opponentRatingBefore ?? null}
-              opponentRatingAfter={gameResult.opponentRatingAfter ?? null}
-              ratingChange={gameResult.ratingChange ?? null}
-              opponentRatingChange={gameResult.opponentRatingChange ?? null}
-              hits={gameResult.hits ?? null}
-              doublesOffered={gameResult.doublesOffered ?? null}
-              doublesAccepted={gameResult.doublesAccepted ?? null}
-              openingRoll={gameResult.openingRoll ?? null}
-              firstPlayer={gameResult.firstPlayer ?? null}
-              durationSeconds={gameResult.durationSeconds ?? null}
-              clockRemaining={gameResult.clockRemaining ?? null}
               onRematch={handleNextGame}
             />
           );

@@ -20,9 +20,6 @@ from game.models import (
 from game.task_runner import NonRetryableTaskError
 
 
-@override_settings(
-    ANALYSIS_SERVICE_URL="http://analysis.test"
-)
 class AnalysisOutboxTests(TestCase):
     def setUp(self):
         white_user = User.objects.create_user(

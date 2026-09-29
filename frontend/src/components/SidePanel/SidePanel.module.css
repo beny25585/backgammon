@@ -51,7 +51,10 @@
   cursor: pointer;
   touch-action: manipulation;
   transform: translateY(-50%);
-  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .menuButton:hover,
@@ -59,7 +62,9 @@
   background: var(--ui-accent-hover, #3156ff);
   color: var(--ui-on-accent, #fff);
   border-color: var(--ui-accent-border, rgba(182, 197, 255, 0.85));
-  box-shadow: 0 0 0 3px var(--ui-accent-faint, rgba(49, 86, 255, 0.18)), 0 12px 24px rgba(0, 0, 0, 0.36);
+  box-shadow:
+    0 0 0 3px var(--ui-accent-faint, rgba(49, 86, 255, 0.18)),
+    0 12px 24px rgba(0, 0, 0, 0.36);
 }
 
 .menuButton span {
@@ -95,8 +100,15 @@
   border: 1px solid var(--ui-accent-border, rgba(112, 137, 255, 0.34));
   border-radius: 8px;
   background:
-    var(--ui-menu-bg, linear-gradient(180deg, rgba(8, 15, 35, 0.98), rgba(2, 6, 17, 0.98))),
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0 1px, transparent 1px 5px);
+    var(
+      --ui-menu-bg,
+      linear-gradient(180deg, rgba(8, 15, 35, 0.98), rgba(2, 6, 17, 0.98))
+    ),
+    repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.025) 0 1px,
+      transparent 1px 5px
+    );
   box-shadow:
     0 28px 60px rgba(0, 0, 0, 0.58),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
@@ -164,18 +176,25 @@
   font-size: 15px;
   font-weight: 800;
   cursor: pointer;
-  transition: transform 0.18s, background 0.18s;
+  transition:
+    transform 0.18s,
+    background 0.18s;
 }
 
 .resignBtn {
-  background: rgba(255, 107, 107, 0.12);
-  border: 1px solid rgba(255, 107, 107, 0.25);
-  color: #f3a2a0;
+  background: #facc15;
+  border: 1px solid #facc15;
+  color: #171717;
 }
 
-.resignBtn:hover,
-.leaveBtn:hover {
+.resignBtn:hover:not(:disabled),
+.leaveBtn:hover:not(:disabled) {
   transform: translateY(-1px);
+}
+
+.resignBtn:hover:not(:disabled) {
+  background: #eab308;
+  border-color: #eab308;
 }
 
 .resignConfirm {
@@ -185,13 +204,13 @@
   gap: 8px;
   padding: 10px 12px;
   border-radius: 6px;
-  background: rgba(255, 107, 107, 0.1);
-  border: 1px solid rgba(255, 107, 107, 0.24);
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.4);
 }
 
 .resignText {
   flex: 1 0 100%;
-  color: #ffb4b4;
+  color: #fde047;
   font-size: 14px;
   font-weight: 800;
   text-align: center;
@@ -210,8 +229,12 @@
 }
 
 .confirmYes {
-  background: #d95f63;
-  color: #240709;
+  background: #facc15;
+  color: #171717;
+}
+
+.confirmYes:hover:not(:disabled) {
+  background: #eab308;
 }
 
 .confirmNo {
@@ -221,9 +244,22 @@
 }
 
 .leaveBtn {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--ui-accent-faint, rgba(112, 137, 255, 0.22));
-  color: rgba(247, 241, 231, 0.82);
+  background: #dc2626;
+  border: 1px solid #dc2626;
+  color: #ffffff;
+}
+
+.leaveBtn:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.resignBtn:focus-visible,
+.leaveBtn:focus-visible,
+.confirmYes:focus-visible,
+.confirmNo:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
 }
 
 @media (max-height: 360px) {
@@ -244,14 +280,16 @@
   }
 }
 
-@media (orientation: landscape) and (max-height: 430px), (orientation: portrait) and (max-width: 430px) {
+@media (orientation: landscape) and (max-height: 430px),
+  (orientation: portrait) and (max-width: 430px) {
   .panel {
     grid-template-rows: minmax(0, 1fr) auto minmax(0, 1fr);
     gap: clamp(3px, calc(var(--app-height, 100dvh) * 0.01), 6px);
     padding: 4px 5px;
     background: linear-gradient(90deg, #111617, #090d0e);
     border-inline-start: 0;
-    border-inline-end: 1px solid var(--ui-accent-border, rgba(32, 62, 130, 0.42));
+    border-inline-end: 1px solid
+      var(--ui-accent-border, rgba(32, 62, 130, 0.42));
     overflow: visible;
   }
 

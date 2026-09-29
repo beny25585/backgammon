@@ -161,6 +161,40 @@ export default function GameResult({
   variant = "private",
 }: BaseGameResultProps) {
   const { t, direction } = useI18n();
+  const winTypeLabel = (() => {
+    switch (winType) {
+      case "single":
+        return t("game.regularWin");
+
+      case "gammon":
+        return t("game.gammonWin");
+
+      case "backgammon":
+        return t("game.backgammonWin");
+
+      default:
+        return null;
+    }
+  })();
+
+  const reasonLabel = (() => {
+    switch (reason) {
+      case "give_up":
+        return t("game.resultReasonGiveUp");
+
+      case "leave":
+        return t("game.resultReasonLeave");
+
+      case "time":
+        return t("game.resultReasonTime");
+
+      case "admin":
+        return t("game.resultReasonAdmin");
+
+      default:
+        return null;
+    }
+  })();
 
   const leftColor: Color = playerColor ?? "white";
   const rightColor: Color = otherColor(leftColor);
@@ -280,7 +314,9 @@ export default function GameResult({
               <span
                 className={[
                   styles.dot,
-                  leftColor === "white" ? styles.checkerWhite : styles.checkerBlack,
+                  leftColor === "white"
+                    ? styles.checkerWhite
+                    : styles.checkerBlack,
                   leftIsWinner ? styles.dotWinner : "",
                 ].join(" ")}
                 aria-hidden="true"
@@ -326,9 +362,13 @@ export default function GameResult({
               </span>
             </div>
 
-            {winType && <span className={styles.subtitle}>{winType}</span>}
+            {winTypeLabel && (
+              <span className={styles.subtitle}>{winTypeLabel}</span>
+            )}
 
-            {reason && <span className={styles.subtitle}>{reason}</span>}
+            {reasonLabel && (
+              <span className={styles.subtitle}>{reasonLabel}</span>
+            )}
 
             {/* Example: Analysis settings / Free Member */}
             {heroMeta && <div className={styles.heroMeta}>{heroMeta}</div>}
@@ -385,7 +425,9 @@ export default function GameResult({
               <span
                 className={[
                   styles.dot,
-                  rightColor === "white" ? styles.checkerWhite : styles.checkerBlack,
+                  rightColor === "white"
+                    ? styles.checkerWhite
+                    : styles.checkerBlack,
                   rightIsWinner ? styles.dotWinner : "",
                 ].join(" ")}
                 aria-hidden="true"

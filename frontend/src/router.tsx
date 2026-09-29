@@ -21,15 +21,18 @@ import { parseTimeControl } from "./lib/clock";
 import type { Color } from "./types/game";
 import { resolveGameType, isValidTournamentId } from "./routerGameType";
 
-const configuredTournamentsUrl =
-  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
-    ?.VITE_TOURNAMENTS_URL?.trim();
+const configuredTournamentsUrl = (
+  import.meta as ImportMeta & { env?: Record<string, string | undefined> }
+).env?.VITE_TOURNAMENTS_URL?.trim();
 const TOURNAMENTS_URL = configuredTournamentsUrl || "/tournaments/";
 
 function safeTournamentReturnUrl(value: string | null): URL | null {
   if (!value) return null;
   try {
-    const origin = window.location.origin && window.location.origin !== "null" ? window.location.origin : "http://localhost:5173";
+    const origin =
+      window.location.origin && window.location.origin !== "null"
+        ? window.location.origin
+        : "http://localhost:5173";
     const base = new URL(TOURNAMENTS_URL, origin);
     const next = new URL(value, origin);
     const basePath = base.pathname.replace(/\/+$/, "") || "/";
@@ -44,7 +47,10 @@ function safeTournamentReturnUrl(value: string | null): URL | null {
 function tournamentLobbyUrl(): URL {
   const fallback = "/tournaments/";
   const target = TOURNAMENTS_URL || fallback;
-  const origin = window.location.origin && window.location.origin !== "null" ? window.location.origin : "http://localhost:5173";
+  const origin =
+    window.location.origin && window.location.origin !== "null"
+      ? window.location.origin
+      : "http://localhost:5173";
   try {
     return new URL(target, origin);
   } catch {
@@ -70,10 +76,22 @@ function RedirectToTournaments() {
     }, 0);
   }
   return (
-    <div style={{ display: "grid", placeItems: "center", minHeight: "100dvh", background: "#03090a", color: "#f0e3cd", padding: 24, textAlign: "center" }}>
+    <div
+      style={{
+        display: "grid",
+        placeItems: "center",
+        minHeight: "100dvh",
+        background: "#03090a",
+        color: "#f0e3cd",
+        padding: 24,
+        textAlign: "center",
+      }}
+    >
       <div>
         <p style={{ marginBottom: 12 }}>Redirecting to tournaments…</p>
-        <a href={url} style={{ color: "#e7bd72", textDecoration: "underline" }}>{url}</a>
+        <a href={url} style={{ color: "#e7bd72", textDecoration: "underline" }}>
+          {url}
+        </a>
       </div>
     </div>
   );
@@ -111,19 +129,24 @@ function GameRoute() {
     } catch {
       next = tournamentLobbyUrl();
     }
-    if (outcome) next.searchParams.set("matchResult", outcome);
-    if (isValidTournamentId(tournamentId)) next.searchParams.set("tournament", tournamentId!);
+    if (outcome) {
+      next.searchParams.set("matchResult", outcome);
+    } else {
+      next.searchParams.delete("matchResult");
+    }
+    if (isValidTournamentId(tournamentId))
+      next.searchParams.set("tournament", tournamentId!);
     window.location.assign(next.toString());
   }
 
-  const isLinkedOneToOne =
-    gameType === "1v1" && tournamentReturnUrl !== null;
+  const isLinkedOneToOne = gameType === "1v1" && tournamentReturnUrl !== null;
 
   return (
     <GameProvider
       roomId={roomId || ""}
       playerColor={playerColor}
       gameType={gameType}
+      onRoomCancelled={() => handleLeave()}
       serverUrl={
         (
           import.meta as ImportMeta & {
@@ -133,11 +156,17 @@ function GameRoute() {
       }
     >
       <GameScreen
-        closeExisting={params.get('closeExisting') === '1'}
-        onPracticeAgain={params.get('practice') === '1' ? () => {
-          clearRoom();
-          window.location.assign(new URL('/tournaments/practice', returnUrl).toString());
-        } : undefined}
+        closeExisting={params.get("closeExisting") === "1"}
+        onPracticeAgain={
+          params.get("practice") === "1"
+            ? () => {
+                clearRoom();
+                window.location.assign(
+                  new URL("/tournaments/practice", returnUrl).toString(),
+                );
+              }
+            : undefined
+        }
         onLeave={handleLeave}
         homeLabel={
           gameType === "tournament"
@@ -162,15 +191,20 @@ function LocalRoute() {
   const botColor: Color | undefined =
     botParam === "white" || botParam === "black" ? botParam : undefined;
   const parsedTarget = targetParam ? parseInt(targetParam, 10) : 7;
-  const matchTarget = Number.isFinite(parsedTarget) && parsedTarget > 0
-    ? parsedTarget
-    : 7;
+  const matchTarget =
+    Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 7;
   const timeControl = useMemo(
     () => parseTimeControl(timeParam, matchTarget),
     [timeParam, matchTarget],
   );
   const localGameType: import("./types/context").GameType =
-    modeParam === "quick" ? "quick" : modeParam === "tournament" ? "tournament" : botColor ? "1v1" : "quick";
+    modeParam === "quick"
+      ? "quick"
+      : modeParam === "tournament"
+        ? "tournament"
+        : botColor
+          ? "1v1"
+          : "quick";
   return (
     <LocalGameProvider
       botColor={botColor}
@@ -179,7 +213,15 @@ function LocalRoute() {
       gameType={localGameType}
       onQuitMatch={returnToTournament}
     >
-      <GameScreen onLeave={returnToTournament} homeLabel={localGameType === "tournament" ? "Back to Tournament" : "Back to Lobby"} gameType={localGameType} />
+      <GameScreen
+        onLeave={returnToTournament}
+        homeLabel={
+          localGameType === "tournament"
+            ? "Back to Tournament"
+            : "Back to Lobby"
+        }
+        gameType={localGameType}
+      />
     </LocalGameProvider>
   );
 }

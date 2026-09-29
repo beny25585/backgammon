@@ -1,40 +1,11 @@
 import ResultSummary from "./ResultSummary";
 import GameResult from "./GameResult";
 import { useI18n } from "../../i18n/I18nProvider";
-import type { Color } from "../../lib/backgammon/engine";
 
-interface Props {
-  roomId?: string;
-  winner: Color;
-  whiteScore: number;
-  blackScore: number;
-  whiteName?: string | null;
-  blackName?: string | null;
-  playerColor?: Color;
-  winType?: string | null;
-  reason?: string;
-  cube: number;
-  stakeAmount?: number | null;
-  ratingBefore?: number | null;
-  ratingAfter?: number | null;
-  opponentRatingBefore?: number | null;
-  opponentRatingAfter?: number | null;
-  ratingChange?: number | null;
-  opponentRatingChange?: number | null;
-  hits?: number | null;
-  doublesOffered?: number | null;
-  doublesAccepted?: number | null;
-  openingRoll?: Partial<Record<Color, number>> | null;
-  firstPlayer?: Color | null;
-  durationSeconds?: number | null;
-  clockRemaining?: Partial<Record<Color, number>> | null;
-  coinsDelta?: number | null;
-  opponentCoinsDelta?: number | null;
-  onClose: () => void;
-  onRematch: () => void;
-  rematchPending?: boolean;
-  onCancelRematch?: () => void;
-}
+import type { RematchGameResultProps } from "./types";
+import styles from "./GameResult.module.css";
+
+type Props = RematchGameResultProps;
 
 export default function QuickGameResult({
   roomId,
@@ -79,28 +50,12 @@ export default function QuickGameResult({
             <button
               type="button"
               onClick={onCancelRematch}
-              style={{
-                minWidth: 120,
-                padding: "8px 16px",
-                borderRadius: 999,
-                border: "1px solid rgba(229,180,77,0.2)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#f0e3cd",
-              }}
+              className={styles.secondaryAction}
             >
               {t("game.cancel")}
             </button>
-            <button
-              type="button"
-              disabled
-              style={{
-                minWidth: 140,
-                padding: "8px 16px",
-                borderRadius: 999,
-                background: "#e7bd72",
-                color: "#0f2a2f",
-              }}
-            >
+
+            <button type="button" disabled className={styles.primaryAction}>
               ⏳ {t("game.waitingForOpponent")}
             </button>
           </>
@@ -109,28 +64,15 @@ export default function QuickGameResult({
             <button
               type="button"
               onClick={onRematch}
-              style={{
-                minWidth: 120,
-                padding: "8px 16px",
-                borderRadius: 999,
-                background: "#e7bd72",
-                color: "#0f2a2f",
-                border: "1px solid #e7bd72",
-              }}
+              className={styles.rematchButton}
             >
               ↻ {t("game.rematch")}
             </button>
+
             <button
               type="button"
               onClick={onClose}
-              style={{
-                minWidth: 120,
-                padding: "8px 16px",
-                borderRadius: 999,
-                border: "1px solid rgba(229,180,77,0.2)",
-                background: "rgba(255,255,255,0.06)",
-                color: "#f0e3cd",
-              }}
+              className={styles.secondaryAction}
             >
               {t("common.backHome")}
             </button>
@@ -138,11 +80,19 @@ export default function QuickGameResult({
         )
       }
     >
-      <ResultSummary key={roomId ?? "local"} roomId={roomId} playerColor={playerColor}
-        ratingBefore={ratingBefore} ratingAfter={ratingAfter} ratingChange={ratingChange}
-        opponentRatingBefore={opponentRatingBefore} opponentRatingAfter={opponentRatingAfter}
-        opponentRatingChange={opponentRatingChange} durationSeconds={durationSeconds}
-        coinsDelta={coinsDelta} opponentCoinsDelta={opponentCoinsDelta}
+      <ResultSummary
+        key={roomId ?? "local"}
+        roomId={roomId}
+        playerColor={playerColor}
+        ratingBefore={ratingBefore}
+        ratingAfter={ratingAfter}
+        ratingChange={ratingChange}
+        opponentRatingBefore={opponentRatingBefore}
+        opponentRatingAfter={opponentRatingAfter}
+        opponentRatingChange={opponentRatingChange}
+        durationSeconds={durationSeconds}
+        coinsDelta={coinsDelta}
+        opponentCoinsDelta={opponentCoinsDelta}
       />
     </GameResult>
   );
