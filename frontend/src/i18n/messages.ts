@@ -191,7 +191,7 @@ export const messages = {
       reconnected: "Connection restored.",
       opponentDisconnected:
         "Your opponent disconnected. If they do not reconnect within {seconds}s, you win.",
-      opponentNotConnected: "Opponent has not connected to the game yet",
+      opponentNotConnected: "Your opponent has not entered the game yet",
       youFirst: "You go first!",
       rematchWaiting: "Waiting for opponent to accept…",
       rematchOffer: "Opponent wants a rematch",
@@ -607,7 +607,7 @@ export const messages = {
       reconnected: "החיבור חודש.",
       opponentDisconnected:
         "היריב התנתק. אם לא יחזור בתוך {seconds} שניות, המשחק יסתיים בניצחון שלך.",
-      opponentNotConnected: "היריב עדיין לא מחובר למשחק",
+      opponentNotConnected: "היריב עדיין לא נכנס למשחק",
       youFirst: "אתה מתחיל!",
       rematchWaiting: "ממתין לאישור היריב…",
       rematchOffer: "היריב רוצה משחק חוזר",

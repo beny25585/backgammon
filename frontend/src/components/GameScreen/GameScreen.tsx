@@ -386,13 +386,25 @@ export default function GameScreen({
               {t("game.reconnected")}
             </div>
           )}
-          {!opponentConnected && !reconnected && (
-            <div className={styles.disconnected} role="status">
-              {t("game.opponentDisconnected", {
-                seconds: disconnectCountdown ?? 40,
-              })}
-            </div>
-          )}
+          {!opponentConnected &&
+            !reconnected &&
+            !gameResult?.matchOver &&
+            !gameHasStarted && (
+              <div className={styles.disconnected} role="status">
+                {t("game.opponentNotConnected")}
+              </div>
+            )}
+          {!opponentConnected &&
+            !reconnected &&
+            gameHasStarted &&
+            disconnectCountdown !== null &&
+            !gameResult?.matchOver && (
+              <div className={styles.disconnected} role="status">
+                {t("game.opponentDisconnected", {
+                  seconds: disconnectCountdown,
+                })}
+              </div>
+            )}
 
           <GameBoard
             state={state}
