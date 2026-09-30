@@ -75,26 +75,18 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CHANNEL_LAYER_BACKEND = config('CHANNEL_LAYER_BACKEND', default='redis')
-
-# Channels settings
-if CHANNEL_LAYER_BACKEND == 'memory':
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+# Channels settings: Redis is the only runtime backend so Daphne and
+# run_tasks share group_send across processes. No InMemory default.
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [config('REDIS_URL', default='redis://127.0.0.1:6379/0')],
+            'capacity': 150,
+            'expiry': 60,
         },
-    }
-else:
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                'hosts': [config('REDIS_URL', default='redis://127.0.0.1:6379/0')],
-                'capacity': 150,
-                'expiry': 60,
-            },
-        },
-    }
+    },
+}
 
 # Tests run each async test in a fresh event loop; the Redis layer is a
 # process-wide singleton whose per-channel asyncio locks leak across loops and

@@ -12,6 +12,23 @@ logger = logging.getLogger(__name__)
 RESULT_TASK = 'game.link.outbox.deliver_result'
 LEASE_SECONDS = 120
 
+_channel_backend_logged = False
+
+
+def log_channel_layer_backend_once():
+    global _channel_backend_logged
+    if _channel_backend_logged:
+        return
+    _channel_backend_logged = True
+    try:
+        from django.conf import settings
+
+        backend = (settings.CHANNEL_LAYERS.get('default', {}).get('BACKEND')
+                   if hasattr(settings, 'CHANNEL_LAYERS') else None)
+    except Exception:
+        backend = None
+    logger.info('CHANNEL_LAYER_BACKEND backend=%s', backend)
+
 
 class NonRetryableTaskError(RuntimeError):
     """The saved request needs operator attention before it can be sent again."""
@@ -26,6 +43,7 @@ def runnable(now):
 
 
 def run_task(task_id):
+    log_channel_layer_backend_once()
     now = timezone.now()
     # Compare-and-set also works on SQLite. Only one worker can claim this lease.
     if not Task.objects.filter(pk=task_id).filter(runnable(now)).update(

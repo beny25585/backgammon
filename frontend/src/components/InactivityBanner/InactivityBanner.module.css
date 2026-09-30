@@ -1,0 +1,70 @@
+.wrapper {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: min(calc(100% - 16px), 720px);
+  pointer-events: none;
+}
+
+.banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(8, 23, 27, 0.97);
+  border: 1px solid rgba(247, 241, 227, 0.3);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+
+.self {
+  border-color: rgba(236, 116, 133, 0.7);
+  background: rgba(45, 16, 20, 0.96);
+}
+
+.opponent {
+  border-color: rgba(229, 180, 77, 0.72);
+}
+
+.title {
+  color: #fff8eb;
+  font-size: clamp(14px, 2vw, 17px);
+  line-height: 1.4;
+  font-weight: 800;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+  unicode-bidi: plaintext;
+}
+
+.subtitle {
+  color: rgba(255, 248, 235, 0.85);
+  font-size: clamp(12px, 1.7vw, 14px);
+  line-height: 1.4;
+  font-weight: 600;
+  text-align: center;
+  unicode-bidi: plaintext;
+}
+
+.label {
+  margin-top: 4px;
+  color: rgba(255, 248, 235, 0.7);
+  font-size: clamp(11px, 1.5vw, 13px);
+  line-height: 1.4;
+  font-weight: 600;
+  text-align: center;
+  unicode-bidi: plaintext;
+}
+
+.countdown {
+  color: #e7bd72;
+  font-size: clamp(28px, 5vw, 40px);
+  line-height: 1.1;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}

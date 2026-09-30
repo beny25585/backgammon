@@ -165,6 +165,9 @@ export function GameProvider({
   // temporarily put back a checker the player has already undone.
   const pendingActionsRef = useRef<PendingAction[]>([]);
   const playerColorRef = useRef(playerColor);
+  // Terminal lockdown: once a match-over game_ended is processed, no further
+  // gameplay intents may be emitted until a fresh non-terminal state arrives.
+  const gameOverRef = useRef(false);
 
   useLayoutEffect(() => {
     stateRef.current = state;
@@ -176,6 +179,7 @@ export function GameProvider({
 
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
+      if (gameOverRef.current) return false;
       const sent = socket.send("state_update", payload);
       if (!sent) setError("Connection lost. Please wait for reconnection.");
       return sent;
@@ -375,6 +379,7 @@ export function GameProvider({
             hasReceivedState = true;
             const initialState = raw as unknown as GameState;
             pendingActionsRef.current = [];
+            gameOverRef.current = initialState.phase === "game_over";
             authoritativeStateRef.current = initialState;
             stateRef.current = initialState;
             setState(initialState);
@@ -508,6 +513,35 @@ export function GameProvider({
 
           stateRef.current = displayedState;
           setState(displayedState);
+          // Keep the terminal guard in sync with authoritative state: a fresh
+          // non-terminal game (e.g. auto-started next game) reopens intents.
+          gameOverRef.current = next.phase === "game_over";
+          const inactivity = (raw as Record<string, unknown>).inactivity as
+            | {
+                player?: unknown;
+                warnedAtMs?: unknown;
+                deadlineMs?: unknown;
+              }
+            | undefined;
+          if (
+            acknowledgedAction === "inactivity_warning" ||
+            (inactivity != null &&
+              typeof inactivity === "object" &&
+              inactivity.warnedAtMs != null)
+          ) {
+            clientLogger.info("INACTIVITY_WARNING_RECEIVED", {
+              roomId,
+              version,
+              player:
+                typeof inactivity?.player === "string"
+                  ? inactivity.player
+                  : undefined,
+              deadlineMs:
+                typeof inactivity?.deadlineMs === "number"
+                  ? inactivity.deadlineMs
+                  : undefined,
+            });
+          }
           buildOpeningResult(raw);
           clientLogger.debug("[state_update] received", {
             phase: next.phase,
@@ -607,8 +641,9 @@ export function GameProvider({
           // The server auto-resolves the opening once both sockets connect, so
           // a roll intent still in flight can hit a resolved opening. That
           // "Cannot roll now" is benign — the UI only offers roll when it is
-          // the player's turn to roll.
-          if (msg === "Cannot roll now") return;
+          // the player's turn to roll. Once terminal, surface rejections
+          // instead of leaving zero feedback on a stale view.
+          if (msg === "Cannot roll now" && !gameOverRef.current) return;
           if (msg === "Unknown action: reorder_dice") return;
           setError(msg);
           setAiRetrying(false);
@@ -640,6 +675,11 @@ export function GameProvider({
           setMatchScore(match);
           if (!winner) return;
           clientLogger.info("Game ended", { winner, reason: payload.reason });
+          clientLogger.info("GAME_ENDED_RECEIVED", {
+            roomId,
+            winner,
+            reason: payload.reason,
+          });
           const targetPoints = payload.targetPoints ?? 0;
           const matchOver =
             payload.matchOver === true ||
@@ -655,6 +695,7 @@ export function GameProvider({
                 : gameTypeRef.current;
           // Continuous match: keep board live when match not over
           if (!matchOver) {
+            pendingActionsRef.current = [];
             setNextGameCountdown(null);
             setState((prev) =>
               prev ? { ...prev, phase: "game_over", winner } : prev,
@@ -690,6 +731,8 @@ export function GameProvider({
           setTimeout(() => void fetchFinalizedResult(0), 400);
           setNextGameCountdown(null);
           clearRoom();
+          pendingActionsRef.current = [];
+          gameOverRef.current = true;
           setState((prev) =>
             prev ? { ...prev, phase: "game_over", winner } : prev,
           );

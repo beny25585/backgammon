@@ -20,6 +20,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from .clock import compute_clock
+from .inactivity import ensure_inactivity_check, refresh_after_action
 from .link.live import publish_snapshot
 from .models import GameEvent, GameRoom, GameState, RoomPlayer
 
@@ -141,6 +142,12 @@ async def apply_server_game_action(
         await on_timeout(winner, new_active)
         return {'outcome': 'timeout', 'sequence': sequence,
                 'state': new_state}
+
+    # Independent anti-stall tracking: every successful engine action resets
+    # the responsible player's inactivity window from the NEW state. Rejected
+    # actions never reach this pipeline; reconnects and heartbeats bypass it.
+    if refresh_after_action(new_state, now_ms) is not None:
+        await database_sync_to_async(ensure_inactivity_check)(room.id)
 
     sequence = await persist_state_and_advance(room.id, new_state)
     new_state['version'] = sequence

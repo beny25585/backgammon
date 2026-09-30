@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
+import InactivityBanner from "../InactivityBanner";
 import TournamentGameResult from "../GameResult/TournamentGameResult";
 import QuickGameResult from "../GameResult/QuickGameResult";
 import PrivateGameResult from "../GameResult/PrivateGameResult";
@@ -206,7 +207,9 @@ export default function GameScreen({
 
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
+    !gameResult &&
     state?.phase === "rolling" &&
+    state?.phase !== "game_over" &&
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
     state.turn === playerColor;
@@ -405,6 +408,9 @@ export default function GameScreen({
                 })}
               </div>
             )}
+          {!gameResult?.matchOver && (
+            <InactivityBanner state={state} playerColor={playerColor} />
+          )}
 
           <GameBoard
             state={state}

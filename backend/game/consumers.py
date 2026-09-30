@@ -1401,10 +1401,23 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def game_ended(self, event):
+        payload = event.get('payload') or {}
+        logger.info(
+            'WS_GROUP_GAME_ENDED_RECEIVED room_id=%s winner=%s reason=%s',
+            getattr(self, 'room_id', None),
+            payload.get('winner') if isinstance(payload, dict) else None,
+            payload.get('reason') if isinstance(payload, dict) else None,
+        )
         await self.send(json.dumps({
             'type': 'game_ended',
             'payload': event.get('payload'),
         }))
+        logger.info(
+            'WS_GAME_ENDED_SENT room_id=%s winner=%s reason=%s',
+            getattr(self, 'room_id', None),
+            payload.get('winner') if isinstance(payload, dict) else None,
+            payload.get('reason') if isinstance(payload, dict) else None,
+        )
 
     async def admin_score_updated(self, event):
         await self.send(json.dumps({
@@ -1529,6 +1542,26 @@ class GameConsumer(AsyncWebsocketConsumer):
         )
 
     async def game_message(self, event):
+        if event.get('event_type') == 'state_update':
+            payload = event.get('payload') or {}
+            inactivity = payload.get('inactivity') if isinstance(payload, dict) else None
+            has_inactivity = isinstance(inactivity, dict)
+            logger.info(
+                'WS_GROUP_STATE_UPDATE_RECEIVED room_id=%s user=%s action=%s version=%s has_inactivity=%s warnedAtMs=%s deadlineMs=%s',
+                getattr(self, 'room_id', None),
+                getattr(self, 'user_id', None),
+                event.get('action'),
+                payload.get('version') if isinstance(payload, dict) else None,
+                has_inactivity,
+                inactivity.get('warnedAtMs') if has_inactivity else None,
+                inactivity.get('deadlineMs') if has_inactivity else None,
+            )
+            logger.info(
+                'WS_STATE_UPDATE_SENT room_id=%s user=%s version=%s',
+                getattr(self, 'room_id', None),
+                getattr(self, 'user_id', None),
+                payload.get('version') if isinstance(payload, dict) else None,
+            )
         message = {
             'type': event['event_type'],
             'payload': event['payload'],

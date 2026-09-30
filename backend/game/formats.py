@@ -15,7 +15,7 @@ def forfeit_win_type(state, loser, fallback='single', *, reason='leave'):
         return 'single'
     game_format = state.get('gameFormat')
     board_result = (
-        game_format == 'money' and reason in {'give_up', 'leave', 'time', 'disconnect'}
+        game_format == 'money' and reason in {'give_up', 'leave', 'time', 'disconnect', 'inactivity_timeout'}
     ) or (game_format == 'match' and reason == 'give_up')
     if not board_result:
         return fallback

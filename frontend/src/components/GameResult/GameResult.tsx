@@ -188,6 +188,11 @@ export default function GameResult({
       case "time":
         return t("game.resultReasonTime");
 
+      case "inactivity_timeout":
+        return winner === playerColor
+          ? t("game.resultReasonInactivity")
+          : t("game.resultReasonInactivitySelf");
+
       case "admin":
         return t("game.resultReasonAdmin");
 
