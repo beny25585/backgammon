@@ -209,7 +209,6 @@ export default function GameScreen({
   const needsToRoll =
     !gameResult &&
     state?.phase === "rolling" &&
-    state?.phase !== "game_over" &&
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
     state.turn === playerColor;
