@@ -1,4 +1,3 @@
-import game.routing
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 import logging
@@ -14,6 +13,8 @@ os.environ.setdefault(
 )
 
 django_asgi_app = get_asgi_application()
+import game.routing
+
 
 
 logger = logging.getLogger(__name__)
