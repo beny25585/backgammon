@@ -2,6 +2,7 @@
 import logging
 from datetime import timedelta
 from importlib import import_module
+import time
 
 from django.db.models import F, Q
 from django.utils import timezone
@@ -44,28 +45,156 @@ def runnable(now):
 
 def run_task(task_id):
     log_channel_layer_backend_once()
+
+    claim_started = time.perf_counter()
     now = timezone.now()
+
     # Compare-and-set also works on SQLite. Only one worker can claim this lease.
-    if not Task.objects.filter(pk=task_id).filter(runnable(now)).update(
-        status='running', attempts=F('attempts') + 1, updated_at=now,
-    ):
+    claimed = Task.objects.filter(
+        pk=task_id,
+    ).filter(
+        runnable(now),
+    ).update(
+        status='running',
+        attempts=F('attempts') + 1,
+        updated_at=now,
+    )
+
+    claim_ms = int((time.perf_counter() - claim_started) * 1000)
+
+    if not claimed:
+        logger.info(
+            'TASK_SKIPPED task=%s claim_ms=%s',
+            task_id,
+            claim_ms,
+        )
         return False
+
     task = Task.objects.get(pk=task_id)
-    lease = Task.objects.filter(pk=task_id, status='running', attempts=task.attempts)
+
+    queue_delay_ms = None
+    if task.run_at is not None:
+        queue_delay_ms = max(
+            0,
+            int((now - task.run_at).total_seconds() * 1000),
+        )
+
+    logger.info(
+        'TASK_START task=%s name=%s attempts=%s '
+        'queue_delay_ms=%s claim_ms=%s args=%s',
+        task.pk,
+        task.name,
+        task.attempts,
+        queue_delay_ms,
+        claim_ms,
+        task.args,
+    )
+
+    lease = Task.objects.filter(
+        pk=task_id,
+        status='running',
+        attempts=task.attempts,
+    )
+
+    execution_started = time.perf_counter()
+
     try:
         module, _, name = task.name.rpartition('.')
-        result = getattr(import_module(module), name)(*task.args, **task.kwargs)
-    except Exception as exc:
-        blocked = isinstance(exc, NonRetryableTaskError)
-        retry = not blocked and (task.name == RESULT_TASK or task.attempts < task.max_attempts)
-        lease.update(
-            status='blocked' if blocked else ('pending' if retry else 'failed'),
-            run_at=timezone.now() + timedelta(seconds=min(30 * 2 ** min(task.attempts - 1, 6), 1800)),
-            last_error=str(exc)[:2000], updated_at=timezone.now(),
+
+        result = getattr(
+            import_module(module),
+            name,
+        )(
+            *task.args,
+            **task.kwargs,
         )
-        logger.error('task_delivery_failed task=%s name=%s attempts=%s retry=%s error=%s',
-                     task.pk, task.name, task.attempts, retry, exc)
+
+    except Exception as exc:
+        execution_ms = int(
+            (time.perf_counter() - execution_started) * 1000
+        )
+
+        blocked = isinstance(exc, NonRetryableTaskError)
+        retry = (
+            not blocked
+            and (
+                task.name == RESULT_TASK
+                or task.attempts < task.max_attempts
+            )
+        )
+
+        update_started = time.perf_counter()
+
+        lease.update(
+            status=(
+                'blocked'
+                if blocked
+                else ('pending' if retry else 'failed')
+            ),
+            run_at=timezone.now()
+            + timedelta(
+                seconds=min(
+                    30 * 2 ** min(task.attempts - 1, 6),
+                    1800,
+                )
+            ),
+            last_error=str(exc)[:2000],
+            updated_at=timezone.now(),
+        )
+
+        update_ms = int(
+            (time.perf_counter() - update_started) * 1000
+        )
+
+        logger.error(
+            'TASK_FAILED task=%s name=%s attempts=%s '
+            'queue_delay_ms=%s execution_ms=%s update_ms=%s '
+            'retry=%s blocked=%s error=%s',
+            task.pk,
+            task.name,
+            task.attempts,
+            queue_delay_ms,
+            execution_ms,
+            update_ms,
+            retry,
+            blocked,
+            exc,
+        )
+
         return False
-    lease.update(status='done', result=result if result is not None else {},
-                 last_error=None, updated_at=timezone.now())
+
+    execution_ms = int(
+        (time.perf_counter() - execution_started) * 1000
+    )
+
+    update_started = time.perf_counter()
+
+    lease.update(
+        status='done',
+        result=result if result is not None else {},
+        last_error=None,
+        updated_at=timezone.now(),
+    )
+
+    update_ms = int(
+        (time.perf_counter() - update_started) * 1000
+    )
+
+    total_ms = claim_ms + execution_ms + update_ms
+
+    logger.info(
+        'TASK_DONE task=%s name=%s attempts=%s '
+        'queue_delay_ms=%s execution_ms=%s '
+        'claim_ms=%s update_ms=%s total_ms=%s result=%s',
+        task.pk,
+        task.name,
+        task.attempts,
+        queue_delay_ms,
+        execution_ms,
+        claim_ms,
+        update_ms,
+        total_ms,
+        result,
+    )
+
     return True

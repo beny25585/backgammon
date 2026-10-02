@@ -31,7 +31,11 @@ export interface CommonGameResultProps {
 }
 
 export interface RematchGameResultProps extends CommonGameResultProps {
+  rematchStatus?: string | null;
+  rematchReason?: string;
+  rematchReady?: boolean;
   onRematch: () => void;
-  rematchPending?: boolean;
+  onAcceptRematch?: () => void;
+  onDeclineRematch?: () => void;
   onCancelRematch?: () => void;
 }

@@ -11,7 +11,6 @@ const isDev = Boolean(
   (import.meta as ImportMeta & { env?: Record<string, unknown> }).env?.DEV,
 );
 const enabledLevels = new Set(["warn", "error"]);
-
 function sendLog(
   level: string,
   message: string,
@@ -19,17 +18,28 @@ function sendLog(
 ) {
   if (!isDev && !enabledLevels.has(level)) return;
 
+  const clientEpochMs = Date.now();
+  const clientPerfMs =
+    typeof performance !== "undefined" ? Math.round(performance.now()) : null;
+
   try {
     fetch(`${API_URL}/api/client-log/`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ level, message, meta }),
+      body: JSON.stringify({
+        level,
+        message,
+        meta: {
+          ...meta,
+          clientEpochMs,
+          clientPerfMs,
+        },
+      }),
     }).catch(() => {});
   } catch {
     // best-effort logging; never throw
   }
 }
-
 export const clientLogger = {
   debug: (message: string, meta?: Record<string, unknown>) =>
     sendLog("debug", message, meta),

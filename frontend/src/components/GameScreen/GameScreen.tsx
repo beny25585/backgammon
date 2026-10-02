@@ -85,6 +85,7 @@ export default function GameScreen({
     reconnected,
     opponentConnected,
     undoMove,
+    autoConfirmPending,
     endTurn,
     respondToDouble,
     offerDouble,
@@ -96,9 +97,14 @@ export default function GameScreen({
     blackName,
     openingRollResult,
     noMovesMessage,
-    handleNextGame,
     handleHome,
     leaveGame,
+    rematchState,
+    rematchReady,
+    requestRematch,
+    acceptRematch,
+    declineRematch,
+    cancelRematch,
     gameType: contextGameType,
   } = useGame();
   const displayedError = (() => {
@@ -148,6 +154,7 @@ export default function GameScreen({
     null,
   );
   const automaticOpeningRollRef = useRef<string | null>(null);
+  const rematchNavigationRef = useRef<string | null>(null);
   const gameHasStarted =
     state?.phase === "rolling" ||
     state?.phase === "moving" ||
@@ -164,21 +171,37 @@ export default function GameScreen({
   // The server decides the forfeit. This countdown only makes its 40-second
   // reconnect grace period visible to the player who remains in the room.
   useEffect(() => {
-    if (opponentConnected || reconnected || gameResult || !gameHasStarted) {
-      setDisconnectCountdown(null);
-      return;
+    if (
+      opponentConnected ||
+      reconnected ||
+      gameResult?.matchOver ||
+      !gameHasStarted
+    ) {
+      const resetTimer = window.setTimeout(() => {
+        setDisconnectCountdown(null);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(resetTimer);
+      };
     }
 
     const deadline = Date.now() + 40_000;
+
     const updateCountdown = () => {
       setDisconnectCountdown(
         Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
       );
     };
-    updateCountdown();
+
+    const initialTimer = window.setTimeout(updateCountdown, 0);
     const interval = window.setInterval(updateCountdown, 250);
-    return () => window.clearInterval(interval);
-  }, [gameHasStarted, gameResult, opponentConnected, reconnected]);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(interval);
+    };
+  }, [gameHasStarted, gameResult?.matchOver, opponentConnected, reconnected]);
 
   const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
   const interruptedOpeningMoveKey =
@@ -204,6 +227,37 @@ export default function GameScreen({
     automaticOpeningRollRef.current = automaticOpeningRollKey;
     rollDice();
   }, [automaticOpeningRollKey, rollDice]);
+
+  useEffect(() => {
+    if (!rematchReady) return;
+    if (
+      typeof rematchReady.ticket === "string" &&
+      rematchReady.ticket.length > 0
+    ) {
+      const key = `ticket:${rematchReady.ticket}`;
+      if (rematchNavigationRef.current === key) return;
+      rematchNavigationRef.current = key;
+      const entry = new URL(
+        "/backgammon/api/link/enter/",
+        window.location.origin,
+      );
+      entry.searchParams.set("ticket", rematchReady.ticket);
+      window.location.assign(entry.toString());
+      return;
+    }
+    if (
+      typeof rematchReady.roomId === "string" &&
+      rematchReady.roomId.length > 0 &&
+      (rematchReady.color === "white" || rematchReady.color === "black")
+    ) {
+      const key = `room:${rematchReady.roomId}:${rematchReady.color}`;
+      if (rematchNavigationRef.current === key) return;
+      rematchNavigationRef.current = key;
+      window.location.assign(
+        `/backgammon/game/${encodeURIComponent(rematchReady.roomId)}?color=${rematchReady.color}`,
+      );
+    }
+  }, [rematchReady]);
 
   const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
@@ -364,9 +418,13 @@ export default function GameScreen({
             return (
               <QuickGameResult
                 {...common}
-                onRematch={handleNextGame}
-                rematchPending={false}
-                onCancelRematch={() => {}}
+                rematchStatus={rematchState?.status ?? null}
+                rematchReason={rematchState?.reason}
+                rematchReady={rematchReady != null}
+                onRematch={requestRematch ?? (() => {})}
+                onAcceptRematch={acceptRematch}
+                onDeclineRematch={declineRematch}
+                onCancelRematch={cancelRematch}
               />
             );
           }
@@ -375,7 +433,13 @@ export default function GameScreen({
               {...common}
               onPracticeAgain={onPracticeAgain}
               showRematch={showRematch}
-              onRematch={handleNextGame}
+              rematchStatus={rematchState?.status ?? null}
+              rematchReason={rematchState?.reason}
+              rematchReady={rematchReady != null}
+              onRematch={requestRematch ?? (() => {})}
+              onAcceptRematch={acceptRematch}
+              onDeclineRematch={declineRematch}
+              onCancelRematch={cancelRematch}
             />
           );
         })()}
@@ -417,6 +481,7 @@ export default function GameScreen({
             makeMove={makeMove}
             reorderDice={reorderDice}
             undoMove={undoMove}
+            autoConfirmPending={autoConfirmPending}
             endTurn={endTurn}
             offerDouble={offerDouble}
             boardTheme={boardTheme}

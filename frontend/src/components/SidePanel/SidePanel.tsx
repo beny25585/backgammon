@@ -33,7 +33,7 @@ function SidePanel({
   onBoardThemeChange,
 }: SidePanelProps) {
   const { t } = useI18n();
-  const { giveUp, whiteName, blackName, matchScore } = useGame();
+  const { giveUp, whiteName, blackName, matchScore, targetPoints } = useGame();
   const [showGiveUp, setShowGiveUp] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -78,6 +78,15 @@ function SidePanel({
           delayMs={delayMs}
           turnStartedAt={turnStartedAt}
         />
+        {targetPoints !== null && (
+          <div className={styles.matchRules}>
+            {t("game.matchTarget", { points: targetPoints })}
+            {" · "}
+            {state.doublingEnabled !== false
+              ? t("game.doublingOn")
+              : t("game.doublingOff")}
+          </div>
+        )}
       </div>
 
       <button

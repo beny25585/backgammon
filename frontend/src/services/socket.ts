@@ -4,6 +4,14 @@ import { handleSessionExpired } from "./auth";
 
 export type MessageHandler = (data: unknown) => void;
 
+interface PendingSocketTrace {
+  action: string;
+  sentAtPerf: number;
+  sentAtEpoch: number;
+  bufferedBefore: number;
+  bufferedAfter: number;
+}
+
 function getCloseReason(code: number): string {
   switch (code) {
     case 4001:
@@ -35,10 +43,63 @@ export class GameSocketService {
   private currentRoomId: string | null = null;
   private intentionalClose = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private traceSendBufferDrain(
+    ws: WebSocket,
+    action: string,
+    sentAtPerf: number,
+    bufferedAfterSend: number,
+  ): void {
+    let slowEmitted = false;
+    const check = () => {
+      const elapsedMs = Math.round(performance.now() - sentAtPerf);
+
+      const bufferedAmount = ws.bufferedAmount;
+
+      if (bufferedAmount === 0) {
+        clientLogger.info("WS_SEND_BUFFER_DRAIN", {
+          action,
+          drainMs: elapsedMs,
+          bufferedAfterSend,
+          readyState: ws.readyState,
+        });
+
+        return;
+      }
+
+      if (elapsedMs >= 5000) {
+        clientLogger.warn("WS_SEND_BUFFER_STUCK", {
+          action,
+          elapsedMs,
+          bufferedAmount,
+          bufferedAfterSend,
+          readyState: ws.readyState,
+        });
+
+        return;
+      }
+
+      if (elapsedMs >= 500 && !slowEmitted) {
+        slowEmitted = true;
+        clientLogger.warn("WS_SEND_BUFFER_SLOW", {
+          action,
+          elapsedMs,
+          bufferedAmount,
+          bufferedAfterSend,
+          readyState: ws.readyState,
+        });
+      }
+
+      setTimeout(check, 10);
+    };
+
+    setTimeout(check, 0);
+  }
 
   constructor(url: string = "") {
     this.url = url || "/backgammon";
   }
+
+  private pendingSocketTraces: PendingSocketTrace[] = [];
 
   connect(roomId: string, token?: string): Promise<void> {
     this.cancelReconnect();
@@ -72,14 +133,92 @@ export class GameSocketService {
         };
 
         this.ws.onmessage = (event) => {
+          const rawReceivedAtPerf = performance.now();
+          const rawReceivedAtEpoch = Date.now();
+
           try {
+            const parseStarted = performance.now();
+
             const message: GameMessage = JSON.parse(event.data);
+
+            const parseMs = Math.round(performance.now() - parseStarted);
+
+            const record = message as unknown as Record<string, unknown>;
+
+            const action =
+              typeof record.action === "string" ? record.action : undefined;
+
+            const payload =
+              record.payload !== null && typeof record.payload === "object"
+                ? (record.payload as Record<string, unknown>)
+                : undefined;
+
+            const version =
+              typeof payload?.version === "number"
+                ? payload.version
+                : undefined;
+
+            let rawRoundTripMs: number | null = null;
+            let bufferedAfterSend: number | null = null;
+            let sentAtEpoch: number | null = null;
+
+            /*
+             * For state_update replies, correlate the server broadcast with the
+             * oldest local command of the same action.
+             *
+             * This is diagnostic instrumentation only.
+             */
+            if (message.type === "state_update" && action) {
+              const traceIndex = this.pendingSocketTraces.findIndex(
+                (trace) => trace.action === action,
+              );
+
+              if (traceIndex !== -1) {
+                const trace = this.pendingSocketTraces.splice(traceIndex, 1)[0];
+
+                rawRoundTripMs = Math.round(
+                  rawReceivedAtPerf - trace.sentAtPerf,
+                );
+
+                bufferedAfterSend = trace.bufferedAfter;
+                sentAtEpoch = trace.sentAtEpoch;
+              }
+            }
+
+            clientLogger.info("WS_RAW_MESSAGE_TIMING", {
+              messageType: message.type,
+              action,
+              version,
+              parseMs,
+              rawRoundTripMs,
+              bufferedAfterSend,
+              sentAtEpoch,
+              rawReceivedAtEpoch,
+              bytes:
+                typeof event.data === "string" ? event.data.length : undefined,
+            });
+
+            const dispatchStarted = performance.now();
+
             this.emit(message.type, message);
+
+            const dispatchMs = Math.round(performance.now() - dispatchStarted);
+
+            if (dispatchMs >= 50) {
+              clientLogger.warn("WS_HANDLER_SLOW", {
+                messageType: message.type,
+                action,
+                version,
+                dispatchMs,
+              });
+            }
           } catch (error) {
             console.error("Failed to parse message:", error);
+
             clientLogger.error("Failed to parse WS message", {
               raw: event.data,
               error: String(error),
+              rawReceivedAtEpoch,
             });
           }
         };
@@ -108,7 +247,8 @@ export class GameSocketService {
             handleSessionExpired();
             return;
           }
-          if (event.code !== 4003 && event.code !== 4004) this.attemptReconnect();
+          if (event.code !== 4003 && event.code !== 4004)
+            this.attemptReconnect();
         };
       } catch (error) {
         reject(error);
@@ -121,20 +261,27 @@ export class GameSocketService {
     this.cancelReconnect();
     {
       this.reconnectAttempts++;
-      this.reconnectTimer = setTimeout(() => {
-        this.reconnectTimer = null;
-        if (this.intentionalClose || !this.currentRoomId) return;
-        clientLogger.info("Attempting to reconnect", {
-          attempt: this.reconnectAttempts,
-        });
-        this.connect(this.currentRoomId, this.currentToken || undefined).catch(
-          (error) => {
+      this.reconnectTimer = setTimeout(
+        () => {
+          this.reconnectTimer = null;
+          if (this.intentionalClose || !this.currentRoomId) return;
+          clientLogger.info("Attempting to reconnect", {
+            attempt: this.reconnectAttempts,
+          });
+          this.connect(
+            this.currentRoomId,
+            this.currentToken || undefined,
+          ).catch((error) => {
             clientLogger.error("Reconnect attempt failed", {
               error: error instanceof Error ? error.message : String(error),
             });
-          },
-        );
-      }, Math.min(this.reconnectDelay * 2 ** Math.min(this.reconnectAttempts - 1, 4), 30000));
+          });
+        },
+        Math.min(
+          this.reconnectDelay * 2 ** Math.min(this.reconnectAttempts - 1, 4),
+          30000,
+        ),
+      );
     }
   }
 
@@ -142,20 +289,96 @@ export class GameSocketService {
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
   }
-
   send(type: string, payload: unknown): boolean {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type, payload }));
-      clientLogger.info("Sending message", { type, payload });
-      return true;
-    } else {
+    const ws = this.ws;
+
+    if (ws?.readyState !== WebSocket.OPEN) {
       clientLogger.warn(
         "WebSocket send skipped because socket is not connected",
+        { type },
       );
+
       return false;
     }
-  }
 
+    const action =
+      type === "state_update" &&
+      payload !== null &&
+      typeof payload === "object" &&
+      typeof (payload as Record<string, unknown>).action === "string"
+        ? String((payload as Record<string, unknown>).action)
+        : "";
+
+    const serialized = JSON.stringify({
+      type,
+      payload,
+    });
+
+    const sentAtPerf = performance.now();
+    const sentAtEpoch = Date.now();
+    const bufferedBefore = ws.bufferedAmount;
+
+    ws.send(serialized);
+
+    const bufferedAfter = ws.bufferedAmount;
+
+    if (action) {
+      this.traceSendBufferDrain(ws, action, sentAtPerf, bufferedAfter);
+    }
+
+    if (type === "state_update" && action) {
+      this.pendingSocketTraces.push({
+        action,
+        sentAtPerf,
+        sentAtEpoch,
+        bufferedBefore,
+        bufferedAfter,
+      });
+
+      // Diagnostic only. Prevent an abandoned/rejected command from leaving
+      // unbounded trace history.
+      if (this.pendingSocketTraces.length > 20) {
+        this.pendingSocketTraces.shift();
+      }
+    }
+
+    clientLogger.info("WS_SEND_TIMING", {
+      type,
+      action: action || undefined,
+      bytes: serialized.length,
+      bufferedBefore,
+      bufferedAfter,
+    });
+
+    /*
+     * A zero-delay timer tells us whether something immediately after ws.send()
+     * blocks the browser main thread.
+     *
+     * For example:
+     * ws.send()
+     * → React setState
+     * → expensive render/layout/animation
+     * → browser cannot process incoming WebSocket frame for 2000ms
+     */
+    const eventLoopProbeStarted = performance.now();
+
+    setTimeout(() => {
+      const eventLoopDelayMs = Math.round(
+        performance.now() - eventLoopProbeStarted,
+      );
+
+      if (eventLoopDelayMs >= 50) {
+        clientLogger.warn("CLIENT_MAIN_THREAD_DELAY_AFTER_SEND", {
+          type,
+          action: action || undefined,
+          eventLoopDelayMs,
+          bufferedAmount: this.ws?.bufferedAmount ?? null,
+        });
+      }
+    }, 0);
+
+    return true;
+  }
   on(type: string, handler: MessageHandler): void {
     if (!this.handlers.has(type)) {
       this.handlers.set(type, new Set());

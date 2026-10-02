@@ -127,6 +127,7 @@ export function GameProvider({
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
+  const [targetPoints, setTargetPoints] = useState<number | null>(null);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
   const [nextGameCountdown, setNextGameCountdown] = useState<number | null>(
     null,
@@ -136,6 +137,15 @@ export function GameProvider({
     black: 0,
   });
   const [gameType, setGameType] = useState<GameType>(initialGameType);
+  const [rematchState, setRematchState] = useState<{
+    status: string;
+    reason?: string;
+  } | null>(null);
+  const [rematchReady, setRematchReady] = useState<{
+    ticket?: string;
+    roomId?: string;
+    color?: Color;
+  } | null>(null);
   const gameTypeRef = useRef(gameType);
   const autoNextGameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -236,40 +246,25 @@ export function GameProvider({
         if (rating || money || stats || result?.endReason) {
           setGameResult((prev) => {
             if (!prev) return prev;
-            const isSelfWhite = playerColorRef.current === "white";
+
             return {
               ...prev,
               reason: result?.endReason ?? prev.reason,
-              ratingBefore: rating
-                ? isSelfWhite
-                  ? rating.self.before
-                  : rating.opponent.before
-                : prev.ratingBefore,
-              ratingAfter: rating
-                ? isSelfWhite
-                  ? rating.self.after
-                  : rating.opponent.after
-                : prev.ratingAfter,
-              opponentRatingBefore: rating
-                ? isSelfWhite
-                  ? rating.opponent.before
-                  : rating.self.before
-                : prev.opponentRatingBefore,
-              opponentRatingAfter: rating
-                ? isSelfWhite
-                  ? rating.opponent.after
-                  : rating.self.after
-                : prev.opponentRatingAfter,
-              ratingChange: rating
-                ? isSelfWhite
-                  ? rating.self.change
-                  : rating.opponent.change
-                : prev.ratingChange,
-              opponentRatingChange: rating
-                ? isSelfWhite
-                  ? rating.opponent.change
-                  : rating.self.change
-                : prev.opponentRatingChange,
+              ratingBefore: rating?.self.before ?? prev.ratingBefore,
+
+              ratingAfter: rating?.self.after ?? prev.ratingAfter,
+
+              ratingChange: rating?.self.change ?? prev.ratingChange,
+
+              opponentRatingBefore:
+                rating?.opponent.before ?? prev.opponentRatingBefore,
+
+              opponentRatingAfter:
+                rating?.opponent.after ?? prev.opponentRatingAfter,
+
+              opponentRatingChange:
+                rating?.opponent.change ?? prev.opponentRatingChange,
+
               coinsChange: money ? money.selfChange : prev.coinsChange,
               opponentCoinsChange: money
                 ? money.opponentChange
@@ -394,6 +389,13 @@ export function GameProvider({
 
             const tc = (msg as Record<string, unknown>).timeControl;
             const targetPoints = (msg as Record<string, unknown>).targetPoints;
+            if (
+              typeof targetPoints === "number" &&
+              Number.isFinite(targetPoints) &&
+              targetPoints > 0
+            ) {
+              setTargetPoints(targetPoints);
+            }
             if (typeof tc === "string") {
               setTimeControl(
                 parseTimeControl(
@@ -555,14 +557,30 @@ export function GameProvider({
           if (next.phase !== "game_over") {
             setGameResult(null);
             setNextGameCountdown(null);
+            setRematchState(null);
+            setRematchReady(null);
           }
         });
 
         socket.on("player_joined", (_message) => {
           const payload = (_message as Record<string, unknown>).payload as
-            | { playerColor?: Color }
+            | { playerColor?: Color; username?: string | null }
             | undefined;
           setIsLoading(false);
+          if (
+            payload?.playerColor === "white" &&
+            typeof payload.username === "string" &&
+            payload.username.length > 0
+          ) {
+            setWhiteName(payload.username);
+          }
+          if (
+            payload?.playerColor === "black" &&
+            typeof payload.username === "string" &&
+            payload.username.length > 0
+          ) {
+            setBlackName(payload.username);
+          }
           if (payload?.playerColor !== playerColorRef.current) {
             setOpponentConnected(true);
           }
@@ -844,6 +862,34 @@ export function GameProvider({
           }
         });
 
+        socket.on("rematch_status", (message) => {
+          const payload = (message as Record<string, unknown>).payload as
+            | { status?: unknown; reason?: unknown }
+            | undefined;
+          if (typeof payload?.status !== "string") return;
+          setRematchState({
+            status: payload.status,
+            reason:
+              typeof payload.reason === "string" ? payload.reason : undefined,
+          });
+        });
+
+        socket.on("rematch_ready", (message) => {
+          const payload = (message as Record<string, unknown>).payload as
+            | { ticket?: unknown; roomId?: unknown; color?: unknown }
+            | undefined;
+          setRematchReady({
+            ticket:
+              typeof payload?.ticket === "string" ? payload.ticket : undefined,
+            roomId:
+              typeof payload?.roomId === "string" ? payload.roomId : undefined,
+            color:
+              payload?.color === "white" || payload?.color === "black"
+                ? payload.color
+                : undefined,
+          });
+        });
+
         await socket.connect(roomId, token);
         setIsLoading(false);
       } catch (err) {
@@ -887,39 +933,149 @@ export function GameProvider({
     }
     sendIntent({ action: "roll" });
   }, [sendIntent]);
-
   const makeMove = useCallback(
     (from: Source, to: Target) => {
       const current = stateRef.current;
+
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
+
+      const totalStartedAt = performance.now();
+
       const pending: PendingMove = {
         action: "move",
         from,
         to,
-        sentAt: performance.now(),
+
+        // Set immediately before the real socket send below.
+        // This makes acknowledgement latency measure actual post-send latency
+        // instead of including optimistic move calculation.
+        sentAt: 0,
       };
+
+      // ---------------------------------------------------------
+      // 1. Measure optimistic move calculation.
+      // applyOptimisticMove() currently calls legal-move generation.
+      // ---------------------------------------------------------
+      const optimisticStartedAt = performance.now();
+
       const optimistic = applyOptimisticMove(
         current,
         pending,
         playerColorRef.current,
       );
-      if (!sendIntent({ action: "move", from, to })) return;
+
+      const optimisticMs = Math.round(performance.now() - optimisticStartedAt);
+
+      // ---------------------------------------------------------
+      // 2. Measure the actual socket send separately.
+      // ---------------------------------------------------------
+      pending.sentAt = performance.now();
+
+      const sendStartedAt = performance.now();
+
+      const sent = sendIntent({
+        action: "move",
+        from,
+        to,
+      });
+
+      const sendMs = Math.round(performance.now() - sendStartedAt);
+
+      if (!sent) {
+        clientLogger.debug("[move] client timing", {
+          from,
+          to,
+          sent: false,
+          optimisticMs,
+          sendMs,
+          totalMs: Math.round(performance.now() - totalStartedAt),
+        });
+
+        return;
+      }
+
       if (optimistic) {
-        autoConfirmArmedRef.current = isWholeTurnDeterministic(
+        // -------------------------------------------------------
+        // 3. Measure deterministic-turn calculation.
+        // -------------------------------------------------------
+        const deterministicStartedAt = performance.now();
+
+        const wholeTurnDeterministic = isWholeTurnDeterministic(
           current,
           current.turn,
         );
-        setAutoConfirmPending(
-          autoConfirmArmedRef.current &&
-            optimistic.phase === "moving" &&
-            !optimistic.winner &&
-            allLegalMoves(optimistic, current.turn).length === 0,
+
+        const deterministicMs = Math.round(
+          performance.now() - deterministicStartedAt,
         );
+
+        autoConfirmArmedRef.current = wholeTurnDeterministic;
+
+        // -------------------------------------------------------
+        // 4. Measure allLegalMoves separately.
+        //
+        // Only calculate it when it is actually needed because
+        // && short-circuiting means auto-confirm false does not
+        // require this search.
+        // -------------------------------------------------------
+        let legalMovesMs = 0;
+        let noLegalMoves = false;
+
+        if (
+          autoConfirmArmedRef.current &&
+          optimistic.phase === "moving" &&
+          !optimistic.winner
+        ) {
+          const legalMovesStartedAt = performance.now();
+
+          noLegalMoves = allLegalMoves(optimistic, current.turn).length === 0;
+
+          legalMovesMs = Math.round(performance.now() - legalMovesStartedAt);
+        }
+
+        const autoConfirm =
+          autoConfirmArmedRef.current &&
+          optimistic.phase === "moving" &&
+          !optimistic.winner &&
+          noLegalMoves;
+
+        setAutoConfirmPending(autoConfirm);
+
         pendingActionsRef.current.push(pending);
+
         stateRef.current = optimistic;
         setState(optimistic);
+
+        const totalMs = Math.round(performance.now() - totalStartedAt);
+
+        clientLogger.debug("[move] client timing", {
+          from,
+          to,
+          remainingBefore: current.remaining?.length ?? 0,
+          remainingAfter: optimistic.remaining?.length ?? 0,
+          optimisticMs,
+          sendMs,
+          deterministicMs,
+          legalMovesMs,
+          totalMs,
+          pendingActions: pendingActionsRef.current.length,
+          autoConfirmArmed: autoConfirmArmedRef.current,
+          autoConfirm,
+        });
+
+        return;
       }
+
+      clientLogger.debug("[move] client timing", {
+        from,
+        to,
+        remainingBefore: current.remaining?.length ?? 0,
+        optimistic: false,
+        optimisticMs,
+        sendMs,
+        totalMs: Math.round(performance.now() - totalStartedAt),
+      });
     },
     [sendIntent],
   );
@@ -1005,6 +1161,34 @@ export function GameProvider({
     }
   }, [socket]);
 
+  const requestRematch = useCallback(() => {
+    setRematchState({ status: "requested" });
+    if (!socket.send("rematch_request", {})) {
+      setRematchState({ status: "unavailable", reason: "service_error" });
+    }
+  }, [socket]);
+
+  const acceptRematch = useCallback(() => {
+    setRematchState({ status: "creating" });
+    if (!socket.send("rematch_accept", {})) {
+      setRematchState({ status: "unavailable", reason: "service_error" });
+    }
+  }, [socket]);
+
+  const declineRematch = useCallback(() => {
+    setRematchState({ status: "available" });
+    if (!socket.send("rematch_decline", {})) {
+      setRematchState({ status: "unavailable", reason: "service_error" });
+    }
+  }, [socket]);
+
+  const cancelRematch = useCallback(() => {
+    setRematchState({ status: "available" });
+    if (!socket.send("rematch_cancel", {})) {
+      setRematchState({ status: "unavailable", reason: "service_error" });
+    }
+  }, [socket]);
+
   const updateState = useCallback((s: GameState) => setState(s), []);
 
   const clearError = useCallback(() => setError(null), []);
@@ -1040,9 +1224,16 @@ export function GameProvider({
         setOpeningRollResult,
         noMovesMessage,
         autoConfirmPending,
+        rematchState,
+        rematchReady,
+        requestRematch,
+        acceptRematch,
+        declineRematch,
+        cancelRematch,
         reconnected,
         opponentConnected,
         timeControl,
+        targetPoints,
         clock: state?.clock ?? null,
         turnStartedAt: state?.turnStartedAt ?? null,
         gameResult,

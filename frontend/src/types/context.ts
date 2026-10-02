@@ -76,12 +76,18 @@ export interface GameContextType {
   reconnected: boolean;
   opponentConnected: boolean;
   autoConfirmPending?: boolean;
-  rematchState?: { status: string; reason?: string };
+  rematchState?: { status: string; reason?: string } | null;
+  rematchReady?: {
+    ticket?: string;
+    roomId?: string;
+    color?: Color;
+  } | null;
   requestRematch?: () => void;
   acceptRematch?: () => void;
   declineRematch?: () => void;
   cancelRematch?: () => void;
   timeControl: TimeControl | null;
+  targetPoints: number | null;
   clock: Record<Color, number> | null;
   turnStartedAt: number | null;
   gameResult: GameResult | null;

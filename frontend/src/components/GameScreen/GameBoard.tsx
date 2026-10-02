@@ -95,6 +95,8 @@ export default function GameBoard({
   const isMyTurn = state.turn === playerColor && state.phase === "moving";
   const selectedBoardTheme = boardTheme ?? DEFAULT_BOARD_THEME;
   const stateVersion = state.version ?? 0;
+  const hasPlayedMoveThisTurn =
+    Array.isArray(state.lastMove) && state.lastMove.length > 0;
 
   const legalMoves = useMemo(() => {
     if (!isMyTurn || !state || !state.points) return [];
@@ -171,6 +173,7 @@ export default function GameBoard({
 
     if (
       autoPointSequenceActive ||
+      hasPlayedMoveThisTurn ||
       !isMyTurn ||
       state.remaining.length === 0 ||
       !forcedMove
@@ -192,10 +195,17 @@ export default function GameBoard({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [state, isMyTurn, forcedMove, autoPointSequenceActive]);
+  }, [
+    state,
+    isMyTurn,
+    forcedMove,
+    autoPointSequenceActive,
+    hasPlayedMoveThisTurn,
+  ]);
 
   const activeAutoMove =
     autoPointSequenceActive ||
+    hasPlayedMoveThisTurn ||
     !isMyTurn ||
     state.remaining.length === 0 ||
     !forcedMove ||

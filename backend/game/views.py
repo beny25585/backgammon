@@ -530,6 +530,18 @@ def room_finalized_result(request, room_id):
             self_seat = 'p2'
             opponent_seat = 'p1'
 
+    if link and (
+        link.result_status != 'delivered'
+        or not isinstance(link.result_response, dict)
+    ):
+        return Response(
+            {
+                'detail': 'Settlement pending',
+                'status': link.result_status,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
     settlement_response = (
         link.result_response
         if link and isinstance(link.result_response, dict)
