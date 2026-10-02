@@ -37,14 +37,15 @@ function makeMock(): GameContextType {
     gameResult: null,
     nextGameCountdown: null,
     matchScore: null,
+    targetPoints: null,
     autoConfirmPending: false,
-     gameType: "1v1",
-     rematchState: { status: "available" },
-     requestRematch: () => {},
-     acceptRematch: () => {},
-     declineRematch: () => {},
-     cancelRematch: () => {},
-     handleNextGame: () => {},
+    gameType: "1v1",
+    rematchState: { status: "available" },
+    requestRematch: () => {},
+    acceptRematch: () => {},
+    declineRematch: () => {},
+    cancelRematch: () => {},
+    handleNextGame: () => {},
     handleHome: () => {},
     updateState: () => {},
     makeMove: () => {},
@@ -83,23 +84,57 @@ if (isEmbed) {
   ];
 
   createRoot(document.getElementById("root")!).render(
-    <div style={{ background: "#0a0a0a", minHeight: "100vh", padding: 16, fontFamily: "system-ui" }}>
-      <div style={{ color: "#f7f1e7", marginBottom: 16, fontSize: 13, lineHeight: 1.6 }}>
-        You are Black. Opponent (White) is disconnected and it&apos;s their turn. Check each viewport:
+    <div
+      style={{
+        background: "#0a0a0a",
+        minHeight: "100vh",
+        padding: 16,
+        fontFamily: "system-ui",
+      }}
+    >
+      <div
+        style={{
+          color: "#f7f1e7",
+          marginBottom: 16,
+          fontSize: 13,
+          lineHeight: 1.6,
+        }}
+      >
+        You are Black. Opponent (White) is disconnected and it&apos;s their
+        turn. Check each viewport:
         <ul style={{ marginTop: 4, paddingLeft: 20 }}>
-          <li>Banner "Opponent disconnected — you can keep playing" shows and does NOT block the board</li>
+          <li>
+            Banner "Opponent disconnected — you can keep playing" shows and does
+            NOT block the board
+          </li>
           <li>White&apos;s dice [4][3] are visible to you</li>
-          <li>Board + side panel layout fits, no overflow, panel stacks below board on mobile</li>
+          <li>
+            Board + side panel layout fits, no overflow, panel stacks below
+            board on mobile
+          </li>
         </ul>
       </div>
       {viewports.map((v) => (
         <div key={v.label} style={{ marginBottom: 24 }}>
-          <div style={{ color: "rgba(247,241,231,0.6)", marginBottom: 8, fontSize: 12, fontWeight: 700 }}>
+          <div
+            style={{
+              color: "rgba(247,241,231,0.6)",
+              marginBottom: 8,
+              fontSize: 12,
+              fontWeight: 700,
+            }}
+          >
             {v.label}
           </div>
           <iframe
             src={`./test-gamescreen.html?embed`}
-            style={{ width: v.w, height: v.h, border: "1px solid rgba(231,189,114,0.3)", borderRadius: 12, background: "#0a0a0a" }}
+            style={{
+              width: v.w,
+              height: v.h,
+              border: "1px solid rgba(231,189,114,0.3)",
+              borderRadius: 12,
+              background: "#0a0a0a",
+            }}
           />
         </div>
       ))}

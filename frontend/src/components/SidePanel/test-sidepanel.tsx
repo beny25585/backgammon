@@ -36,6 +36,7 @@ const mock: GameContextType = {
   gameResult: null,
   nextGameCountdown: null,
   matchScore: { white: 2, black: 3 },
+  targetPoints: null,
   autoConfirmPending: false,
   gameType: "1v1",
   rematchState: { status: "available" },
@@ -68,18 +69,50 @@ function Test() {
   return (
     <MemoryRouter>
       <GameContext.Provider value={mock}>
-        <div style={{ display: "flex", gap: 20, alignItems: "flex-start", padding: 20, background: "#0a0a0a" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 20,
+            alignItems: "flex-start",
+            padding: 20,
+            background: "#0a0a0a",
+          }}
+        >
           <div style={{ width: 300 }}>
-            <div style={{ color: "#f7f1e7", fontFamily: "system-ui", marginBottom: 8, fontSize: 13, fontWeight: 700 }}>
+            <div
+              style={{
+                color: "#f7f1e7",
+                fontFamily: "system-ui",
+                marginBottom: 8,
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
               Your turn
             </div>
-            <SidePanel state={yourTurn} playerColor="white" onLeave={() => {}} />
+            <SidePanel
+              state={yourTurn}
+              playerColor="white"
+              onLeave={() => {}}
+            />
           </div>
           <div style={{ width: 300 }}>
-            <div style={{ color: "#f7f1e7", fontFamily: "system-ui", marginBottom: 8, fontSize: 13, fontWeight: 700 }}>
+            <div
+              style={{
+                color: "#f7f1e7",
+                fontFamily: "system-ui",
+                marginBottom: 8,
+                fontSize: 13,
+                fontWeight: 700,
+              }}
+            >
               Opponent's turn
             </div>
-            <SidePanel state={opponentTurn} playerColor="white" onLeave={() => {}} />
+            <SidePanel
+              state={opponentTurn}
+              playerColor="white"
+              onLeave={() => {}}
+            />
           </div>
         </div>
       </GameContext.Provider>

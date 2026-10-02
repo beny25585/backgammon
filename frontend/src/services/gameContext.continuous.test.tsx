@@ -23,9 +23,18 @@ function makeGameResult(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("non-final game does not show final GameResult overlay", async ({ mount }) => {
-  const state = makeState({ phase: "game_over", winner: "white", winType: "single" });
-  const gameResult = makeGameResult({ matchOver: false, matchScore: { white: 2, black: 1 } });
+test("non-final game does not show final GameResult overlay", async ({
+  mount,
+}) => {
+  const state = makeState({
+    phase: "game_over",
+    winner: "white",
+    winType: "single",
+  });
+  const gameResult = makeGameResult({
+    matchOver: false,
+    matchScore: { white: 2, black: 1 },
+  });
   const component = await mount(
     <GameContext.Provider
       value={{
@@ -46,6 +55,7 @@ test("non-final game does not show final GameResult overlay", async ({ mount }) 
         gameResult: gameResult as never,
         nextGameCountdown: null,
         matchScore: { white: 2, black: 1 },
+        targetPoints: null,
         autoConfirmPending: false,
         gameType: "1v1",
         handleNextGame: () => {},
@@ -69,16 +79,21 @@ test("non-final game does not show final GameResult overlay", async ({ mount }) 
       }}
     >
       <GameScreen />
-    </GameContext.Provider>
+    </GameContext.Provider>,
   );
   // Board should be visible, final overlay should not
   await expect(component.getByText("Match Result")).not.toBeVisible();
-  await expect(component.locator('[data-testid="score-white"]')).not.toBeVisible();
+  await expect(
+    component.locator('[data-testid="score-white"]'),
+  ).not.toBeVisible();
 });
 
 test("final game shows base GameResult", async ({ mount }) => {
   const state = makeState({ phase: "game_over", winner: "white" });
-  const gameResult = makeGameResult({ matchOver: true, matchScore: { white: 9, black: 1 } });
+  const gameResult = makeGameResult({
+    matchOver: true,
+    matchScore: { white: 9, black: 1 },
+  });
   const component = await mount(
     <GameContext.Provider
       value={{
@@ -99,6 +114,7 @@ test("final game shows base GameResult", async ({ mount }) => {
         gameResult: gameResult as never,
         nextGameCountdown: null,
         matchScore: { white: 9, black: 1 },
+        targetPoints: null,
         autoConfirmPending: false,
         gameType: "1v1",
         handleNextGame: () => {},
@@ -122,7 +138,7 @@ test("final game shows base GameResult", async ({ mount }) => {
       }}
     >
       <GameScreen />
-    </GameContext.Provider>
+    </GameContext.Provider>,
   );
   await expect(component.getByText("Match Result")).toBeVisible();
   await expect(component.getByText("Alice")).toBeVisible();

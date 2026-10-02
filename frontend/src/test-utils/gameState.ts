@@ -6,7 +6,9 @@ export function makeGameState(overrides: Partial<GameState> = {}): GameState {
   return { ...newGame(), ...overrides };
 }
 
-export function makeMockContext(overrides: Partial<GameContextType> = {}): GameContextType {
+export function makeMockContext(
+  overrides: Partial<GameContextType> = {},
+): GameContextType {
   return {
     state: makeGameState(),
     playerColor: "white",
@@ -25,6 +27,7 @@ export function makeMockContext(overrides: Partial<GameContextType> = {}): GameC
     gameResult: null,
     nextGameCountdown: null,
     matchScore: null,
+    targetPoints: null,
     gameType: "1v1",
     handleNextGame: () => {},
     handleHome: () => {},

@@ -230,30 +230,35 @@ export function LocalGameProvider({
       ...matchScore,
       [state.winner]: matchScore[state.winner] + points,
     };
-    setMatchScore(nextScore);
+    const winner = state.winner;
 
-    if (nextScore[state.winner] >= MATCH_TARGET) {
-      setMatchWinner(state.winner);
-      setGameResult({
-        winner: state.winner,
-        winType: state.winType || "single",
-        points,
-        cube: state.cube || 1,
-        matchScore: nextScore,
-        targetPoints: MATCH_TARGET,
-        matchOver: true,
-        gameType,
-      });
-      return;
-    }
+    queueMicrotask(() => {
+      setMatchScore(nextScore);
 
-    if (!betweenGamesTimer.current) {
-      betweenGamesTimer.current = setTimeout(() => {
-        betweenGamesTimer.current = null;
-        handleNextGame();
-      }, 1500);
-    }
-  }, [gameResult, handleNextGame, matchScore, MATCH_TARGET, state]);
+      if (nextScore[winner] >= MATCH_TARGET) {
+        setMatchWinner(winner);
+        setGameResult({
+          winner,
+          winType: state.winType || "single",
+          points,
+          cube: state.cube || 1,
+          matchScore: nextScore,
+          targetPoints: MATCH_TARGET,
+          matchOver: true,
+          gameType,
+        });
+
+        return;
+      }
+
+      if (!betweenGamesTimer.current) {
+        betweenGamesTimer.current = setTimeout(() => {
+          betweenGamesTimer.current = null;
+          handleNextGame();
+        }, 1500);
+      }
+    });
+  }, [gameResult, handleNextGame, matchScore, MATCH_TARGET, state, gameType]);
 
   useEffect(
     () => () => {
@@ -565,7 +570,7 @@ export function LocalGameProvider({
       setTurnColor(next.turn);
       if (shouldReveal && revealPayload) revealNoMoves(revealPayload);
     },
-    [revealNoMoves],
+    [revealNoMoves, setTurnColor],
   );
 
   const offerDoubleAction = useCallback(() => {
@@ -594,7 +599,7 @@ export function LocalGameProvider({
     stateRef.current = next;
     setState(next);
     setTurnColor(next.turn);
-  }, []);
+  }, [setTurnColor]);
 
   const undoMove = useCallback(() => {
     setState((prev) => {
@@ -640,7 +645,7 @@ export function LocalGameProvider({
         message: `${color} ran out of time`,
       });
     },
-    [matchScore, MATCH_TARGET],
+    [matchScore, MATCH_TARGET, gameType],
   );
 
   const handleGiveUp = useCallback(() => {
@@ -672,7 +677,7 @@ export function LocalGameProvider({
       winType,
       message: `${loser} gave up`,
     });
-  }, [matchScore, MATCH_TARGET]);
+  }, [matchScore, MATCH_TARGET, gameType]);
 
   const localClock = useLocalClock(state, timeControl ?? null, handleTimeout);
 
@@ -698,6 +703,7 @@ export function LocalGameProvider({
         gameResult,
         nextGameCountdown,
         matchScore,
+        targetPoints: MATCH_TARGET,
         gameType,
         rematchState: { status: "unavailable", reason: "local" },
         requestRematch: () => {},
