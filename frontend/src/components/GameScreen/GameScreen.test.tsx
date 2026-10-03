@@ -27,6 +27,12 @@ for (const [theme, label, fieldColor] of [
     await option.click();
     await expect(option).toHaveAttribute("aria-pressed", "true");
     await expect(component.getByTestId("board-inner")).toHaveCSS("background-color", fieldColor);
+    await expect(component.getByTestId("doubling-cube")).toHaveCSS("color", "rgb(255, 244, 207)");
+    await expect(component.getByRole("button", { name: "Blue and ivory" })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    const drawerWidth = await component.getByTestId("match-control-drawer").evaluate(
+      (element) => element.getBoundingClientRect().width,
+    );
+    expect(drawerWidth).toBeLessThanOrEqual(280);
     await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-board-theme"))).toBe(theme);
     await component.unmount();
     const reopened = await mount(screen);

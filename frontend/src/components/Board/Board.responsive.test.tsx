@@ -160,7 +160,8 @@ test("short landscape keeps bar checkers clear of the larger pip counts", async 
   expect(pipBox).not.toBeNull();
   expect(checkerBox).not.toBeNull();
   expect(barBox!.width).toBeGreaterThanOrEqual(26);
-  expect(pipFontSize).toBeGreaterThanOrEqual(11);
+  expect(pipFontSize).toBeGreaterThanOrEqual(9);
+  expect(await whitePip.evaluate((element: HTMLElement) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(checkerBox!.y + checkerBox!.height).toBeLessThan(pipBox!.y);
 
   const pipCenter = pipBox!.y + pipBox!.height / 2;

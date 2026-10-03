@@ -49,11 +49,11 @@ export default function Bar({
   const blackCount = Math.max(state.bar.black - (hideChecker === "black" ? 1 : 0), 0);
   const whiteCount = Math.max(state.bar.white - (hideChecker === "white" ? 1 : 0), 0);
   return (
-    <button type="button" onClick={onClick} className="relative h-full w-[var(--bar-w)] cursor-pointer border-0 [background:var(--lux-bar-bg,#071034)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300" data-point-idx="bar" aria-label={t("game.barSummary", { black: state.bar.black, white: state.bar.white })}>
+    <button type="button" onClick={onClick} className="relative h-full [--bar-display-width:max(26px,var(--bar-w))] w-[var(--bar-display-width)] cursor-pointer border-0 [background:var(--lux-bar-bg,#071034)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300" data-point-idx="bar" aria-label={t("game.barSummary", { black: state.bar.black, white: state.bar.white })}>
       {(selected || isLegalFrom) && <div className={styles.highlight} />}
 
       <span
-        className="pointer-events-none absolute inset-x-0 top-[18%] z-10 -translate-y-1/2 rounded bg-black/85 py-0.5 text-center text-[clamp(14px,2.1cqw,22px)] leading-none font-black text-white"
+        className="pointer-events-none absolute inset-x-0.5 top-[18%] z-10 -translate-y-1/2 rounded-sm bg-black/85 py-1 text-center font-mono text-[clamp(9px,calc((var(--bar-display-width)-4px)*0.54),16px)] leading-none font-bold tabular-nums text-white"
         data-testid="bar-pip-black"
       >
         {pipCount(state, "black")}
@@ -73,7 +73,7 @@ export default function Bar({
       <BarStack count={whiteCount} color="white" />
 
       <span
-        className="pointer-events-none absolute inset-x-0 top-[82%] z-10 -translate-y-1/2 rounded bg-black/85 py-0.5 text-center text-[clamp(14px,2.1cqw,22px)] leading-none font-black text-white"
+        className="pointer-events-none absolute inset-x-0.5 top-[82%] z-10 -translate-y-1/2 rounded-sm bg-black/85 py-1 text-center font-mono text-[clamp(9px,calc((var(--bar-display-width)-4px)*0.54),16px)] leading-none font-bold tabular-nums text-white"
         data-testid="bar-pip-white"
       >
         {pipCount(state, "white")}

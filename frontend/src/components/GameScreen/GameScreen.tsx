@@ -103,7 +103,15 @@ export default function GameScreen({
     cancelRematch,
     gameType: contextGameType,
   } = useGame();
-  const { soundEnabled, setSoundEnabled } = useGameSounds(state, roomId);
+  const { soundEnabled, setSoundEnabled, playActionSound } = useGameSounds(state, roomId);
+  const handleUndo = useCallback(() => {
+    playActionSound("undo");
+    undoMove();
+  }, [playActionSound, undoMove]);
+  const handleConfirm = useCallback(() => {
+    playActionSound("confirm");
+    endTurn();
+  }, [playActionSound, endTurn]);
   const displayedError = (() => {
     switch (error) {
       case "room_cancelled":
@@ -477,9 +485,9 @@ export default function GameScreen({
             playerColor={playerColor}
             makeMove={makeMove}
             reorderDice={reorderDice}
-            undoMove={undoMove}
+            undoMove={handleUndo}
             autoConfirmPending={autoConfirmPending}
-            endTurn={endTurn}
+            endTurn={handleConfirm}
             offerDouble={offerDouble}
             boardTheme={boardTheme}
             onBoardThemeChange={setBoardTheme}

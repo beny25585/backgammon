@@ -73,11 +73,13 @@
   --radius-xl: 12px;
 }
 
-* {
-  max-width: var(--app-width, 100dvw);
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@layer base {
+  * {
+    max-width: var(--app-width, 100dvw);
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 }
 
 html,
@@ -121,11 +123,13 @@ html[lang="en"] {
   --font-display: "Playfair Display", "Assistant", serif;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+@layer base {
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
 }
 
 button:focus-visible,

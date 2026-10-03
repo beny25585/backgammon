@@ -117,15 +117,11 @@ function SidePanel({
       </div>
 
       {menuOpen && (
-        <div className="fixed right-[clamp(44px,7dvh,68px)] top-1/2 z-30 flex max-h-[calc(var(--app-height,100dvh)-16px)] w-[min(320px,calc(var(--app-width,100dvw)-64px))] -translate-y-1/2 flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-[var(--ui-accent-border)] [background:var(--ui-menu-bg,#101314)] p-3 shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
-          <div className={styles.header}>
-            <span className={styles.kicker}>{t("game.matchControl")}</span>
+        <div className="fixed right-[clamp(44px,7dvh,68px)] top-1/2 z-30 flex max-h-[calc(var(--app-height,100dvh)-16px)] w-[min(280px,calc(var(--app-width,100dvw)-64px))] -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-white/15 bg-[#111617] p-4 text-sm text-white shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
+            <span className="text-sm font-bold text-white">{t("game.matchControl")}</span>
             <span
-              className={
-                activeColor === playerColor
-                  ? styles.turnSelf
-                  : styles.turnOpponent
-              }
+              className="text-xs font-medium text-white/50"
             >
               {activeColor === playerColor
                 ? t("common.yourTurn")
@@ -133,13 +129,13 @@ function SidePanel({
             </span>
           </div>
 
-          <div className={`${styles.section} ${styles.languageSection}`}>
-            <LanguageSwitcher />
-            <InstallAppButton />
+          <div className="grid grid-cols-2 gap-2">
+            <LanguageSwitcher className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-300" />
+            <InstallAppButton className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-2 text-white/80 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-300" />
           </div>
 
           {boardTheme && onBoardThemeChange && (
-            <div className={`${styles.section} ${styles.themeSection}`}>
+            <div>
               <BoardThemeSelector
                 value={boardTheme}
                 onChange={onBoardThemeChange}
@@ -147,7 +143,7 @@ function SidePanel({
             </div>
           )}
           {onSoundEnabledChange && (
-            <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded border border-white/15 px-3 text-sm text-white focus-within:ring-2 focus-within:ring-amber-300">
+            <label className="flex min-h-12 cursor-pointer items-center justify-between gap-3 rounded-lg bg-white/5 px-3 text-sm text-white/80 focus-within:ring-2 focus-within:ring-amber-300">
               <span>{t("game.soundEffects")}</span>
               <input
                 type="checkbox"

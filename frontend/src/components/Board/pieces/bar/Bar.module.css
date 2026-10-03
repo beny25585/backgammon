@@ -64,7 +64,7 @@
   border-radius: 4px;
   background: var(--ui-cube-bg, linear-gradient(180deg, #3d6cff, #2439d6));
   border-color: var(--ui-accent-border, rgba(137, 170, 255, 0.8));
-  color: var(--ui-on-accent, #f4f8ff) !important;
+  color: var(--ui-cube-text, var(--ui-on-accent, #f4f8ff)) !important;
   font-size: clamp(14px, 2.2cqw, 20px);
   box-shadow:
     0 8px 16px rgba(0, 0, 0, 0.48),

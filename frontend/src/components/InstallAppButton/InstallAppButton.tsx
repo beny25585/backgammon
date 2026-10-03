@@ -25,7 +25,7 @@ function instructionKey() {
   return "common.installDesktop";
 }
 
-export default function InstallAppButton() {
+export default function InstallAppButton({ className }: { className?: string } = {}) {
   const { t } = useI18n();
   const [installPrompt, setInstallPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
@@ -87,7 +87,7 @@ export default function InstallAppButton() {
     <>
       <button
         type="button"
-        className={styles.installButton}
+        className={className ?? styles.installButton}
         onClick={handleInstall}
         aria-label={t("common.installApp")}
       >

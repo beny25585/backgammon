@@ -6,6 +6,7 @@ import { newGame } from "../../lib/backgammon/engine";
 import GameScreen from "./GameScreen";
 import type { GameContextType } from "../../types/context";
 import "../../styles/global.css";
+import { I18nProvider } from "../../i18n/I18nProvider";
 
 function makeState() {
   const state = newGame();
@@ -30,7 +31,7 @@ function makeMock(): GameContextType {
     openingRollResult: null,
     setOpeningRollResult: () => {},
     reconnected: false,
-    opponentConnected: false,
+    opponentConnected: new URLSearchParams(window.location.search).has("connected"),
     timeControl: null,
     clock: null,
     turnStartedAt: null,
@@ -63,11 +64,13 @@ function makeMock(): GameContextType {
 
 function Game() {
   return (
+    <I18nProvider>
     <MemoryRouter>
       <GameContext.Provider value={makeMock()}>
         <GameScreen />
       </GameContext.Provider>
     </MemoryRouter>
+    </I18nProvider>
   );
 }
 

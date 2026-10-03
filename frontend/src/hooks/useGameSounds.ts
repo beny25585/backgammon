@@ -1,20 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameState } from "../lib/backgammon/engine";
 
 const STORAGE_KEY = "6b-game-sounds";
-type GameSound = "roll" | "move" | "hit";
+type GameSound = "roll" | "move" | "hit" | "undo" | "confirm";
 
 function playSound(context: AudioContext, sound: GameSound) {
   if (context.state !== "running") return;
   const start = context.currentTime;
-  const taps = sound === "roll" ? 5 : sound === "hit" ? 2 : 1;
+  const taps = sound === "roll" ? 5 : sound === "hit" || sound === "confirm" ? 2 : 1;
   for (let index = 0; index < taps; index++) {
     const at = start + index * (sound === "roll" ? 0.04 : 0.075);
     const oscillator = context.createOscillator();
     const gain = context.createGain();
     oscillator.type = "triangle";
-    oscillator.frequency.setValueAtTime(sound === "hit" ? 260 : 520 + index * 80, at);
-    oscillator.frequency.exponentialRampToValueAtTime(100, at + 0.055);
+    const frequency = sound === "hit" ? 260 : sound === "undo" ? 400 :
+      sound === "confirm" ? 600 + index * 200 : 520 + index * 80;
+    oscillator.frequency.setValueAtTime(frequency, at);
+    oscillator.frequency.exponentialRampToValueAtTime(sound === "confirm" ? frequency * 1.2 : 100, at + 0.055);
     gain.gain.setValueAtTime(0.0001, at);
     gain.gain.exponentialRampToValueAtTime(0.12, at + 0.003);
     gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.07);
@@ -33,6 +35,9 @@ export function useGameSounds(state: GameState | null, roomId?: string) {
   });
   const audioRef = useRef<AudioContext | null>(null);
   const previousRef = useRef<{ state: GameState | null; roomId?: string }>({ state, roomId });
+  const playActionSound = useCallback((sound: "undo" | "confirm") => {
+    if (soundEnabled && audioRef.current) playSound(audioRef.current, sound);
+  }, [soundEnabled]);
 
   useEffect(() => {
     try { localStorage.setItem(STORAGE_KEY, String(soundEnabled)); }
@@ -71,15 +76,21 @@ export function useGameSounds(state: GameState | null, roomId?: string) {
       (color) => before.openingRoll[color] === null && state.openingRoll[color] !== null,
     );
     const rolled = before.phase === "rolling" && state.phase === "moving" && state.dice.length > 0;
-    if (openingRolled || rolled) {
+    // The server may clear lastMove when a hit also ends the turn. Identify
+    // the captured blot on the board instead of depending on history length.
+    const hit = (state.bar.white > before.bar.white || state.bar.black > before.bar.black) &&
+      state.points.some((point, index) => Math.abs(before.points[index]) === 1 &&
+        point === -before.points[index]);
+    if (hit) {
+      playSound(audio, "hit");
+    } else if (openingRolled || rolled) {
       playSound(audio, "roll");
     } else if ((state.lastMove?.length ?? 0) > (before.lastMove?.length ?? 0) &&
       (state.home.white !== before.home.white || state.home.black !== before.home.black ||
         state.points.some((point, index) => point !== before.points[index]))) {
-      const hit = state.bar.white > before.bar.white || state.bar.black > before.bar.black;
-      playSound(audio, hit ? "hit" : "move");
+      playSound(audio, "move");
     }
   }, [state, roomId, soundEnabled]);
 
-  return { soundEnabled, setSoundEnabled };
+  return { soundEnabled, setSoundEnabled, playActionSound };
 }

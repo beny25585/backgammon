@@ -37,27 +37,27 @@ export default function BoardThemeSelector({
   const { t } = useI18n();
 
   return (
-    <section className="grid gap-2 rounded-md border border-white/15 bg-black/20 p-2" aria-label={t("game.boardTheme")}>
-      <div className="text-xs font-bold text-white/65">
+    <section className="grid gap-2" aria-label={t("game.boardTheme")}>
+      <div className="px-1 text-xs font-semibold text-white/55">
         <span>{t("game.boardTheme")}</span>
       </div>
-      <div className="grid gap-1.5">
+      <div className="grid gap-1 rounded-xl bg-white/[0.025] p-1">
         {BOARD_THEMES.map((theme) => (
           <button
             key={theme}
             type="button"
-            className="grid min-h-11 grid-cols-[36px_minmax(0,1fr)] items-center gap-2 rounded border border-white/15 px-2 py-1.5 text-start text-white hover:border-amber-300/60 hover:bg-amber-300/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 aria-pressed:border-amber-300/70 aria-pressed:bg-amber-300/10"
+            className="grid min-h-12 grid-cols-[40px_minmax(0,1fr)] items-center gap-3 rounded-lg border border-transparent bg-transparent px-3 py-2 text-start text-white/80 hover:bg-white/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 aria-pressed:border-amber-300/40 aria-pressed:bg-amber-300/10 aria-pressed:text-amber-100"
             aria-pressed={value === theme}
             onClick={() => onChange(theme)}
           >
-            <span aria-hidden="true" className={`grid h-7 grid-cols-3 overflow-hidden rounded border border-white/25 ${themeSwatches[theme]}`}>
+            <span aria-hidden="true" className={`grid h-7 grid-cols-3 overflow-hidden rounded-md border border-white/15 ${themeSwatches[theme]}`}>
               <span />
               <span />
               <span />
             </span>
             <span className="grid min-w-0 gap-0.5">
-              <strong className="text-xs font-bold">{t(themeLabelKeys[theme])}</strong>
-              <small className="text-[10px] leading-snug text-white/55">{t(themeDescriptionKeys[theme])}</small>
+              <strong className="text-sm leading-snug font-semibold">{t(themeLabelKeys[theme])}</strong>
+              <small className="text-xs leading-snug text-white/45 [@media(max-height:500px)]:hidden">{t(themeDescriptionKeys[theme])}</small>
             </span>
           </button>
         ))}

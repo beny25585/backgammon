@@ -65,7 +65,7 @@ export default function DoublingCube({ value, owner, showOwner = true }: Doublin
           count={1}
           variant="value"
           value={value}
-          valueColor={color}
+          valueColor={`var(--ui-cube-text, ${color})`}
           landOn={[value]}
           spins={false}
           onRollComplete={() => setRolling(false)}
