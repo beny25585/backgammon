@@ -13,6 +13,7 @@ import type {
   GameContextType,
   GameResult,
   GameType,
+  MakeMoveOptions,
   NoMovesMessage,
   OpeningRollResult,
 } from "../types/context";
@@ -934,11 +935,19 @@ export function GameProvider({
     sendIntent({ action: "roll" });
   }, [sendIntent]);
   const makeMove = useCallback(
-    (from: Source, to: Target) => {
+    (
+      from: Source,
+      to: Target,
+      options?: MakeMoveOptions,
+    ) => {
       const current = stateRef.current;
 
       if (!current || current.phase !== "moving") return;
       if (current.turn !== playerColorRef.current) return;
+
+      const isForcedMove = options?.origin === "forced";
+
+      autoConfirmArmedRef.current = false;
 
       const totalStartedAt = performance.now();
 
@@ -1010,7 +1019,8 @@ export function GameProvider({
           performance.now() - deterministicStartedAt,
         );
 
-        autoConfirmArmedRef.current = wholeTurnDeterministic;
+        autoConfirmArmedRef.current =
+          isForcedMove && wholeTurnDeterministic;
 
         // -------------------------------------------------------
         // 4. Measure allLegalMoves separately.

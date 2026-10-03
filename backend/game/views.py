@@ -597,8 +597,14 @@ def room_finalized_result(request, room_id):
     # know rating/money are pending via null.
     # However if the request expects rating and it's not yet available, return 202
     # to signal retry — frontend should check if rating is expected but missing.
-    expects_rating = game_type in ('quick', 'tournament')
-    expects_money = game_type == 'quick'
+    expects_rating = (
+        link is not None
+        and game_type in ('quick', 'tournament', '1v1')
+    )
+    expects_money = (
+        link is not None
+        and game_type in ('quick', '1v1')
+    )
 
     # If this is a linked money/tournament room and the link's result is still pending/queued,
     # signal that the finalized data is not yet available.
@@ -631,7 +637,7 @@ def room_finalized_result(request, room_id):
             'nextOpponent': None,
         }
 
-    if game_type == 'quick':
+    if link and game_type in ('quick', '1v1'):
         stake = remote_money.get('stake') if isinstance(
             remote_money, dict) and 'stake' in remote_money else state.get('stake')
         self_change = None

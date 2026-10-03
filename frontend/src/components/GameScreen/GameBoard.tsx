@@ -88,6 +88,15 @@ export default function GameBoard({
     move: Move;
   } | null>(null);
   const forcedCommandIdRef = useRef(0);
+
+  const [forcedSequenceActive, setForcedSequenceActive] = useState(false);
+
+  const [forcedAwaitingAck, setForcedAwaitingAck] = useState<{
+    version: number;
+    fromPositionKey: string;
+    from: Source;
+    to: Target;
+  } | null>(null);
   const [autoPointSequenceActive, setAutoPointSequenceActive] = useState(false);
   const [hiddenTurnNotice, setHiddenTurnNotice] =
     useState<GuidanceMessage | null>(null);
@@ -97,6 +106,10 @@ export default function GameBoard({
   const stateVersion = state.version ?? 0;
   const hasPlayedMoveThisTurn =
     Array.isArray(state.lastMove) && state.lastMove.length > 0;
+
+  const forcedSequenceAllowed = !hasPlayedMoveThisTurn || forcedSequenceActive;
+
+  const waitingForForcedAck = forcedAwaitingAck !== null;
 
   const legalMoves = useMemo(() => {
     if (!isMyTurn || !state || !state.points) return [];
@@ -133,6 +146,59 @@ export default function GameBoard({
     return getAutomaticMove(state, playerColor);
   }, [state, playerColor, isMyTurn]);
 
+  useEffect(() => {
+    const pending = forcedAwaitingAck;
+    if (!pending) return;
+
+    const acknowledged =
+      typeof state.version === "number"
+        ? stateVersion > pending.version
+        : getGameplayKey(state) !== pending.fromPositionKey;
+
+    if (!acknowledged) return;
+
+    const lastMove =
+      Array.isArray(state.lastMove) && state.lastMove.length > 0
+        ? state.lastMove[state.lastMove.length - 1]
+        : null;
+
+    if (
+      !lastMove ||
+      lastMove.from !== pending.from ||
+      lastMove.to !== pending.to
+    ) {
+      setForcedSequenceActive(false);
+      setForcedAwaitingAck(null);
+      forcedCommandIdRef.current += 1;
+      setAutoMove(null);
+      return;
+    }
+
+    setForcedAwaitingAck(null);
+    setAutoMove(null);
+  }, [state, stateVersion, forcedAwaitingAck]);
+
+  useEffect(() => {
+    if (!forcedSequenceActive) return;
+    if (forcedAwaitingAck) return;
+    if (!isMyTurn) return;
+
+    if (state.remaining.length === 0 || !forcedMove) {
+      setForcedSequenceActive(false);
+      forcedCommandIdRef.current += 1;
+      setAutoMove(null);
+    }
+  }, [state, isMyTurn, forcedMove, forcedSequenceActive, forcedAwaitingAck]);
+
+  useEffect(() => {
+    if (isMyTurn) return;
+
+    setForcedSequenceActive(false);
+    setForcedAwaitingAck(null);
+    forcedCommandIdRef.current += 1;
+    setAutoMove(null);
+  }, [isMyTurn]);
+
   const turnNotice = useMemo<GuidanceMessage | null>(() => {
     if (
       noMovesMessage?.color === playerColor &&
@@ -146,6 +212,7 @@ export default function GameBoard({
 
     if (
       !autoPointSequenceActive &&
+      forcedSequenceAllowed &&
       isMyTurn &&
       state.remaining.length > 0 &&
       forcedMove
@@ -161,6 +228,7 @@ export default function GameBoard({
     noMovesMessage,
     playerColor,
     autoPointSequenceActive,
+    forcedSequenceAllowed,
     isMyTurn,
     state.remaining.length,
     forcedMove,
@@ -173,7 +241,8 @@ export default function GameBoard({
 
     if (
       autoPointSequenceActive ||
-      hasPlayedMoveThisTurn ||
+      !forcedSequenceAllowed ||
+      waitingForForcedAck ||
       !isMyTurn ||
       state.remaining.length === 0 ||
       !forcedMove
@@ -200,12 +269,14 @@ export default function GameBoard({
     isMyTurn,
     forcedMove,
     autoPointSequenceActive,
-    hasPlayedMoveThisTurn,
+    forcedSequenceAllowed,
+    waitingForForcedAck,
   ]);
 
   const activeAutoMove =
     autoPointSequenceActive ||
-    hasPlayedMoveThisTurn ||
+    !forcedSequenceAllowed ||
+    waitingForForcedAck ||
     !isMyTurn ||
     state.remaining.length === 0 ||
     !forcedMove ||
@@ -251,7 +322,17 @@ export default function GameBoard({
       selectedSource ??
       (activeAutoMove?.move.to === to ? activeAutoMove.move.from : null);
     if (from === null) return;
-    if (options?.origin !== "forced") {
+    if (options?.origin === "forced") {
+      setForcedSequenceActive(true);
+      setForcedAwaitingAck({
+        version: stateVersion,
+        fromPositionKey: getGameplayKey(state),
+        from,
+        to,
+      });
+    } else {
+      setForcedSequenceActive(false);
+      setForcedAwaitingAck(null);
       forcedCommandIdRef.current += 1;
       setAutoMove(null);
     }

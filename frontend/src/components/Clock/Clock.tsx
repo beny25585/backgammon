@@ -39,11 +39,14 @@ export default function Clock({
   );
 
   useEffect(() => {
-    if (!activeColor || turnStartedAt != null) {
-      setFallbackStartedAt(null);
-      return;
-    }
-    setFallbackStartedAt(Date.now());
+    const id = window.setTimeout(() => {
+      if (!activeColor || turnStartedAt != null) {
+        setFallbackStartedAt(null);
+        return;
+      }
+      setFallbackStartedAt(Date.now());
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [activeColor, turnStartedAt]);
 
   useEffect(() => {

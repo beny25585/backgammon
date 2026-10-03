@@ -8,6 +8,7 @@ import {
   type Target,
 } from "../lib/backgammon/engine";
 import { gameOverFixture } from "./fixtures";
+import type { MakeMoveOptions } from "../types/context";
 import { MockGameWrapper } from "./wrappers";
 import { makeGameState } from "./gameState";
 import GameScreen from "../components/GameScreen/GameScreen";
@@ -89,13 +90,16 @@ export function SeedRollingBot() {
 export function GameProbe({
   from,
   to,
+  origin,
   secondMove,
 }: {
   from: Source;
   to: Target;
+  origin?: MakeMoveOptions["origin"];
   secondMove?: {
     from: Source;
     to: Target;
+    origin?: MakeMoveOptions["origin"];
   };
 }) {
   const {
@@ -128,13 +132,26 @@ export function GameProbe({
       <div data-testid="game-result">
         {JSON.stringify(gameResult ? { winner: gameResult.winner } : null)}
       </div>
-      <button data-testid="move" onClick={() => makeMove(from, to)}>
+      <button
+        data-testid="move"
+        onClick={() =>
+          makeMove(from, to, origin ? { origin } : undefined)
+        }
+      >
         move
       </button>
       {secondMove && (
         <button
           data-testid="move-2"
-          onClick={() => makeMove(secondMove.from, secondMove.to)}
+          onClick={() =>
+            makeMove(
+              secondMove.from,
+              secondMove.to,
+              secondMove.origin
+                ? { origin: secondMove.origin }
+                : undefined,
+            )
+          }
         >
           move-2
         </button>

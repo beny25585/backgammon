@@ -517,10 +517,11 @@ export function LocalGameProvider({
   }
 
   const makeMove = useCallback(
-    (from: Source, to: Target, _options?: MakeMoveOptions) => {
+    (from: Source, to: Target, options?: MakeMoveOptions) => {
       const cur = stateRef.current;
       if (!cur || cur.phase !== "moving") return;
       if (cur.turn !== playerColorRef.current) return;
+      const isForcedMove = options?.origin === "forced";
       const actor = playerColorRef.current;
       const wholeTurnDeterministic = isWholeTurnDeterministic(cur, actor);
       const dest = to === OFF ? OFF : to;
@@ -557,6 +558,7 @@ export function LocalGameProvider({
         shouldReveal = true;
       }
       if (
+        isForcedMove &&
         wholeTurnDeterministic &&
         next.phase === "moving" &&
         next.turn === actor &&
