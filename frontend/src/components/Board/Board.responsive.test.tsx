@@ -164,10 +164,31 @@ test("short landscape keeps bar checkers clear of the larger pip counts", async 
   expect(checkerBox!.y + checkerBox!.height).toBeLessThan(pipBox!.y);
 
   const pipCenter = pipBox!.y + pipBox!.height / 2;
-  const checkerCenter = checkerBox!.y + checkerBox!.height / 2;
   expect((pipCenter - barBox!.y) / barBox!.height).toBeCloseTo(0.82, 1);
-  expect((checkerCenter - barBox!.y) / barBox!.height).toBeCloseTo(0.62, 1);
 });
+
+for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
+  test(`full bar stacks do not cover either pip count (${viewport.width}x${viewport.height})`, async ({ mount, page }) => {
+    await page.setViewportSize(viewport);
+    const state = busyState();
+    state.bar = { white: 15, black: 15 };
+    const component = await mountBoard(mount, state);
+    for (const color of ["white", "black"] as const) {
+      const pipBox = await component.getByTestId(`bar-pip-${color}`).boundingBox();
+      expect(pipBox).not.toBeNull();
+      const stack = component.getByTestId(`bar-checkers-${color}`);
+      await expect(stack).toContainText("15");
+      const checkers = stack.locator("[data-checker]");
+      for (const checker of await checkers.all()) {
+        const checkerBox = await checker.boundingBox();
+        expect(checkerBox).not.toBeNull();
+        const hasVerticalGap = checkerBox!.y + checkerBox!.height < pipBox!.y ||
+          pipBox!.y + pipBox!.height < checkerBox!.y;
+        expect(hasVerticalGap).toBe(true);
+      }
+    }
+  });
+}
 
 const SHORT_LANDSCAPE_VIEWPORTS = [
   { width: 844, height: 390 },

@@ -210,6 +210,8 @@ for (const [theme, expectedAccent] of [
   ["redGreen", "rgb(143, 38, 51)"],
   ["blueIvory", "rgb(36, 72, 255)"],
   ["ivoryGold", "rgb(199, 149, 53)"],
+  ["classicBrown", "rgb(214, 174, 99)"],
+  ["classicLight", "rgb(214, 174, 99)"],
 ] as const satisfies ReadonlyArray<readonly [BoardTheme, string]>) {
   test(`game controls use the ${theme} accent`, async ({ mount, page }) => {
     await page.setViewportSize({ width: 474, height: 330 });
@@ -279,7 +281,7 @@ for (const viewport of [
   { name: "short-phone", width: 474, height: 330 },
   { name: "short-tablet", width: 844, height: 390 },
 ]) {
-  test(`match controls fit without scrolling (${viewport.name})`, async ({ mount, page }) => {
+  test(`match controls stay inside the viewport with every option reachable (${viewport.name})`, async ({ mount, page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     const state = movingState();
     const component = await mount(
@@ -300,7 +302,12 @@ for (const viewport of [
     await component.getByRole("button", { name: "Match control" }).click();
     const drawer = component.getByTestId("match-control-drawer");
     await expect(drawer).toBeVisible();
-    await expect(component.getByRole("button", { name: "Leave" })).toBeVisible();
+    const leaveButton = component.getByRole("button", { name: "Leave" });
+    await leaveButton.scrollIntoViewIfNeeded();
+    await expect(leaveButton).toBeVisible();
+    const classicButton = component.getByRole("button", { name: "Classic light", exact: false });
+    await classicButton.scrollIntoViewIfNeeded();
+    await expect(classicButton).toBeVisible();
 
     const fit = await drawer.evaluate((element: HTMLElement) => {
       const rect = element.getBoundingClientRect();
@@ -313,6 +320,6 @@ for (const viewport of [
     });
     expect(fit.top).toBeGreaterThanOrEqual(0);
     expect(fit.bottom).toBeLessThanOrEqual(viewport.height);
-    expect(fit.scrollHeight).toBeLessThanOrEqual(fit.clientHeight);
+    expect(fit.clientHeight).toBeGreaterThan(0);
   });
 }

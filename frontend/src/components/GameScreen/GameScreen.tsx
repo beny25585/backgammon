@@ -15,14 +15,10 @@ import {
   isBoardTheme,
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
+import { boardThemeClasses } from "../BoardThemeSelector/boardThemeClasses";
+import { useGameSounds } from "../../hooks/useGameSounds";
 
 const BOARD_THEME_STORAGE_KEY = "6b-board-theme";
-
-const themeClassByTheme: Record<BoardTheme, string> = {
-  redGreen: styles.themeRedGreen,
-  blueIvory: styles.themeBlueIvory,
-  ivoryGold: styles.themeIvoryGold,
-};
 
 function initialBoardTheme(): BoardTheme {
   const saved = window.localStorage.getItem(BOARD_THEME_STORAGE_KEY);
@@ -107,6 +103,7 @@ export default function GameScreen({
     cancelRematch,
     gameType: contextGameType,
   } = useGame();
+  const { soundEnabled, setSoundEnabled } = useGameSounds(state, roomId);
   const displayedError = (() => {
     switch (error) {
       case "room_cancelled":
@@ -321,7 +318,7 @@ export default function GameScreen({
   }
 
   return (
-    <div className={`${styles.container} ${themeClassByTheme[boardTheme]}`}>
+    <div className={`${styles.container} ${boardThemeClasses[boardTheme]}`}>
       <SamsungDarkModeHelp />
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
@@ -486,6 +483,8 @@ export default function GameScreen({
             offerDouble={offerDouble}
             boardTheme={boardTheme}
             onBoardThemeChange={setBoardTheme}
+            soundEnabled={soundEnabled}
+            onSoundEnabledChange={setSoundEnabled}
             needsToRoll={needsToRoll}
             onRoll={handleRoll}
             respondToDouble={respondToDouble}

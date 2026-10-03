@@ -20,6 +20,8 @@ interface SidePanelProps {
   timeControl?: TimeControl | null;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
+  soundEnabled?: boolean;
+  onSoundEnabledChange?: (enabled: boolean) => void;
 }
 
 function SidePanel({
@@ -31,6 +33,8 @@ function SidePanel({
   timeControl,
   boardTheme,
   onBoardThemeChange,
+  soundEnabled,
+  onSoundEnabledChange,
 }: SidePanelProps) {
   const { t } = useI18n();
   const { giveUp, whiteName, blackName, matchScore, targetPoints } = useGame();
@@ -113,7 +117,7 @@ function SidePanel({
       </div>
 
       {menuOpen && (
-        <div className={styles.menuDrawer} data-testid="match-control-drawer">
+        <div className="fixed right-[clamp(44px,7dvh,68px)] top-1/2 z-30 flex max-h-[calc(var(--app-height,100dvh)-16px)] w-[min(320px,calc(var(--app-width,100dvw)-64px))] -translate-y-1/2 flex-col gap-3 overflow-y-auto overscroll-contain rounded-lg border border-[var(--ui-accent-border)] [background:var(--ui-menu-bg,#101314)] p-3 shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
           <div className={styles.header}>
             <span className={styles.kicker}>{t("game.matchControl")}</span>
             <span
@@ -141,6 +145,17 @@ function SidePanel({
                 onChange={onBoardThemeChange}
               />
             </div>
+          )}
+          {onSoundEnabledChange && (
+            <label className="flex min-h-11 cursor-pointer items-center justify-between gap-3 rounded border border-white/15 px-3 text-sm text-white focus-within:ring-2 focus-within:ring-amber-300">
+              <span>{t("game.soundEffects")}</span>
+              <input
+                type="checkbox"
+                checked={soundEnabled ?? true}
+                onChange={(event) => onSoundEnabledChange(event.target.checked)}
+                className="size-5 accent-amber-400"
+              />
+            </label>
           )}
           <div className={styles.actions}>
             {!showGiveUp ? (

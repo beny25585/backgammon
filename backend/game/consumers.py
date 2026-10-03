@@ -650,7 +650,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 f"[roll] result success={result.get('success')} msg={result.get('message')}")
         elif action == 'move':
             result = engine.make_move(
-                intent.get('from'), intent.get('to'), self.player_color
+                intent.get('from'), intent.get('to'), self.player_color,
+                die=intent.get('die'),
             )
         elif action == 'reorder_dice':
             result = engine.reorder_dice(self.player_color)

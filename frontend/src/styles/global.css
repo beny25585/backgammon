@@ -1,3 +1,7 @@
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
 :root {
   /* Keep browser-provided controls in the same dark scheme as the application and
      signal that no automatic color conversion is needed. */

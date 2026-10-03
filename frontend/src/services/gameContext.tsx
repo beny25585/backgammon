@@ -50,6 +50,7 @@ interface PendingMove {
   action: "move";
   from: Source;
   to: Target;
+  die?: number;
   sentAt: number;
 }
 
@@ -77,13 +78,14 @@ function applyOptimisticAction(
 
 function applyOptimisticMove(
   state: GameState,
-  pending: Pick<PendingMove, "from" | "to">,
+  pending: Pick<PendingMove, "from" | "to" | "die">,
   color: Color,
 ): GameState | null {
   if (state.phase !== "moving" || state.turn !== color) return null;
 
   const matchingMoves = allLegalMoves(state, color).filter(
-    (move) => move.from === pending.from && move.to === pending.to,
+    (move) => move.from === pending.from && move.to === pending.to &&
+      (pending.die === undefined || move.die === pending.die),
   );
   const move =
     state.remaining
@@ -955,6 +957,7 @@ export function GameProvider({
         action: "move",
         from,
         to,
+        die: options?.die,
 
         // Set immediately before the real socket send below.
         // This makes acknowledgement latency measure actual post-send latency
@@ -987,6 +990,7 @@ export function GameProvider({
         action: "move",
         from,
         to,
+        ...(options?.die === undefined ? {} : { die: options.die }),
       });
 
       const sendMs = Math.round(performance.now() - sendStartedAt);

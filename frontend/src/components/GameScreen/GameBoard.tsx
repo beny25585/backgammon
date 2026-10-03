@@ -19,6 +19,7 @@ import {
   DEFAULT_BOARD_THEME,
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
+import { boardThemeClasses } from "../BoardThemeSelector/boardThemeClasses";
 
 interface GameBoardProps {
   state: GameState;
@@ -39,13 +40,9 @@ interface GameBoardProps {
   onBoardThemeChange?: (theme: BoardTheme) => void;
   noMovesMessage?: NoMovesMessage | null;
   autoConfirmPending?: boolean;
+  soundEnabled?: boolean;
+  onSoundEnabledChange?: (enabled: boolean) => void;
 }
-
-const themeClassByTheme: Record<BoardTheme, string> = {
-  redGreen: styles.themeRedGreen,
-  blueIvory: styles.themeBlueIvory,
-  ivoryGold: styles.themeIvoryGold,
-};
 
 function getGameplayKey(s: GameState): string {
   return `${s.points.join(",")}|${s.bar.white},${s.bar.black}|${s.home.white},${s.home.black}|${s.remaining.join(",")}|${s.turn}|${s.phase}|${JSON.stringify(s.lastMove)}`;
@@ -74,6 +71,8 @@ export default function GameBoard({
   onBoardThemeChange,
   noMovesMessage,
   autoConfirmPending = false,
+  soundEnabled,
+  onSoundEnabledChange,
 }: GameBoardProps) {
   const [selection, setSelection] = useState<{
     from: Source | null;
@@ -345,7 +344,7 @@ export default function GameBoard({
 
   return (
     <div
-      className={`${styles.gameFrame} ${themeClassByTheme[selectedBoardTheme]}`}
+      className={`${styles.gameFrame} ${boardThemeClasses[selectedBoardTheme]}`}
       data-testid="board-frame"
     >
       <div className={styles.boardArea}>
@@ -395,6 +394,8 @@ export default function GameBoard({
         timeControl={timeControl}
         boardTheme={boardTheme}
         onBoardThemeChange={onBoardThemeChange}
+        soundEnabled={soundEnabled}
+        onSoundEnabledChange={onSoundEnabledChange}
       />
     </div>
   );

@@ -12,6 +12,7 @@ export type GameType = "tournament" | "1v1" | "quick" | "local";
 
 export interface MakeMoveOptions {
   origin?: "forced" | "manual";
+  die?: number;
 }
 
 export interface TournamentProgress {

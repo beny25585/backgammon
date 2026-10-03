@@ -9,6 +9,51 @@ test("blue and ivory is the default board theme", () => {
   expect(DEFAULT_BOARD_THEME).toBe("blueIvory");
 });
 
+for (const [theme, label, fieldColor] of [
+  ["classicBrown", "Classic brown", "rgb(118, 81, 58)"],
+  ["classicLight", "Classic light", "rgb(237, 232, 215)"],
+] as const) {
+  test(`${theme} applies its palette and survives reopening the game`, async ({ mount, page }) => {
+    await page.evaluate(() => localStorage.removeItem("6b-board-theme"));
+    const screen = (
+      <MockGameWrapper playerColor="white" state={makeGameState({ phase: "rolling", turn: "white" })}>
+        <GameScreen />
+      </MockGameWrapper>
+    );
+    const component = await mount(screen);
+    await component.getByRole("button", { name: "Match control" }).click();
+    const option = component.getByRole("button", { name: label });
+    await option.scrollIntoViewIfNeeded();
+    await option.click();
+    await expect(option).toHaveAttribute("aria-pressed", "true");
+    await expect(component.getByTestId("board-inner")).toHaveCSS("background-color", fieldColor);
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-board-theme"))).toBe(theme);
+    await component.unmount();
+    const reopened = await mount(screen);
+    await expect(reopened.getByTestId("board-inner")).toHaveCSS("background-color", fieldColor);
+  });
+}
+
+test("game sounds can be muted and the preference survives reopening", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.removeItem("6b-game-sounds"));
+  const screen = (
+    <MockGameWrapper playerColor="white" state={makeGameState({ phase: "rolling", turn: "white" })}>
+      <GameScreen />
+    </MockGameWrapper>
+  );
+  const component = await mount(screen);
+  await component.getByRole("button", { name: "Match control" }).click();
+  const sounds = component.getByRole("checkbox", { name: "Game sounds" });
+  await sounds.scrollIntoViewIfNeeded();
+  await expect(sounds).toBeChecked();
+  await sounds.uncheck();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-game-sounds"))).toBe("false");
+  await component.unmount();
+  const reopened = await mount(screen);
+  await reopened.getByRole("button", { name: "Match control" }).click();
+  await expect(reopened.getByRole("checkbox", { name: "Game sounds" })).not.toBeChecked();
+});
+
 test("opening result shows both dice and uses the selected theme", async ({ mount, page }) => {
   await page.evaluate(() => localStorage.removeItem("6b-board-theme"));
   const component = await mount(

@@ -237,6 +237,14 @@ export function Board({
   );
   const interactionBlocked = baseInteractionBlocked || autoPointSequenceActive;
 
+  const bearOffMove = useMemo(() => {
+    if (myColor === null || state.turn !== myColor || state.phase !== "moving") return null;
+    const moves = allLegalMoves(state, myColor).filter(
+      (move) => move.to === OFF && (selected === null || move.from === selected),
+    );
+    return preferredDirectMove(moves, [...state.remaining].sort((a, b) => b - a));
+  }, [state, myColor, selected]);
+
   useEffect(() => {
     if (!flyChecker?.committed) return;
     const acknowledged =
@@ -922,12 +930,11 @@ export function Board({
           <BearOff
             state={state}
             myColor={myColor}
-            isLegalTarget={displayedTargets.includes(OFF)}
-            onClick={() =>
-              !interactionBlocked &&
-              legalTargets.includes(OFF) &&
-              triggerFly(selected ?? 0, OFF)
-            }
+            isLegalTarget={!interactionBlocked && bearOffMove !== null}
+            onClick={() => {
+              if (interactionBlocked || !bearOffMove) return;
+              triggerFly(bearOffMove.from, OFF, undefined, { die: bearOffMove.die });
+            }}
           />
         </div>
 

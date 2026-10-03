@@ -380,7 +380,7 @@ class BackgammonEngine:
             'remaining': list(opening_dice),
         }
 
-    def make_move(self, from_point, to_point, player_color):
+    def make_move(self, from_point, to_point, player_color, die=None):
         if self.state['turn'] != player_color:
             return {'success': False, 'message': 'Not your turn'}
         if self.state.get('phase') != 'moving':
@@ -393,7 +393,8 @@ class BackgammonEngine:
         to_pt = to_point
 
         moves = self.legal_moves_from(from_pt, player_color)
-        matching = [m for m in moves if m['to'] == to_pt]
+        matching = [m for m in moves if m['to'] == to_pt
+                    and (die is None or (type(die) is int and m['die'] == die))]
         if not matching:
             return {'success': False, 'message': 'Invalid move'}
 

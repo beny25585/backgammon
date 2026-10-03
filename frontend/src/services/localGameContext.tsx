@@ -528,7 +528,8 @@ export function LocalGameProvider({
       const moves = allLegalMoves(cur, cur.turn);
       const matchingMoves = moves.filter(
         (m: Move) =>
-          m.from === from && (dest === OFF ? m.to === OFF : m.to === dest),
+          m.from === from && (dest === OFF ? m.to === OFF : m.to === dest) &&
+          (options?.die === undefined || m.die === options.die),
       );
       const match =
         cur.remaining

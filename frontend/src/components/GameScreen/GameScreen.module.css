@@ -28,11 +28,7 @@
 }
 
 /* === Board + Side Panel outer frame === */
-.gameFrame {
-  --bearoff-control-right: calc(
-    clamp(1px, 0.22vw, 3px) + clamp(7px, 0.7vw, 11px) +
-      clamp(8px, 0.9vw, 13px) + 3px
-  );
+.defaultTheme {
   --lux-case-bg:
     linear-gradient(
       90deg,
@@ -186,6 +182,13 @@
     180deg,
     rgba(31, 11, 14, 0.98),
     rgba(10, 7, 8, 0.99)
+  );
+}
+
+.gameFrame {
+  --bearoff-control-right: calc(
+    clamp(1px, 0.22vw, 3px) + clamp(7px, 0.7vw, 11px) +
+      clamp(8px, 0.9vw, 13px) + 3px
   );
   position: relative;
   display: grid;

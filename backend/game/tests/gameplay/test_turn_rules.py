@@ -73,6 +73,20 @@ class TurnRulesTests(TestCase):
             self.assertTrue(engine.make_move(0, 'off', 'white')['success'])
             self.assertEqual(engine.state['remaining'], [dice[1]])
 
+    def test_explicit_bearoff_die_is_used_for_both_colors(self):
+        for color in ['white', 'black']:
+            engine = self.position({0: 2}, dice=(1, 2), color=color)
+            source = 0 if color == 'white' else 23
+            self.assertTrue(engine.make_move(source, 'off', color, die=2)['success'])
+            self.assertEqual(engine.state['remaining'], [1])
+
+    def test_explicit_bearoff_die_must_be_a_legal_integer(self):
+        for die in [6, '2', True, 2.0]:
+            engine = self.position({0: 2}, dice=(1, 2))
+            before = deepcopy(engine.state)
+            self.assertFalse(engine.make_move(0, 'off', 'white', die=die)['success'])
+            self.assertEqual(engine.state, before)
+
     def test_doubles_require_all_four_moves_when_available(self):
         engine = self.position({8: 1}, dice=(2, 2, 2, 2))
         for source in [8, 6, 4, 2]:
