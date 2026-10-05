@@ -58,7 +58,7 @@ export function writePerformanceReport(runDir) {
   const report = {
     acceptance: evaluatePerformance(summary, scenario),
     scope: runtime.profile === 'server-rehearsal'
-      ? 'Browser load from this PC through public host Nginx HTTPS to R2 server images and copied PostgreSQL databases. ACK timings include this network connection. Server log samples are not collected by this browser runner.'
+      ? 'Browser load from this PC through public host Nginx HTTPS to R2 server images and fresh browser PostgreSQL databases. ACK timings include this network connection. Server log samples are not collected by this browser runner.'
       : 'This machine and isolated databases; no production capacity guarantee. Slow DB log samples are threshold-selected.',
     playerCount: scenario.players, recoveryChecks: scenario.recoveryChecks,
     websocketDatabaseWorkersObserved: [...databaseWorkers].filter(Number.isFinite),

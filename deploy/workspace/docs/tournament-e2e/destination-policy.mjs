@@ -8,6 +8,16 @@ export function runtimeOrigins(runtime) {
     || runtime.database_mode !== 'postgresql')) {
     throw new Error('Remote browser runs require the prepared PostgreSQL rehearsal identity.')
   }
+  if (remote) {
+    const context = runtime.remote_target.database_context
+    const suffix = runtime.remote_target.session_id.slice(0, 12)
+    if (context?.purpose !== 'browser-e2e'
+      || context.databases?.game !== `backgammon_game_e2e_${suffix}`
+      || context.databases?.tournaments !== `backgammon_tournaments_e2e_${suffix}`
+      || context.redis_databases?.game !== 8 || context.redis_databases?.tournaments !== 9) {
+      throw new Error('Remote browser runs require the fresh browser database context.')
+    }
+  }
   return new Set(['game', 'tournament'].map(key => {
     const url = new URL(runtime.urls[key])
     if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash

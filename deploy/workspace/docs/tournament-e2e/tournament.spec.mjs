@@ -43,7 +43,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     playerCount: scenario.players, recoveryChecks: scenario.recoveryChecks,
     targetSession: runtime.remote_target?.session_id ?? null,
     scope: runtime.profile === 'server-rehearsal'
-      ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; copied PostgreSQL databases.'
+      ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; fresh browser PostgreSQL databases.'
       : 'Disposable local HTTPS; signup/login/registration/admission through UI; legal gameplay over the UI real WebSocket.',
     adminSetup: 'Seeded administrator; tournament creation and scheduled start use authenticated APIs, not admin UI.',
     dice: 'Real configured dice service; no board/result/score injection.',

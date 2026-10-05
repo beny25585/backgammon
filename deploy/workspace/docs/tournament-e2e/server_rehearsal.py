@@ -11,6 +11,8 @@ import subprocess
 import time
 import uuid
 
+from rehearsal_context import fresh_database_context, require_fresh_database_context
+
 PROJECT = 'backgammon-rehearsal-20261005t184922z'
 HOST = '38.247.146.17.nip.io'
 ORIGIN = f'https://{HOST}:18443'
@@ -67,7 +69,7 @@ def harness_inventory(tools):
     return files, digest.hexdigest()
 
 
-def refresh_prepared_harness(state, tools, session):
+def refresh_prepared_harness(state, tools, session, context_change=False):
     # A reviewed tool fix can resume this same stopped session without rebuilding images.
     require(not CONF.exists(), 'Do not update a harness while its test listener is installed')
     client_file = state / 'server-client.json'
@@ -76,7 +78,8 @@ def refresh_prepared_harness(state, tools, session):
         require(file.is_file() and not file.is_symlink(), 'Missing or unsafe prepared artifact')
     client = json.loads(client_file.read_text())
     def core(identity):
-        return {key: value for key, value in identity.items() if key != 'harness_sha256'}
+        ignored = ('harness_sha256', 'database_context') if context_change else ('harness_sha256',)
+        return {key: value for key, value in identity.items() if key not in ignored}
     require(core(client['identity']) == core(session['identity'])
             and core(json.loads(identity_file.read_text())) == core(session['identity'])
             and client['admin'] == session['admin'], 'Prepared artifacts belong to a different session')
@@ -93,6 +96,109 @@ def refresh_prepared_harness(state, tools, session):
     public = Path('/var/lib/backgammon-e2e') / session['identity']['session_id']
     run(['sudo', 'install', '-m', '0644', identity_file, public / 'identity.json'])
     print('Prepared harness identity refreshed; download server-client.json again before a browser run.')
+
+
+def verify_existing_app_identities(session, stopped=False):
+    for service in APPS + WORKERS:
+        exists = docker('ps', '-aq', '--filter', f'label=com.docker.compose.project={PROJECT}',
+                        '--filter', f'label=com.docker.compose.service={service}', capture=True)
+        if exists:
+            value = inspect(service)
+            require(value['project'] == PROJECT and value['service'] == service
+                    and value['image'] == session['identity']['images'][SERVICES[service]],
+                    'Existing rehearsal container belongs to a different release')
+            if stopped:
+                require(value['status'] in ('created', 'exited'), 'Stop rehearsal applications before fresh-databases')
+
+
+def postgres_query(database, sql):
+    return docker('exec', '--user', 'postgres', PROJECT + '-postgres-1', 'psql', '-X', '-At',
+                  '-U', 'postgres', '-d', database, '-v', 'ON_ERROR_STOP=1', '-c', sql, capture=True)
+
+
+def fresh_databases(args, state, tools, session):
+    require(not CONF.exists(), 'Stop the test listener before fresh-databases')
+    verify_existing_app_identities(session, stopped=True)
+    for service in ('postgres', 'redis'):
+        value = inspect(service)
+        require(value['project'] == PROJECT and value['service'] == service
+                and value['status'] == 'running' and value['health'] == 'healthy',
+                'Existing rehearsal infrastructure is not healthy')
+    context = fresh_database_context(session['identity']['session_id'])
+    plan = {'session_id': session['identity']['session_id'], 'database_context': context}
+    plan_file = state / 'fresh-databases.json'
+
+    def catalog(name):
+        result = postgres_query('postgres',
+            "SELECT json_build_object('owner', pg_get_userbyid(datdba), "
+            "'marker', shobj_description(oid, 'pg_database')) "
+            f"FROM pg_database WHERE datname = '{name}'")
+        return json.loads(result) if result else None
+
+    for kind in ('game', 'tournaments'):
+        role = 'backgammon_' + kind
+        result = postgres_query('postgres', "SELECT json_build_object('login', rolcanlogin, "
+            "'superuser', rolsuper, 'createdb', rolcreatedb, 'createrole', rolcreaterole) "
+            f"FROM pg_roles WHERE rolname = '{role}'")
+        require(result and json.loads(result) == {'login': True, 'superuser': False,
+                                                  'createdb': False, 'createrole': False},
+                'Expected existing unprivileged rehearsal database roles')
+    if plan_file.exists():
+        require(not plan_file.is_symlink() and json.loads(plan_file.read_text()) == plan,
+                'Fresh database plan belongs to another session')
+        require(all(file.is_file() and not file.is_symlink() for file in (
+            state / 'session.before-fresh.json', state / 'compose.e2e.before-fresh.json')),
+            'Fresh database plan is missing its original configuration backups')
+    else:
+        for name in context['databases'].values():
+            require(catalog(name) is None, 'Refusing to adopt an existing unmarked test database')
+        for index in context['redis_databases'].values():
+            require(docker('exec', PROJECT + '-redis-1', 'redis-cli', '-n', str(index), 'DBSIZE',
+                           capture=True) == '0', 'Selected browser Redis database is already in use')
+        backups = {state / 'session.before-fresh.json': session,
+                   state / 'compose.e2e.before-fresh.json': json.loads((state / 'compose.e2e.json').read_text())}
+        for file, original in backups.items():
+            if file.exists():
+                require(file.is_file() and not file.is_symlink() and json.loads(file.read_text()) == original,
+                        'An interrupted preparation has different configuration backups')
+            else:
+                write(file, original)
+        # Record the two reserved names before creating either database, for interrupted retries.
+        write(plan_file, plan)
+    for kind, name in context['databases'].items():
+        role = 'backgammon_' + kind
+        marker = f'backgammon-browser-e2e:{plan["session_id"]}:{kind}'
+        existing = catalog(name)
+        if existing is None:
+            postgres_query('postgres', f'CREATE DATABASE "{name}" OWNER "{role}" TEMPLATE template0')
+            existing = catalog(name)
+        require(existing['owner'] == role and existing['marker'] in (None, marker),
+                'Test database ownership or session marker changed')
+        if existing['marker'] is None:
+            require(postgres_query(name, "SELECT count(*) FROM information_schema.tables "
+                "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'") == '0',
+                'An unmarked database contains tables; refusing to adopt it')
+            postgres_query('postgres', f"COMMENT ON DATABASE \"{name}\" IS '{marker}'")
+        postgres_query('postgres', f'REVOKE ALL ON DATABASE "{name}" FROM PUBLIC')
+    overrides = json.loads((state / 'compose.e2e.json').read_text())
+    for service, values in overrides['services'].items():
+        if service.startswith(('game-', 'tournaments-')) and service not in ('game-frontend', 'tournaments-frontend'):
+            kind = 'game' if service.startswith('game-') else 'tournaments'
+            values['environment'].update(DB_NAME=context['databases'][kind],
+                REDIS_URL=f'redis://redis:6379/{context["redis_databases"][kind]}')
+            module = {'type': 'bind', 'source': str(tools / 'rehearsal_context.py'),
+                      'target': '/opt/e2e/rehearsal_context.py', 'read_only': True}
+            if module not in values['volumes']:
+                values['volumes'].append(module)
+    (state / 'compose.e2e.json').write_text(json.dumps(overrides, indent=2) + '\n', encoding='utf-8')
+    session['identity']['database_context'] = context
+    refresh_prepared_harness(state, tools, session, context_change=True)
+    verify_config(args, state)
+    # Remove only stopped app containers so their replacement reads the new DB_NAME/REDIS_URL.
+    # No volume is removed, and PostgreSQL/Redis are not included in this command.
+    compose(args, state, 'rm', '-f', *WORKERS, *APPS)
+    print(json.dumps(context, indent=2))
+    print('Fresh browser database context prepared. Copied databases, snapshots and existing infrastructure preserved.')
 
 
 def prepare(args, state, tools):
@@ -274,7 +380,7 @@ def compose(args, state, *command, capture=False):
                 '-f', args.rehearsal / 'compose.override.yaml', '-f', state / 'compose.e2e.json', *command], capture=capture)
 
 
-def verify_config(args, state):
+def verify_config(args, state, database_transition=False):
     config = json.loads(compose(args, state, 'config', '--format', 'json', capture=True))
     require(config['name'] == PROJECT and config['networks']['application']['internal'] is True,
             'Expected the isolated copied rehearsal project')
@@ -283,51 +389,49 @@ def verify_config(args, state):
     session = json.loads((state / 'session.json').read_text())
     require(session['project_dir'] == str(args.project) and session['rehearsal_dir'] == str(args.rehearsal),
             'Session paths differ from the prepared target')
+    context = session['identity'].get('database_context')
+    if context is not None:
+        require_fresh_database_context(session['identity'])
+    planned = fresh_database_context(session['identity']['session_id']) if database_transition else None
     for service, image in SERVICES.items():
         require(config['services'][service]['image'] == session['identity']['images'][image], 'Application image differs from verified R2')
         if service.startswith(('game-', 'tournaments-')) and service not in ('game-frontend', 'tournaments-frontend'):
             env = config['services'][service]['environment']
             kind = 'game' if service.startswith('game-') else 'tournaments'
-            require(env['DB_HOST'] == 'postgres' and env['DB_NAME'] == 'backgammon_' + kind,
-                    'Application database is outside the copied rehearsal')
+            expected = context['databases'][kind] if context else 'backgammon_' + kind
+            names = {expected, 'backgammon_' + kind, planned['databases'][kind]} if planned else {expected}
+            expected_redis = f'redis://redis:6379/{context["redis_databases"][kind]}' if context else f'redis://redis:6379/{0 if kind == "game" else 1}'
+            redis_urls = {expected_redis, f'redis://redis:6379/{planned["redis_databases"][kind]}'} if planned else {expected_redis}
+            require(env['DB_HOST'] == 'postgres' and env['DB_NAME'] in names
+                    and env['DB_USER'] == 'backgammon_' + kind and env['REDIS_URL'] in redis_urls,
+                    'Application database/cache is outside the prepared rehearsal')
             key = 'GAMELINK_TOURNAMENTS_URL' if kind == 'game' else 'GAMELINK_BACKGAMMON_URL'
             require(env[key] == ORIGIN, 'Callback origin differs from the test Nginx listener')
     return session
 
 
 def verify_live(session):
+    context = require_fresh_database_context(session['identity'])
     for service in APPS + WORKERS:
         state = inspect(service)
         require(state['project'] == PROJECT and state['service'] == service and state['status'] == 'running'
                 and state['image'] == session['identity']['images'][SERVICES[service]], f'Wrong running container: {service}')
         if service in APPS:
             require(state['health'] == 'healthy', f'Unhealthy application: {service}')
-
-
-def game_startup_probe():
-    # During bootstrap only, a responding API can drain its copied outbox after workers start.
-    # A 500, connection failure, or malformed body must never pass as a delivery backlog.
-    code = '''import json
-from urllib.error import HTTPError
-from urllib.request import urlopen
-try:
-    try:
-        response = urlopen('http://localhost:8000/api/health/', timeout=5)
-    except HTTPError as error:
-        response = error
-    with response:
-        status_code = response.code
-        payload = json.loads(response.read(1024))
-    print(json.dumps({'code': status_code, 'status': payload.get('status')}))
-except (OSError, ValueError, AttributeError) as error:
-    print(json.dumps({'code': 0, 'status': type(error).__name__}))
-'''
-    return json.loads(docker('exec', PROJECT + '-game-api-1', 'python', '-c', code, capture=True))
+        if service in ('game-api', 'game-tasks', 'tournaments-api', 'tournaments-tasks'):
+            kind = 'game' if service.startswith('game-') else 'tournaments'
+            values = json.loads(docker('inspect', PROJECT + '-' + service + '-1', '--format',
+                                       '{{json .Config.Env}}', capture=True))
+            selected = {key: value for key, value in (item.split('=', 1) for item in values)
+                        if key in ('DB_HOST', 'DB_NAME', 'DB_USER', 'REDIS_URL')}
+            require(selected == {'DB_HOST': 'postgres', 'DB_NAME': context['databases'][kind],
+                                 'DB_USER': 'backgammon_' + kind,
+                                 'REDIS_URL': f'redis://redis:6379/{context["redis_databases"][kind]}'},
+                    'Running container uses a different database/cache context: ' + service)
 
 
 def wait_application_health(session, deadline, bootstrap=False):
     services = APPS if bootstrap else APPS + WORKERS
-    backlog_logged = False
     while True:
         pending = {}
         for service in services:
@@ -339,13 +443,6 @@ def wait_application_health(session, deadline, bootstrap=False):
                 pending[service] = value['status']
             elif service in APPS and value['health'] != 'healthy':
                 pending[service] = value['health']
-                if bootstrap and service == 'game-api':
-                    probe = game_startup_probe()
-                    if (probe['code'], probe['status']) in ((200, 'ok'), (503, 'degraded')):
-                        del pending[service]
-                        if probe['status'] == 'degraded' and not backlog_logged:
-                            print('Game API responds with a delivery backlog; strict health is required after normal workers start.')
-                            backlog_logged = True
         if not pending:
             return
         require(time.monotonic() < deadline, 'Application health timeout: ' + json.dumps(pending))
@@ -418,7 +515,7 @@ def restore_monitoring(state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'stop'))
+    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'stop'))
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--rehearsal', required=True, type=Path)
     parser.add_argument('--summary', type=Path)
@@ -431,7 +528,10 @@ def main():
     if args.action == 'prepare':
         prepare(args, state, tools)
         return
-    session = verify_config(args, state)
+    session = verify_config(args, state, database_transition=args.action == 'fresh-databases')
+    if args.action == 'fresh-databases':
+        fresh_databases(args, state, tools, session)
+        return
     if args.action == 'finish-prepare':
         finish_prepare(args, state, tools, session)
         return
@@ -439,15 +539,9 @@ def main():
         restore_monitoring(state)
         return
     if args.action == 'start':
+        require_fresh_database_context(session['identity'])
         require(not CONF.exists(), 'Test listener is already installed; use check instead of starting twice')
-        for service in APPS + WORKERS:
-            exists = docker('ps', '-aq', '--filter', f'label=com.docker.compose.project={PROJECT}',
-                            '--filter', f'label=com.docker.compose.service={service}', capture=True)
-            if exists:
-                old = inspect(service)
-                require(old['project'] == PROJECT and old['service'] == service
-                        and old['image'] == session['identity']['images'][SERVICES[service]],
-                        'Existing rehearsal container belongs to a different release')
+        verify_existing_app_identities(session)
         # Retry a partially completed setup only within this pinned rehearsal.
         compose(args, state, 'stop', *WORKERS, *APPS)
         refresh_prepared_harness(state, tools, session)

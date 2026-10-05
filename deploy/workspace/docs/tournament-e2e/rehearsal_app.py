@@ -8,6 +8,8 @@ import time
 import uuid
 from decimal import Decimal
 
+from rehearsal_context import require_fresh_database_context
+
 
 def require(condition, message):
     if not condition:
@@ -24,6 +26,7 @@ def main():
     require(kind in ('game', 'tournaments'), 'Unknown rehearsal service')
     session = json.loads(Path('/opt/e2e/session.json').read_text())
     target = session['identity']
+    context = require_fresh_database_context(target)
     require(target['project'] == 'backgammon-rehearsal-20261005t184922z'
             and target['origin'] == 'https://38.247.146.17.nip.io:18443', 'Unexpected test target')
     sys.path.insert(0, os.getcwd())
@@ -35,8 +38,14 @@ def main():
     from django.db.migrations.executor import MigrationExecutor
     database = connection.settings_dict
     require(connection.vendor == 'postgresql' and database['HOST'] == 'postgres'
-            and database['NAME'] == f'backgammon_{kind}' and database['USER'] == f'backgammon_{kind}',
-            'Operation refuses any database outside the copied rehearsal')
+            and database['NAME'] == context['databases'][kind] and database['USER'] == f'backgammon_{kind}',
+            'Operation refuses any database outside the fresh browser rehearsal')
+    expected_redis = f'redis://redis:6379/{context["redis_databases"][kind]}'
+    layer = settings.CHANNEL_LAYERS['default']
+    hosts = [item.get('address') if isinstance(item, dict) else item for item in layer['CONFIG']['hosts']]
+    require(os.environ.get('REDIS_URL') == expected_redis
+            and layer['BACKEND'] == 'channels_redis.core.RedisChannelLayer' and hosts == [expected_redis],
+            'Unexpected browser Redis channel configuration')
     require(not settings.DEBUG, 'DEBUG must be disabled')
     require(not MigrationExecutor(connection).migration_plan(MigrationExecutor(connection).loader.graph.leaf_nodes()),
             'Pending rehearsal migrations')
@@ -78,7 +87,7 @@ def main():
             cursor.execute('SET TRANSACTION READ ONLY')
         if action == 'baseline':
             from django.db.models import Max
-            save(baseline_file, {'session_id': target['session_id'], 'tasks': task_state(),
+            save(baseline_file, {'session_id': target['session_id'], 'database': database['NAME'], 'tasks': task_state(),
                                 'max_user_id': User.objects.aggregate(value=Max('id'))['value'] or 0})
             print(f'{kind}: private task baseline captured; PostgreSQL context verified.')
             return
@@ -92,10 +101,12 @@ def main():
         require(len(matches) == expected, 'Incomplete browser fixture coverage')
         baseline = json.loads(baseline_file.read_text())
         require(baseline['session_id'] == target['session_id'], 'Wrong private baseline')
+        require(baseline.get('database') == database['NAME'], 'Baseline belongs to a different database')
         changed_errors = [task_id for task_id, state in task_state().items()
                           if (state['error_hash'] or state['status'] in ('failed', 'blocked'))
                           and state != baseline['tasks'].get(task_id)]
         report = {'kind': kind, 'session_id': target['session_id'], 'run_id': summary['runId'],
+                  'database': database['NAME'],
                   'tournament_id': tournament_id, 'changed_task_failures': changed_errors,
                   'baseline_error_tasks': sum(bool(row['error_hash']) for row in baseline['tasks'].values())}
         require(not changed_errors, 'New or changed background task failures; inspect private baseline and logs')
