@@ -159,6 +159,7 @@ def run_task(task_id):
             retry,
             blocked,
             exc,
+            exc_info=True,
         )
 
         return False

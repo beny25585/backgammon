@@ -21,7 +21,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.http import HttpResponseRedirect
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, renderer_classes
@@ -36,9 +36,26 @@ from game.models import GameRoom, GameState, RoomPlayer, generate_room_code
 
 from .identity import resolve_user
 from .models import RedeemedTicket, TournamentLink
-from .signing import TicketError, redact, verify_command_signature, verify_ticket
+from .signing import TicketError, verify_command_signature, verify_ticket
 
 logger = logging.getLogger(__name__)
+
+
+def _entry_log(request, event, *, ticket=None, room=None, color=None,
+               reason='-', error=None, missing_colors=(), missing_seats=(), user_id=None):
+    """Only verified identifiers and fixed reasons; never credential contents."""
+    ticket = ticket or {}
+    log = logger.warning if event == 'game_entry_refused' else logger.info
+    log(
+        'event=%s request_id=%s tournament_id=%s fixture_id=%s room_id=%s '
+        'seat=%s color=%s user_id=%s reason=%s error_type=%s missing_colors=%s missing_seats=%s',
+        event, getattr(request, 'incident_request_id', '-'), ticket.get('trn', '-'),
+        ticket.get('fix', '-'), room.pk if room is not None else '-',
+        ticket.get('seat', '-'), color or '-', user_id or '-', reason,
+        type(error).__name__ if error is not None else '-',
+        ','.join(missing_colors) or '-',
+        ','.join(missing_seats) or '-',
+    )
 
 
 def tournaments_frontend_url():
@@ -76,26 +93,30 @@ def enter_link(request):
     has no session yet — establishing one is what this endpoint does. Nothing in it ever reads
     `request.user`.
     """
+    request.incident_request_id = uuid.uuid4().hex
+    room = None
     if not settings.GAMELINK_ENABLED:
         # Invisible rather than merely refusing: a deployment that does not link tournaments
         # should not advertise that it could.
-        logger.info("link enter refused: feature disabled")
+        _entry_log(request, 'game_entry_refused', reason='feature_disabled')
         return Response({'error': 'Not found'}, status=status.HTTP_404_NOT_FOUND)
 
     try:
         ticket = verify_ticket(request.GET.get('ticket', ''))
     except TicketError as exc:
-        logger.warning(f"link enter rejected: {redact(exc)}")
+        reason = 'ticket_expired' if str(exc) == 'ticket has expired' else 'invalid_ticket'
+        _entry_log(request, 'game_entry_refused', reason=reason, error=exc)
         return Response({'error': 'This link is not valid.'}, status=status.HTTP_400_BAD_REQUEST)
 
     frontend_url = settings.GAMELINK_FRONTEND_URL.rstrip('/')
     if not frontend_url:
-        logger.error(
-            "link enter failed: GAMELINK_FRONTEND_URL is not configured")
+        _entry_log(request, 'game_entry_refused', ticket=ticket, reason='frontend_url_missing')
         return Response({'error': 'This link is not valid.'}, status=status.HTTP_400_BAD_REQUEST)
 
     issuer = ticket['iss']
     seat = ticket['seat']
+    missing_colors = ()
+    missing_seats = ()
 
     try:
         with transaction.atomic():
@@ -144,35 +165,52 @@ def enter_link(request):
 
             # An existing seat is kept as it is: a player who clicks the link again keeps the
             # colour they already have, whatever the new ticket says.
-            seated, _ = RoomPlayer.objects.get_or_create(
+            seated, seat_created = RoomPlayer.objects.get_or_create(
                 room=room, player=player, defaults={'color': color})
             started = _start_if_full(room)
+            if seat_created and room.status == 'waiting':
+                present_colors = set(room.players.values_list('color', flat=True))
+                missing_colors = sorted({'white', 'black'} - present_colors)
+                missing_seats = [value for value in ('p1', 'p2')
+                                 if link.color_for_seat(value) in missing_colors]
     except _ActiveRoom as conflict:
+        _entry_log(request, 'game_entry_refused', ticket=ticket,
+                   room=conflict.room, reason='another_active_room', error=conflict)
         if 'text/html' in request.headers.get('Accept', ''):
             room = conflict.room
             color = RoomPlayer.objects.get(room=room, player=player).color
             return _handoff(user, room, color, frontend_url, conflict=True)
         return Response({'error': 'יש לך כבר משחק פעיל. יש לחזור אליו לפני פתיחת משחק נוסף.'}, status=409)
-    except _AlreadyRedeemed:
-        logger.warning(
-            f"link enter rejected: ticket already redeemed jti={ticket['jti']}")
+    except _AlreadyRedeemed as exc:
+        _entry_log(request, 'game_entry_refused', ticket=ticket, reason='ticket_already_redeemed', error=exc)
         return Response(
             {'error': 'This link has already been used. Return to the tournament and open it again.'},
             status=status.HTTP_409_CONFLICT)
     except _SeatTaken as taken:
-        logger.warning(
-            f"link enter rejected: seat {taken.color} of fixture {ticket['fix']} is already held "
-            f"by another player")
+        _entry_log(request, 'game_entry_refused', ticket=ticket, room=room,
+                   color=taken.color, reason='seat_owned_by_another_player', error=taken)
         return Response(
             {'error': 'That seat has already been taken by another player.'},
             status=status.HTTP_409_CONFLICT)
-    except _RoomClosed:
-        logger.info(
-            f"link enter rejected: fixture {ticket['fix']} is already closed")
+    except _RoomClosed as exc:
+        _entry_log(request, 'game_entry_refused', ticket=ticket, room=room,
+                   reason='room_closed', error=exc)
         return Response(
             {'error': 'This match has already ended.'},
             status=status.HTTP_409_CONFLICT)
+    except DatabaseError as exc:
+        reason = 'database_locked' if 'locked' in str(exc).lower() else 'database_error'
+        _entry_log(request, 'game_entry_refused', ticket=ticket, room=room,
+                   reason=reason, error=exc)
+        raise
+    _entry_log(request, 'game_entry_seated', ticket=ticket, room=room,
+               color=seated.color, user_id=user.pk)
+    if missing_colors:
+        _entry_log(request, 'game_start_waiting', ticket=ticket, room=room,
+                   color=seated.color, reason='missing_opponent_seat',
+                   missing_colors=missing_colors, missing_seats=missing_seats)
     if started:
+        _entry_log(request, 'game_started', ticket=ticket, room=room, color=seated.color)
         # The room starts when the second seat is filled, not when that player's socket opens,
         # which is what wakes the first player out of the waiting room.
         channel_layer = get_channel_layer()

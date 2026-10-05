@@ -48,9 +48,10 @@ def get_user_id_from_token(token):
 
 
 @database_sync_to_async
-def get_room(room_id):
+def get_room(room_id, *, with_link=False):
     try:
-        return GameRoom.objects.get(id=uuid.UUID(room_id))
+        rooms = GameRoom.objects.select_related('tournament_link') if with_link else GameRoom.objects
+        return rooms.get(id=uuid.UUID(str(room_id)))
     except (GameRoom.DoesNotExist, ValueError):
         return None
 
@@ -150,6 +151,21 @@ class GameConsumer(AsyncWebsocketConsumer):
     # auto-starts the next game of the match.
     NEXT_GAME_DELAY = 30.0
 
+    def _socket_entry_event(self, event, *, reason='-', error=None):
+        try:
+            room_id = str(uuid.UUID(str(getattr(self, 'room_id', ''))))
+        except (ValueError, TypeError, AttributeError):
+            room_id = 'invalid'
+        log = logger.warning if event == 'socket_auth_refused' else logger.info
+        log(
+            'event=%s connection_id=%s tournament_id=%s fixture_id=%s room_id=%s '
+            'user_id=%s color=%s reason=%s error_type=%s',
+            event, getattr(self, 'incident_connection_id', '-'),
+            getattr(self, 'linked_tournament_id', '-'), getattr(self, 'linked_fixture_id', '-'),
+            room_id, getattr(self, 'user_id', '-'), getattr(self, 'player_color', '-') or '-',
+            reason, type(error).__name__ if error is not None else '-',
+        )
+
     async def room_expired(self, event):
         await self.send(json.dumps({'type': 'room_expired', 'payload': {'reason': 'entry_timeout'}}))
         await self.close(code=4004)
@@ -200,23 +216,21 @@ class GameConsumer(AsyncWebsocketConsumer):
                 )
 
     async def connect(self):
+        self.incident_connection_id = uuid.uuid4().hex
+        self.room_id = self.scope.get('url_route', {}).get('kwargs', {}).get('room_id')
         # Validate JWT from query string
         query_string = self.scope.get('query_string', b'').decode()
         params = parse_qs(query_string)
         token = params.get('token', [None])[0]
 
         if not token:
-            logger.warning(
-                "WS connect rejected (4001): missing token",
-                extra={"room_id": self.scope.get("url_route", {}).get(
-                    "kwargs", {}).get("room_id")},
-            )
+            self._socket_entry_event('socket_auth_refused', reason='missing_token')
             await self.close(code=4001)
             return
 
         self.user_id = get_user_id_from_token(token)
         if not self.user_id:
-            logger.warning("WS connect rejected (4001): invalid token")
+            self._socket_entry_event('socket_auth_refused', reason='invalid_token')
             await self.close(code=4001)
             return
 
@@ -225,17 +239,20 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Validate room and user assignment BEFORE accepting
         try:
-            room = await get_room(self.room_id)
+            room = await get_room(self.room_id, with_link=True)
             if not room:
-                logger.warning(
-                    f"WS connect rejected (4004): room not found room={self.room_id}")
+                self._socket_entry_event('socket_auth_refused', reason='room_not_found')
                 await self.close(code=4004)
                 return
 
+            link = getattr(room, 'tournament_link', None)
+            if link is not None:
+                self.linked_tournament_id = link.tournament_id
+                self.linked_fixture_id = link.fixture_id
+
             self.player_color = await get_room_player_color(self.room_id, self.user_id)
             if not self.player_color:
-                logger.warning(
-                    f"WS connect rejected (4003): user {self.user_id} not assigned to room {self.room_id}")
+                self._socket_entry_event('socket_auth_refused', reason='user_not_assigned_to_room')
                 await self.close(code=4003)
                 return
 
@@ -282,6 +299,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             if not state_data:
                 logger.warning(f"Empty state_data for room {self.room_id}")
         except Exception as exc:
+            self._socket_entry_event('socket_auth_refused', reason='connection_setup_failed', error=exc)
             logger.exception("WS connect failed", extra={
                              "room_id": self.room_id})
             await self.close()
@@ -293,6 +311,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
         await self.accept()
+        self._socket_entry_event('socket_joined')
 
         # Track connected user
         if self.room_group_name not in _connected_users:

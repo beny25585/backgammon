@@ -1350,12 +1350,15 @@ class DeliveryRetryTests(ResultTestBase):
 
 @link_settings
 class AbandonedFixtureTests(ResultTestBase):
-    """Expiry of a linked room — plan §9 decision 2, answered as auto-forfeit."""
+    """Legacy cleanup of direct-play links, whose expiry the game server owns."""
 
     def setUp(self):
         super().setUp()
         self.room.status = "waiting"
         self.room.save(update_fields=["status"])
+        self.link.tournament_id = 0
+        self.link.fixture_id = -482
+        self.link.save(update_fields=["tournament_id", "fixture_id"])
 
     def age(self, room=None, minutes=90):
         room = room or self.room

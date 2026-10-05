@@ -62,6 +62,8 @@ DATABASES = {
     'default': dj_database_url.parse(config('DATABASE_URL', default='sqlite:///db.sqlite3'))
 
 }
+if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
+    DATABASES['default']['ENGINE'] = 'game.db.backends.sqlite3'
 
 AUTH_PASSWORD_VALIDATORS = []
 
