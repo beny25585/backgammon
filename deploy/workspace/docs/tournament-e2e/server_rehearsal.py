@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import secrets
 import subprocess
+import time
 import uuid
 
 PROJECT = 'backgammon-rehearsal-20261005t184922z'
@@ -64,6 +65,34 @@ def harness_inventory(tools):
         digest.update((name + '\0').encode())
         digest.update((tools / name).read_bytes())
     return files, digest.hexdigest()
+
+
+def refresh_prepared_harness(state, tools, session):
+    # A reviewed tool fix can resume this same stopped session without rebuilding images.
+    require(not CONF.exists(), 'Do not update a harness while its test listener is installed')
+    client_file = state / 'server-client.json'
+    identity_file = state / 'identity.json'
+    for file in (client_file, identity_file, state / 'session.json'):
+        require(file.is_file() and not file.is_symlink(), 'Missing or unsafe prepared artifact')
+    client = json.loads(client_file.read_text())
+    def core(identity):
+        return {key: value for key, value in identity.items() if key != 'harness_sha256'}
+    require(core(client['identity']) == core(session['identity'])
+            and core(json.loads(identity_file.read_text())) == core(session['identity'])
+            and client['admin'] == session['admin'], 'Prepared artifacts belong to a different session')
+    engine = state / 'engine/engine.js'
+    require(engine.is_file() and not engine.is_symlink()
+            and hashlib.sha256(engine.read_bytes()).hexdigest() == session['identity']['engine_sha256'],
+            'Prepared engine differs from the pinned build')
+    session['harness_files'], session['identity']['harness_sha256'] = harness_inventory(tools)
+    (state / 'session.json').write_text(json.dumps(session, indent=2) + '\n', encoding='utf-8')
+    identity_file.write_text(json.dumps(session['identity'], indent=2) + '\n', encoding='utf-8')
+    client_file.write_text(json.dumps({'identity': session['identity'], 'admin': session['admin'],
+                                      'harness_files': session['harness_files']}, indent=2) + '\n', encoding='utf-8')
+    client_file.chmod(0o600)
+    public = Path('/var/lib/backgammon-e2e') / session['identity']['session_id']
+    run(['sudo', 'install', '-m', '0644', identity_file, public / 'identity.json'])
+    print('Prepared harness identity refreshed; download server-client.json again before a browser run.')
 
 
 def prepare(args, state, tools):
@@ -275,6 +304,54 @@ def verify_live(session):
             require(state['health'] == 'healthy', f'Unhealthy application: {service}')
 
 
+def game_startup_probe():
+    # During bootstrap only, a responding API can drain its copied outbox after workers start.
+    # A 500, connection failure, or malformed body must never pass as a delivery backlog.
+    code = '''import json
+from urllib.error import HTTPError
+from urllib.request import urlopen
+try:
+    try:
+        response = urlopen('http://localhost:8000/api/health/', timeout=5)
+    except HTTPError as error:
+        response = error
+    with response:
+        status_code = response.code
+        payload = json.loads(response.read(1024))
+    print(json.dumps({'code': status_code, 'status': payload.get('status')}))
+except (OSError, ValueError, AttributeError) as error:
+    print(json.dumps({'code': 0, 'status': type(error).__name__}))
+'''
+    return json.loads(docker('exec', PROJECT + '-game-api-1', 'python', '-c', code, capture=True))
+
+
+def wait_application_health(session, deadline, bootstrap=False):
+    services = APPS if bootstrap else APPS + WORKERS
+    backlog_logged = False
+    while True:
+        pending = {}
+        for service in services:
+            value = inspect(service)
+            require(value['project'] == PROJECT and value['service'] == service
+                    and value['image'] == session['identity']['images'][SERVICES[service]],
+                    f'Container identity changed: {service}')
+            if value['status'] != 'running':
+                pending[service] = value['status']
+            elif service in APPS and value['health'] != 'healthy':
+                pending[service] = value['health']
+                if bootstrap and service == 'game-api':
+                    probe = game_startup_probe()
+                    if (probe['code'], probe['status']) in ((200, 'ok'), (503, 'degraded')):
+                        del pending[service]
+                        if probe['status'] == 'degraded' and not backlog_logged:
+                            print('Game API responds with a delivery backlog; strict health is required after normal workers start.')
+                            backlog_logged = True
+        if not pending:
+            return
+        require(time.monotonic() < deadline, 'Application health timeout: ' + json.dumps(pending))
+        time.sleep(min(3, max(0, deadline - time.monotonic())))
+
+
 def app(args, state, kind, action):
     compose(args, state, 'run', '-T', '--interactive=false', '--rm', '--no-deps', kind + '-migrate',
             'python', '/opt/e2e/rehearsal_app.py', kind, action)
@@ -373,15 +450,20 @@ def main():
                         'Existing rehearsal container belongs to a different release')
         # Retry a partially completed setup only within this pinned rehearsal.
         compose(args, state, 'stop', *WORKERS, *APPS)
+        refresh_prepared_harness(state, tools, session)
         for kind in ('game', 'tournaments'):
             compose(args, state, 'run', '-T', '--interactive=false', '--rm', '--no-deps', kind + '-migrate')
         app(args, state, 'tournaments', 'seed')
         for kind in ('game', 'tournaments'):
             app(args, state, kind, 'baseline')
-        compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', '--wait', '--wait-timeout', '180', *APPS)
-        # No public-production Nginx block is edited. Only this new test file is installed.
-        run(['sudo', 'install', '-m', '0644', state / 'nginx.candidate.conf', CONF])
+        deadline = time.monotonic() + 180
+        installed = False
         try:
+            compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *APPS)
+            wait_application_health(session, deadline, bootstrap=True)
+            # No public-production Nginx block is edited. Only this new test file is installed.
+            run(['sudo', 'install', '-m', '0644', state / 'nginx.candidate.conf', CONF])
+            installed = True
             run(['sudo', 'nginx', '-t'])
             run(['sudo', 'systemctl', 'reload', 'nginx'])
             check_listener(session)
@@ -392,11 +474,13 @@ def main():
                     'assert json.load(urllib.request.urlopen(target["origin"]+"/__e2e__/identity",timeout=10))==target; '
                     'print("Container HTTPS callback route verified.")')
             compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *WORKERS)
+            wait_application_health(session, deadline)
             verify_live(session)
         except Exception:
-            run(['sudo', 'rm', '--', CONF])
-            run(['sudo', 'nginx', '-t'])
-            run(['sudo', 'systemctl', 'reload', 'nginx'])
+            if installed:
+                run(['sudo', 'rm', '--', CONF])
+                run(['sudo', 'nginx', '-t'])
+                run(['sudo', 'systemctl', 'reload', 'nginx'])
             compose(args, state, 'stop', *WORKERS, *APPS)
             raise
         print(f'TEST ENTRY READY: {ORIGIN}/tournaments/\nExisting production HTTPS port 443 and its services are unchanged.')
