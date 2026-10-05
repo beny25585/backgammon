@@ -56,6 +56,16 @@ def inspect(service):
         '"service":{{json (index .Config.Labels "com.docker.compose.service")}}}', capture=True))
 
 
+def harness_inventory(tools):
+    files = sorted(file.name for file in tools.iterdir() if file.is_file()
+                   and file.suffix in ('.mjs', '.py', '.ps1', '.Dockerfile'))
+    digest = hashlib.sha256()
+    for name in files:
+        digest.update((name + '\0').encode())
+        digest.update((tools / name).read_bytes())
+    return files, digest.hexdigest()
+
+
 def prepare(args, state, tools):
     require(not state.exists(), 'Test state already exists; use start/check with this same session, not prepare again')
     run(['python3', args.project / 'docker/verify_workspace.py'])
@@ -83,13 +93,7 @@ def prepare(args, state, tools):
     identity = {'schema_version': 1, 'project': PROJECT, 'origin': ORIGIN, 'session_id': session_id,
                 'image_tag': TAG, 'sources': built['sources'],
                 'images': {key: value['id'] for key, value in built['images'].items()}}
-    files = sorted(file.name for file in tools.iterdir() if file.is_file()
-                   and file.suffix in ('.mjs', '.py', '.ps1', '.Dockerfile'))
-    digest = hashlib.sha256()
-    for name in files:
-        digest.update((name + '\0').encode())
-        digest.update((tools / name).read_bytes())
-    identity['harness_sha256'] = digest.hexdigest()
+    files, identity['harness_sha256'] = harness_inventory(tools)
     admin = {'username': 'E2EAdmin_' + session_id[:12], 'password': secrets.token_urlsafe(36)}
     session = {'identity': identity, 'admin': admin, 'harness_files': files,
                'project_dir': str(args.project), 'rehearsal_dir': str(args.rehearsal),
@@ -151,8 +155,19 @@ def finish_prepare(args, state, tools, session):
     finally:
         docker('buildx', 'stop', builder)
     engine = output / 'engine.js'
+    # The local exporter is invoked with sudo and can create a root-owned 0700 directory.
+    # Repair only its two known artifacts; never recurse into the rehearsal backup.
+    run(['sudo', 'test', '-d', output])
+    run(['sudo', 'test', '!', '-L', output])
+    run(['sudo', 'test', '-f', engine])
+    run(['sudo', 'test', '!', '-L', engine])
+    run(['sudo', 'chown', '--no-dereference', f'{os.getuid()}:{os.getgid()}', '--', output, engine])
+    output.chmod(0o700)
+    engine.chmod(0o600)
     require(engine.is_file(), 'Pure game helper was not built')
     identity['engine_sha256'] = hashlib.sha256(engine.read_bytes()).hexdigest()
+    # A retry can follow a Git fix before the private client manifest is issued.
+    session['harness_files'], identity['harness_sha256'] = harness_inventory(tools)
     # These are exclusively public bytes; root installs them to a traversable path.
     session['identity'] = identity
     (state / 'session.json').write_text(json.dumps(session, indent=2) + '\n')
