@@ -6,11 +6,41 @@ import json
 import os
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 from decimal import Decimal
 from itertools import chain
 from pathlib import Path
 
 from service_runtime import enter_service
+
+TRANSFER_FORMAT = 2
+
+
+def canonical_datetime(value):
+    """Compare aware timestamps as UTC instants without losing microseconds."""
+    timestamp = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    if timestamp.utcoffset() is None:
+        raise ValueError(
+            "Transfer timestamps must include a timezone; inspect source settings."
+        )
+    return (
+        timestamp.astimezone(timezone.utc).isoformat(timespec="microseconds")[:-6] + "Z"
+    )
+
+
+def serialize_records(rows, **options):
+    # Import after enter_service() has selected the source interpreter environment.
+    from django.core import serializers
+    from django.core.serializers.json import DjangoJSONEncoder
+
+    class TransferJSONEncoder(DjangoJSONEncoder):
+        def default(self, value):
+            if isinstance(value, datetime):
+                # Django's default JSON encoder truncates to milliseconds.
+                return canonical_datetime(value)
+            return super().default(value)
+
+    return serializers.serialize("json", rows, cls=TransferJSONEncoder, **options)
 
 
 def file_hash(path):
@@ -39,6 +69,8 @@ def summarize(records, model):
                 amount = Decimal(str(value))
                 row["fields"][name] = format(amount.normalize(), "f")
                 money[name] += amount
+            elif field.get_internal_type() == "DateTimeField" and value is not None:
+                row["fields"][name] = canonical_datetime(value)
             elif field.many_to_many:
                 row["fields"][name] = sorted(value, key=str)
         fields.update(row["fields"])
@@ -58,7 +90,6 @@ def summarize(records, model):
 
 def export_snapshot(directory):
     from django.apps import apps
-    from django.core import serializers
     from django.db import connection
 
     if connection.vendor != "sqlite":
@@ -86,7 +117,7 @@ def export_snapshot(directory):
         model_queryset(model).order_by("pk").iterator() for model in models
     )
     with fixture.open("w", encoding="utf-8") as output:
-        serializers.serialize("json", rows, stream=output)
+        serialize_records(rows, stream=output)
     fixture.chmod(0o600)
     records = json.loads(fixture.read_text())
     grouped = defaultdict(list)
@@ -103,7 +134,8 @@ def export_snapshot(directory):
         cursor.execute("SELECT app, name FROM django_migrations ORDER BY app, name")
         migrations = cursor.fetchall()
     manifest = {
-        "format": 1,
+        "format": TRANSFER_FORMAT,
+        "datetime_encoding": "utc-microseconds",
         "fixture_sha256": file_hash(fixture),
         "source_vendor": "sqlite",
         "migrations": migrations,
@@ -113,14 +145,23 @@ def export_snapshot(directory):
     path.write_text(json.dumps(manifest, indent=2) + "\n")
     path.chmod(0o600)
     print(
-        f"Exported {len(records)} records from the snapshot. IDs and monetary values are preserved."
+        f"Exported {len(records)} records from the snapshot. IDs, monetary values and timestamp precision are preserved."
     )
 
 
 def read_bundle(directory):
     fixture = directory / "fixture.json"
     manifest = json.loads((directory / "manifest.json").read_text())
-    if manifest.get("format") != 1 or manifest.get("source_vendor") != "sqlite":
+    if manifest.get("format") == 1:
+        raise ValueError(
+            "Transfer format 1 truncates timestamp precision. "
+            "Re-export the original SQLite snapshot into a new directory with this tool."
+        )
+    if (
+        manifest.get("format") != TRANSFER_FORMAT
+        or manifest.get("source_vendor") != "sqlite"
+        or manifest.get("datetime_encoding") != "utc-microseconds"
+    ):
         raise ValueError("Unsupported transfer manifest.")
     if file_hash(fixture) != manifest["fixture_sha256"]:
         raise ValueError("Fixture checksum does not match the export manifest.")
@@ -129,7 +170,6 @@ def read_bundle(directory):
 
 def verify_manifest(manifest):
     from django.apps import apps
-    from django.core import serializers
 
     for label, expected in manifest["models"].items():
         model = apps.get_model(label)
@@ -139,8 +179,7 @@ def verify_manifest(manifest):
             # still retain their original IDs and values; business counts stay exact.
             queryset = queryset.filter(pk__in=expected["ids"])
         records = json.loads(
-            serializers.serialize(
-                "json",
+            serialize_records(
                 queryset.order_by("pk"),
                 fields=expected["fields"],
             )

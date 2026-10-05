@@ -1,7 +1,7 @@
 # הכנה ומעבר לפרודקשן — Bot1
 
-הקבצים מוכנים לסקירה מקומית. הם עדיין לא נפרסו, לא נבדקו על עותק נתוני
-השרת, ולא מהווים אישור לביצוע מעבר חי. tests ובניית האתרים נשארו למשתמש.
+שבע תמונות היישום נבנו ב־Bot1. תרגול העברת נתוני השרת עדיין בתהליך;
+הייבוא לא הושלם ולא בוצע מעבר חי. tests ובניית האתרים נשארו למשתמש.
 הפקודות להלן מיועדות לשלבי פריסה מוסכמים, לא להדבקה של המסמך כולו בשרת.
 מצב המוכנות, פקודות ה־build/tests למשתמש ואימות התהליכים מופיעים ב־
 [READINESS.he.md](READINESS.he.md). מדריך איסוף הלוגים הוא
@@ -124,10 +124,9 @@ python3 /path/to/project/docker/backup_production.py \
 חייב להיות נתיב חדש ומוחלט. לא משתמשים במסד SQLite החי כמקור הייצוא:
 
 ```bash
-cd /home/dev/backgammon-tournaments-backend/tournaments
-DJANGO_SETTINGS_MODULE=tournaments.settings.development \
-  /home/dev/backgammon-tournaments-backend/venv/bin/python -B \
+sudo /home/dev/backgammon-tournaments-backend/venv/bin/python -B \
   /path/to/project/docker/tournaments_transfer.py export \
+  --service backgammon_tournaments_backend.service \
   --sqlite /ABSOLUTE_BACKUP_PATH/tournaments.sqlite3 \
   --directory /ABSOLUTE_EXPORT_PATH
 ```
@@ -135,6 +134,14 @@ DJANGO_SETTINGS_MODULE=tournaments.settings.development \
 הייצוא כולל את כל הרשומות והמזהים, לרבות permissions, content types,
 יחסי many-to-many, שחקנים פולימורפיים, sessions, ארנקים ותורים. אין לשתף
 fixture או קובץ SQLite בצ'אט. הרשאות ברירת המחדל של החבילה הן 0700/0600.
+פורמט ההעברה הוא 2: תאריכים נשמרים ב־UTC עם מלוא דיוק המיקרו־שניות,
+והאימות משווה את הזמן בפועל. למשל, `.000Z` ו־`Z` מייצגים אותו זמן;
+הבדל אמיתי של מיקרו־שנייה עדיין מכשיל את האימות. חבילה ישנה בפורמט 1
+מחייבת ייצוא מחדש מה־snapshot המקורי לתיקייה חדשה, מפני שהייצוא הישן
+קיצר את דיוק התאריכים. אין לשנות ידנית את ה־manifest או את ה־fixture.
+שירות `tournaments-transfer` טוען את הכלי מקובץ Git ב־mount לקריאה בלבד,
+כך שאפשר להשתמש בתמונות היישום שכבר נבנו. יש להשתמש בסביבת פריסה חדשה
+ומאומתת עם כלי ההעברה המתוקן; אין להחליף קבצים מאחורי רשימת ה־hashes.
 העתק את חבילת הייצוא לתיקיית `TRANSFER_DIR`, כ־`tournaments/`, והקצה לבעלים
 10001:10001 כדי שהמשתמש הלא־מנהל בקונטיינר יוכל לקרוא אותה. זו תיקיית העברה
 ייעודית; לא משנים בעלות על תיקיות הקוד או מסדי המקור.
@@ -156,12 +163,12 @@ dc exec -T postgres sh -c \
 לאחר השחזור, החל מיגרציות. בניתוח מדובר במסד חדש; אין לייבא את SQLite שלו:
 
 ```bash
-dc run --rm game-migrate
-dc run --rm tournaments-migrate
-dc run --rm analysis-migrate
-dc run --rm tournaments-transfer python /opt/docker/tournaments_transfer.py \
+dc run -T --interactive=false --rm game-migrate < /dev/null
+dc run -T --interactive=false --rm tournaments-migrate < /dev/null
+dc run -T --interactive=false --rm analysis-migrate < /dev/null
+dc run -T --interactive=false --rm tournaments-transfer python /opt/docker/tournaments_transfer.py \
   import --directory /transfer/tournaments \
-  --confirm-new-database backgammon_tournaments
+  --confirm-new-database backgammon_tournaments < /dev/null
 ```
 
 הייבוא מסרב למסד עם משתמשים, משחקים, sessions או עסקאות קיימים. רק הרשומות
@@ -196,8 +203,8 @@ dc --profile live up -d --wait --no-build
 dc run --rm --no-deps game-api python manage.py check --deploy
 dc run --rm --no-deps tournaments-api python manage.py check --deploy
 dc run --rm --no-deps analysis-api python manage.py check --deploy
-dc run --rm tournaments-transfer python /opt/docker/tournaments_transfer.py \
-  verify --directory /transfer/tournaments
+dc run -T --interactive=false --rm tournaments-transfer python /opt/docker/tournaments_transfer.py \
+  verify --directory /transfer/tournaments < /dev/null
 ```
 
 יש לבדוק ולפתור אזהרות בהתאם למצב האמיתי. HTTPS מסתיים ב־Nginx הקיים;

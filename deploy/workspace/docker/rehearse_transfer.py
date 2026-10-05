@@ -203,6 +203,7 @@ def main():
             else:
                 result = subprocess.run(
                     command + arguments,
+                    stdin=subprocess.DEVNULL,
                     stdout=destination,
                     stderr=diagnostics,
                     check=False,
@@ -219,7 +220,15 @@ def main():
                     raise RuntimeError(f"{label} failed for an unexpected reason.")
 
     def app(service, *arguments):
-        return ["run", "--rm", "--no-deps", service, *arguments]
+        return [
+            "run",
+            "-T",
+            "--interactive=false",
+            "--rm",
+            "--no-deps",
+            service,
+            *arguments,
+        ]
 
     try:
         run(

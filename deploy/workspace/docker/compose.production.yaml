@@ -190,7 +190,14 @@ services:
     restart: "no"
     mem_limit: 1g
     command: [python, /opt/docker/tournaments_transfer.py, verify, --directory, /transfer/tournaments]
-    volumes: ["${TRANSFER_DIR:?Set TRANSFER_DIR}:/transfer:ro"]
+    volumes:
+      - "${TRANSFER_DIR:?Set TRANSFER_DIR}:/transfer:ro"
+      # Use the reviewed Git helper even when reusing already-built application images.
+      - type: bind
+        source: ./tournaments_transfer.py
+        target: /opt/docker/tournaments_transfer.py
+        read_only: true
+        bind: {create_host_path: false}
     depends_on:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}

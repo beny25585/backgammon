@@ -7,6 +7,7 @@ import os
 import sqlite3
 import sys
 from contextlib import closing
+from datetime import datetime, timezone as datetime_timezone
 from pathlib import Path
 
 if os.environ.get("RUN_TRANSFER_REHEARSAL") != "1":
@@ -18,11 +19,10 @@ django.setup()
 
 from django.apps import apps
 from django.contrib.auth.models import Group, Permission, User
-from django.core import serializers
 from django.core.management.color import no_style
 from django.db import connection, transaction
 from django.utils import timezone
-from tournaments_transfer import model_queryset, summarize
+from tournaments_transfer import model_queryset, serialize_records, summarize
 
 
 def seed():
@@ -34,6 +34,23 @@ def seed():
     group = Group.objects.create(name="synthetic_rehearsal")
     group.permissions.add(Permission.objects.order_by("pk").first())
     User.objects.get(pk=11).groups.add(group)
+    from django.contrib.sessions.models import Session
+
+    for index, microseconds in enumerate((500, 123456)):
+        Session.objects.create(
+            session_key=f"synthetic_timestamp_{index}",
+            session_data=f"synthetic_payload_{index}",
+            expire_date=datetime(
+                2030,
+                10,
+                17,
+                13,
+                13,
+                9,
+                microsecond=microseconds,
+                tzinfo=datetime_timezone.utc,
+            ),
+        )
     if os.environ["REHEARSAL_KIND"] == "game":
         from game.models import GameRoom, GameState, Match, Player, RoomPlayer
 
@@ -104,7 +121,9 @@ def seed():
             name="reconcile_searches",
             kwargs={"synthetic": True},
         )
-    print("Synthetic seed created: users, relationships, game or tournament data.")
+    print(
+        "Synthetic seed created: users, sessions with microseconds, relationships, game or tournament data."
+    )
 
 
 def audit(output):
@@ -112,7 +131,7 @@ def audit(output):
     for model in apps.get_models():
         if model._meta.managed and not model._meta.proxy:
             records = json.loads(
-                serializers.serialize("json", model_queryset(model).order_by("pk"))
+                serialize_records(model_queryset(model).order_by("pk"))
             )
             summaries[model._meta.label_lower] = summarize(records, model)
     Path(output).write_text(json.dumps(summaries, sort_keys=True), encoding="utf-8")
