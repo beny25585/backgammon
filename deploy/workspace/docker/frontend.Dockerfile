@@ -19,5 +19,8 @@ ENV VITE_SERVER_URL=$VITE_SERVER_URL VITE_TOURNAMENTS_URL=$VITE_TOURNAMENTS_URL 
 RUN pnpm run build
 
 FROM nginx:1.28-alpine AS production
+ARG SOURCE_REVISION=unversioned
+ARG RELEASE_TAG=unversioned
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG
 COPY --from=build /app/dist/ /usr/share/nginx/html/
 COPY docker/nginx.frontend.conf /etc/nginx/conf.d/default.conf

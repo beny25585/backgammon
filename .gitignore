@@ -44,3 +44,5 @@ dice_service/.elixir_ls/
 
 .superpowers/
 docs/
+!deploy/workspace/docs/
+!deploy/workspace/docs/**

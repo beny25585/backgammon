@@ -9,6 +9,9 @@ COPY ["Backgammon Game/dice_service/lib/", "/app/lib/"]
 RUN mix compile && mix release --path /opt/release
 
 FROM debian:bookworm-slim
+ARG SOURCE_REVISION=unversioned
+ARG RELEASE_TAG=unversioned
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG
 ENV LANG=C.UTF-8
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libstdc++6 libncurses6 libtinfo6 libssl3 libsctp1 ca-certificates curl \

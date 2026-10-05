@@ -21,11 +21,20 @@ if [ "$limits" != '3221225472 3221225472 100000 100000' ]; then
   exit 1
 fi
 for service in game-api tournaments-api analysis-api dice game-frontend tournaments-frontend admin-frontend; do
+  case "$service" in
+    game-api|dice|game-frontend) source_directory='Backgammon Game' ;;
+    tournaments-api|admin-frontend) source_directory='backgammon-tournaments-backend' ;;
+    tournaments-frontend) source_directory='backgammon-tournaments' ;;
+    analysis-api) source_directory='backgammon-analysis-service' ;;
+  esac
+  source_revision="$(python3 docker/verify_workspace.py --print-revision "$source_directory")"
   printf '\nBuilding %s\n' "$service"
-  "${compose[@]}" build --builder "$builder" "$service"
+  "${compose[@]}" build --builder "$builder" \
+    --build-arg "SOURCE_REVISION=$source_revision" --build-arg "RELEASE_TAG=$release_tag" "$service"
 done
 for image in game tournaments analysis dice game-frontend tournaments-frontend admin-frontend; do
   sudo docker image inspect "backgammon-production-${image}:${release_tag}" \
     --format '{{.RepoTags}} {{.Id}} {{.Os}}/{{.Architecture}}'
 done
+python3 docker/release_images.py --sudo-docker --output .built-images.json
 printf '%s\n' 'Seven production images built. Application services have not been started.'

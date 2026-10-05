@@ -13,6 +13,9 @@ COPY backgammon-analysis-service/scripts/install_open_sage.py scripts/install_op
 RUN python scripts/install_open_sage.py --compatible
 
 FROM python:3.12-slim-bookworm
+ARG SOURCE_REVISION=unversioned
+ARG RELEASE_TAG=unversioned
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PATH="/opt/venv/bin:$PATH"
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/* \

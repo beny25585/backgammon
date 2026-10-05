@@ -54,13 +54,19 @@ def verify():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--print-tag", action="store_true")
+    parser.add_argument("--print-revision", choices=sorted(SOURCE_PATHS))
     arguments = parser.parse_args()
     try:
         tag = verify()
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError) as error:
         print(f"Release verification stopped: {error}", file=sys.stderr)
         return 1
-    print(tag if arguments.print_tag else f"Prepared release verified: {tag}")
+    if arguments.print_revision:
+        root = Path(__file__).resolve().parents[1]
+        record = json.loads((root / '.workspace-release.json').read_text(encoding='utf-8'))
+        print(next(source['revision'] for source in record['sources'] if source['path'] == arguments.print_revision))
+    else:
+        print(tag if arguments.print_tag else f"Prepared release verified: {tag}")
     return 0
 
 
