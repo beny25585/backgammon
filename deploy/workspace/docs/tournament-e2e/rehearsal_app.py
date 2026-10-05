@@ -16,6 +16,21 @@ def require(condition, message):
         raise ValueError(message)
 
 
+def require_tournament_finished(tournament, expected_name):
+    require(tournament.name == expected_name, 'Tournament name differs from browser proof')
+    require(tournament.state == 'finished' and not tournament.entry_deadline_paused,
+            'Tournament did not finish normally')
+
+
+def require_tournament_podium(participants, observed_podium):
+    podium = sorted((row for row in participants if row.podium_position is not None),
+                    key=lambda row: row.podium_position)
+    require([row.podium_position for row in podium] == [0, 1], 'Unexpected podium')
+    require([row.participant_id for row in podium] == [row['id'] for row in observed_podium],
+            'Tournament podium differs from browser proof')
+    return podium[0]
+
+
 def save(file, value):
     file.write_text(json.dumps(value, indent=2, default=str) + '\n', encoding='utf-8')
     file.chmod(0o600)
@@ -134,8 +149,7 @@ def main():
             from tournaments.models import Tournament, Fixture, Participation, WalletTransaction
             from gamelink.models import GameLink
             tournament = Tournament.objects.get(pk=tournament_id)
-            require(tournament.name == summary['tournamentName'] and tournament.results_confirmed_at
-                    and not tournament.entry_deadline_paused, 'Tournament did not finish normally')
+            require_tournament_finished(tournament, summary['tournamentName'])
             participants = list(Participation.objects.filter(tournament_id=tournament_id).select_related('participant__user'))
             suffix = ''.join(character for character in summary['runId'] if character.isalnum())[-12:]
             require(len(participants) == summary['playerCount'] and all(
@@ -154,12 +168,11 @@ def main():
                 require(link.status == 'completed' and link.external_room_id == observed['roomId']
                         and link.raw_result, 'Tournament callback belongs to a different room')
             awards = list(WalletTransaction.objects.filter(tournament_id=tournament_id, kind='tournament_prize'))
-            champion = next(row for row in participants if row.podium_position == 1)
+            champion = require_tournament_podium(participants, summary['final']['podium'])
             require(len(awards) == 1 and awards[0].amount == Decimal('100.00')
                     and awards[0].pk == summary['final']['awardId']
                     and awards[0].user_id == champion.participant.user_id
                     and champion.participant_id == summary['final']['championId'], 'Prize or champion differs from browser proof')
-            require(sorted(row.podium_position for row in participants if row.podium_position) == [1, 2], 'Unexpected podium')
             report.update(fixtures=len(fixtures), prize_awards=1, prize_amount='100.00')
     if action == 'replay':
         require(kind == 'game', 'Duplicate-result replay requires the game container')
