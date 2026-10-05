@@ -49,6 +49,10 @@ prometheus.exporter.unix "backgammon_host" {
 discovery.relabel "backgammon_host" {
   targets = prometheus.exporter.unix.backgammon_host.targets
   rule {
+    target_label = "job"
+    replacement  = "backgammon_host"
+  }
+  rule {
     target_label = "stack"
     replacement  = "backgammon-production"
   }
