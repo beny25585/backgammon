@@ -1,0 +1,49 @@
+**
+!docker/
+!docker/**
+!Backgammon Game/
+!Backgammon Game/backend/
+!Backgammon Game/backend/**
+!Backgammon Game/frontend/
+!Backgammon Game/frontend/**
+!Backgammon Game/dice_service/
+!Backgammon Game/dice_service/**
+!backgammon-tournaments/
+!backgammon-tournaments/**
+!backgammon-tournaments-backend/
+!backgammon-tournaments-backend/**
+!backgammon-analysis-service/
+!backgammon-analysis-service/**
+**/.git
+**/node_modules
+**/.pnpm-store
+**/*.local
+**/.vscode
+**/.venv
+**/venv
+**/env
+**/__pycache__
+**/.env
+**/.env.*
+**/*.sqlite3
+**/*.db
+**/*.log
+**/dist
+**/deployed
+**/staticfiles
+**/media
+**/.engine-build
+**/.local-postgresql
+**/test-results
+**/playwright-report
+**/.pytest_cache
+**/.worktrees
+**/_build
+**/deps
+docker/.local
+docker/.production
+docker/backups
+docker/production.env
+docker/*.zip
+docker/*.tar
+docker/*.tar.gz

@@ -1,0 +1,98 @@
+{
+  "project": "backgammon-rehearsal-20261005t164350z-e5270ff3",
+  "data": "synthetic only",
+  "image_ids": {
+    "game": "sha256:d137fc07ccaecf864cad0fe75c93f9aaf2b5c55dd04100d26a4bbc9ba074aa4c",
+    "tournaments": "sha256:cda741a638a82301d48aa1ebd2861ab38e27884248ea38ab6579c28f9666d13a"
+  },
+  "steps": [
+    {
+      "stage": "Start isolated PostgreSQL",
+      "exit_code": 0
+    },
+    {
+      "stage": "Create SQLite source schema",
+      "exit_code": 0
+    },
+    {
+      "stage": "Seed synthetic tournament data",
+      "exit_code": 0
+    },
+    {
+      "stage": "Take SQLite snapshot",
+      "exit_code": 0
+    },
+    {
+      "stage": "Export snapshot",
+      "exit_code": 0
+    },
+    {
+      "stage": "Create target PostgreSQL schema",
+      "exit_code": 0
+    },
+    {
+      "stage": "Import SQLite data into PostgreSQL",
+      "exit_code": 0
+    },
+    {
+      "stage": "Verify tournament IDs/relations/money",
+      "exit_code": 0
+    },
+    {
+      "stage": "Verify tournament user sequence",
+      "exit_code": 0
+    },
+    {
+      "stage": "Refuse repeat import into populated target",
+      "exit_code": 1
+    },
+    {
+      "stage": "Verify refused import preserved data",
+      "exit_code": 0
+    },
+    {
+      "stage": "Create source game schema",
+      "exit_code": 0
+    },
+    {
+      "stage": "Seed synthetic game data",
+      "exit_code": 0
+    },
+    {
+      "stage": "Record game source model fingerprints",
+      "exit_code": 0
+    },
+    {
+      "stage": "Dump source game PostgreSQL",
+      "exit_code": 0
+    },
+    {
+      "stage": "Restore empty game target",
+      "exit_code": 0
+    },
+    {
+      "stage": "Record restored game model fingerprints",
+      "exit_code": 0
+    },
+    {
+      "stage": "Verify restored game user sequence",
+      "exit_code": 0
+    },
+    {
+      "stage": "Stop rehearsal and remove its synthetic anonymous volumes",
+      "exit_code": 0
+    }
+  ],
+  "status": "passed",
+  "game_audit_sha256": "8b03d0abba627ff89fb503eb737a926cbb2f66f62bbf44acd56e21ab53236ffa",
+  "tool_sha256": {
+    "runtime_env.py": "383a00cf8e19bdec72a83df4c4cd5e138e77d86e00c06ebb13e8adb54baaa81e",
+    "tournaments_transfer.py": "c9104c84ee4fb06c2179333a8acfac4c529b1b59b59486732cbba30b80d2a1cf",
+    "service_runtime.py": "dcde9261fc39c3bb3325424ab89f11d3653ca91a9a6dd995ba14d1877bfbec4f",
+    "rehearsal_settings.py": "45f547b06cb3b737cd26fe102b7529c408f5e492f605a7346759ecbf6092ef3b",
+    "rehearsal_data.py": "d8f00862931b3cbab842fe785ee7a6de8903cf0069e9f36498ecbc5d16c15b16",
+    "rehearse_transfer.py": "cbe95a89fe6e027a7274c7f62fc642d2d40851b9a7eff9e070115c5c9110aebf"
+  },
+  "scope": "Synthetic fixtures and existing local images; current source code mounted. No production data or application tests/build.",
+  "source_snapshot": "Current workspace source copied without environment files, databases or logs."
+}

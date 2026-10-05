@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "image_tag": "bg-20261005-git-r1",
+  "sources": [
+    {
+      "path": "Backgammon Game",
+      "url": "https://github.com/beny25585/backgammon.git",
+      "revision": "5a5f763544c29400b2402970f1b3b71b760b0bbf"
+    },
+    {
+      "path": "backgammon-analysis-service",
+      "url": "https://github.com/beny25585/backgammon-analysis-service.git",
+      "revision": "9133cae5572917e5560c75964c62839326b01f78"
+    },
+    {
+      "path": "backgammon-tournaments",
+      "url": "https://github.com/beny25585/backgammon-tournament-ui.git",
+      "revision": "49b24ac4b4a0dd1965aed5cdcb18a038a9b5fb46"
+    },
+    {
+      "path": "backgammon-tournaments-backend",
+      "url": "https://github.com/Maestroxr/tournaments.git",
+      "revision": "3f428012248be15de670bd40153c2805e1794bf5"
+    }
+  ]
+}

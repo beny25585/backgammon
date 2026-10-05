@@ -1,0 +1,7 @@
+.local/
+.production/
+backups/
+production.env
+*.zip
+*.tar
+*.tar.gz
