@@ -24,6 +24,8 @@ SERVICES = {'game-api': 'game', 'game-tasks': 'game', 'game-migrate': 'game',
             'admin-frontend': 'admin-frontend'}
 APPS = ['dice', 'game-api', 'tournaments-api', 'game-frontend', 'tournaments-frontend', 'admin-frontend']
 WORKERS = ['game-tasks', 'tournaments-tasks']
+UPSTREAM_PORTS = {'game-api': 8000, 'tournaments-api': 8000,
+                  'game-frontend': 80, 'tournaments-frontend': 80, 'admin-frontend': 80}
 CONF = Path('/etc/nginx/conf.d/backgammon-rehearsal-e2e.conf')
 
 
@@ -329,11 +331,54 @@ def finish_prepare(args, state, tools, session):
     print('Application images unchanged. No application service or test Nginx listener has been started.')
 
 
-def nginx(identity):
+def upstreams_for_addresses(addresses, subnets):
+    require(set(addresses) == set(UPSTREAM_PORTS), 'Incomplete rehearsal upstream addresses')
+    networks = [ipaddress.ip_network(value) for value in subnets]
+    require(networks and len(set(addresses.values())) == len(addresses), 'Unexpected rehearsal network addresses')
+    upstreams = {}
+    for service, address in addresses.items():
+        ip = ipaddress.IPv4Address(address)
+        require(not (ip.is_loopback or ip.is_unspecified or ip.is_multicast or ip.is_link_local)
+                and any(ip in network for network in networks if network.version == 4),
+                'Upstream address is outside the rehearsal bridge: ' + service)
+        upstreams[service] = f'{ip}:{UPSTREAM_PORTS[service]}'
+    return upstreams
+
+
+def discover_upstreams(session):
+    name = PROJECT + '_application'
+    network = json.loads(docker('network', 'inspect', name, capture=True))[0]
+    require(network['Name'] == name and network['Driver'] == 'bridge' and network['Internal'] is True,
+            'Expected the existing internal rehearsal bridge')
+    subnets = [item['Subnet'] for item in network['IPAM']['Config'] if item.get('Subnet')]
+    addresses = {}
+    for service in UPSTREAM_PORTS:
+        value = inspect(service)
+        require(value['project'] == PROJECT and value['service'] == service
+                and value['image'] == session['identity']['images'][SERVICES[service]]
+                and value['status'] == 'running' and value['health'] == 'healthy',
+                'Upstream is not the healthy pinned rehearsal container: ' + service)
+        attached = json.loads(docker('inspect', PROJECT + '-' + service + '-1', '--format',
+                                     '{{json .NetworkSettings.Networks}}', capture=True))
+        require(set(attached) == {name} and attached[name]['NetworkID'] == network['Id'],
+                'Upstream network changed: ' + service)
+        addresses[service] = attached[name]['IPAddress']
+    return upstreams_for_addresses(addresses, subnets)
+
+
+def nginx(identity, upstreams=None):
+    require(re.fullmatch(r'[a-f0-9]{32}', identity['session_id']), 'Invalid Nginx session identifier')
     public = Path('/var/lib/backgammon-e2e') / identity['session_id']
-    def proxy(prefix, port, target=None, websocket=False):
+    if upstreams is not None:
+        require(set(upstreams) == set(UPSTREAM_PORTS), 'Incomplete Nginx upstreams')
+        for service, destination in upstreams.items():
+            address, separator, port = destination.rpartition(':')
+            require(separator and port == str(UPSTREAM_PORTS[service])
+                    and str(ipaddress.IPv4Address(address)) == address,
+                    'Invalid Nginx upstream: ' + service)
+    def proxy(prefix, service, target=None, websocket=False):
         return f'''location {prefix} {{
-    proxy_pass http://127.0.0.1:{port}{target or ''};
+    proxy_pass http://{upstreams[service]}{target or ''};
     proxy_set_header Host $http_host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -341,14 +386,17 @@ def nginx(identity):
     proxy_http_version 1.1;
     {'proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection "upgrade";' if websocket else ''}
 }}'''
-    routes = [proxy('/backgammon/api/', 18005, '/api/'), proxy('/backgammon/ws/', 18005, '/ws/', True),
-              proxy('/api/link/', 18005, '/api/link/'), proxy('/api/gamelink/', 18006, '/api/gamelink/'),
-              proxy('/tournaments-api/', 18006, '/api/'), proxy('/tournaments-ws/', 18006, '/ws/', True),
-              proxy('/tournaments-play/', 18006, '/t/'), proxy('/api/admin/', 18006, '/api/admin/'),
-              proxy('/tournaments-accounts/', 18006, '/accounts/'),
-              proxy('/tournaments-django-admin/', 18006, '/admin/'),
-              proxy('/backgammon/', 18105), proxy('/tournaments/', 18106), proxy('/tournaments-admin/', 18108),
-              proxy('/tournaments-static/', 18106), proxy('/tournaments-media/', 18106)]
+    # Before applications start this is only an identity/engine preview, with no proxy routes.
+    routes = [] if upstreams is None else [
+        proxy('/backgammon/api/', 'game-api', '/api/'), proxy('/backgammon/ws/', 'game-api', '/ws/', True),
+        proxy('/api/link/', 'game-api', '/api/link/'), proxy('/api/gamelink/', 'tournaments-api', '/api/gamelink/'),
+        proxy('/tournaments-api/', 'tournaments-api', '/api/'), proxy('/tournaments-ws/', 'tournaments-api', '/ws/', True),
+        proxy('/tournaments-play/', 'tournaments-api', '/t/'), proxy('/api/admin/', 'tournaments-api', '/api/admin/'),
+        proxy('/tournaments-accounts/', 'tournaments-api', '/accounts/'),
+        proxy('/tournaments-django-admin/', 'tournaments-api', '/admin/'),
+        proxy('/backgammon/', 'game-frontend'), proxy('/tournaments/', 'tournaments-frontend'),
+        proxy('/tournaments-admin/', 'admin-frontend'), proxy('/tournaments-static/', 'tournaments-frontend'),
+        proxy('/tournaments-media/', 'tournaments-frontend')]
     return f'''# Session {identity['session_id']}; temporary rehearsal only.
 server {{
   listen 18443 ssl;
@@ -367,6 +415,20 @@ server {{
   location / {{ return 404; }}
 }}
 '''
+
+
+def refresh_nginx_candidate(state, session):
+    candidate = state / 'nginx.candidate.conf'
+    require(candidate.is_file() and not candidate.is_symlink()
+            and 'Session ' + session['identity']['session_id'] in candidate.read_text(),
+            'Nginx candidate belongs to another session')
+    backup = state / 'nginx.before-container-routing.conf'
+    if not backup.exists():
+        write(backup, candidate.read_text())
+    else:
+        require(backup.is_file() and not backup.is_symlink(), 'Unsafe Nginx backup')
+    candidate.write_text(nginx(session['identity'], discover_upstreams(session)), encoding='utf-8')
+    print('Test Nginx upstreams refreshed from healthy container addresses on the internal bridge.')
 
 
 def compose(args, state, *command, capture=False):
@@ -454,11 +516,41 @@ def app(args, state, kind, action):
             'python', '/opt/e2e/rehearsal_app.py', kind, action)
 
 
+def validate_listener_response(path, response, identity):
+    headers, separator, body = response.replace('\r\n', '\n').partition('\n\n')
+    lines = headers.splitlines()
+    require(separator and lines and re.match(r'^HTTP/\S+\s+200(?:\s|$)', lines[0]),
+            'Nginx must return HTTP 200: ' + path)
+    values = {key.lower(): value.strip() for key, value in
+              (line.split(':', 1) for line in lines[1:] if ':' in line)}
+    content_type = values.get('content-type', '').split(';', 1)[0].lower()
+    if path in ('/backgammon/', '/tournaments/', '/tournaments-admin/'):
+        require(content_type == 'text/html' and '<script' in body.lower(), 'Frontend HTML is missing: ' + path)
+        return
+    require(content_type == 'application/json', 'Expected API JSON through Nginx: ' + path)
+    payload = json.loads(body)
+    if path == '/__e2e__/identity':
+        require(payload == identity, 'Nginx listener has an unexpected identity')
+    elif path == '/tournaments-api/csrf/':
+        require(payload.get('detail') == 'CSRF cookie set'
+                and any(line.lower().startswith('set-cookie: csrftoken=') for line in lines),
+                'Nginx did not deliver the Django CSRF cookie')
+    else:
+        require(path in ('/backgammon/api/health/', '/tournaments-api/health/')
+                and payload.get('status') == 'ok', 'API health through Nginx failed: ' + path)
+
+
 def check_listener(session):
+    active = run(['sudo', 'cat', CONF], capture=True)
+    require(active.strip() == nginx(session['identity'], discover_upstreams(session)).strip(),
+            'Test Nginx upstreams differ from current containers; use stop then start to refresh them')
     # Force the local host gateway without relying on public hairpin routing.
-    identity = run(['curl', '--fail', '--silent', '--show-error', '--max-time', '10', '--resolve',
-                    f'{HOST}:18443:127.0.0.1', ORIGIN + '/__e2e__/identity'], capture=True)
-    require(json.loads(identity) == session['identity'], 'Nginx listener has an unexpected identity')
+    for path in ('/__e2e__/identity', '/backgammon/api/health/', '/tournaments-api/health/',
+                 '/tournaments-api/csrf/', '/backgammon/', '/tournaments/', '/tournaments-admin/'):
+        response = run(['curl', '--fail', '--silent', '--show-error', '--include', '--max-time', '10',
+                        '--noproxy', '*', '--resolve', f'{HOST}:18443:127.0.0.1', ORIGIN + path], capture=True)
+        validate_listener_response(path, response, session['identity'])
+    print('Nginx HTTPS APIs, CSRF cookie and all three application frontends verified.')
 
 
 def monitoring(state, tools):
@@ -555,6 +647,7 @@ def main():
         try:
             compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *APPS)
             wait_application_health(session, deadline, bootstrap=True)
+            refresh_nginx_candidate(state, session)
             # No public-production Nginx block is edited. Only this new test file is installed.
             run(['sudo', 'install', '-m', '0644', state / 'nginx.candidate.conf', CONF])
             installed = True
@@ -570,6 +663,7 @@ def main():
             compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *WORKERS)
             wait_application_health(session, deadline)
             verify_live(session)
+            check_listener(session)
         except Exception:
             if installed:
                 run(['sudo', 'rm', '--', CONF])

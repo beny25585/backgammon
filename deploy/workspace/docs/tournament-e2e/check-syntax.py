@@ -8,7 +8,8 @@ import sys
 root = Path(__file__).resolve().parent
 python_files = ['e2e_common.py', 'backend_bootstrap.py', 'postgresql_runtime.py',
                 'runtime_inventory.py', 'tournament_settings.py', 'check-syntax.py',
-                'run-postgresql-reliability.py', 'server_rehearsal.py', 'rehearsal_app.py', 'rehearsal_context.py', 'rehearsal_context_test.py',
+                'run-postgresql-reliability.py', 'server_rehearsal.py', 'rehearsal_app.py',
+                'rehearsal_context.py', 'rehearsal_context_test.py', 'rehearsal_nginx_test.py',
                 '../../Backgammon Game/backend/backgammon_project/asgi.py',
                 '../../Backgammon Game/backend/backgammon_project/settings.py',
                 '../../Backgammon Game/backend/game/consumers.py',
