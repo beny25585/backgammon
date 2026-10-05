@@ -20,11 +20,6 @@ class PracticeGameConsumer(GameConsumer):
         self._ai_task = None
         self._ai_failed = False
         self._ai_disconnected = False
-        room = await get_room(self.scope['url_route']['kwargs']['room_id'])
-        self.is_ai = bool(room and (room.state or {}).get('ai'))
-        if self.is_ai and room.status == 'waiting':
-            await self.close(code=4003)
-            return
         await super().connect()
         if self.is_ai and getattr(self, 'player_color', None):
             await self.send(json.dumps({'type': 'player_joined', 'payload': {

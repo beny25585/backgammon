@@ -1,6 +1,41 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import QuickGameResult from "./QuickGameResult";
 
+test("unconfigured analysis stops polling while the result remains visible", async ({ mount, page }) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route("**/tournaments-api/analyses?room=disabled", route => {
+    calls++;
+    return route.fulfill({ status: 503, json: { code: "analysis_not_configured", retryable: false } });
+  });
+  const component = await mount(<QuickGameResult roomId="disabled" winner="white"
+    whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />);
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.runFor(300_000);
+  expect(calls).toBe(1);
+  await expect(component.getByTestId("score-left")).toBeVisible();
+});
+
+test("temporary analysis failures back off instead of polling every five seconds", async ({ mount, page }) => {
+  await page.clock.install();
+  let calls = 0;
+  await page.route("**/tournaments-api/analyses?room=offline", route => {
+    calls++;
+    return route.fulfill({ status: 503, json: { retryable: true } });
+  });
+  await mount(<QuickGameResult roomId="offline" winner="white"
+    whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />);
+  await expect.poll(() => calls).toBe(1);
+  await page.clock.runFor(15_000);
+  expect(calls).toBe(1);
+  await page.clock.runFor(25_000);
+  await expect.poll(() => calls).toBe(2);
+  await page.clock.runFor(70_000);
+  await expect.poll(() => calls).toBe(3);
+  await page.clock.runFor(300_000);
+  expect(calls).toBe(3);
+});
+
 test("result maps analysis to black self, preserves zero coins, and links to this analysis", async ({
   mount,
   page,

@@ -56,6 +56,8 @@ class TournamentLink(models.Model):
     fixture_id = models.IntegerField()
     room = models.OneToOneField('game.GameRoom', on_delete=models.CASCADE, related_name='tournament_link')
     seat_p1_color = models.CharField(max_length=5, default='white')
+    status_event_revision = models.PositiveBigIntegerField(default=0)
+    status_started_at = models.DateTimeField(null=True, blank=True)
 
     # 'pending' (nothing to report yet) -> 'queued' (a result is built and waiting on delivery)
     # -> 'delivered'. The body is frozen into `result_body` the moment the outcome is known, so a

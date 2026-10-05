@@ -2,12 +2,14 @@ import uuid
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from ...engine import BackgammonEngine
 from ...models import GameRoom, GameState, Match, Player, RoomPlayer, Task
 from ...presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat, needs_admin_adjudication
 from game.link.models import TournamentLink
+from game.link.live import STATUS_TASK
+from game.task_runner import run_task
 
 
 class PresenceForfeitTests(TestCase):
@@ -83,14 +85,19 @@ class PresenceForfeitTests(TestCase):
         self.assertEqual(self.room.status, 'playing')
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
 
+    @override_settings(GAMELINK_ENABLED=True)
     def test_two_missing_players_require_admin_adjudication(self):
+        TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=17, fixture_id=1005, room=self.room,
+        )
         self.connect_both()
         mark_disconnected(self.room.id, 'white-1', 1001)
-        with patch('game.link.live.publish_snapshot') as publish:
-            publish.return_value = None
+        with patch('game.link.live.httpx.post') as post:
             with self.captureOnCommitCallbacks(execute=True):
                 mark_disconnected(self.room.id, 'black-1', 1002)
-        publish.assert_called_once()
+        post.assert_not_called()
+        delivery = Task.objects.get(name=STATUS_TASK)
+        self.assertTrue(delivery.kwargs['body']['state']['presence']['needsAdminAdjudication'])
         result = check_room_presence(self.room.id, 1100)
         self.assertEqual(result['status'], 'admin_required')
         self.assertEqual(result['missing'], ['black', 'white'])
@@ -101,6 +108,7 @@ class PresenceForfeitTests(TestCase):
             GameState.objects.get(room=self.room).state_data['clock'],
             {'white': 30000, 'black': 30000},
         )
+        self.assertEqual(Task.objects.filter(name=STATUS_TASK).count(), 1)
 
         # Returning later does not restart the old automatic-forfeit deadline.
         mark_connected(self.room.id, 'white-2', 'white', 1110)
@@ -134,14 +142,18 @@ class PresenceForfeitTests(TestCase):
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
 
+    @override_settings(GAMELINK_ENABLED=True)
     def test_failed_admin_snapshot_delivery_remains_queued_for_retry(self):
+        TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=17, fixture_id=1006, room=self.room,
+        )
         self.connect_both()
         mark_disconnected(self.room.id, 'white-1', 1001)
-        with patch('game.link.live.publish_snapshot', side_effect=RuntimeError('offline')):
-            with self.captureOnCommitCallbacks(execute=True):
-                mark_disconnected(self.room.id, 'black-1', 1002)
-
-        delivery = Task.objects.get(name='game.link.live.publish_snapshot')
+        mark_disconnected(self.room.id, 'black-1', 1002)
+        delivery = Task.objects.get(name=STATUS_TASK)
+        with patch('game.link.live.deliver_status_event', side_effect=RuntimeError('offline')):
+            self.assertFalse(run_task(delivery.pk))
+        delivery.refresh_from_db()
         self.assertEqual(delivery.status, 'pending')
         self.assertEqual(delivery.attempts, 1)
         self.assertIn('offline', delivery.last_error)
@@ -215,6 +227,7 @@ class PresenceForfeitTests(TestCase):
         self.room.refresh_from_db()
         self.assertTrue(self.room.state['presence']['needsAdminAdjudication'])
 
+    @override_settings(GAMELINK_ENABLED=True)
     def test_stale_flag_recovered_for_h2h(self):
         TournamentLink.objects.create(
             issuer='tournaments',
@@ -237,6 +250,9 @@ class PresenceForfeitTests(TestCase):
         self.assertFalse(self.room.state['presence'].get(
             'needsAdminAdjudication'))
         self.assertEqual(self.room.state['presence'].get('absentSince'), {})
+        delivery = Task.objects.get(name=STATUS_TASK)
+        self.assertEqual(delivery.kwargs['body']['event_type'], 'admin_cleared')
+        self.assertFalse(delivery.kwargs['body']['state']['presence']['needsAdminAdjudication'])
         # Also via check path
         result = check_room_presence(self.room.id, 1201)
         self.room.refresh_from_db()

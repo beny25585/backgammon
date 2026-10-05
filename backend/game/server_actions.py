@@ -2,7 +2,7 @@
 
 Shared pipeline used after a game-engine action, so that BOTH the player
 WebSocket flow (GameConsumer) and the future Bot Driver produce the same
-persistence, sequencing, clock, game-end, event, broadcast and snapshot
+persistence, sequencing, clock, game-end, event and broadcast
 behavior.
 
 Transport-specific effects are delivered through explicit async callbacks,
@@ -20,8 +20,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from .clock import active_player, apply_transition, compute_clock, parse_time_control
-from .inactivity import ensure_inactivity_check, refresh_after_action
-from .link.live import publish_snapshot
+from .db_timing import measured_database_sync_to_async
+from .inactivity import refresh_after_action
 from .models import GameEvent, GameRoom, GameState, RoomPlayer
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def event_game_id(payload):
     return "initial"
 
 
-@database_sync_to_async
+@measured_database_sync_to_async
 def persist_state_and_advance(room_id, state):
     """Persist the authoritative state with one serialized room transaction."""
     with transaction.atomic():
@@ -156,8 +156,8 @@ async def apply_server_game_action(
     - The engine action has ALREADY happened before this function is called.
       Timing here therefore measures only the post-engine pipeline.
     - The authoritative state is persisted before it is broadcast.
-    - GameEvent persistence and live snapshot publishing stay off the
-      latency-critical broadcast path.
+    - GameEvent persistence stays off the latency-critical broadcast path.
+      External status transitions are queued by their owning transaction.
     - On end_turn, the next player's turnStartedAt is reset immediately before
       persistence so server-side processing does not consume their free delay.
 
@@ -184,7 +184,6 @@ async def apply_server_game_action(
         "broadcast_ms": 0,
         "timeout_reschedule_ms": 0,
         "turn_notice_ms": 0,
-        "snapshot_schedule_ms": 0,
         "game_over_event_ms": 0,
         "game_over_callback_ms": 0,
     }
@@ -352,36 +351,9 @@ async def apply_server_game_action(
         inactivity_refresh_started
     )
 
-    if inactivity_refreshed is not None:
-        inactivity_schedule_started = time_module.perf_counter()
-
-        # Keep this awaited while diagnosing. If this becomes the slow stage,
-        # optimize it separately without changing the authoritative state flow.
-        inactivity_task_created = await database_sync_to_async(
-            ensure_inactivity_check
-        )(room.id)
-
-        timings["inactivity_schedule_ms"] = _elapsed_ms(
-            inactivity_schedule_started
-        )
-
-        if (
-            action == "end_turn"
-            or is_final_move
-            or timings["inactivity_schedule_ms"] >= SLOW_ACTION_WARNING_MS
-        ):
-            logger.debug(
-                "INACTIVITY_SCHEDULE_TIMING "
-                "room=%s action=%s active=%s created=%s "
-                "refresh_ms=%s schedule_ms=%s inactivity=%s",
-                room.id,
-                action,
-                active_player(new_state),
-                inactivity_task_created,
-                timings["inactivity_refresh_ms"],
-                timings["inactivity_schedule_ms"],
-                new_state.get("inactivity"),
-            )
+    # A persistent room check reads this committed timestamp when it wakes.
+    # Opening/reconnect arms it; the watchdog repairs a missing task. No queue
+    # lookup or scheduling round trip is needed on each accepted action.
 
     # 4. Pause clock while waiting for Confirm / Undo after final move
     confirm_pause_started = time_module.perf_counter()
@@ -606,7 +578,7 @@ async def apply_server_game_action(
     if clock is not None and new_active:
         timeout_started = time_module.perf_counter()
 
-        await on_reschedule_timeout()
+        await on_reschedule_timeout(new_state)
 
         timings["timeout_reschedule_ms"] = _elapsed_ms(
             timeout_started
@@ -638,22 +610,6 @@ async def apply_server_game_action(
             turn_notice_started
         )
 
-    # 13. Publish external live snapshot in background
-    snapshot_schedule_started = time_module.perf_counter()
-
-    asyncio.create_task(
-        database_sync_to_async(
-            publish_snapshot,
-            thread_sensitive=False,
-        )(
-            room.id,
-            new_state,
-        )
-    )
-
-    timings["snapshot_schedule_ms"] = _elapsed_ms(
-        snapshot_schedule_started
-    )
 
     # 14. One summary line per successful action
     log_timing("state_update", sequence)

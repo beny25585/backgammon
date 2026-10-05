@@ -276,11 +276,11 @@ def admin_command(request):
 
     event = None
     with transaction.atomic():
-        link = (TournamentLink.objects.select_for_update().select_related('room')
-                .filter(issuer=issuer, fixture_id=fixture_id, room_id=room_id).first())
+        from .locking import lock_linked_room
+
+        room, link = lock_linked_room(room_id, issuer=issuer, fixture_id=fixture_id)
         if link is None:
             return Response({'error': 'Linked room not found'}, status=status.HTTP_404_NOT_FOUND)
-        room = link.room
         game_state, _ = GameState.objects.select_for_update().get_or_create(room=room)
         state = dict(game_state.state_data or {})
         if state.get('adminCommandId') == command_id:
@@ -409,6 +409,8 @@ def _start_if_full(room):
         return False
     room.status = 'playing'
     room.save(update_fields=['status', 'updated_at'])
+    from .live import enqueue_status_event
+    enqueue_status_event(room, 'started')
     return True
 
 

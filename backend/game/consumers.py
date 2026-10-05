@@ -14,6 +14,8 @@ from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
 from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
 from .clock import active_player, compute_clock, deadline_for
+from .db_timing import measured_database_sync_to_async
+from .room_execution import serialized_room_operation
 from .game_service import finalize_room, game_ended_payload, record_game_end
 from .server_actions import (
     apply_server_game_action,
@@ -24,7 +26,6 @@ from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
                        mark_disconnected, mark_heartbeat, needs_admin_adjudication,
                        both_players_connected, connected_colors,
                        STALE_SECONDS)
-from .link.live import publish_snapshot
 from .link.rematch import RematchServiceError, send_direct_play_rematch_action
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
@@ -47,13 +48,90 @@ def get_user_id_from_token(token):
         return None
 
 
-@database_sync_to_async
-def get_room(room_id, *, with_link=False):
+def _get_room(room_id, *, with_link=False, with_state=False):
     try:
-        rooms = GameRoom.objects.select_related('tournament_link') if with_link else GameRoom.objects
+        rooms = GameRoom.objects.all()
+        if with_link:
+            rooms = rooms.select_related('tournament_link')
+        if with_state:
+            rooms = rooms.select_related('gamestate')
         return rooms.get(id=uuid.UUID(str(room_id)))
     except (GameRoom.DoesNotExist, ValueError):
         return None
+
+
+@measured_database_sync_to_async
+def get_room(room_id, *, with_link=False):
+    return _get_room(room_id, with_link=with_link)
+
+
+@measured_database_sync_to_async
+def get_received_context(room_id, *, include_state=False):
+    """Load fresh dispatch data in one executor admission, never across messages."""
+    room = _get_room(room_id, with_state=include_state)
+    if room is None:
+        return None, False, None
+    admin_review_pending = needs_admin_adjudication(room)
+    game_state = None
+    if include_state and not admin_review_pending:
+        try:
+            game_state = room.gamestate
+        except GameState.DoesNotExist:
+            # Legacy rooms without state retain the dispatcher's lazy creation.
+            pass
+    return room, admin_review_pending, game_state
+
+
+@measured_database_sync_to_async
+def get_connection_identity(room_id, user_id):
+    """Authorize and load both display names in one executor admission."""
+    room = _get_room(room_id, with_link=True)
+    names = {'white': None, 'black': None}
+    if room is None:
+        return None, None, names
+    seats = list(room.players.select_related('player__user'))
+    player_color = None
+    for seat in seats:
+        names[seat.color] = str(seat.player)
+        if seat.player.user_id == user_id:
+            player_color = seat.color
+    if (room.state or {}).get('ai'):
+        names['black'] = 'Open Sage'
+    return room, player_color, names
+
+
+@measured_database_sync_to_async
+def get_connected_snapshot(room_id, channel_name, player_color):
+    """Register presence and read/normalize a fresh snapshot under the room lock.
+
+    Reconnect normalization must never save an earlier opening board over a
+    move accepted while the connection was waiting in the executor queue.
+    """
+    with transaction.atomic():
+        room = GameRoom.objects.select_for_update().get(pk=room_id)
+        if mark_connected(room_id, channel_name, player_color) is False:
+            return None
+        room.refresh_from_db()
+        game_state, _ = GameState.objects.get_or_create(room=room)
+        state_data = dict(game_state.state_data or {})
+        admin_review_pending = needs_admin_adjudication(room)
+        timed_out_color = None
+        if room.status == 'playing' and not admin_review_pending:
+            clock, started_at, active, timed_out, _ = compute_clock(
+                state_data, state_data, int(time_module.time() * 1000),
+                room.time_control, room.target_points,
+            )
+            if clock is not None:
+                normalized = dict(state_data)
+                normalized.setdefault('clock', clock)
+                normalized.setdefault('turnStartedAt', started_at)
+                if normalized != state_data:
+                    state_data = normalized
+                    game_state.state_data = state_data
+                    game_state.save(update_fields=['state_data', 'updated_at'])
+            if timed_out:
+                timed_out_color = active
+        return room, state_data, admin_review_pending, timed_out_color
 
 
 @database_sync_to_async
@@ -119,7 +197,7 @@ def record_event_and_advance(room, player_color, event_type, payload):
     return sequence
 
 
-@database_sync_to_async
+@measured_database_sync_to_async
 def get_game_state(room):
     state, _ = GameState.objects.get_or_create(room=room)
     return state
@@ -150,6 +228,25 @@ class GameConsumer(AsyncWebsocketConsumer):
     # How long a finished (but not match-ending) game waits before the server
     # auto-starts the next game of the match.
     NEXT_GAME_DELAY = 30.0
+
+    async def __call__(self, scope, receive, send):
+        try:
+            return await super().__call__(scope, receive, send)
+        finally:
+            # A handshake/application cancellation can interrupt connect before
+            # Channels gets to dispatch websocket.disconnect. Remove that seat
+            # and its watches instead of retaining a ghost connected player.
+            watches = [getattr(self, name, None) for name in (
+                '_timeout_task', '_opening_watch_task', '_presence_heartbeat_task',
+            )]
+            for task in watches:
+                if task is not None:
+                    task.cancel()
+            group = getattr(self, 'room_group_name', None)
+            channels = _connected_users.get(group, {}).get(getattr(self, 'user_id', None), set())
+            if getattr(self, 'channel_name', None) in channels:
+                await self.disconnect(1001)
+            await asyncio.gather(*(task for task in watches if task is not None), return_exceptions=True)
 
     def _socket_entry_event(self, event, *, reason='-', error=None):
         try:
@@ -239,7 +336,9 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # Validate room and user assignment BEFORE accepting
         try:
-            room = await get_room(self.room_id, with_link=True)
+            room, self.player_color, players = await get_connection_identity(
+                self.room_id, self.user_id,
+            )
             if not room:
                 self._socket_entry_event('socket_auth_refused', reason='room_not_found')
                 await self.close(code=4004)
@@ -250,54 +349,19 @@ class GameConsumer(AsyncWebsocketConsumer):
                 self.linked_tournament_id = link.tournament_id
                 self.linked_fixture_id = link.fixture_id
 
-            self.player_color = await get_room_player_color(self.room_id, self.user_id)
             if not self.player_color:
                 self._socket_entry_event('socket_auth_refused', reason='user_not_assigned_to_room')
                 await self.close(code=4003)
                 return
 
+            self.is_ai = bool((room.state or {}).get('ai'))
+            if self.is_ai and room.status == 'waiting':
+                await self.close(code=4003)
+                return
+
             self.room_group_name = f'game_{self.room_id}'
             self._timeout_task = None
-            game_state = await get_game_state(room)
-            state_data = game_state.state_data or {}
-            timed_out_color = None
-            admin_review_pending = await database_sync_to_async(
-                needs_admin_adjudication
-            )(room)
-
-            # Ensure an active game always sends authoritative clock state on connect.
-            if room.status == 'playing' and not admin_review_pending:
-                now_ms = int(time_module.time() * 1000)
-                clock, turn_started_at, clock_active, timed_out, _ = compute_clock(
-                    state_data,
-                    state_data,
-                    now_ms,
-                    room.time_control,
-                    room.target_points,
-                )
-                if clock is not None:
-                    normalized_state = dict(state_data)
-                    normalized_state.setdefault('clock', clock)
-                    normalized_state.setdefault(
-                        'turnStartedAt', turn_started_at)
-                    if (
-                        normalized_state.get(
-                            'clock') != state_data.get('clock')
-                        or normalized_state.get('turnStartedAt') != state_data.get('turnStartedAt')
-                    ):
-                        normalized_state['clock'] = clock
-                        normalized_state['turnStartedAt'] = turn_started_at
-                        state_data = normalized_state
-                        game_state.state_data = state_data
-                        await save_game_state(game_state)
-                if timed_out:
-                    timed_out_color = clock_active
-
-            username = await get_username(self.user_id)
-            logger.info(
-                f"WebSocket connected: {self.player_color} ({username}) room={self.room_id} phase={state_data.get('phase')}")
-            if not state_data:
-                logger.warning(f"Empty state_data for room {self.room_id}")
+            username = players[self.player_color]
         except Exception as exc:
             self._socket_entry_event('socket_auth_refused', reason='connection_setup_failed', error=exc)
             logger.exception("WS connect failed", extra={
@@ -322,18 +386,17 @@ class GameConsumer(AsyncWebsocketConsumer):
             self.channel_name
         )
         _connected_user_colors[self.room_group_name][self.user_id] = self.player_color
-        connected = await database_sync_to_async(mark_connected)(
-            room.id, self.channel_name, self.player_color
-        )
-        if connected is False:
+        snapshot = await get_connected_snapshot(room.id, self.channel_name, self.player_color)
+        if snapshot is None:
             await self.room_expired({})
             return
+        room, state_data, admin_review_pending, timed_out_color = snapshot
         self._presence_heartbeat_task = asyncio.create_task(
             self._presence_heartbeat())
-
-        username = await get_username(self.user_id)
-
-        players = await get_room_player_usernames(self.room_id)
+        logger.info(
+            'WebSocket connected: %s (%s) room=%s phase=%s',
+            self.player_color, username, self.room_id, state_data.get('phase'),
+        )
 
         await self.send(json.dumps({
             'type': 'state_update',
@@ -404,16 +467,6 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'username': username,
             }
         )
-        asyncio.create_task(
-            database_sync_to_async(
-                publish_snapshot,
-                thread_sensitive=False,
-            )(
-                room.id,
-                state_data,
-            )
-        )
-
         await self._broadcast_room_status()
 
         # Covers the case where the second player joined through the REST API
@@ -523,12 +576,12 @@ class GameConsumer(AsyncWebsocketConsumer):
         await asyncio.sleep(40)
         await database_sync_to_async(check_room_presence)(self.room_id)
 
+    @serialized_room_operation
     async def receive(self, text_data):
         receive_started = time_module.perf_counter()
 
         receive_epoch_ms = int(time_module.time() * 1000)
-        receive_room_ms = 0
-        receive_admin_ms = 0
+        receive_context_ms = 0
         receive_dispatch_ms = 0
         try:
             data = json.loads(text_data)
@@ -538,23 +591,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.info(
                 f"WS receive: type={message_type} player={self.player_color} room={self.room_id}")
 
-            room_lookup_started = time_module.perf_counter()
-            room = await get_room(self.room_id)
-            receive_room_ms = int(
-                (time_module.perf_counter() - room_lookup_started) * 1000
+            context_started = time_module.perf_counter()
+            room, admin_review_pending, game_state = await get_received_context(
+                self.room_id, include_state=message_type == 'state_update',
             )
-            if room:
-                admin_check_started = time_module.perf_counter()
-
-                admin_review_pending = await database_sync_to_async(
-                    needs_admin_adjudication
-                )(room)
-                receive_admin_ms = int(
-                    (time_module.perf_counter() - admin_check_started) * 1000
-                )
-            else:
-                admin_review_pending = False
-                receive_admin_ms = 0
+            receive_context_ms = int(
+                (time_module.perf_counter() - context_started) * 1000
+            )
 
             # Keep gameplay paused, but allow an explicit match forfeit.
             if room and admin_review_pending and message_type != 'leave':
@@ -566,7 +609,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
             if message_type == 'state_update':
                 dispatch_started = time_module.perf_counter()
-                await self._handle_intent(data)
+                await self._handle_intent(data, context=(room, game_state))
                 receive_dispatch_ms = int(
                     (time_module.perf_counter() - dispatch_started) * 1000
                 )
@@ -579,12 +622,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                     logger.warning(
                         "SLOW_WS_RECEIVE "
                         "room=%s player=%s type=%s "
-                        "room_ms=%s admin_ms=%s dispatch_ms=%s total_ms=%s",
+                        "context_ms=%s dispatch_ms=%s total_ms=%s",
                         self.room_id,
                         self.player_color,
                         message_type,
-                        receive_room_ms,
-                        receive_admin_ms,
+                        receive_context_ms,
                         receive_dispatch_ms,
                         receive_total_ms,
                     )
@@ -613,7 +655,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 'message': str(exc)
             }))
 
-    async def _handle_intent(self, data):
+    @serialized_room_operation
+    async def _handle_intent(self, data, *, context=None):
         """Server-authoritative dispatcher. Accepts action intents only.
 
         Payload format (frontend Step 5): {'action': 'roll'|'move'|'end_turn'|
@@ -624,7 +667,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         intent_started = time_module.perf_counter()
         intent_room_started = time_module.perf_counter()
 
-        room = await get_room(self.room_id)
+        # WebSocket receive already loaded this message's room/state together.
+        # Direct callers (including the practice bot) still fetch fresh data.
+        room = await get_room(self.room_id) if context is None else context[0]
 
         intent_room_ms = int(
             (time_module.perf_counter() - intent_room_started) * 1000
@@ -648,7 +693,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         action = intent.get('action')
         game_state_started = time_module.perf_counter()
 
-        gs = await get_game_state(room)
+        gs = context[1] if context is not None else None
+        if gs is None:
+            gs = await get_game_state(room)
 
         game_state_ms = int(
             (time_module.perf_counter() - game_state_started) * 1000
@@ -716,8 +763,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         async def _on_timeout(winner, loser):
             await self._forfeit_on_time(winner, loser)
 
-        async def _on_reschedule_timeout():
-            await self._reschedule_timeout_from_state()
+        async def _on_reschedule_timeout(persisted_state):
+            await self._schedule_timeout_from_snapshot(persisted_state, room)
 
         async def _on_opening_result():
             await self._arm_opening_result_watch()
@@ -863,6 +910,10 @@ class GameConsumer(AsyncWebsocketConsumer):
 
     async def _opening_result_watch(self):
         await asyncio.sleep(GameConsumer.OPENING_RESULT_DELAY)
+        await self._activate_opening_move()
+
+    @serialized_room_operation
+    async def _activate_opening_move(self):
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
             return
@@ -1573,6 +1624,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             _auto_next_tasks.pop(self.room_group_name, None)
             _auto_next_deadlines.pop(self.room_group_name, None)
 
+    @serialized_room_operation
     async def _start_next_game(self):
         """Start the next game of a match, mirroring the `next_game` intent."""
         room = await get_room(self.room_id)
@@ -1681,6 +1733,10 @@ class GameConsumer(AsyncWebsocketConsumer):
         delay = deadline - time_module.time()
         if delay > 0:
             await asyncio.sleep(delay)
+        await self._expire_clock(active_color)
+
+    @serialized_room_operation
+    async def _expire_clock(self, active_color):
         room = await get_room(self.room_id)
         if not room:
             return
@@ -1692,8 +1748,21 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
         if stored.get('phase') == 'game_over':
             return
+        current_deadline = deadline_for(stored, room.time_control, room.target_points)
+        if current_deadline is not None and current_deadline > int(time_module.time() * 1000):
+            await self._schedule_timeout(current_deadline, active_color)
+            return
         winner = 'black' if active_color == 'white' else 'white'
         await self._forfeit_on_time(winner, active_color)
+
+    async def _schedule_timeout_from_snapshot(self, stored, room):
+        """Use the action's persisted state; expiry still rechecks the database."""
+        active = active_player(stored)
+        if not active or stored.get('phase') == 'game_over':
+            return
+        await self._schedule_timeout(
+            deadline_for(stored, room.time_control, room.target_points), active,
+        )
 
     async def _reschedule_timeout_from_state(self):
         """Re-arm the deadline from the saved state (e.g. after a disconnect)."""
@@ -1715,16 +1784,22 @@ class GameConsumer(AsyncWebsocketConsumer):
         deadline = deadline_for(stored, room.time_control, room.target_points)
         await self._schedule_timeout(deadline, active)
 
+    @serialized_room_operation
     async def _forfeit_on_time(self, winner, loser):
         """Mark the game over because `loser` ran out of time and broadcast it."""
         room = await get_room(self.room_id)
-        if not room:
+        if not room or room.status != 'playing':
             return
         if await database_sync_to_async(needs_admin_adjudication)(room):
             return
         gs = await get_game_state(room)
         stored = dict(gs.state_data or {})
-        if stored.get('phase') == 'game_over':
+        deadline = deadline_for(stored, room.time_control, room.target_points)
+        reserve = (stored.get('clock') or {}).get(loser)
+        exhausted = isinstance(reserve, (int, float)) and reserve <= 0
+        if stored.get('phase') == 'game_over' or (
+                not exhausted and (active_player(stored) != loser or deadline is None
+                                   or deadline > int(time_module.time() * 1000))):
             return
         stored['phase'] = 'game_over'
         stored['winner'] = winner

@@ -14,6 +14,7 @@ os.environ.setdefault(
 
 django_asgi_app = get_asgi_application()
 import game.routing
+from game.room_execution import RoomDatabaseMiddleware
 
 
 
@@ -78,9 +79,11 @@ class WebSocketReceiveTimingMiddleware:
 
 
 websocket_application = WebSocketReceiveTimingMiddleware(
-    AuthMiddlewareStack(
-        URLRouter(
-            game.routing.websocket_urlpatterns
+    RoomDatabaseMiddleware(
+        AuthMiddlewareStack(
+            URLRouter(
+                game.routing.websocket_urlpatterns
+            )
         )
     )
 )

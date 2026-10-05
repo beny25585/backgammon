@@ -78,6 +78,7 @@ STATUS_COMPLETED = 'completed'
 STATUS_CANCELLED = 'cancelled'
 
 
+@transaction.atomic
 def enqueue_result(link, match, room, status, *, winner_color=None, end_reason=None, score=None):
     """
     Freeze this fixture's outcome onto `link` and queue it for delivery.
@@ -102,17 +103,24 @@ def enqueue_result(link, match, room, status, *, winner_color=None, end_reason=N
         score=score,
     )
 
+    from .models import TournamentLink
+    # Fence a stale in-memory link too. Freezing the body and creating its one
+    # queue identity commit together; retries cannot replace the saved result.
+    frozen = TournamentLink.objects.filter(pk=link.pk, result_status='pending').update(
+        result_body=body, result_status='queued',
+    )
+    if not frozen:
+        return None
     link.result_body = body
     link.result_status = 'queued'
-    link.save(update_fields=['result_body', 'result_status'])
 
-    task = Task.objects.create(
-        name=TASK_NAME,
-        kwargs={'link_id': link.pk},
-        # `run_tasks` selects on `run_at__lte=now`, and NULL never satisfies that comparison, so a
-        # task left with `run_at=None` is invisible to the runner forever. Always stamp it.
-        run_at=timezone.now(),
+    task, created = Task.objects.get_or_create(
+        key=f'result:{link.pk}',
+        defaults={'name': TASK_NAME, 'kwargs': {'link_id': link.pk},
+                  'run_at': timezone.now()},
     )
+    if not created:
+        raise RuntimeError('A result task already exists for a reset link; inspect its frozen result')
 
     logger.info(
         f"result queued: fixture {link.fixture_id} status={status} "

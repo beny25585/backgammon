@@ -993,7 +993,8 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
         self.assertEqual(room.target_points, 5)
         self.assertEqual(room.status, "playing")
         self.assertEqual(link.result_status, "pending")
-        self.assertEqual(Task.objects.count(), 0)
+        self.assertEqual(Task.objects.filter(name='game.link.outbox.deliver_result').count(), 0)
+        self.assertEqual(Task.objects.filter(name='game.link.live.deliver_status_event').count(), 1)
         post.assert_not_called()
 
     def test_entering_from_tournaments_and_finishing_sends_a_single_point_score(self):
@@ -1096,6 +1097,16 @@ class EnqueueResultTests(ResultTestBase):
         self.assertIsNone(enqueue_result(
             self.link, None, self.room, "cancelled"))
         self.assertEqual(Task.objects.count(), 1)
+
+    def test_stale_link_cannot_replace_a_frozen_result_or_queue_a_second_task(self):
+        stale = TournamentLink.objects.get(pk=self.link.pk)
+        self.seat_both()
+        record_game_end(self.room, self.winning_state(), 'white', 'single', 'bear_off')
+        saved = TournamentLink.objects.get(pk=self.link.pk).result_body
+        self.assertEqual(stale.result_status, 'pending')
+        self.assertIsNone(enqueue_result(stale, None, self.room, 'cancelled'))
+        self.assertEqual(Task.objects.filter(key=f'result:{self.link.pk}').count(), 1)
+        self.assertEqual(TournamentLink.objects.get(pk=self.link.pk).result_body, saved)
 
     def test_an_ending_that_rolls_back_queues_nothing(self):
         self.seat_both()
@@ -1801,3 +1812,16 @@ class AdminCommandTests(TestCase):
         self.room.refresh_from_db()
         self.assertEqual(
             (self.room.white_score, self.room.black_score), (1, 0))
+
+    def test_room_lock_does_not_authorize_a_command_for_another_fixture(self):
+        response = self.post_command(self.payload(fixture_id=43))
+        self.assertEqual(response.status_code, 404)
+        self.room.refresh_from_db()
+        self.assertEqual((self.room.white_score, self.room.black_score), (1, 0))
+        self.assertEqual(self.room.last_sequence, 0)
+
+    def test_command_for_a_missing_room_is_refused(self):
+        response = self.post_command(self.payload(room_id=str(uuid.uuid4())))
+        self.assertEqual(response.status_code, 404)
+        self.room.refresh_from_db()
+        self.assertEqual((self.room.white_score, self.room.black_score), (1, 0))

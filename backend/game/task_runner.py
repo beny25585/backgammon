@@ -3,14 +3,19 @@ import logging
 from datetime import timedelta
 from importlib import import_module
 import time
+import uuid
+import random
 
 from django.db.models import F, Q
+from django.db import transaction
 from django.utils import timezone
 
 from .models import Task
+from .scheduling import current_schedule
 
 logger = logging.getLogger(__name__)
 RESULT_TASK = 'game.link.outbox.deliver_result'
+DURABLE_DELIVERY_TASKS = (RESULT_TASK, 'game.link.live.deliver_status_event')
 LEASE_SECONDS = 120
 
 _channel_backend_logged = False
@@ -39,7 +44,7 @@ def runnable(now):
     return (
         Q(status='pending') & (Q(run_at__lte=now) | Q(run_at__isnull=True))
         | Q(status='running', updated_at__lte=now - timedelta(seconds=LEASE_SECONDS))
-        | Q(status='failed', name=RESULT_TASK)
+        | Q(status='failed', name__in=DURABLE_DELIVERY_TASKS)
     )
 
 
@@ -48,6 +53,7 @@ def run_task(task_id):
 
     claim_started = time.perf_counter()
     now = timezone.now()
+    lease_token = uuid.uuid4()
 
     # Compare-and-set also works on SQLite. Only one worker can claim this lease.
     claimed = Task.objects.filter(
@@ -58,6 +64,8 @@ def run_task(task_id):
         status='running',
         attempts=F('attempts') + 1,
         updated_at=now,
+        lease_token=lease_token,
+        requested_run_at=None,
     )
 
     claim_ms = int((time.perf_counter() - claim_started) * 1000)
@@ -70,7 +78,9 @@ def run_task(task_id):
         )
         return False
 
-    task = Task.objects.get(pk=task_id)
+    task = Task.objects.filter(pk=task_id, lease_token=lease_token, status='running').first()
+    if task is None:
+        return False
 
     queue_delay_ms = None
     if task.run_at is not None:
@@ -94,9 +104,14 @@ def run_task(task_id):
         pk=task_id,
         status='running',
         attempts=task.attempts,
+        lease_token=lease_token,
     )
 
     execution_started = time.perf_counter()
+    schedule = {'key': task.key, 'run_at': None, 'owns': lease.exists, 'lease': lease,
+                'heartbeat': lambda: bool(lease.update(updated_at=timezone.now())),
+                'renew_at': time.monotonic() + 30}
+    schedule_token = current_schedule.set(schedule)
 
     try:
         module, _, name = task.name.rpartition('.')
@@ -118,7 +133,7 @@ def run_task(task_id):
         retry = (
             not blocked
             and (
-                task.name == RESULT_TASK
+                task.name in DURABLE_DELIVERY_TASKS or task.key is not None
                 or task.attempts < task.max_attempts
             )
         )
@@ -136,10 +151,11 @@ def run_task(task_id):
                 seconds=min(
                     30 * 2 ** min(task.attempts - 1, 6),
                     1800,
-                )
+                ) + random.uniform(0, 5)
             ),
             last_error=str(exc)[:2000],
             updated_at=timezone.now(),
+            lease_token=None,
         )
 
         update_ms = int(
@@ -164,24 +180,44 @@ def run_task(task_id):
 
         return False
 
+    finally:
+        current_schedule.reset(schedule_token)
+
     execution_ms = int(
         (time.perf_counter() - execution_started) * 1000
     )
 
     update_started = time.perf_counter()
 
-    lease.update(
-        status='done',
-        result=result if result is not None else {},
-        last_error=None,
-        updated_at=timezone.now(),
-    )
+    # Merge external wakeups under the queue row lock. No room locks or remote
+    # work here; a request either precedes completion or reactivates done work.
+    with transaction.atomic():
+        latest = lease.select_for_update().only('pk', 'requested_run_at').first()
+        completed = False
+        if latest is not None:
+            next_runs = [value for value in (schedule['run_at'], latest.requested_run_at) if value is not None]
+            next_run = min(next_runs) if next_runs else None
+            completed = lease.update(
+                kwargs=schedule.get('kwargs', task.kwargs),
+                status='pending' if next_run is not None else 'done',
+                run_at=next_run if next_run is not None else task.run_at,
+                result=result if result is not None else {},
+                last_error=None,
+                updated_at=timezone.now(),
+                lease_token=None,
+                requested_run_at=None,
+                attempts=0 if next_run is not None else task.attempts,
+            )
 
     update_ms = int(
         (time.perf_counter() - update_started) * 1000
     )
 
     total_ms = claim_ms + execution_ms + update_ms
+
+    if not completed:
+        logger.warning('event=task_lease_lost task=%s name=%s phase=completion', task.pk, task.name)
+        return False
 
     logger.info(
         'TASK_DONE task=%s name=%s attempts=%s '
@@ -198,4 +234,4 @@ def run_task(task_id):
         result,
     )
 
-    return True
+    return bool(completed)

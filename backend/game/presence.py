@@ -56,12 +56,9 @@ def both_players_connected(room, now=None):
 
 
 def _schedule(room_id, delay=WATCH_SECONDS):
-    Task.objects.create(
-        name=WATCH_TASK,
-        args=[str(room_id)],
-        run_at=timezone.now() + timedelta(seconds=delay),
-        max_attempts=3,
-    )
+    from .scheduling import schedule_unique
+    return schedule_unique(f'presence:{room_id}', WATCH_TASK, [str(room_id)],
+                           timezone.now() + timedelta(seconds=delay))
 
 
 def _requires_organizer_adjudication(room):
@@ -81,20 +78,14 @@ def _requires_organizer_adjudication(room):
 
 
 def _publish_admin_transition(room):
-    snapshot_state = dict(
-        GameState.objects.filter(room=room)
-        .values_list('state_data', flat=True)
-        .first() or {}
-    )
-    task = Task.objects.create(
-        name='game.link.live.publish_snapshot',
-        args=[str(room.id), snapshot_state],
-        kwargs={'raise_on_error': True},
-        run_at=timezone.now(),
-        max_attempts=3,
-    )
-    from .task_runner import run_task
-    transaction.on_commit(lambda task_pk=task.pk: run_task(task_pk))
+    from .link.live import enqueue_status_event
+
+    needs_admin = bool(((room.state or {}).get('presence') or {}).get('needsAdminAdjudication'))
+    if not needs_admin and room.status == 'playing':
+        from .inactivity import ensure_inactivity_check
+        ensure_inactivity_check(room.pk, run_at=timezone.now())
+        _schedule(room.pk)
+    return enqueue_status_event(room, 'admin_required' if needs_admin else 'admin_cleared')
 
 
 @transaction.atomic
@@ -106,6 +97,7 @@ def mark_connected(room_id, channel_name, color, now=None):
         return False
     state, presence = _presence(room)
     requires_organizer = _requires_organizer_adjudication(room)
+    previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
     if not requires_organizer and presence.get('needsAdminAdjudication'):
         presence['needsAdminAdjudication'] = False
         presence['absentSince'] = {}
@@ -124,6 +116,8 @@ def mark_connected(room_id, channel_name, color, now=None):
     state['presence'] = presence
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
+    if previous_needs_admin != bool(presence.get('needsAdminAdjudication')):
+        _publish_admin_transition(room)
     return True
 
 
@@ -193,7 +187,9 @@ def check_room_presence(room_id, now=None):
     loser = None
     payload = None
     with transaction.atomic():
+        from .scheduling import check_ownership
         room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
+        check_ownership(lock=True)
         if not room or room.status != 'playing':
             return {'status': 'closed'}
         if (room.state or {}).get('ai'):

@@ -1,15 +1,18 @@
 """Turn obligations are enforced at the websocket and persistence boundary."""
 from urllib.parse import urlencode
+from unittest.mock import patch
 
 from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth.models import User
-from django.test import TransactionTestCase
+from django.test import TransactionTestCase, override_settings
 from rest_framework_simplejwt.tokens import AccessToken
 
 from game.consumers import GameConsumer
 from game.engine import BackgammonEngine
-from game.models import GameRoom, GameState, Player, RoomPlayer
+from game.models import GameRoom, GameState, Player, RoomPlayer, Task
+from game.link.live import STATUS_TASK
+from game.link.models import TournamentLink
 
 
 class TurnIntentTests(TransactionTestCase):
@@ -74,6 +77,27 @@ class TurnIntentTests(TransactionTestCase):
             self.assertEqual((await self.snapshot())[1], 3)
         finally:
             await comm.disconnect()
+
+    @override_settings(GAMELINK_ENABLED=True)
+    async def test_moves_and_reconnections_do_not_publish_external_snapshots(self):
+        await database_sync_to_async(TournamentLink.objects.create)(
+            issuer='tournaments', tournament_id=32, fixture_id=72, room=self.room,
+        )
+        with patch('game.link.live.httpx.post') as post:
+            comm = await self.connect()
+            try:
+                await self.intent(comm, 'move', **{'from': 12, 'to': 9})
+                update = await self.receive(comm, 'state_update', 'move')
+                self.assertEqual(update['payload']['remaining'], [5])
+            finally:
+                await comm.disconnect()
+            comm = await self.connect()
+            try:
+                count = await database_sync_to_async(Task.objects.filter(name=STATUS_TASK).count)()
+                self.assertEqual(count, 0)
+                post.assert_not_called()
+            finally:
+                await comm.disconnect()
 
     async def test_lower_die_rejected_when_only_higher_die_may_be_used(self):
         points = [0] * 24

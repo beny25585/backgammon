@@ -11,7 +11,7 @@ from .models import GameRoom
 logger = logging.getLogger(__name__)
 
 
-def expire_waiting_rooms(minutes: int = 60) -> int:
+def expire_waiting_rooms(minutes: int = 60, *, limit: int = 50) -> int:
     """Expire stale waiting rooms owned by the game service.
 
     Tournament entry deadlines belong to the tournaments service. In particular,
@@ -19,11 +19,13 @@ def expire_waiting_rooms(minutes: int = 60) -> int:
     Direct-play links and unlinked rooms retain their existing expiry behavior.
     Returns the number of rooms actually closed after rechecking under lock.
     """
+    if limit < 1:
+        raise ValueError('limit must be positive')
     cutoff = timezone.now() - timedelta(minutes=minutes)
     stale_ids = list(
         GameRoom.objects.filter(status="waiting", updated_at__lt=cutoff).exclude(
             tournament_link__tournament_id__gt=0,
-        ).values_list("pk", flat=True)
+        ).order_by('updated_at', 'pk').values_list("pk", flat=True)[:limit]
     )
     return sum(_expire_waiting_room(room_id, cutoff) for room_id in stale_ids)
 
@@ -32,6 +34,8 @@ def _expire_waiting_room(room_id, cutoff) -> bool:
     """Recheck ownership, activity and state before closing one candidate."""
     with transaction.atomic():
         room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
+        from .scheduling import check_ownership
+        check_ownership(lock=True)
         if room is None or room.status != "waiting" or room.updated_at >= cutoff:
             return False
         link = TournamentLink.objects.select_for_update().filter(room_id=room.pk).first()

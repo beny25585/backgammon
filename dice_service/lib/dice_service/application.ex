@@ -16,13 +16,18 @@ defmodule DiceService.Application do
       Application.get_env(:dice_service, :port, 4000)
       |> maybe_from_env(System.get_env("PORT"))
 
+    {:ok, listen_ip} =
+      System.get_env("DICE_BIND_HOST", "127.0.0.1")
+      |> String.to_charlist()
+      |> :inet.parse_address()
+
     children = [
       {Plug.Cowboy,
        scheme: :http,
        plug: DiceService.Router,
        options: [
          port: port,
-         ip: {127, 0, 0, 1}
+         ip: listen_ip
        ]}
     ]
 

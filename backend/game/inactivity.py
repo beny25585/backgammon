@@ -11,8 +11,8 @@ schemaless ``GameState.state_data`` under ``"inactivity"`` — no migration::
         "deadlineMs": None,
     }
 
-No decrementing counters are stored. Automatic loss is intentionally not
-implemented here yet; the checker reports ``expired_awaiting_loss``.
+No decrementing counters are stored. A due checker re-reads the persisted
+window before warning or finalizing an inactivity loss.
 """
 
 import logging
@@ -62,39 +62,26 @@ def _dt_from_ms(moment_ms):
 
 
 def _schedule_at(room_id, run_at):
-    from .models import Task
+    from .scheduling import schedule_unique
 
-    Task.objects.create(
-        name=INACTIVITY_TASK,
-        args=[str(room_id)],
-        run_at=run_at,
-        max_attempts=3,
-    )
+    return schedule_unique(f'inactivity:{room_id}', INACTIVITY_TASK, [str(room_id)], run_at)
 
 
-def ensure_inactivity_check(room_id):
+def ensure_inactivity_check(room_id, *, run_at=None):
     """Guarantee a pending durable inactivity check exists for the room.
 
-    Called after every successful action; creates nothing when a check is
-    already pending. Stale wake-ups are harmless: the checker re-derives
+    Called on opening/resume and by restart repair, not on every action.
+    Stale wake-ups are harmless: the checker re-derives
     everything from the persisted block under lock.
     """
-    from .models import Task
-
-    key = str(room_id)
-    pending_args = Task.objects.filter(
-        name=INACTIVITY_TASK, status='pending',
-    ).values_list('args', flat=True)
-    for args in pending_args:
-        if args and list(args)[:1] == [key]:
-            return False
-    _schedule_at(room_id, timezone.now() + timedelta(seconds=INACTIVITY_WARN_SECONDS))
-    ensure_inactivity_watchdog()
-    return True
+    created = _schedule_at(room_id, run_at or timezone.now() + timedelta(seconds=INACTIVITY_WARN_SECONDS))
+    if created:
+        ensure_inactivity_watchdog()
+    return created
 
 
 def check_room_inactivity(room_id, now=None):
-    """Enter warning state for a stalling player; never finalize.
+    """Warn or finalize a stalling player from the persisted inactivity window.
 
     Restart-tolerant like ``presence.check_room_presence``: locks the room,
     re-reads ``GameState``, and decides from persisted state, so a valid
@@ -109,7 +96,9 @@ def check_room_inactivity(room_id, now=None):
 
     now_ms = int(now * 1000) if now is not None else int(time_module.time() * 1000)
     with transaction.atomic():
+        from .scheduling import check_ownership
         room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
+        check_ownership(lock=True)
         if room is None or room.status != 'playing':
             logger.info(
                 'INACTIVITY_CHECK_STARTED room_id=%s now_ms=%s room_status=%s',
@@ -163,6 +152,7 @@ def check_room_inactivity(room_id, now=None):
                 del state['inactivity']
                 game_state.state_data = state
                 game_state.save(update_fields=['state_data', 'updated_at'])
+            _schedule_at(room_id, _dt_from_ms(now_ms + INACTIVITY_WARN_SECONDS * 1000))
             return {'status': 'idle'}
         block = state.get('inactivity')
         if not isinstance(block, dict) or block.get('player') != responsible:
@@ -326,107 +316,108 @@ def _finalize_inactivity_loss(room, state, game_state, block):
         matchId=str(match.id), matchOver=True, nextGame=False,
     )
     group_name = f'game_{room.id}'
-    logger.info(
-        'INACTIVITY_GAME_ENDED_BROADCAST_START room_id=%s group_name=%s',
-        room.id,
-        group_name,
-    )
-    try:
-        async_to_sync(get_channel_layer().group_send)(
-            group_name, {'type': 'game_ended', 'payload': payload}
-        )
-    except Exception as exc:
-        logger.exception(
-            'INACTIVITY_GAME_ENDED_BROADCAST_FAILED room_id=%s exception=%s',
-            room.id,
-            exc,
-        )
-        raise
-    logger.info(
-        'INACTIVITY_GAME_ENDED_BROADCAST_OK room_id=%s group_name=%s',
-        room.id,
-        group_name,
-    )
+    def notify():
+        logger.info('INACTIVITY_GAME_ENDED_BROADCAST_START room_id=%s group_name=%s', room.id, group_name)
+        try:
+            async_to_sync(get_channel_layer().group_send)(
+                group_name, {'type': 'game_ended', 'payload': payload}
+            )
+        except Exception:
+            # The committed result and its durable delivery task survive a
+            # Redis outage. Re-entry reads that result from the database.
+            logger.exception('INACTIVITY_GAME_ENDED_BROADCAST_FAILED room_id=%s', room.id)
+            raise
+        logger.info('INACTIVITY_GAME_ENDED_BROADCAST_OK room_id=%s group_name=%s', room.id, group_name)
+
+    # This callback is synchronous after commit, not a background worker.
+    # Redis must never hold or roll back the room's scoring transaction.
+    transaction.on_commit(notify, robust=True)
     return {'status': 'forfeited', 'loser': loser, 'winner': winner}
 
 
 def ensure_inactivity_watchdog():
-    """Guarantee a pending watchdog check exists. Monitoring only."""
-    from .models import Task
+    from .scheduling import schedule_unique
 
-    pending = Task.objects.filter(
-        name=INACTIVITY_WATCHDOG_TASK, status='pending',
-    ).exists()
-    if pending:
-        return False
-    Task.objects.create(
-        name=INACTIVITY_WATCHDOG_TASK,
-        args=[],
-        run_at=timezone.now() + timedelta(seconds=INACTIVITY_WATCHDOG_INTERVAL_SECONDS),
-        max_attempts=3,
-    )
-    return True
+    return schedule_unique('inactivity-watchdog', INACTIVITY_WATCHDOG_TASK, [],
+                           timezone.now() + timedelta(seconds=INACTIVITY_WATCHDOG_INTERVAL_SECONDS))
 
 
-def check_inactivity_watchdog(now=None):
-    """Read-only monitor for the inactivity pipeline. Never mutates rooms.
+def check_inactivity_watchdog(now=None, cursor=None):
+    """Bounded monitor and repair for missing inactivity checks. Never mutates rooms.
 
     Detects overdue warnings/forfeits and re-schedules itself through the
     existing Task infrastructure. Does not warn, forfeit, or write state.
     """
-    from .models import GameRoom, GameState, Task
+    from .models import GameRoom, Task
 
     now_ms = int(now * 1000) if now is not None else int(time_module.time() * 1000)
     tolerance_ms = INACTIVITY_WATCHDOG_TOLERANCE_SECONDS * 1000
-    try:
-        rooms = list(GameRoom.objects.filter(status='playing').only('id', 'status'))
-        for room in rooms:
-            game_state = GameState.objects.filter(room=room).first()
-            if game_state is None:
+    from .scheduling import current_schedule, check_ownership
+    rooms = list(GameRoom.objects.filter(status='playing', pk__gt=cursor)
+                 .select_related('gamestate').order_by('pk')[:200]) if cursor else list(
+                     GameRoom.objects.filter(status='playing').select_related('gamestate').order_by('pk')[:200])
+    keys = {f'inactivity:{room.pk}' for room in rooms}
+    active_keys = set(Task.objects.filter(key__in=keys, status__in=('pending', 'running'))
+                      .values_list('key', flat=True))
+    for index, room in enumerate(rooms):
+        if index % 25 == 0:
+            check_ownership()
+        game_state = getattr(room, 'gamestate', None)
+        if game_state is None:
+            continue
+        state = dict(game_state.state_data or {})
+        if state.get('phase') == 'game_over':
+            continue
+        block = state.get('inactivity')
+        if f'inactivity:{room.pk}' not in active_keys:
+            # Repair at the persisted due time, not sixty seconds from repair.
+            # A late watchdog must not delay an already-due warning again.
+            due_ms = now_ms
+            if isinstance(block, dict):
+                due_ms = block.get('deadlineMs') or (
+                    (block.get('lastActionAtMs') or now_ms) + INACTIVITY_WARN_SECONDS * 1000)
+            ensure_inactivity_check(room.pk, run_at=_dt_from_ms(due_ms))
+        if not isinstance(block, dict):
+            continue
+        warned_at_ms = block.get('warnedAtMs')
+        deadline_ms = block.get('deadlineMs')
+        last_action_ms = block.get('lastActionAtMs')
+        player = block.get('player')
+        version = state.get('version')
+        if warned_at_ms is None:
+            if last_action_ms is None:
                 continue
-            state = dict(game_state.state_data or {})
-            if state.get('phase') == 'game_over':
+            warn_at_ms = int(last_action_ms) + INACTIVITY_WARN_SECONDS * 1000
+            if now_ms > warn_at_ms + tolerance_ms:
+                logger.error(
+                    'INACTIVITY_WATCHDOG_WARNING_OVERDUE room_id=%s player=%s version=%s lastActionAtMs=%s warn_at_ms=%s now_ms=%s',
+                    room.id,
+                    player,
+                    version,
+                    last_action_ms,
+                    warn_at_ms,
+                    now_ms,
+                )
+        else:
+            if deadline_ms is None:
                 continue
-            block = state.get('inactivity')
-            if not isinstance(block, dict):
-                continue
-            warned_at_ms = block.get('warnedAtMs')
-            deadline_ms = block.get('deadlineMs')
-            last_action_ms = block.get('lastActionAtMs')
-            player = block.get('player')
-            version = state.get('version')
-            if warned_at_ms is None:
-                if last_action_ms is None:
-                    continue
-                warn_at_ms = int(last_action_ms) + INACTIVITY_WARN_SECONDS * 1000
-                if now_ms > warn_at_ms + tolerance_ms:
-                    logger.error(
-                        'INACTIVITY_WATCHDOG_WARNING_OVERDUE room_id=%s player=%s version=%s lastActionAtMs=%s warn_at_ms=%s now_ms=%s',
-                        room.id,
-                        player,
-                        version,
-                        last_action_ms,
-                        warn_at_ms,
-                        now_ms,
-                    )
-            else:
-                if deadline_ms is None:
-                    continue
-                if now_ms > int(deadline_ms) + tolerance_ms:
-                    logger.error(
-                        'INACTIVITY_WATCHDOG_FORFEIT_OVERDUE room_id=%s player=%s version=%s warnedAtMs=%s deadlineMs=%s now_ms=%s',
-                        room.id,
-                        player,
-                        version,
-                        warned_at_ms,
-                        deadline_ms,
-                        now_ms,
-                    )
-    finally:
-        Task.objects.create(
-            name=INACTIVITY_WATCHDOG_TASK,
-            args=[],
-            run_at=timezone.now() + timedelta(seconds=INACTIVITY_WATCHDOG_INTERVAL_SECONDS),
-            max_attempts=3,
-        )
-    return {'status': 'ok'}
+            if now_ms > int(deadline_ms) + tolerance_ms:
+                logger.error(
+                    'INACTIVITY_WATCHDOG_FORFEIT_OVERDUE room_id=%s player=%s version=%s warnedAtMs=%s deadlineMs=%s now_ms=%s',
+                    room.id,
+                    player,
+                    version,
+                    warned_at_ms,
+                    deadline_ms,
+                    now_ms,
+                )
+
+    # The owner reuses its row; an exception follows the runner retry path and
+    # never creates a second watchdog. Continue large rosters on the next tick.
+    owned = current_schedule.get()
+    if owned is not None:
+        owned['kwargs'] = {'cursor': str(rooms[-1].pk)} if len(rooms) == 200 else {}
+    ensure_inactivity_watchdog()
+    if owned is not None and len(rooms) == 200:
+        owned['run_at'] = timezone.now() + timedelta(seconds=1)
+    return {'status': 'ok', 'rooms_checked': len(rooms)}

@@ -158,6 +158,9 @@ class Task(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.CharField(max_length=255, null=True, blank=True, unique=True)
+    lease_token = models.UUIDField(null=True, blank=True)
+    requested_run_at = models.DateTimeField(null=True, blank=True)
     name = models.CharField(
         max_length=200, help_text="Callable path, e.g. module.func")
     args = models.JSONField(default=list, blank=True)

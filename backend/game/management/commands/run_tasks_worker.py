@@ -36,6 +36,9 @@ class Command(BaseCommand):
         if limit < 1:
             raise CommandError("--limit must be positive.")
 
+        from game.inactivity import ensure_inactivity_watchdog
+        ensure_inactivity_watchdog()
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Game task worker started: interval={interval}s limit={limit}"

@@ -181,6 +181,8 @@ def join_room(request):
     RoomPlayer.objects.create(room=room, player=player, color=color)
     room.status = 'playing'
     room.save()
+    from .link.live import enqueue_status_event
+    enqueue_status_event(room, 'started')
     logger.info(
         f"User joined room: user={user.username} code={code} color={color}")
 

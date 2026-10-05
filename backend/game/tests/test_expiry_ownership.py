@@ -12,6 +12,22 @@ from game.tasks import _expire_waiting_room, expire_waiting_rooms
 
 
 class TournamentExpiryOwnershipTests(TestCase):
+    def test_worker_budget_preserves_started_rooms_and_visits_later_unstarted_rooms(self):
+        old = timezone.now() - timedelta(hours=2)
+        started = GameRoom.objects.create(code='STARTD', status='playing',
+            state={'presence': {'everBothConnected': True}})
+        future = GameRoom.objects.create(code='FUTURE', status='waiting',
+            state={'entryDeadline': (timezone.now() + timedelta(hours=1)).timestamp()})
+        rooms = [GameRoom.objects.create(code=f'BND{i:03}', status='waiting') for i in range(3)]
+        GameRoom.objects.filter(pk__in=[started.pk, future.pk, *[r.pk for r in rooms]]).update(created_at=old)
+        self.assertEqual(expire_unstarted_rooms(limit=2), 2)
+        self.assertEqual(expire_unstarted_rooms(limit=2), 1)
+        self.assertEqual(expire_unstarted_rooms(limit=2), 0)
+        started.refresh_from_db()
+        future.refresh_from_db()
+        self.assertEqual(started.status, 'playing')
+        self.assertEqual(future.status, 'waiting')
+
     def room(self, *, status='waiting', seat_count=0):
         room = GameRoom.objects.create(code='OWN001', status=status)
         link = TournamentLink.objects.create(

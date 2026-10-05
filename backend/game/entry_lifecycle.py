@@ -31,6 +31,8 @@ def entry_deadline(room):
 def expire_unstarted_room(room_id, now=None):
     now = now or timezone.now()
     room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
+    from .scheduling import check_ownership
+    check_ownership(lock=True)
     if room is None:
         return 'missing'
     if room.status not in ('waiting', 'playing'):
@@ -57,11 +59,18 @@ def expire_unstarted_room(room_id, now=None):
     return 'cancelled'
 
 
-def expire_unstarted_rooms():
+def expire_unstarted_rooms(limit=50):
+    if limit < 1:
+        raise ValueError('limit must be positive')
     now = timezone.now()
     ids = GameRoom.objects.filter(status__in=['waiting', 'playing']).exclude(
         tournament_link__tournament_id__gt=0
     ).filter(
-        Q(created_at__lte=now - ENTRY_TIMEOUT) | Q(state__entryDeadline__lte=now.timestamp())
-    ).values_list('pk', flat=True)
+        Q(state__ai__isnull=True) | Q(state__ai=False) | Q(state__ai=None),
+        Q(state__presence__everBothConnected__isnull=True)
+        | Q(state__presence__everBothConnected=False) | Q(state__presence__everBothConnected=None),
+    ).filter(
+        Q(state__entryDeadline__lte=now.timestamp())
+        | Q(state__entryDeadline__isnull=True, created_at__lte=now - ENTRY_TIMEOUT)
+    ).order_by('created_at', 'pk').values_list('pk', flat=True)[:limit]
     return sum(expire_unstarted_room(pk, now) == 'cancelled' for pk in list(ids))

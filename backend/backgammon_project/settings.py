@@ -57,6 +57,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'backgammon_project.wsgi.application'
 ASGI_APPLICATION = 'backgammon_project.asgi.application'
+GAME_WS_DB_WORKERS = config('GAME_WS_DB_WORKERS', default=4, cast=int)
 
 DATABASES = {
     'default': dj_database_url.parse(config('DATABASE_URL', default='sqlite:///db.sqlite3'))

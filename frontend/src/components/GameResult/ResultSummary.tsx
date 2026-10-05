@@ -3,6 +3,7 @@ import type { Color } from "../../lib/backgammon/engine";
 import { useI18n } from "../../i18n/I18nProvider";
 import { MatchDetailRow, ResultMetricRow } from "./ResultComparison";
 import styles from "./GameResult.module.css";
+import { AnalysisDeferred, fetchAnalysis } from "./analysisPolling";
 
 interface PlayerAnalysis {
   color: Color;
@@ -73,19 +74,31 @@ export default function ResultSummary(props: Props) {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
+    let failures = 0;
+    setAnalysis(null);
+    setUnavailable(false);
     async function load() {
       attempts += 1;
       try {
-        const response = await fetch(
+        const response = await fetchAnalysis(
           `${apiOrigin}/tournaments-api/analyses?room=${encodeURIComponent(roomId!)}`,
-          {
-            credentials: "include",
-            signal: controller.signal,
-          },
+          controller.signal,
         );
+        if ([401, 403, 404].includes(response.status)) {
+          if (!controller.signal.aborted) setUnavailable(true);
+          return;
+        }
+        if (response.status === 503) {
+          const error = await response.clone().json().catch(() => null);
+          if (error?.retryable === false) {
+            if (!controller.signal.aborted) setUnavailable(true);
+            return;
+          }
+        }
         if (!response.ok) throw new Error("Analysis unavailable");
         const data: { matches: Analysis[] } = await response.json();
         if (controller.signal.aborted) return;
+        failures = 0;
         const match =
           data.matches
             .filter((item) => item.room_id === roomId)
@@ -94,11 +107,19 @@ export default function ResultSummary(props: Props) {
         setAnalysis(match);
         setUnavailable(match?.status === "failed");
         if (match?.status === "completed" || match?.status === "failed") return;
-      } catch {
+      } catch (error) {
         if (controller.signal.aborted) return;
+        if (error instanceof AnalysisDeferred) {
+          attempts -= 1;
+          timer = setTimeout(load, error.delayMs);
+          return;
+        }
         setUnavailable(true);
+        failures += 1;
+        if (failures >= 3) return;
       }
-      if (attempts < 60) timer = setTimeout(load, 5000);
+      if (attempts < 60) timer = setTimeout(load,
+        failures ? 30_000 * 2 ** (failures - 1) + Math.random() * 5000 : 5000);
       else setUnavailable(true);
     }
     void load();

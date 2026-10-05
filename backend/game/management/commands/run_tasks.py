@@ -8,6 +8,8 @@ class Command(BaseCommand):
     help = 'Run due tasks and recover abandoned leases; transient result failures retry, refusals block for review.'
 
     def handle(self, *args, **options):
+        from game.inactivity import ensure_inactivity_watchdog
+        ensure_inactivity_watchdog()
         from game.entry_lifecycle import expire_unstarted_rooms
         expire_unstarted_rooms()
         ids = list(Task.objects.filter(runnable(timezone.now())).order_by('run_at', 'created_at')

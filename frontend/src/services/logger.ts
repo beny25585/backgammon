@@ -7,16 +7,16 @@ function getServerUrl(): string {
 }
 
 const API_URL = getServerUrl();
-const isDev = Boolean(
-  (import.meta as ImportMeta & { env?: Record<string, unknown> }).env?.DEV,
-);
+const verboseLogging =
+  (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env
+    ?.VITE_CLIENT_LOG_VERBOSE === "true";
 const enabledLevels = new Set(["warn", "error"]);
 function sendLog(
   level: string,
   message: string,
   meta: Record<string, unknown> = {},
 ) {
-  if (!isDev && !enabledLevels.has(level)) return;
+  if (!verboseLogging && !enabledLevels.has(level)) return;
 
   const clientEpochMs = Date.now();
   const clientPerfMs =

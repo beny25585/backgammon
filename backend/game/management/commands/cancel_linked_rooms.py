@@ -3,7 +3,7 @@ from django.db import transaction
 from django.db.models import Count
 
 from ...link.models import TournamentLink
-from ...models import GameRoom
+from ...link.locking import lock_linked_room
 
 
 class Command(BaseCommand):
@@ -75,9 +75,9 @@ class Command(BaseCommand):
         cleaned = 0
         for candidate in links:
             with transaction.atomic():
-                link = TournamentLink.objects.select_for_update().select_related("room").get(
-                    pk=candidate.pk)
-                room = GameRoom.objects.select_for_update().get(pk=link.room_id)
+                room, link = lock_linked_room(candidate.room_id, pk=candidate.pk)
+                if link is None:
+                    continue
                 if room.status not in ("waiting", "playing") or room.players.count() > 1:
                     continue
                 room.status = "cancelled"
