@@ -8,7 +8,7 @@ import sys
 root = Path(__file__).resolve().parent
 python_files = ['e2e_common.py', 'backend_bootstrap.py', 'postgresql_runtime.py',
                 'runtime_inventory.py', 'tournament_settings.py', 'check-syntax.py',
-                'run-postgresql-reliability.py',
+                'run-postgresql-reliability.py', 'server_rehearsal.py', 'rehearsal_app.py',
                 '../../Backgammon Game/backend/backgammon_project/asgi.py',
                 '../../Backgammon Game/backend/backgammon_project/settings.py',
                 '../../Backgammon Game/backend/game/consumers.py',
@@ -20,6 +20,7 @@ python_files = ['e2e_common.py', 'backend_bootstrap.py', 'postgresql_runtime.py'
 javascript_files = ['run-e2e.mjs', 'production-ui.mjs', 'parity-report.mjs',
                     'scenario-config.mjs', 'tournament.spec.mjs', 'game-driver.mjs', 'performance-report.mjs',
                     'performance-policy.mjs', 'shared-progress.mjs', 'source-versions.mjs']
+javascript_files += ['destination-policy.mjs', 'destination-policy.test.mjs', 'run-remote-e2e.mjs', 'playwright.config.mjs']
 javascript_files += ['scenario-config.test.mjs', 'game-driver.test.mjs', 'performance-policy.test.mjs']
 for name in python_files:
     compile(ast.parse((root / name).read_text(encoding='utf-8-sig'), filename=name), name, 'exec')

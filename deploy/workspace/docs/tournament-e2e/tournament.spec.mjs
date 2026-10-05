@@ -6,6 +6,7 @@ import { installGameObserver, waitForGame, inspectGame, driveMatch } from './gam
 import { createEventJournal } from './event-journal.mjs'
 import { scenarioConfig } from './scenario-config.mjs'
 import { createSharedProgress } from './shared-progress.mjs'
+import { runtimeOrigins } from './destination-policy.mjs'
 
 const runDir = process.env.E2E_RUN_DIR
 if (!runDir || !path.isAbsolute(runDir)) throw new Error('E2E_RUN_DIR is required.')
@@ -17,13 +18,7 @@ const require = createRequire(path.join(process.env.E2E_GAME_FRONTEND || path.jo
 const { test, expect } = require('@playwright/test')
 const tourOrigin = new URL(runtime.urls.tournament).origin
 const gameOrigin = new URL(runtime.urls.game).origin
-const origins = new Set([tourOrigin, gameOrigin])
-for (const origin of origins) {
-  const url = new URL(origin)
-  if (url.protocol !== 'https:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)) {
-    throw new Error('E2E refuses non-loopback destinations.')
-  }
-}
+const origins = runtimeOrigins(runtime)
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const fixturesOf = (progress) => Object.values(progress.stages).flatMap(
   (stage) => stage.levels.flatMap((level) => level.fixtures),
@@ -46,13 +41,18 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
   const summary = {
     runId: runtime.run_id, startedAt: new Date().toISOString(), status: 'running',
     playerCount: scenario.players, recoveryChecks: scenario.recoveryChecks,
-    scope: 'Disposable local HTTPS; signup/login/registration/admission through UI; legal gameplay over the UI real WebSocket.',
+    targetSession: runtime.remote_target?.session_id ?? null,
+    scope: runtime.profile === 'server-rehearsal'
+      ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; copied PostgreSQL databases.'
+      : 'Disposable local HTTPS; signup/login/registration/admission through UI; legal gameplay over the UI real WebSocket.',
     adminSetup: 'Seeded administrator; tournament creation and scheduled start use authenticated APIs, not admin UI.',
-    dice: 'Real configured local dice service; no board/result/score injection.',
+    dice: 'Real configured dice service; no board/result/score injection.',
     limits: ['Desktop Chromium, not physical mobile.', `${scenario.players} accounts from one machine and network connection.`,
       'Gameplay drives legal protocol intents through the UI socket; it does not validate pointer/drag controls.',
       'Only GET /tournaments-api/analyses HTTP 503 is classified separately when analysis is explicitly disabled; responses are not mocked.',
-      `Wallet award is checked across normal workers; the orchestrator then repeats all ${scenario.matches} unchanged signed results twice and verifies the final database.`],
+      runtime.profile === 'server-rehearsal'
+        ? `Final acceptance requires a separate server audit and ${scenario.matches * 2} unchanged signed result replays.`
+        : `Wallet award is checked across normal workers; the orchestrator then repeats all ${scenario.matches} unchanged signed results twice and verifies the final database.`],
     observations: [], matches: [], requests: [], failedRequests: [], serverErrors: [], excludedIntegrationErrors: [],
     console: [], pageErrors: [], blockedExternal: [],
     earlySemifinalObserved: false,
@@ -82,7 +82,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     record(excludedAnalysis ? 'excludedIntegrationErrors' : 'serverErrors', event)
   }
   async function newUser(label) {
-    const context = await browser.newContext({ ignoreHTTPSErrors: true, locale: 'en-US',
+    const context = await browser.newContext({ ignoreHTTPSErrors: runtime.profile !== 'server-rehearsal', locale: 'en-US',
       viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' })
     contexts.push(context)
     await context.addInitScript(() => {
@@ -318,6 +318,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     // color. Keep the account-to-seat proof separate from the score callback.
     expect(seats.map((seat) => seat.color)).toEqual(['white', 'black'])
     const result = await driveMatch(pair.map((player) => player.page), {
+      allowedOrigins: [...origins],
       timeoutMs: Infinity,
       actionTimeoutMs: Infinity,
       initialGames,
@@ -355,6 +356,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     await api(admin, '/auth/login', { method: 'POST', data: runtime.admin })
     const suffix = String(runtime.run_id).replace(/[^a-z0-9]/gi, '').slice(-12)
     const password = `E2E!${randomBytes(16).toString('hex')}z9`
+    const phonePrefix = randomBytes(3).readUIntBE(0, 3).toString().padStart(5, '0').slice(-5)
     secrets.push(password)
     for (let index = 0; index < scenario.players; index++) {
       const player = await newUser(`player${index + 1}`)
@@ -362,7 +364,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       await player.page.goto(`${tourOrigin}/tournaments/account/signup`)
       await player.page.locator('input[autocomplete="username"]').fill(username)
       await player.page.locator('input[type="email"]').fill(`${username.toLowerCase()}@example.invalid`)
-      await player.page.locator('input[type="tel"]').fill(`+97250123${String(index).padStart(4, '0')}`)
+      await player.page.locator('input[type="tel"]').fill(`+97250${phonePrefix}${String(index).padStart(2, '0')}`)
       await player.page.locator('#account-password').fill(password)
       const signup = player.page.waitForResponse((response) => new URL(response.url()).pathname.endsWith('/auth/signup'))
       await player.page.locator('form button[type="submit"]').click()

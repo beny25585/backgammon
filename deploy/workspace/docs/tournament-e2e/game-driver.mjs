@@ -401,11 +401,13 @@ export async function driveMatch(pages, {
   maxActions = 3000,
   initialGames,
   onObservation,
+  allowedOrigins,
 } = {}) {
   if (!Array.isArray(pages) || pages.length !== 2) throw new Error('driveMatch requires two real game pages');
-  const local = await Promise.all(pages.map(page => page.evaluate(() =>
-    ['127.0.0.1', 'localhost', '[::1]'].includes(window.location.hostname))));
-  if (local.some(value => !value)) throw new Error('Tournament E2E gameplay is restricted to loopback hosts');
+  const permitted = await Promise.all(pages.map(page => page.evaluate(origins => origins
+    ? origins.includes(window.location.origin)
+    : ['127.0.0.1', 'localhost', '[::1]'].includes(window.location.hostname), allowedOrigins)));
+  if (permitted.some(value => !value)) throw new Error('Gameplay destination differs from the isolated runtime');
   let games = await Promise.all(pages.map(page => waitForGame(page)));
   const roomId = games[0].roomId;
   if (games[1].roomId !== roomId || new Set(games.map(game => game.color)).size !== 2) {

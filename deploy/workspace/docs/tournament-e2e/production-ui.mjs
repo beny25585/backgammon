@@ -58,6 +58,7 @@ server {
   ssl_certificate_key ${quote(config.certificate.key)};
   root ${quote(path.join(run, 'built', name))};
   ${proxy('/tournaments-api/', config.ports.tournament_backend, '/api/')}
+  ${proxy('/tournaments-ws/', config.ports.tournament_backend, '/ws/', true)}
   ${proxy('/tournaments-play/', config.ports.tournament_backend, '/t/')}
   ${proxy('/api/', config.ports[`${name}_backend`], '/api/')}
   ${name === 'game' ? proxy('/backgammon/api/', config.ports.game_backend, '/api/')

@@ -15,7 +15,8 @@ export function writePerformanceReport(runDir) {
   const read = name => fs.existsSync(path.join(runDir, name)) ? fs.readFileSync(path.join(runDir, name), 'utf8') : ''
   const summary = JSON.parse(read('tournament-summary.json') || '{}')
   const game = JSON.parse(read('status-game.json') || '{}')
-  const scenario = scenarioConfig(JSON.parse(read('config.json') || '{}'))
+  const runtime = JSON.parse(read('config.json') || '{}')
+  const scenario = scenarioConfig(runtime)
   // Backend samples are logged above a threshold. Never describe their means
   // as the latency distribution of every action.
   const samples = {}
@@ -56,7 +57,9 @@ export function writePerformanceReport(runDir) {
   const unfinishedAcknowledged = unfinishedSeats.reduce((sum, seat) => sum + seat.acknowledged, 0)
   const report = {
     acceptance: evaluatePerformance(summary, scenario),
-    scope: 'This machine and isolated databases; no production capacity guarantee. Slow DB log samples are threshold-selected.',
+    scope: runtime.profile === 'server-rehearsal'
+      ? 'Browser load from this PC through public host Nginx HTTPS to R2 server images and copied PostgreSQL databases. ACK timings include this network connection. Server log samples are not collected by this browser runner.'
+      : 'This machine and isolated databases; no production capacity guarantee. Slow DB log samples are threshold-selected.',
     playerCount: scenario.players, recoveryChecks: scenario.recoveryChecks,
     websocketDatabaseWorkersObserved: [...databaseWorkers].filter(Number.isFinite),
     acknowledgedActions: acknowledged,
