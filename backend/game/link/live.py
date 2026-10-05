@@ -2,6 +2,7 @@
 
 import json
 import logging
+import time
 import uuid
 
 import httpx
@@ -67,7 +68,9 @@ def publish_snapshot(room_id, state=None, *, raise_on_error=False):
         'X-Gamelink-Nonce': nonce,
         'X-Gamelink-Signature': sign_result_body(raw, timestamp, nonce),
         'X-Gamelink-Issuer': settings.GAMELINK_ISSUER,
+        'X-Snapshot-ID': nonce,
     }
+    started = time.perf_counter()
     try:
         httpx.post(
             f"{settings.GAMELINK_TOURNAMENTS_URL.rstrip('/')}{LIVE_PATH}",
@@ -79,9 +82,14 @@ def publish_snapshot(room_id, state=None, *, raise_on_error=False):
         response = getattr(error, 'response', None)
         logger.warning(
             'event=snapshot_delivery_failed tournament_id=%s fixture_id=%s room_id=%s '
-            'sequence=%s status_code=%s error_type=%s retryable=%s',
+            'sequence=%s status_code=%s error_type=%s retryable=%s snapshot_id=%s duration_ms=%s',
             link.tournament_id, link.fixture_id, room.id, body['sequence'],
             getattr(response, 'status_code', None), type(error).__name__, raise_on_error,
+            nonce, round((time.perf_counter() - started) * 1000, 1),
         )
         if raise_on_error:
             raise
+    else:
+        logger.debug('event=snapshot_delivered snapshot_id=%s fixture_id=%s sequence=%s duration_ms=%s',
+                     nonce, link.fixture_id, body['sequence'],
+                     round((time.perf_counter() - started) * 1000, 1))
