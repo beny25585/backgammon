@@ -435,8 +435,7 @@ def main():
     parser.add_argument('--retry-restored', action='store_true', help='Preserve the previous failed-attempt backup after verifying its original session is restored')
     args = parser.parse_args()
     args.project, args.rehearsal = args.project.resolve(), args.rehearsal.resolve()
-    require(args.project.name == rehearsal.TAG and args.rehearsal.name == 'docker-rehearsal'
-            and args.rehearsal.parent.name == 'rehearsal-20261005T184922Z', 'Unexpected deployment directories')
+    rehearsal.configure_target(args)
     state, tools = args.rehearsal / 'browser-e2e-r2', Path(__file__).resolve().parent
     if args.action == 'enable':
         enable(rehearsal, args, state, tools)

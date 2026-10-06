@@ -50,9 +50,11 @@ def safe_environment(values):
 
 
 def collect(args):
+    from rehearsal_context import rehearsal_project
     state = args.rehearsal / 'browser-e2e-r2'
     session = read_json(state / 'session.json')
     identity = session['identity'] if session else None
+    project = rehearsal_project(identity) if identity else PROJECT
     report = {'collected_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
               'project_dir': str(args.project), 'rehearsal_dir': str(args.rehearsal),
               'target': identity, 'findings': [], 'read_only': True}
@@ -82,7 +84,7 @@ def collect(args):
     code, output = command(['sudo', 'docker', 'stats', '--no-stream', '--format',
                             '{"name":{{json .Name}},"cpu":{{json .CPUPerc}},"memory":{{json .MemUsage}},"pids":{{json .PIDs}}}'])
     report['container_resources'] = [json.loads(line) for line in output.splitlines()] if code == 0 else []
-    observed = {item['service']: item for item in containers if item['project'] == PROJECT}
+    observed = {item['service']: item for item in containers if item['project'] == project}
     report['missing_rehearsal_services'] = [name for name in EXPECTED_SERVICES
                                            if name not in observed or observed[name]['status'] != 'running']
     if report['missing_rehearsal_services']:
@@ -179,7 +181,7 @@ def collect(args):
                             if separator and re.fullmatch(r'[A-Z_][A-Z_0-9]*', key):
                                 values[key] = value.strip().strip('"\'')
                         context.setdefault('dotenv_configuration', {})[str(dotenv)] = safe_environment(values)
-    code, output = command(['sudo', 'docker', 'exec', '--user', 'postgres', PROJECT + '-postgres-1',
+    code, output = command(['sudo', 'docker', 'exec', '--user', 'postgres', project + '-postgres-1',
         'psql', '-X', '-At', '-U', 'postgres', '-d', 'postgres', '-c',
         "SELECT COALESCE(json_agg(json_build_object('name', datname, 'owner', pg_get_userbyid(datdba), "
         "'size_bytes', pg_database_size(datname), 'session_marker', shobj_description(oid, 'pg_database'))), '[]'::json) "
@@ -217,8 +219,8 @@ def main():
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args()
     args.project, args.rehearsal = args.project.resolve(), args.rehearsal.resolve()
-    if args.project.name != 'bg-20261005-git-r2' or args.rehearsal.parent.name != 'rehearsal-20261005T184922Z':
-        raise ValueError('Unexpected release or rehearsal directory')
+    from server_rehearsal import configure_target
+    configure_target(args)
     if args.output.is_symlink() or args.output.exists():
         raise ValueError('Choose a new, nonsymlink output file')
     report = collect(args)

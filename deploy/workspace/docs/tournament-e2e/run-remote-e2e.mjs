@@ -80,7 +80,9 @@ fs.writeFileSync(path.join(runDir, 'environment-summary.json'), JSON.stringify({
   comprehensive_checks: comprehensive,
   scope: 'Public test listener in existing host Nginx; application images pinned by target.images; separate fresh browser databases in the existing rehearsal PostgreSQL container.',
   exclusions: runtime.excluded_integrations,
-  limitation: 'The game return-to-tournaments link in the R2 image was compiled for production port 443. This scenario navigates to the configured test origin directly and does not exercise that link.',
+  limitation: target.validation_id
+    ? 'The return link is compiled as a relative path; verify it manually on the physical device.'
+    : 'The game return-to-tournaments link in the R2 image was compiled for production port 443. This scenario navigates to the configured test origin directly and does not exercise that link.',
 }, null, 2))
 const require = createRequire(path.join(workspace, 'Backgammon Game/frontend/package.json'))
 let failure

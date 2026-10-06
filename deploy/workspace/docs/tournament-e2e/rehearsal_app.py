@@ -147,8 +147,6 @@ def main():
     session = json.loads(Path('/opt/e2e/session.json').read_text())
     target = session['identity']
     context = require_fresh_database_context(target)
-    require(target['project'] == 'backgammon-rehearsal-20261005t184922z'
-            and target['origin'] == 'https://38.247.146.17.nip.io:18443', 'Unexpected test target')
     sys.path.insert(0, os.getcwd())
     import django
     django.setup()

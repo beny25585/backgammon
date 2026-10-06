@@ -167,7 +167,7 @@ dc run -T --interactive=false --rm game-migrate < /dev/null
 dc run -T --interactive=false --rm tournaments-migrate < /dev/null
 dc run -T --interactive=false --rm analysis-migrate < /dev/null
 dc run -T --interactive=false --rm tournaments-transfer python /opt/docker/tournaments_transfer.py \
-  import --directory /transfer/tournaments \
+  import --directory /data/backgammon-transfer/tournaments \
   --confirm-new-database backgammon_tournaments < /dev/null
 ```
 
@@ -204,7 +204,7 @@ dc run --rm --no-deps game-api python manage.py check --deploy
 dc run --rm --no-deps tournaments-api python manage.py check --deploy
 dc run --rm --no-deps analysis-api python manage.py check --deploy
 dc run -T --interactive=false --rm tournaments-transfer python /opt/docker/tournaments_transfer.py \
-  verify --directory /transfer/tournaments < /dev/null
+  verify --directory /data/backgammon-transfer/tournaments < /dev/null
 ```
 
 יש לבדוק ולפתור אזהרות בהתאם למצב האמיתי. HTTPS מסתיים ב־Nginx הקיים;

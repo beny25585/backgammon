@@ -47,6 +47,17 @@ class RehearsalContextTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             require_fresh_database_context(identity)
 
+    def test_candidate_is_isolated_and_requires_both_revisions_and_exact_project(self):
+        identity = self.identity()
+        identity.update(validation_id='b' * 32, infrastructure_revision='c' * 40,
+                        project='backgammon-candidate-' + 'b' * 32)
+        self.assertEqual(require_fresh_database_context(identity), identity['database_context'])
+        for key, value in (('validation_id', 'd' * 32), ('infrastructure_revision', ''),
+                           ('project', PROJECT), ('origin', ORIGIN.replace(':18443', ''))):
+            changed = dict(identity, **{key: value})
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                require_fresh_database_context(changed)
+
 
 if __name__ == '__main__':
     unittest.main()

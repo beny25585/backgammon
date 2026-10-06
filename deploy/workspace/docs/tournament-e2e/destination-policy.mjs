@@ -4,8 +4,15 @@ import { isDeepStrictEqual } from 'node:util'
 export function runtimeOrigins(runtime) {
   const remote = runtime.profile === 'server-rehearsal'
   const expected = 'https://38.247.146.17.nip.io:18443'
+  const validation = runtime.remote_target?.validation_id
+  const candidate = validation !== undefined
+  if (candidate && (!/^[a-f0-9]{32}$/.test(validation)
+    || !/^[a-f0-9]{40}$/.test(runtime.remote_target?.infrastructure_revision || ''))) {
+    throw new Error('Invalid release validation identity.')
+  }
+  const project = candidate ? `backgammon-candidate-${validation}` : 'backgammon-rehearsal-20261005t184922z'
   if (remote && (runtime.remote_target?.origin !== expected
-    || runtime.remote_target?.project !== 'backgammon-rehearsal-20261005t184922z'
+    || runtime.remote_target?.project !== project
     || !/^[a-f0-9]{32}$/.test(runtime.remote_target?.session_id || '')
     || runtime.database_mode !== 'postgresql')) {
     throw new Error('Remote browser runs require the prepared PostgreSQL rehearsal identity.')

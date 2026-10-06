@@ -21,8 +21,10 @@ SOURCE_PATHS = {
 
 
 def git(directory, *arguments, capture=True):
+    directory = Path(directory).resolve()
+    safe_root = next((parent for parent in (directory, *directory.parents) if (parent / '.git').exists()), directory)
     return subprocess.run(
-        ["git", "-C", str(directory), *arguments],
+        ["git", "-c", "safe.directory=" + str(safe_root), "-C", str(directory), *arguments],
         check=True,
         stdout=subprocess.PIPE if capture else None,
     ).stdout
@@ -71,25 +73,50 @@ def validate_release(files):
     return release
 
 
-def prepare(destination):
-    if os.path.lexists(destination):
-        raise ValueError("Destination already exists; choose a new release directory.")
+def prepare(destination, resume=False):
     revision, files = deployment_files()
     release = validate_release(files)
-    destination.mkdir(parents=True, exist_ok=False)
+    expected = {"infrastructure_revision": revision, "release": release}
+    marker = destination / '.preparation.json'
+    if os.path.lexists(destination):
+        if not resume or destination.is_symlink() or not marker.is_file() or marker.is_symlink():
+            raise ValueError("Destination already exists without an owned preparation; choose a new directory.")
+        if json.loads(marker.read_text()) != expected:
+            raise ValueError("Partial workspace belongs to different source revisions.")
+    else:
+        destination.mkdir(parents=True, exist_ok=False, mode=0o700)
+        marker.write_text(json.dumps(expected, indent=2) + '\n', encoding='utf-8')
+        marker.chmod(0o600)
     print(f"Preparing {destination}", flush=True)
     for source in release["sources"]:
         checkout = destination / source["path"]
         print(f"Cloning {source['path']} at {source['revision'][:12]}", flush=True)
-        git(destination, "clone", "--filter=blob:none", "--no-checkout", "--", source["url"], str(checkout), capture=False)
+        if not checkout.exists():
+            git(destination, "clone", "--filter=blob:none", "--no-checkout", "--", source["url"], str(checkout), capture=False)
+        elif (checkout.is_symlink() or not (checkout / '.git').is_dir()
+              or git(checkout, 'remote', 'get-url', 'origin').decode().strip() != source['url']):
+            raise ValueError('Partial source checkout is unsafe: ' + source['path'])
+        current = git(checkout, 'rev-parse', 'HEAD').decode().strip()
+        status = git(checkout, 'status', '--porcelain', '--untracked-files=all').decode()
+        # A no-checkout clone reports staged deletions; never reset a populated dirty tree.
+        pristine_clone = all(line.startswith('D  ') for line in status.splitlines()) and not any(
+            child.name != '.git' for child in checkout.iterdir())
+        if status and not pristine_clone:
+            raise ValueError('Partial source checkout contains local edits: ' + source['path'])
+        if current != source['revision'] and not pristine_clone:
+            raise ValueError('Partial checkout contains a different populated revision: ' + source['path'])
         git(checkout, "checkout", "--detach", source["revision"], capture=False)
         if git(checkout, "rev-parse", "HEAD").decode().strip() != source["revision"]:
             raise ValueError(f"Source revision differs: {source['path']}")
     for relative, content in files.items():
         target = destination / relative
         target.parent.mkdir(parents=True, exist_ok=True)
-        with target.open("xb") as output:
-            output.write(content)
+        if target.exists():
+            if target.is_symlink() or target.read_bytes() != content:
+                raise ValueError('Partial deployment file changed: ' + relative)
+        else:
+            with target.open("xb") as output:
+                output.write(content)
         # Public config is mounted into containers that run with different UIDs.
         # The private workspace directory still prevents unrelated host access.
         target.chmod(0o755 if target.suffix == ".sh" else 0o644)
@@ -97,8 +124,11 @@ def prepare(destination):
     environment = environment.replace("IMAGE_TAG=replace-with-reviewed-release", f"IMAGE_TAG={release['image_tag']}")
     environment = environment.replace("TRANSFER_DIR=/home/administrator/backgammon-transfer", f"TRANSFER_DIR={Path.home() / 'backgammon-transfer'}")
     environment_path = destination / "docker" / "production.env"
-    with environment_path.open("x", encoding="utf-8", newline="\n") as output:
-        output.write(environment)
+    if not environment_path.exists():
+        with environment_path.open("x", encoding="utf-8", newline="\n") as output:
+            output.write(environment)
+    elif environment_path.is_symlink():
+        raise ValueError('Unsafe private environment file')
     environment_path.chmod(0o600)
     record = {
         "schema_version": 1,
@@ -118,10 +148,14 @@ def prepare(destination):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--destination", required=True, type=Path)
+    parser.add_argument("--resume", action='store_true', help='Resume only this marked, immutable partial workspace')
     arguments = parser.parse_args()
     os.umask(0o077)
     try:
-        prepare(arguments.destination.expanduser().resolve())
+        destination = arguments.destination.expanduser().absolute()
+        if destination.is_symlink():
+            raise ValueError('Destination must not be a symlink')
+        prepare(destination.resolve(), resume=arguments.resume)
     except (ValueError, KeyError, OSError, subprocess.CalledProcessError, tarfile.TarError) as error:
         print(f"Preparation stopped: {error}", file=sys.stderr)
         print("Any partial release directory is preserved. No running services were changed.", file=sys.stderr)

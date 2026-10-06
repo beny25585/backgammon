@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "image_tag": "bg-20261005-git-r2",
+  "image_tag": "backgammon-production-candidate-20261007-r1",
   "sources": [
     {
       "path": "Backgammon Game",
       "url": "https://github.com/beny25585/backgammon.git",
-      "revision": "2ecd2008054d05d8c4030d6b780be537af145171"
+      "revision": "8447f74e2004e16ef8614896297213e1aa3bfa42"
     },
     {
       "path": "backgammon-analysis-service",
@@ -20,7 +20,7 @@
     {
       "path": "backgammon-tournaments-backend",
       "url": "https://github.com/Maestroxr/tournaments.git",
-      "revision": "f4eaa6073c38a9f01157f7f525ebda00a73ac6ee"
+      "revision": "4cae43076a208c0abe824c0aa227c2b41dd0a31b"
     }
   ]
 }

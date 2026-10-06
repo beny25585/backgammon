@@ -20,6 +20,18 @@ const comprehensive = () => {
   return runtime
 }
 
+test('a candidate retains the exact origin, source identity and fresh database guards', () => {
+  const runtime = comprehensive()
+  Object.assign(runtime.remote_target, { validation_id: 'b'.repeat(32), infrastructure_revision: 'c'.repeat(40),
+    project: 'backgammon-candidate-' + 'b'.repeat(32) })
+  assert.deepEqual([...runtimeOrigins(runtime)], ['https://38.247.146.17.nip.io:18443'])
+  for (const change of [{ project: 'backgammon-production' }, { validation_id: 'd'.repeat(32) },
+    { infrastructure_revision: '' }, { origin: 'https://38.247.146.17.nip.io' },
+    { database_context: { ...runtime.remote_target.database_context, databases: { game: 'backgammon_game' } } }]) {
+    assert.throws(() => runtimeOrigins({ ...runtime, remote_target: { ...runtime.remote_target, ...change } }))
+  }
+})
+
 test('a configured rehearsal cannot send its second service to production', () => {
   const runtime = remote()
   runtime.urls.game = 'https://38.247.146.17.nip.io'

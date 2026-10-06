@@ -33,7 +33,7 @@ x-game: &game
     GAMELINK_FRONTEND_URL: ${PUBLIC_ORIGIN}/backgammon
     DICE_SERVICE_URL: http://dice:4000
     AI_SERVICE_URL: http://analysis-api:8000
-    ANALYSIS_SERVICE_URL: http://analysis-api:8000
+    ANALYSIS_SERVICE_URL: ${ANALYSIS_SERVICE_URL:-http://analysis-api:8000}
   secrets: [game_config, game_password]
   volumes: [game_static:/data/static]
 
@@ -60,7 +60,7 @@ x-tournaments: &tournaments
     REDIS_URL: redis://redis:6379/1
     GAMELINK_BACKGAMMON_URL: ${PUBLIC_ORIGIN}
     ACCOUNT_FRONTEND_URL: ${PUBLIC_ORIGIN}/tournaments
-    ANALYSIS_SERVICE_URL: http://analysis-api:8000
+    ANALYSIS_SERVICE_URL: ${ANALYSIS_SERVICE_URL:-http://analysis-api:8000}
   secrets: [tournaments_config, tournaments_password]
   volumes:
     - tournaments_static:/data/static
@@ -189,9 +189,9 @@ services:
     profiles: [operations]
     restart: "no"
     mem_limit: 1g
-    command: [python, /opt/docker/tournaments_transfer.py, verify, --directory, /transfer/tournaments]
+    command: [python, /opt/docker/tournaments_transfer.py, verify, --directory, /data/backgammon-transfer/tournaments]
     volumes:
-      - "${TRANSFER_DIR:?Set TRANSFER_DIR}:/transfer:ro"
+      - "${TRANSFER_DIR:?Set TRANSFER_DIR}:/data/backgammon-transfer:ro"
       # Use the reviewed Git helper even when reusing already-built application images.
       - type: bind
         source: ./tournaments_transfer.py
@@ -285,7 +285,7 @@ services:
       args:
         APP_DIR: Backgammon Game/frontend
         VITE_SERVER_URL: /backgammon
-        VITE_TOURNAMENTS_URL: ${PUBLIC_ORIGIN}/tournaments/
+        VITE_TOURNAMENTS_URL: /tournaments/
     ports: ["127.0.0.1:${GAME_FRONTEND_PORT:-18105}:80"]
     volumes: [game_static:/srv/game-static:ro]
   tournaments-frontend:

@@ -7,6 +7,7 @@ param(
     [ValidateSet('chrome','msedge','chromium')][string]$Browser = 'chrome',
     [switch]$Headed,
     [switch]$Comprehensive,
+    [ValidatePattern('^([a-f0-9]{32})?$')][string]$ValidationId = '',
     [ValidatePattern('^/[A-Za-z0-9_/-]+/backgammon-project$')][string]$ServerRoot = '/home/dev/backgammon-project'
 )
 $ErrorActionPreference = 'Stop'
@@ -70,16 +71,26 @@ try {
 import json, subprocess, sys, time
 from pathlib import Path
 root = Path('SERVER_ROOT')
-rehearsal = root / 'backups/backgammon-backups/rehearsal-20261005T184922Z/docker-rehearsal'
+validation = 'VALIDATION_ID'
+rehearsal = root / 'backups/backgammon-backups' / (
+    'validation-' + validation if validation else 'rehearsal-20261005T184922Z') / 'docker-rehearsal'
 state = rehearsal / 'browser-e2e-r2'
 session = json.loads((state / 'session.json').read_text())
 summary = root / 'reports/e2e-tournament-summary.json'
 browser = json.loads(summary.read_text())
 if browser.get('runId') != 'RUN_ID' or browser.get('targetSession') != 'SESSION_ID' or session['identity']['session_id'] != 'SESSION_ID':
     raise ValueError('Browser summary and server session do not match this invocation')
-project = root / 'deploy/backgammon-deploy/bg-20261005-git-r2'
+if validation and session['identity'].get('validation_id') != validation:
+    raise ValueError('Candidate validation identity differs')
+project = root / 'deploy/backgammon-deploy' / (
+    session['identity']['image_tag'] if validation else 'bg-20261005-git-r2')
 tools = Path(session['tools_dir']).resolve(strict=True)
-if not project.samefile(session['project_dir']) or not rehearsal.samefile(session['rehearsal_dir']) or not tools.parent.samefile(root / 'tools'):
+if validation:
+    if project.parent.resolve() != (root / 'deploy/backgammon-deploy').resolve() or tools != (project / 'docs/tournament-e2e').resolve():
+        raise ValueError('Unexpected candidate tool/project paths')
+elif not tools.parent.samefile(root / 'tools'):
+    raise ValueError('Unexpected historical tool installation')
+if not project.samefile(session['project_dir']) or not rehearsal.samefile(session['rehearsal_dir']):
     raise ValueError('Managed layout differs from the prepared session directories')
 started = time.time_ns()
 result = subprocess.run(['python3', str(tools / 'server_rehearsal.py'), 'audit', '--project', str(project),
@@ -103,7 +114,7 @@ for prefix, name in (('operations-', 'server-operations.json'), ('entry-flow-', 
     destination.chmod(0o600)
 sys.exit(result.returncode)
 '@
-    $taskRemotePython = $taskRemotePython.Replace('SERVER_ROOT', $ServerRoot).Replace('RUN_ID', $taskRunId).Replace('SESSION_ID', $taskSessionId).Replace('INVOCATION_ID', $taskInvocation)
+    $taskRemotePython = $taskRemotePython.Replace('SERVER_ROOT', $ServerRoot).Replace('RUN_ID', $taskRunId).Replace('SESSION_ID', $taskSessionId).Replace('INVOCATION_ID', $taskInvocation).Replace('VALIDATION_ID', $ValidationId)
     $taskRemoteEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($taskRemotePython))
     # Base64 carries this fixed program through Windows/OpenSSH quoting unchanged.
     & ssh.exe -t $taskDestination "printf %s $taskRemoteEncoded | base64 --decode | python3"

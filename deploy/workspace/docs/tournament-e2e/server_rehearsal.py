@@ -12,7 +12,7 @@ import subprocess
 import time
 import uuid
 
-from rehearsal_context import fresh_database_context, require_fresh_database_context
+from rehearsal_context import fresh_database_context, require_fresh_database_context, rehearsal_project
 from rehearsal_integrations import require_integration_context, verify_integration_config
 
 PROJECT = 'backgammon-rehearsal-20261005t184922z'
@@ -30,6 +30,35 @@ BASE_SERVICES, BASE_APPS, BASE_WORKERS = SERVICES.copy(), APPS.copy(), WORKERS.c
 UPSTREAM_PORTS = {'game-api': 8000, 'tournaments-api': 8000,
                   'game-frontend': 80, 'tournaments-frontend': 80, 'admin-frontend': 80}
 CONF = Path('/etc/nginx/conf.d/backgammon-rehearsal-e2e.conf')
+
+
+def configure_target(args):
+    """Select the historical rehearsal or a sealed stage-1--4 candidate."""
+    global PROJECT, TAG
+    target_file = args.rehearsal / 'validation-target.json'
+    if not target_file.exists():
+        require(args.project.name == 'bg-20261005-git-r2'
+                and args.rehearsal.name == 'docker-rehearsal'
+                and args.rehearsal.parent.name == 'rehearsal-20261005T184922Z',
+                'Unexpected release or rehearsal directory')
+        PROJECT, TAG = 'backgammon-rehearsal-20261005t184922z', 'bg-20261005-git-r2'
+        return None
+    require(not target_file.is_symlink(), 'Unsafe validation target')
+    target = json.loads(target_file.read_text())
+    project = rehearsal_project(target)
+    root = args.project.parents[2]
+    require(root == Path('/home/dev/backgammon-project')
+            and args.project.parent == root / 'deploy/backgammon-deploy'
+            and args.project.name == target['image_tag']
+            and args.rehearsal == root / 'backups/backgammon-backups' /
+                ('validation-' + target['validation_id']) / 'docker-rehearsal'
+            and args.project.samefile(target['project_dir']), 'Candidate paths differ from the managed layout')
+    release = json.loads((args.project / '.workspace-release.json').read_text())
+    require(release['image_tag'] == target['image_tag']
+            and release['infrastructure_revision'] == target['infrastructure_revision']
+            and release['sources'] == target['sources'], 'Candidate source identity changed')
+    PROJECT, TAG = project, target['image_tag']
+    return target
 
 
 def select_services(identity):
@@ -409,7 +438,7 @@ def prepare(args, state, tools):
     require(not state.exists(), 'Test state already exists; use start/check with this same session, not prepare again')
     run(['python3', args.project / 'docker/verify_workspace.py'])
     built = json.loads((args.project / '.built-images.json').read_text())
-    require(built['image_tag'] == TAG and len(built['sources']) == 4, 'Expected verified R2 images')
+    require(built['image_tag'] == TAG and len(built['sources']) == 4, 'Expected the pinned release images')
     for image, value in built['images'].items():
         actual = docker('image', 'inspect', value['name'], '--format', '{{.Id}}', capture=True)
         require(actual == value['id'], f'Built image changed: {image}')
@@ -432,6 +461,10 @@ def prepare(args, state, tools):
     identity = {'schema_version': 1, 'project': PROJECT, 'origin': ORIGIN, 'session_id': session_id,
                 'image_tag': TAG, 'sources': built['sources'],
                 'images': {key: value['id'] for key, value in built['images'].items()}}
+    target = configure_target(args)
+    if target is not None:
+        identity.update(validation_id=target['validation_id'],
+                        infrastructure_revision=target['infrastructure_revision'])
     files, identity['harness_sha256'] = harness_inventory(tools)
     admin = {'username': 'E2EAdmin_' + session_id[:12], 'password': secrets.token_urlsafe(36)}
     session = {'identity': identity, 'admin': admin, 'harness_files': files,
@@ -488,7 +521,7 @@ def finish_prepare(args, state, tools, session):
         docker('buildx', 'inspect', builder, '--bootstrap')
         limits = docker('inspect', f'buildx_buildkit_{builder}0', '--format',
                         '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}}', capture=True)
-        require(limits == '3221225472 3221225472 100000 100000', 'Engine builder resource limits differ from R2')
+        require(limits == '3221225472 3221225472 100000 100000', 'Engine builder resource limits differ from the reviewed limits')
         docker('buildx', 'build', '--builder', builder, '--file', tools / 'remote-engine.Dockerfile',
                '--output', f'type=local,dest={output}', args.project)
     finally:
@@ -669,7 +702,7 @@ def verify_config(args, state, database_transition=False):
         require_fresh_database_context(session['identity'])
     planned = fresh_database_context(session['identity']['session_id']) if database_transition else None
     for service, image in SERVICES.items():
-        require(config['services'][service]['image'] == session['identity']['images'][image], 'Application image differs from verified R2')
+        require(config['services'][service]['image'] == session['identity']['images'][image], 'Application image differs from the pinned release')
         if image in ('game', 'tournaments'):
             env = config['services'][service]['environment']
             kind = image
@@ -916,8 +949,7 @@ def main():
     parser.add_argument('--tools-revision', help='Full approved clean Git commit for a running-session tool update')
     args = parser.parse_args()
     args.project, args.rehearsal = args.project.resolve(), args.rehearsal.resolve()
-    require(args.project.name == TAG and args.rehearsal.name == 'docker-rehearsal'
-            and args.rehearsal.parent.name == 'rehearsal-20261005T184922Z', 'Unexpected release or rehearsal directory')
+    configure_target(args)
     tools = Path(__file__).resolve().parent
     state = args.rehearsal / 'browser-e2e-r2'
     if args.action == 'prepare':
@@ -1004,7 +1036,7 @@ def main():
         return
     if args.action == 'check':
         compose(args, state, 'ps')
-        print('R2 container identities, health and host Nginx test listener verified.')
+        print('Pinned container identities, health and host Nginx test listener verified.')
         return
     if args.action == 'monitoring':
         monitoring(state, tools)
