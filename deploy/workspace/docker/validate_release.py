@@ -16,7 +16,8 @@ from validation_support import Postgres, Stages, command, declared_asset_sources
 ROOT = Path('/home/dev/backgammon-project')
 OLD_PROJECT = 'backgammon-rehearsal-20261005t184922z'
 OLD_TAG = 'bg-20261005-git-r2'
-OLD_REHEARSAL = ROOT / 'backups/backgammon-backups/rehearsal-20261005T184922Z/docker-rehearsal'
+OLD_REHEARSAL = ROOT / \
+    'backups/backgammon-backups/rehearsal-20261005T184922Z/docker-rehearsal'
 ORIGIN = 'https://38.247.146.17.nip.io:18443'
 MANUAL = {
     'device_push': 'Enable Push and receive a notification on your own test device.',
@@ -36,7 +37,8 @@ def console_command(args, label):
                 process.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 # Keep the already granted sudo ticket alive during a long user-run build.
-                subprocess.run(['sudo', '-n', '-v'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ['sudo', '-n', '-v'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 print('Still working: ' + label, flush=True)
         require(process.returncode == 0,
                 f'{label} failed with exit code {process.returncode}; see output above')
@@ -44,14 +46,17 @@ def console_command(args, label):
 
 class Validation:
     def __init__(self, root=ROOT):
-        require(Path(root).resolve() == ROOT, 'Only the existing managed server layout is supported')
+        require(Path(root).resolve() == ROOT,
+                'Only the existing managed server layout is supported')
         self.workspace = Path(__file__).resolve().parents[1]
         sys.path.insert(0, str(self.workspace / 'docs/tournament-e2e'))
         self.repository = self.workspace.parents[1]
         self.release = read(self.workspace / 'release.json')
         self.tag = self.release['image_tag']
-        require(re.fullmatch(r'backgammon-[a-z0-9-]{1,36}', self.tag) and self.tag != OLD_TAG, 'Choose a new candidate tag')
-        git = ['git', '-c', 'safe.directory=' + str(self.repository), '-C', self.repository]
+        require(re.fullmatch(r'backgammon-[a-z0-9-]{1,36}', self.tag)
+                and self.tag != OLD_TAG, 'Choose a new candidate tag')
+        git = ['git', '-c', 'safe.directory=' +
+            str(self.repository), '-C', self.repository]
         self.revision = command([*git, 'rev-parse', 'HEAD'], text=True).strip()
         require(not command([*git, 'status', '--porcelain', '--untracked-files=all'], text=True).strip(),
                 'Validation tools must come from the clean published Git commit')
@@ -69,7 +74,8 @@ class Validation:
             save(file, self.plan)
         self.id = self.plan['validation_id']
         self.project = ROOT / 'deploy/backgammon-deploy' / self.tag
-        self.rehearsal = ROOT / 'backups/backgammon-backups' / ('validation-' + self.id) / 'docker-rehearsal'
+        self.rehearsal = ROOT / 'backups/backgammon-backups' / \
+            ('validation-' + self.id) / 'docker-rehearsal'
         self.state = self.rehearsal / 'browser-e2e-r2'
         self.name = 'backgammon-candidate-' + self.id
         self.tools = self.project / 'docs/tournament-e2e'
