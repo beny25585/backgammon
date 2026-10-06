@@ -46,6 +46,11 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; fresh browser PostgreSQL databases.'
       : 'Disposable local HTTPS; signup/login/registration/admission through UI; legal gameplay over the UI real WebSocket.',
     adminSetup: 'Seeded administrator; tournament creation and scheduled start use authenticated APIs, not admin UI.',
+    browserInstrumentation: { headless: process.env.E2E_HEADED !== '1',
+      channel: process.env.CHROMIUM_PATH ? 'custom_chromium' : process.env.E2E_BROWSER || 'chrome',
+      requestRouting: 'all_requests_origin_guard',
+      httpCache: 'disabled_by_playwright_routing', serviceWorkers: 'blocked',
+      admissionTiming: 'Browser callback timestamps are diagnostic; the existing Node-observed acceptance metric is unchanged.' },
     dice: 'Real configured dice service; no board/result/score injection.',
     limits: ['Desktop Chromium, not physical mobile.', `${scenario.players} accounts from one machine and network connection.`,
       'Gameplay drives legal protocol intents through the UI socket; it does not validate pointer/drag controls.',
@@ -54,7 +59,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
         ? `Final acceptance requires a separate server audit and ${scenario.matches * 2} unchanged signed result replays.`
         : `Wallet award is checked across normal workers; the orchestrator then repeats all ${scenario.matches} unchanged signed results twice and verifies the final database.`],
     observations: [], matches: [], requests: [], failedRequests: [], serverErrors: [], excludedIntegrationErrors: [],
-    console: [], pageErrors: [], blockedExternal: [],
+    console: [], pageErrors: [], blockedExternal: [], frontendRequests: [],
     earlySemifinalObserved: false,
   }
   const contexts = []
@@ -70,9 +75,10 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     journal.append(event)
   }
   const record = (bucket, event) => {
+    const timestamped = { at: new Date().toISOString(), ...event }
     // Bound memory during a failing poll loop, but retain the entire safe stream on disk.
-    if (summary[bucket].length < 10_000) summary[bucket].push(event)
-    journal.append({ bucket, ...event })
+    if (summary[bucket].length < 10_000) summary[bucket].push(timestamped)
+    journal.append({ bucket, ...timestamped })
   }
   const recordServerError = (event) => {
     if (event.status < 500) return
@@ -80,6 +86,11 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       && event.status === 503 && event.method === 'GET'
       && new URL(event.path).pathname === '/tournaments-api/analyses'
     record(excludedAnalysis ? 'excludedIntegrationErrors' : 'serverErrors', event)
+  }
+  const isGameFrontendRequest = (request) => {
+    const url = new URL(request.url())
+    return url.origin === gameOrigin && url.pathname.startsWith('/backgammon/')
+      && ['document', 'script', 'stylesheet', 'font'].includes(request.resourceType())
   }
   async function newUser(label) {
     const context = await browser.newContext({ ignoreHTTPSErrors: runtime.profile !== 'server-rehearsal', locale: 'en-US',
@@ -108,14 +119,27 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     })
     context.on('requestfailed', (request) => record('failedRequests', {
       label, method: request.method(), path: safePath(request.url()),
+      startedAt: requestStarts.get(request) ?? null,
       elapsedMs: Date.now() - (requestStarts.get(request) ?? Date.now()),
       error: redact(request.failure()?.errorText),
     }))
     context.on('response', (response) => {
       const event = { label, method: response.request().method(), path: safePath(response.url()),
+        startedAt: requestStarts.get(response.request()) ?? null,
         status: response.status(), elapsedMs: Date.now() - (requestStarts.get(response.request()) ?? Date.now()) }
       if (event.path.includes('/tournaments-api/') || event.path.includes('/api/link/')) record('requests', event)
+      if (isGameFrontendRequest(response.request())) {
+        record('frontendRequests', { ...event, resourceType: response.request().resourceType(), phase: 'response_headers' })
+      }
       recordServerError(event)
+    })
+    context.on('requestfinished', (request) => {
+      if (isGameFrontendRequest(request)) {
+        record('frontendRequests', { label, method: request.method(), path: safePath(request.url()),
+          resourceType: request.resourceType(), phase: 'body_finished',
+          startedAt: requestStarts.get(request) ?? null,
+          elapsedMs: Date.now() - (requestStarts.get(request) ?? Date.now()) })
+      }
     })
     context.on('page', (page) => {
       page.on('websocket', (socket) => {
@@ -149,11 +173,13 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       })
     } catch (error) {
       record('failedRequests', { label: user.label, source: 'assertion-api', method,
+        startedAt: begin,
         path: `${tourOrigin}/tournaments-api${endpoint.split('?')[0]}`,
         elapsedMs: Date.now() - begin, error: redact(error.message) })
       throw error
     }
     const event = { label: user.label, source: 'assertion-api', method,
+      startedAt: begin,
       path: safePath(response.url()), status: response.status(), elapsedMs: Date.now() - begin }
     record('requests', event)
     recordServerError(event)
@@ -193,6 +219,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     if (gate) await gate.arrive(player.label)
     const clickedAt = Date.now()
     await button.click()
+    observe('entry_click_command_completed', { label: player.label, fixtureId, clickedAt,
+      elapsedMs: Date.now() - clickedAt })
     return clickedAt
   }
   function admissionGate(count) {
@@ -297,6 +325,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     evidence.roomId = one.roomId
     // Start when both users have clicked, excluding ordinary opponent wait.
     admissions.set(fixture.id, { clickedAt: Math.max(...clickTimes), observedAt: Date.now(),
+      clicks: clickTimes.map((clickedAt, index) => ({ color: [one, two][index].color, clickedAt })),
       ...(delayedSecond ? { excludedReason: 'intentional_recovery_delay' } : {}) })
     evidence.firstRoundEntryElapsedMs = fixture.round_index === 0 ? Date.now() - tournamentStartedAt : null
     if (fixture.round_index === 0) expect(evidence.firstRoundEntryElapsedMs).toBeLessThan(10 * 60_000)
@@ -343,6 +372,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       score1: done.score1, score2: done.score2, winnerId: done.winner_id,
       moves: result.moves, rolls: result.rolls, winnerColor: result.winnerColor, metrics: result.metrics,
       admission: { elapsedMs: result.metrics.firstBothConnectedAt - admissions.get(fixture.id)?.clickedAt,
+        clickedAt: admissions.get(fixture.id)?.clickedAt, clicks: admissions.get(fixture.id)?.clicks,
         ...(admissions.get(fixture.id)?.excludedReason ? { excludedReason: admissions.get(fixture.id).excludedReason } : {}) },
       resultConfirmationMs,
       result: result.result, terminalMove: result.terminalMove }

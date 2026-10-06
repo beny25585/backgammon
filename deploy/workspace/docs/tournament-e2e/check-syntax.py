@@ -24,6 +24,7 @@ javascript_files = ['run-e2e.mjs', 'production-ui.mjs', 'parity-report.mjs',
                     'performance-policy.mjs', 'shared-progress.mjs', 'source-versions.mjs']
 javascript_files += ['destination-policy.mjs', 'destination-policy.test.mjs', 'run-remote-e2e.mjs', 'playwright.config.mjs']
 javascript_files += ['scenario-config.test.mjs', 'game-driver.test.mjs', 'performance-policy.test.mjs']
+javascript_files += ['admission-timing.test.mjs']
 for name in python_files:
     compile(ast.parse((root / name).read_text(encoding='utf-8-sig'), filename=name), name, 'exec')
 print(f'Python static syntax: {len(python_files)} files passed', flush=True)

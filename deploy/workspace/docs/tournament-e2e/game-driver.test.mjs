@@ -5,7 +5,7 @@ import { installGameObserver } from './game-driver.mjs';
 
 const roomId = 'd830ca8f-9954-47b5-b537-79265f9b5a11';
 
-async function observer() {
+async function observer({ clock = Date.now, performance } = {}) {
   class Socket {
     static OPEN = 1;
     readyState = 1;
@@ -19,14 +19,14 @@ async function observer() {
     emit(type, event) { for (const listener of this.listeners.get(type) ?? []) listener(event); }
     send(raw) { this.sent.push(JSON.parse(raw)); }
   }
-  const window = { WebSocket: Socket, location: { href: 'https://127.0.0.1/backgammon/' } };
+  const window = { WebSocket: Socket, location: { href: 'https://127.0.0.1/backgammon/' }, performance };
   await installGameObserver({
     async addInitScript(initializer, options) {
       vm.runInNewContext(`(${initializer.toString()})(options)`,
-        { window, options, URL, setTimeout, clearTimeout });
+        { window, options, URL, setTimeout, clearTimeout, Date: { now: clock } });
     },
   });
-  const socket = new window.WebSocket(`wss://127.0.0.1/ws/game/${roomId}/`);
+  const socket = new window.WebSocket(`wss://127.0.0.1/ws/game/${roomId}/?token=private-token`);
   const api = window.__tournamentE2EGame;
   const snapshot = (version, initial = false) => socket.emit('message', { data: JSON.stringify({
     type: 'state_update', initial, playerColor: 'white', action: initial ? undefined : 'roll',
@@ -78,4 +78,68 @@ test('socket errors wake the driver even without a newer state', { timeout: 1000
   socket.emit('error', {});
   await wake;
   assert.equal(api.inspect(roomId).metrics.socketErrors, 1);
+});
+
+test('admission callback times survive later states, repeated status and a full event buffer', async () => {
+  let clock = 1000;
+  const { api, socket, snapshot } = await observer({ clock: () => clock });
+  clock = 1100;
+  socket.emit('open', {});
+  clock = 1200;
+  socket.emit('message', { data: JSON.stringify({ type: 'room_status', payload: { connectedColors: ['white'] } }) });
+  assert.equal(api.inspect(roomId).timing.firstBothConnectedAt, null);
+  clock = 1400;
+  const both = () => socket.emit('message', { data: JSON.stringify({ type: 'room_status',
+    payload: { connectedColors: ['white', 'black'] } }) });
+  both();
+  clock = 9000;
+  both();
+  for (let index = 0; index < 150; index++) {
+    socket.send(JSON.stringify({ type: 'state_update', payload: { action: 'roll' } }));
+    snapshot(index + 1);
+  }
+  const game = api.inspect(roomId, true);
+  assert.equal(game.events.length, 100);
+  assert.equal(game.timing.socketConstructedAt, 1000);
+  assert.equal(game.timing.socketOpenedAt, 1100);
+  assert.equal(game.timing.initialStateAt, 1000);
+  assert.equal(game.timing.firstRoomStatusAt, 1200);
+  assert.equal(game.timing.firstBothConnectedAt, 1400);
+});
+
+test('a both-connected payload cannot stamp an unopened socket', async () => {
+  const { api, socket } = await observer();
+  socket.readyState = 0;
+  socket.emit('message', { data: JSON.stringify({ type: 'room_status', payload: { connectedColors: ['white', 'black'] } }) });
+  assert.equal(api.inspect(roomId).timing.firstBothConnectedAt, null);
+  socket.readyState = 1;
+  socket.emit('open', {});
+  assert.ok(api.inspect(roomId).timing.firstBothConnectedAt !== null);
+});
+
+test('document evidence excludes credentials, API traffic and off-origin assets', async () => {
+  let clock = 1000;
+  const asset = name => ({ name, initiatorType: 'script', startTime: 5, responseStart: 10, responseEnd: 50,
+    duration: 45, transferSize: 200, encodedBodySize: 100, decodedBodySize: 300 });
+  const navigation = { startTime: 0, responseStart: 10, responseEnd: 30, domInteractive: 0,
+    domContentLoadedEventEnd: 0, loadEventEnd: 0 };
+  const resources = [asset('https://127.0.0.1/backgammon/assets/main.js?ticket=secret#private'),
+    asset('https://127.0.0.1/api/link/enter/?ticket=secret'), asset('https://outside.example/backgammon/assets/main.js')];
+  const performance = { timeOrigin: 900, getEntriesByType: type => type === 'navigation' ? [navigation] : resources };
+  const { api, socket } = await observer({ clock: () => clock, performance });
+  assert.equal(api.inspect(roomId).admissionTiming, undefined);
+  socket.emit('open', {});
+  clock = 1400;
+  socket.emit('message', { data: JSON.stringify({ type: 'room_status', payload: { connectedColors: ['white', 'black'] } }) });
+  clock = 9000;
+  resources.push(asset('https://127.0.0.1/backgammon/assets/later.js'));
+  const timing = api.inspect(roomId, true).admissionTiming;
+  assert.equal(timing.document.capturedAt, 1400);
+  assert.equal(timing.document.navigationStartedAt, 900);
+  assert.equal(timing.document.responseEndedAt, 930);
+  assert.equal(timing.document.domContentLoadedAt, null);
+  assert.equal(timing.document.resourceCount, 1);
+  assert.equal(timing.document.resources[0].path, '/backgammon/assets/main.js');
+  assert.equal(timing.document.transferBytes, 200);
+  assert.doesNotMatch(JSON.stringify(timing), /secret|private|ticket|token|outside\.example|later\.js/);
 });

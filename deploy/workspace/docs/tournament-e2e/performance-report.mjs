@@ -11,6 +11,55 @@ function distribution(values) {
     p50Ms: percentile(.5), p95Ms: percentile(.95), maxMs: sorted.at(-1) }
 }
 
+export function admissionDiagnostics(summary) {
+  const elapsed = (end, start) => Number.isFinite(end) && Number.isFinite(start) && end >= start ? end - start : null
+  const fixtures = (summary.matches || []).map(match => {
+    const diagnostic = match.metrics?.admissionTiming
+    const clicks = match.admission?.clicks || []
+    const seats = (diagnostic?.seats || []).map(seat => {
+      const clickedAt = clicks.find(click => click.color === seat.color)?.clickedAt ?? null
+      const document = seat.document
+      return { color: seat.color, clickCommandStartedAt: clickedAt,
+        socketConstructedAt: seat.socketConstructedAt, socketOpenedAt: seat.socketOpenedAt,
+        initialStateAt: seat.initialStateAt, firstRoomStatusAt: seat.firstRoomStatusAt,
+        firstBothConnectedAt: seat.firstBothConnectedAt,
+        phases: {
+          clickToNavigationMs: elapsed(document?.navigationStartedAt, clickedAt),
+          navigationToHtmlEndMs: elapsed(document?.responseEndedAt, document?.navigationStartedAt),
+          htmlTransferMs: elapsed(document?.responseEndedAt, document?.responseStartedAt),
+          htmlEndToSocketConstructionMs: elapsed(seat.socketConstructedAt, document?.responseEndedAt),
+          socketOpenMs: elapsed(seat.socketOpenedAt, seat.socketConstructedAt),
+          openToInitialStateMs: elapsed(seat.initialStateAt, seat.socketOpenedAt),
+          openToBothConnectedMs: elapsed(seat.firstBothConnectedAt, seat.socketOpenedAt),
+        }, document: document ?? null }
+    })
+    const bothTimes = seats.map(seat => seat.firstBothConnectedAt)
+    const browserBothAt = seats.length === 2 && bothTimes.every(Number.isFinite) ? Math.max(...bothTimes) : null
+    return { fixtureId: match.fixtureId, round: match.round,
+      complete: seats.length === 2 && ['white', 'black'].every(color => seats.some(seat => seat.color === color))
+        && seats.every(seat => [seat.socketConstructedAt, seat.socketOpenedAt, seat.initialStateAt,
+          seat.firstBothConnectedAt, seat.document?.navigationStartedAt, seat.document?.responseEndedAt].every(Number.isFinite)),
+      nodeObservedAdmissionMs: match.admission?.elapsedMs ?? null,
+      browserAdmissionMs: elapsed(browserBothAt, match.admission?.clickedAt),
+      driverDetectionLagMs: elapsed(diagnostic?.observedAt, browserBothAt),
+      nodeObservedAt: diagnostic?.observedAt ?? null, browserBothConnectedAt: browserBothAt, seats }
+  })
+  const phaseNames = ['clickToNavigationMs', 'navigationToHtmlEndMs', 'htmlTransferMs',
+    'htmlEndToSocketConstructionMs', 'socketOpenMs', 'openToInitialStateMs', 'openToBothConnectedMs']
+  return { version: 1,
+    scope: 'Diagnostic timestamps on this PC. Browser callbacks precede Node observation. Do not subtract these timestamps from server log clocks without clock alignment.',
+    limitations: ['Click time is the start of the existing Playwright click command, not the DOM click event.',
+      'HTML-to-socket time includes asset loading and JavaScript execution; resources overlap, so phase durations must not be added together.',
+      'Waiting for both connections can include waiting for the opponent. Resource data includes only completed same-origin game assets at first both-connected callback.',
+      'A zero transfer size alone does not establish a cache hit. Resources are capped at the 40 slowest per document.',
+      'Missing timestamps remain null. These diagnostics do not change admission acceptance or identify a cause without a controlled follow-up.'],
+    instrumentation: summary.browserInstrumentation ?? null,
+    coverage: { completedMatches: fixtures.length, completeDiagnostics: fixtures.filter(fixture => fixture.complete).length },
+    phaseDistributions: Object.fromEntries(phaseNames.map(phase => [phase,
+      distribution(fixtures.flatMap(fixture => fixture.seats.map(seat => seat.phases[phase])))])),
+    driverDetectionLag: distribution(fixtures.map(fixture => fixture.driverDetectionLagMs)), fixtures }
+}
+
 export function writePerformanceReport(runDir) {
   const read = name => fs.existsSync(path.join(runDir, name)) ? fs.readFileSync(path.join(runDir, name), 'utf8') : ''
   const summary = JSON.parse(read('tournament-summary.json') || '{}')
@@ -57,6 +106,7 @@ export function writePerformanceReport(runDir) {
   const unfinishedAcknowledged = unfinishedSeats.reduce((sum, seat) => sum + seat.acknowledged, 0)
   const report = {
     acceptance: evaluatePerformance(summary, scenario),
+    admissionDiagnostics: admissionDiagnostics(summary),
     scope: runtime.profile === 'server-rehearsal'
       ? 'Browser load from this PC through public host Nginx HTTPS to R2 server images and fresh browser PostgreSQL databases. ACK timings include this network connection. Server log samples are not collected by this browser runner.'
       : 'This machine and isolated databases; no production capacity guarantee. Slow DB log samples are threshold-selected.',

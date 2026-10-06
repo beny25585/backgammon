@@ -29,6 +29,41 @@ export async function installGameObserver(context) {
     const color = value => value === 'white' || value === 'black' ? value : null;
     const actionNames = new Set(['roll', 'move', 'end_turn']);
     const idPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    function documentTiming() {
+      const performance = window.performance;
+      if (!performance?.getEntriesByType || !Number.isFinite(performance.timeOrigin)) return null;
+      const navigation = performance.getEntriesByType('navigation')[0];
+      if (!navigation) return null;
+      const epoch = value => Number.isFinite(value) && value > 0 ? performance.timeOrigin + value : null;
+      const resources = performance.getEntriesByType('resource').flatMap(resource => {
+        let url;
+        try { url = new URL(resource.name, window.location.href); } catch { return []; }
+        // Only application assets, never API URLs, query strings or fragments.
+        if (url.origin !== new URL(window.location.href).origin ||
+          !/^\/backgammon\/(assets\/|src\/|__e2e__\/engine\.js$)/.test(url.pathname)) return [];
+        return [{ path: url.pathname, initiatorType: resource.initiatorType,
+          startedAt: performance.timeOrigin + resource.startTime,
+          responseStartedAt: epoch(resource.responseStart), finishedAt: epoch(resource.responseEnd),
+          durationMs: resource.duration, transferBytes: resource.transferSize,
+          encodedBodyBytes: resource.encodedBodySize, decodedBodyBytes: resource.decodedBodySize }];
+      });
+      return {
+        capturedAt: now(), navigationStartedAt: performance.timeOrigin + navigation.startTime,
+        responseStartedAt: epoch(navigation.responseStart), responseEndedAt: epoch(navigation.responseEnd),
+        domInteractiveAt: epoch(navigation.domInteractive),
+        domContentLoadedAt: epoch(navigation.domContentLoadedEventEnd), loadEventAt: epoch(navigation.loadEventEnd),
+        resourceCount: resources.length, transferBytes: resources.reduce((sum, resource) => sum + resource.transferBytes, 0),
+        resources: resources.sort((one, two) => two.durationMs - one.durationMs).slice(0, 40),
+        resourceLimit: 40,
+      };
+    }
+    function bothConnected(entry) {
+      if (entry.timing.firstBothConnectedAt !== null || entry.socket.readyState !== NativeWebSocket.OPEN ||
+        !['white', 'black'].every(seat => entry.connectedColors.includes(seat))) return;
+      entry.timing.firstBothConnectedAt = now();
+      // Capture once in the browser callback, before the Node driver observes it.
+      entry.documentTiming = documentTiming();
+    }
     const stateFields = [
       'points', 'bar', 'home', 'turn', 'dice', 'remaining', 'phase', 'cube',
       'cubeOwner', 'doubleOfferedBy', 'winner', 'winType', 'openingRoll',
@@ -81,7 +116,7 @@ export async function installGameObserver(context) {
       const open = matching.filter(entry => entry.socket.readyState === NativeWebSocket.OPEN);
       return (open.length ? open : matching).at(-1) ?? null;
     }
-    function view(entry) {
+    function view(entry, includeAdmissionTiming = false) {
       if (!entry) return null;
       return clone({
         roomId: entry.roomId,
@@ -105,11 +140,15 @@ export async function installGameObserver(context) {
         lastSent: entry.lastSent,
         terminalMove: entry.terminalMove,
         metrics: entry.metrics,
+        timing: entry.timing,
+        ...(includeAdmissionTiming ? { admissionTiming: {
+          ...entry.timing, document: entry.documentTiming ?? documentTiming(),
+        } } : {}),
         errors: entry.errors,
         events: entry.events,
       });
     }
-    function observe(socket, url) {
+    function observe(socket, url, constructedAt) {
       let roomId;
       try {
         const pathname = new URL(String(url), window.location.href).pathname;
@@ -122,6 +161,8 @@ export async function installGameObserver(context) {
         targetPoints: null, connectedColors: [], roomStarted: false,
         result: null, revision: 0, change: 0, waiters: new Set(), stateAt: 0, lastSent: null,
         pending: [], terminalMove: null, driverSending: false, events: [], errors: [],
+        timing: { socketConstructedAt: constructedAt, socketOpenedAt: null, initialStateAt: null,
+          firstRoomStatusAt: null, firstBothConnectedAt: null }, documentTiming: null,
         metrics: { sent: 0, driverActions: 0, appActions: 0, moves: 0, rolls: 0,
           endTurns: 0, snapshots: 0, serverErrors: 0, forbiddenActions: 0,
           closes: 0, socketErrors: 0, acknowledged: 0, maxAckMs: 0, totalAckMs: 0 },
@@ -169,6 +210,7 @@ export async function installGameObserver(context) {
           if (!state) return;
           // Broadcast playerColor identifies the actor. Only initial identifies us.
           if (message.initial === true) {
+            entry.timing.initialStateAt ??= now();
             entry.color = color(message.playerColor);
             entry.initialState = clone(state);
             entry.targetPoints = message.targetPoints ?? null;
@@ -189,7 +231,9 @@ export async function installGameObserver(context) {
             }
           }
         } else if (message?.type === 'room_status') {
+          entry.timing.firstRoomStatusAt ??= now();
           entry.connectedColors = (message.payload?.connectedColors ?? []).map(color).filter(Boolean);
+          bothConnected(entry);
         } else if (message?.type === 'room_started') {
           entry.roomStarted = true;
         } else if (message?.type === 'game_ended') {
@@ -219,7 +263,11 @@ export async function installGameObserver(context) {
         }
         changed(entry);
       });
-      socket.addEventListener('open', () => changed(entry));
+      socket.addEventListener('open', () => {
+        entry.timing.socketOpenedAt ??= now();
+        bothConnected(entry);
+        changed(entry);
+      });
       socket.addEventListener('close', event => {
         entry.metrics.closes++;
         record(entry, { kind: 'close', code: event.code });
@@ -233,13 +281,14 @@ export async function installGameObserver(context) {
     }
     window.WebSocket = new Proxy(NativeWebSocket, {
       construct(target, args) {
+        const constructedAt = now();
         const socket = Reflect.construct(target, args);
-        observe(socket, args[0]);
+        observe(socket, args[0], constructedAt);
         return socket;
       },
     });
     window[key] = {
-      inspect(roomId) { return view(current(roomId)); },
+      inspect(roomId, includeAdmissionTiming = false) { return view(current(roomId), includeAdmissionTiming); },
       waitForChange(roomId, socketId, change, timeoutMs) {
         const entry = current(roomId);
         if (!entry || entry.id !== socketId || entry.change !== change) return Promise.resolve();
@@ -317,15 +366,17 @@ export async function installGameObserver(context) {
 const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 /** Returns only game/protocol fields; never authentication or URL material. */
-export async function inspectGame(page, { roomId } = {}) {
-  return page.evaluate(({ key, roomId }) => window[key]?.inspect(roomId) ?? null,
-    { key: OBSERVER_KEY, roomId });
+export async function inspectGame(page, { roomId, includeAdmissionTiming = false } = {}) {
+  return page.evaluate(({ key, roomId, includeAdmissionTiming }) =>
+    window[key]?.inspect(roomId, includeAdmissionTiming) ?? null,
+  { key: OBSERVER_KEY, roomId, includeAdmissionTiming });
 }
 
 function compact(game) {
   return game ? {
     roomId: game.roomId, color: game.color, connected: game.connected,
     connectedColors: game.connectedColors, phase: game.state?.phase,
+    timing: game.timing,
     version: game.state?.version, turn: game.state?.turn,
     pending: game.pendingActions?.map(item => item.action), metrics: game.metrics,
     lastSent: game.lastSent, recentEvents: game.events?.slice(-12),
@@ -427,6 +478,7 @@ export async function driveMatch(pages, {
   let previousProgress = '';
   let previousObservation = '';
   let firstBothConnectedAt = null;
+  let admissionTiming = null;
   let driverActions = 0;
   const initialSocketIds = games.map(game => game.socketId);
   const waitForChange = async index => {
@@ -440,7 +492,9 @@ export async function driveMatch(pages, {
   };
 
   while (Date.now() - startedAt < timeoutMs) {
-    games = await Promise.all(pages.map(page => inspectGame(page, { roomId })));
+    games = await Promise.all(pages.map(page => inspectGame(page, {
+      roomId, includeAdmissionTiming: firstBothConnectedAt === null,
+    })));
     if (games.some(game => !game)) throw failure('game document/observer disappeared', games);
     if (games.some((game, index) => game.socketId !== initialSocketIds[index])) {
       throw failure('socket reconnected during the match; inspect server/client logs', games);
@@ -479,6 +533,7 @@ export async function driveMatch(pages, {
         elapsedMs: Date.now() - startedAt,
         firstBothConnectedAfterMs: firstBothConnectedAt == null ? null : firstBothConnectedAt - startedAt,
         firstBothConnectedAt,
+        admissionTiming,
         driverActions,
         seats: games.map(game => ({ color: game.color, ...game.metrics })),
       };
@@ -502,7 +557,12 @@ export async function driveMatch(pages, {
       await waitForChange(missing);
       continue;
     }
-    firstBothConnectedAt ??= Date.now();
+    if (firstBothConnectedAt === null) {
+      firstBothConnectedAt = Date.now();
+      admissionTiming = { observedAt: firstBothConnectedAt,
+        seats: games.map(game => ({ color: game.color, ...game.admissionTiming })) };
+      await onObservation?.({ event: 'game_admission_observed', admissionTiming });
+    }
     // Never overlap our own or UI-generated requests. Both pages must observe
     // the same authoritative version before the next turn is driven.
     if (games.some(game => game.pendingActions.length) ||
