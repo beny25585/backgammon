@@ -31,6 +31,7 @@ class GameRoom(models.Model):
     status = models.CharField(max_length=20, default='waiting')
     state = models.JSONField(default=dict)
     last_sequence = models.IntegerField(default=0)
+    history_sequence = models.PositiveIntegerField(null=True, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -94,6 +95,7 @@ class Match(models.Model):
     black_score = models.IntegerField(default=0)
     winner = models.CharField(max_length=5, null=True, blank=True)
     games = models.JSONField(default=list)
+    history_sequence = models.PositiveIntegerField(null=True, blank=True)
     end_reason = models.CharField(max_length=20, null=True, blank=True)
     first_player = models.CharField(max_length=5, null=True, blank=True)
     opening_roll = models.JSONField(null=True, blank=True)
@@ -131,12 +133,17 @@ class GameEvent(models.Model):
         db_index=True,
     )
     sequence = models.IntegerField(default=0)
+    history_sequence = models.PositiveIntegerField(null=True, blank=True)
     event_type = models.CharField(max_length=20, choices=EVENT_TYPES)
     payload = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ['sequence']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['room', 'history_sequence'], name='unique_room_history_sequence'),
+        ]
         indexes = [
             models.Index(
                 fields=['room', 'game_id', 'sequence'],
@@ -165,6 +172,7 @@ class Task(models.Model):
         max_length=200, help_text="Callable path, e.g. module.func")
     args = models.JSONField(default=list, blank=True)
     kwargs = models.JSONField(default=dict, blank=True)
+    delivery_payload = models.JSONField(null=True, blank=True)
     run_at = models.DateTimeField(
         null=True, blank=True, help_text="When to run (UTC)")
     status = models.CharField(

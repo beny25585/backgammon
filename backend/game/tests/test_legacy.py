@@ -691,7 +691,7 @@ class GameConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_move_broadcast_does_not_wait_for_event_history(self):
+    async def test_move_broadcast_follows_committed_state_and_history(self):
         stored = BackgammonEngine.get_initial_state()
         stored.update({
             'phase': 'moving',
@@ -704,27 +704,22 @@ class GameConsumerTests(TransactionTestCase):
         gs.state_data = stored
         await save_game_state(gs)
         comm_white, comm_black = await self._connect_both()
-        persistence_started = asyncio.Event()
-        release_persistence = asyncio.Event()
-
-        async def blocked_persistence(*_args, **_kwargs):
-            persistence_started.set()
-            await release_persistence.wait()
-
-        with patch('game.consumers.record_event', side_effect=blocked_persistence):
-            await comm_white.send_json_to({
-                'type': 'state_update',
-                'payload': {'action': 'move', 'from': 12, 'to': 9},
-            })
-            event = await self._receive_until(
-                comm_white,
-                lambda item: item.get('type') == 'state_update'
-                and item.get('action') == 'move',
-            )
-            await asyncio.wait_for(persistence_started.wait(), timeout=1)
-            self.assertEqual(event['payload']['remaining'], [5])
-            release_persistence.set()
-            await asyncio.sleep(0)
+        await comm_white.send_json_to({
+            'type': 'state_update',
+            'payload': {'action': 'move', 'from': 12, 'to': 9},
+        })
+        event = await self._receive_until(
+            comm_white,
+            lambda item: item.get('type') == 'state_update'
+            and item.get('action') == 'move',
+        )
+        self.assertEqual(event['payload']['remaining'], [5])
+        saved = await database_sync_to_async(lambda: GameEvent.objects.get(
+            room=self.room, sequence=event['payload']['version']))()
+        persisted = await database_sync_to_async(lambda: GameState.objects.get(room=self.room).state_data)()
+        self.assertEqual(saved.payload['remaining'], [5])
+        self.assertEqual(persisted['version'], event['payload']['version'])
+        self.assertEqual(saved.history_sequence, 1)
 
         await comm_white.disconnect()
         await comm_black.disconnect()

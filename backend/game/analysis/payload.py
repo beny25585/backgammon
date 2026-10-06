@@ -8,6 +8,8 @@ This module performs no I/O beyond local ORM reads: no HTTP requests,
 no task enqueueing, no Open Sage calls.
 """
 
+from collections import defaultdict
+
 from ..link.models import TournamentLink
 from ..models import GameEvent, GameState
 
@@ -16,6 +18,40 @@ SCHEMA_VERSION = 1
 
 class AnalysisPayloadError(ValueError):
     pass
+
+
+def validate_match_history(match, events):
+    """Validate the sealed history, independently of client-visible versions."""
+    expected = match.history_sequence
+    if expected is None:
+        raise AnalysisPayloadError(
+            f"Match {match.pk} has no verified history boundary; inspect legacy history before delivery."
+        )
+    mismatch = next(((ordinal, event.history_sequence)
+                     for ordinal, event in enumerate(events, 1)
+                     if event.history_sequence != ordinal), None)
+    if len(events) != expected or mismatch is not None:
+        raise AnalysisPayloadError(
+            f"Match {match.pk} history is incomplete: expected={expected} stored={len(events)}; "
+            f"first mismatch={mismatch or (len(events) + 1, None)}; "
+            "history ordinals must be unique and contiguous."
+        )
+    if not isinstance(match.games, list) or not match.games:
+        raise AnalysisPayloadError('Match has no valid game list.')
+    game_ids = []
+    for game in match.games:
+        if not isinstance(game, dict) or not game.get('game_id'):
+            raise AnalysisPayloadError('Match has a game without an ID.')
+        game_ids.append(str(game['game_id']))
+    if len(set(game_ids)) != len(game_ids):
+        raise AnalysisPayloadError('Match has duplicate game IDs.')
+    known_games = set(game_ids)
+    for event in events:
+        if not isinstance(event.payload, dict):
+            raise AnalysisPayloadError(f'Event {event.pk} has an invalid payload.')
+        if event.game_id not in known_games or (
+                event.payload.get('gameId') and str(event.payload['gameId']) != event.game_id):
+            raise AnalysisPayloadError(f'Event {event.pk} does not belong to a recorded game.')
 
 
 def _source_payload(room):
@@ -86,7 +122,7 @@ def _legacy_crawford_from_events(events):
     return False
 
 
-def _games_payload(match, room):
+def _games_payload(match, events):
     stored = match.games or []
     ordered = sorted(
         stored, key=lambda game: int(game.get("game_number", 0))
@@ -94,17 +130,16 @@ def _games_payload(match, room):
     running_white = 0
     running_black = 0
     games = []
+    by_game = defaultdict(list)
+    for event in events:
+        by_game[event.game_id].append(_serialize_event(event, ai=match.match_type == "ai"))
     for game in ordered:
         game_id = str(game["game_id"])
-        events = [
-            _serialize_event(event, ai=match.match_type == "ai")
-            for event in GameEvent.objects.filter(
-                room=room,
-                game_id=game_id,
-            ).select_related("player").order_by("sequence")
-        ]
+        game_events = by_game[game_id]
 
         if "score_before" in game and "score_after" in game:
+            if not isinstance(game['score_before'], dict) or not isinstance(game['score_after'], dict):
+                raise AnalysisPayloadError(f'Game {game_id} has invalid scores.')
             score_before = {
                 "white": int(game["score_before"].get("white", 0)),
                 "black": int(game["score_before"].get("black", 0)),
@@ -132,7 +167,7 @@ def _games_payload(match, room):
         if "is_crawford" in game:
             is_crawford = bool(game["is_crawford"])
         else:
-            is_crawford = _legacy_crawford_from_events(events)
+            is_crawford = _legacy_crawford_from_events(game_events)
 
         games.append({
             "game_id": game_id,
@@ -143,12 +178,12 @@ def _games_payload(match, room):
             "score_before": score_before,
             "score_after": score_after,
             "is_crawford": is_crawford,
-            "events": events,
+            "events": game_events,
         })
     return games
 
 
-def build_match_analysis_payload(match) -> dict:
+def build_match_analysis_payload(match, *, events=None) -> dict:
     """Build the immutable analysis package for a finished Match."""
     room = match.room
     if room is None:
@@ -158,11 +193,16 @@ def build_match_analysis_payload(match) -> dict:
     if not match.games:
         raise AnalysisPayloadError("Match has no games.")
     try:
-        state = GameState.objects.get(room=room).state_data or {}
+        state = GameState.objects.get(room=room).state_data
     except GameState.DoesNotExist as exc:
         raise AnalysisPayloadError(
             "Final GameState for the room does not exist."
         ) from exc
+    if not isinstance(state, dict):
+        raise AnalysisPayloadError('Final GameState has an invalid payload.')
+
+    if events is None:
+        events = list(GameEvent.objects.filter(room=room).select_related("player").order_by("sequence"))
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -179,5 +219,5 @@ def build_match_analysis_payload(match) -> dict:
             "white_score": int(match.white_score),
             "black_score": int(match.black_score),
         },
-        "games": _games_payload(match, room),
+        "games": _games_payload(match, events),
     }

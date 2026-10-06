@@ -13,7 +13,7 @@ from django.test import TestCase
 from game.consumers import event_game_id, record_event_and_advance
 from game.engine import BackgammonEngine
 from game.game_service import _match_metadata, record_game_end
-from game.models import GameEvent, GameRoom, Player, RoomPlayer
+from game.models import GameEvent, GameRoom, GameState, Player, RoomPlayer
 
 
 def make_room(code, target_points=7):
@@ -55,6 +55,7 @@ class EventGameIdStampingTests(TestCase):
             'dice': [3, 2],
             'phase': 'moving',
         }
+        GameState.objects.create(room=room, state_data={})
         async_to_sync(record_event_and_advance)(room, 'white', 'roll', payload)
 
         event = GameEvent.objects.get(room=room)
@@ -64,6 +65,7 @@ class EventGameIdStampingTests(TestCase):
     def test_legacy_missing_game_id_falls_back_to_initial(self):
         room = make_room('STAMP2')
         payload = {'turn': 'white', 'dice': [3, 2], 'phase': 'moving'}
+        GameState.objects.create(room=room, state_data={})
         async_to_sync(record_event_and_advance)(room, 'white', 'roll', payload)
 
         event = GameEvent.objects.get(room=room)

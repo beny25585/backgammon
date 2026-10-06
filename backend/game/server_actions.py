@@ -11,18 +11,13 @@ socket timers. No bot-specific code lives here.
 """
 
 import asyncio
-import copy
 import logging
 import time as time_module
 
-from channels.db import database_sync_to_async
-from django.db import transaction
-from django.utils import timezone
-
 from .clock import active_player, apply_transition, compute_clock, parse_time_control
 from .db_timing import measured_database_sync_to_async
+from .event_history import persist_game_action
 from .inactivity import refresh_after_action
-from .models import GameEvent, GameRoom, GameState, RoomPlayer
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +26,7 @@ SLOW_ACTION_WARNING_MS = 250
 
 SLOW_GAME_ACTION_MS = 250
 
-# Keep strong references until background persistence finishes.
+# Keep strong references to bot work until it finishes.
 _background_tasks: set[asyncio.Task] = set()
 
 
@@ -46,93 +41,9 @@ def run_in_background(coroutine):
     return task
 
 
-def event_game_id(payload):
-    """Extract the game ID from a persisted state-snapshot payload.
-
-    The authoritative value is the state snapshot stored in the event
-    payload. The "initial" fallback exists only for legacy persisted
-    rooms that predate real game IDs.
-    """
-    if isinstance(payload, dict):
-        value = payload.get("gameId")
-        if value:
-            return str(value)
-    return "initial"
-
-
 @measured_database_sync_to_async
-def persist_state_and_advance(room_id, state):
-    """Persist the authoritative state with one serialized room transaction."""
-    with transaction.atomic():
-        room = GameRoom.objects.select_for_update().get(id=room_id)
-        room.last_sequence += 1
-        room.save(update_fields=["last_sequence"])
-        sequence = room.last_sequence
-        state["version"] = sequence
-        GameState.objects.filter(room_id=room_id).update(
-            state_data=state,
-            updated_at=timezone.now(),
-        )
-    return sequence
-
-
-@database_sync_to_async
-def record_event(room_id, player_color, event_type, payload, sequence):
-    player_id = None
-    if player_color:
-        player_id = (
-            RoomPlayer.objects.filter(room_id=room_id, color=player_color)
-            .values_list("id", flat=True)
-            .first()
-        )
-
-    GameEvent.objects.create(
-        room_id=room_id,
-        player_id=player_id,
-        game_id=event_game_id(payload),
-        sequence=sequence,
-        event_type=event_type,
-        payload={**payload, "actorColor": player_color},
-    )
-
-
-async def record_event_safely(
-    room_id,
-    player_color,
-    event_type,
-    payload,
-    sequence,
-):
-    started = time_module.perf_counter()
-
-    try:
-        await record_event(
-            room_id,
-            player_color,
-            event_type,
-            payload,
-            sequence,
-        )
-    except Exception:
-        logger.exception(
-            "BACKGROUND_EVENT_FAILED room=%s action=%s sequence=%s elapsed_ms=%s",
-            room_id,
-            event_type,
-            sequence,
-            _elapsed_ms(started),
-        )
-        return
-
-    elapsed_ms = _elapsed_ms(started)
-
-    if elapsed_ms >= SLOW_ACTION_WARNING_MS:
-        logger.warning(
-            "BACKGROUND_EVENT_SLOW room=%s action=%s sequence=%s elapsed_ms=%s",
-            room_id,
-            event_type,
-            sequence,
-            elapsed_ms,
-        )
+def persist_state_and_advance(room_id, state, player_color, event_type):
+    return persist_game_action(room_id, state, player_color, event_type)
 
 
 async def apply_server_game_action(
@@ -155,9 +66,8 @@ async def apply_server_game_action(
     Important:
     - The engine action has ALREADY happened before this function is called.
       Timing here therefore measures only the post-engine pipeline.
-    - The authoritative state is persisted before it is broadcast.
-    - GameEvent persistence stays off the latency-critical broadcast path.
-      External status transitions are queued by their owning transaction.
+    - State and history commit together before the state is broadcast.
+    - Analysis HTTP delivery belongs to the existing task worker.
     - On end_turn, the next player's turnStartedAt is reset immediately before
       persistence so server-side processing does not consume their free delay.
 
@@ -179,12 +89,9 @@ async def apply_server_game_action(
         "confirm_pause_ms": 0,
         "persist_ms": 0,
         "opening_result_ms": 0,
-        "event_copy_ms": 0,
-        "event_schedule_ms": 0,
         "broadcast_ms": 0,
         "timeout_reschedule_ms": 0,
         "turn_notice_ms": 0,
-        "game_over_event_ms": 0,
         "game_over_callback_ms": 0,
     }
 
@@ -208,13 +115,15 @@ async def apply_server_game_action(
             logger.debug(
                 "GAME_ACTION_TIMING "
                 "room=%s action=%s outcome=%s sequence=%s "
-                "player=%s total_ms=%s",
+                "player=%s total_ms=%s persist_ms=%s broadcast_ms=%s",
                 room.id,
                 action,
                 outcome,
                 sequence,
                 player_color,
                 total_ms,
+                timings["persist_ms"],
+                timings["broadcast_ms"],
             )
             return
 
@@ -310,19 +219,9 @@ async def apply_server_game_action(
         )
 
         persist_started = time_module.perf_counter()
-        sequence = await persist_state_and_advance(room.id, new_state)
+        sequence = await persist_state_and_advance(room.id, new_state, player_color, action)
         timings["persist_ms"] = _elapsed_ms(persist_started)
         new_state["version"] = sequence
-
-        event_started = time_module.perf_counter()
-        await record_event(
-            room.id,
-            player_color,
-            action,
-            copy.deepcopy(new_state),
-            sequence,
-        )
-        timings["game_over_event_ms"] = _elapsed_ms(event_started)
 
         winner = "black" if new_active == "white" else "white"
 
@@ -438,6 +337,8 @@ async def apply_server_game_action(
     sequence = await persist_state_and_advance(
         room.id,
         new_state,
+        player_color,
+        action,
     )
 
     timings["persist_ms"] = _elapsed_ms(persist_started)
@@ -467,18 +368,6 @@ async def apply_server_game_action(
         new_state.get("phase") == "game_over"
         and new_state.get("winner")
     ):
-        event_started = time_module.perf_counter()
-
-        await record_event(
-            room.id,
-            player_color,
-            action,
-            copy.deepcopy(new_state),
-            sequence,
-        )
-
-        timings["game_over_event_ms"] = _elapsed_ms(event_started)
-
         game_over_started = time_module.perf_counter()
 
         await on_game_over(
@@ -500,42 +389,7 @@ async def apply_server_game_action(
             "state": new_state,
         }
 
-    # 9. Persist GameEvent in background.
-    # Measure deepcopy separately because a growing nested state can make this
-    # unexpectedly expensive even though the DB write itself is backgrounded.
-    event_copy_started = time_module.perf_counter()
-    event_payload = copy.deepcopy(new_state)
-    timings["event_copy_ms"] = _elapsed_ms(event_copy_started)
-
-    event_schedule_started = time_module.perf_counter()
-
-    run_in_background(
-        record_event_safely(
-            room.id,
-            player_color,
-            action,
-            event_payload,
-            sequence,
-        )
-    )
-
-    timings["event_schedule_ms"] = _elapsed_ms(
-        event_schedule_started
-    )
-
-    if (
-        is_final_move
-        and timings["event_copy_ms"] >= 25
-    ):
-        logger.warning(
-            "FINAL_MOVE_EVENT_COPY_SLOW "
-            "room=%s copy_ms=%s move_history_len=%s",
-            room.id,
-            timings["event_copy_ms"],
-            move_history_len,
-        )
-
-    # 10. Broadcast authoritative state FIRST
+    # 9. Broadcast the committed state
     broadcast_wall_started_ms = int(time_module.time() * 1000)
 
     if is_turn_handoff:
@@ -574,7 +428,7 @@ async def apply_server_game_action(
             int(time_module.time() * 1000) - pipeline_started_ms,
         )
 
-    # 11. Reschedule authoritative clock timeout AFTER broadcast
+    # 10. Reschedule authoritative clock timeout AFTER broadcast
     if clock is not None and new_active:
         timeout_started = time_module.perf_counter()
 
@@ -595,7 +449,7 @@ async def apply_server_game_action(
                 int(time_module.time() * 1000) - pipeline_started_ms,
             )
 
-    # 12. Optional turn notice
+    # 11. Optional turn notice
     turn_notice = (result or {}).get("turn_notice")
 
     if turn_notice:
@@ -611,7 +465,7 @@ async def apply_server_game_action(
         )
 
 
-    # 14. One summary line per successful action
+    # 12. One summary line per successful action
     log_timing("state_update", sequence)
 
     return {

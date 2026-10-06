@@ -374,6 +374,7 @@ def finalize_room(room, state, winner, win_type, reason):
             white_player=white_player,
             black_player=black_player,
             games=games_data,
+            history_sequence=locked.history_sequence,
             **metadata,
         )
 
@@ -480,6 +481,7 @@ def record_game_end(room, state, winner, win_type, reason):
                 white_player=white_player,
                 black_player=black_player,
                 games=games,
+                history_sequence=locked.history_sequence,
                 **metadata,
             )
             # Only the end of the *match* is a fixture result. Individual games inside a

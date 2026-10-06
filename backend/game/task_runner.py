@@ -15,7 +15,10 @@ from .scheduling import current_schedule
 
 logger = logging.getLogger(__name__)
 RESULT_TASK = 'game.link.outbox.deliver_result'
-DURABLE_DELIVERY_TASKS = (RESULT_TASK, 'game.link.live.deliver_status_event')
+DURABLE_DELIVERY_TASKS = (
+    RESULT_TASK, 'game.link.live.deliver_status_event',
+    'game.analysis.outbox.deliver_analysis', 'game.analysis_outbox.deliver_analysis',
+)
 LEASE_SECONDS = 120
 
 _channel_backend_logged = False
@@ -108,7 +111,7 @@ def run_task(task_id):
     )
 
     execution_started = time.perf_counter()
-    schedule = {'key': task.key, 'run_at': None, 'owns': lease.exists, 'lease': lease,
+    schedule = {'key': task.key, 'task': task, 'run_at': None, 'owns': lease.exists, 'lease': lease,
                 'heartbeat': lambda: bool(lease.update(updated_at=timezone.now())),
                 'renew_at': time.monotonic() + 30}
     schedule_token = current_schedule.set(schedule)

@@ -9,17 +9,17 @@ from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
-from django.db import models, transaction
+from django.db import transaction
 from django.utils import timezone
 from rest_framework_simplejwt.tokens import AccessToken
-from .models import GameRoom, GameState, RoomPlayer, Player, GameEvent
+from .models import GameRoom, GameState, RoomPlayer, Player
 from .clock import active_player, compute_clock, deadline_for
 from .db_timing import measured_database_sync_to_async
+from .event_history import event_game_id as event_game_id, persist_game_action
 from .room_execution import serialized_room_operation
 from .game_service import finalize_room, game_ended_payload, record_game_end
 from .server_actions import (
     apply_server_game_action,
-    event_game_id,
     run_in_background,
 )
 from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
@@ -178,23 +178,10 @@ def room_has_both_players(room_group_name):
     return len(_connected_users.get(room_group_name, {})) >= 2
 
 
-@database_sync_to_async
+@measured_database_sync_to_async
 def record_event_and_advance(room, player_color, event_type, payload):
-    """Atomically bump last_sequence and store a GameEvent. Returns the new sequence."""
-    GameRoom.objects.filter(id=room.id).update(
-        last_sequence=models.F('last_sequence') + 1)
-    room.refresh_from_db()
-    sequence = room.last_sequence
-    rp = room.players.filter(color=player_color).first()
-    GameEvent.objects.create(
-        room=room,
-        player=rp if rp else None,
-        game_id=event_game_id(payload),
-        sequence=sequence,
-        event_type=event_type,
-        payload={**payload, "actorColor": player_color},
-    )
-    return sequence
+    """Use the same state/history transaction for timer-driven actions."""
+    return persist_game_action(room.pk, payload, player_color, event_type)
 
 
 @measured_database_sync_to_async
@@ -938,14 +925,6 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         state = engine.state
 
-        sequence = await record_event_and_advance(
-            room,
-            None,
-            'opening_result_done',
-            state,
-        )
-        state['version'] = sequence
-
         # The opening dice are the winner's first playable roll.
         # Start the clock and inactivity window only after the
         # opening-result banner has finished.
@@ -968,9 +947,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             now_ms,
         )
 
-        # Persist inactivity before creating its scheduled check.
-        gs.state_data = state
-        await save_game_state(gs)
+        # Commit clocks, inactivity and history before arming their checks.
+        await record_event_and_advance(room, None, 'opening_result_done', state)
 
         if timed_out and new_active:
             winner = 'black' if new_active == 'white' else 'white'
@@ -1649,9 +1627,6 @@ class GameConsumer(AsyncWebsocketConsumer):
             return
 
         state = engine.state
-        sequence = await record_event_and_advance(room, None, 'next_game', state)
-        state['version'] = sequence
-
         now_ms = int(time_module.time() * 1000)
         clock, turn_started_at, new_active, timed_out, _deadline = compute_clock(
             stored, state, now_ms, room.time_control, room.target_points
@@ -1660,8 +1635,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['clock'] = clock
             state['turnStartedAt'] = turn_started_at
 
-        gs.state_data = state
-        await save_game_state(gs)
+        await record_event_and_advance(room, None, 'next_game', state)
 
         if clock is not None and new_active:
             await self._reschedule_timeout_from_state()
