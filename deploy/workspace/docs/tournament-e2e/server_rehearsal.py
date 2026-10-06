@@ -12,6 +12,7 @@ import time
 import uuid
 
 from rehearsal_context import fresh_database_context, require_fresh_database_context
+from rehearsal_integrations import require_integration_context, verify_integration_config
 
 PROJECT = 'backgammon-rehearsal-20261005t184922z'
 HOST = '38.247.146.17.nip.io'
@@ -24,9 +25,22 @@ SERVICES = {'game-api': 'game', 'game-tasks': 'game', 'game-migrate': 'game',
             'admin-frontend': 'admin-frontend'}
 APPS = ['dice', 'game-api', 'tournaments-api', 'game-frontend', 'tournaments-frontend', 'admin-frontend']
 WORKERS = ['game-tasks', 'tournaments-tasks']
+BASE_SERVICES, BASE_APPS, BASE_WORKERS = SERVICES.copy(), APPS.copy(), WORKERS.copy()
 UPSTREAM_PORTS = {'game-api': 8000, 'tournaments-api': 8000,
                   'game-frontend': 80, 'tournaments-frontend': 80, 'admin-frontend': 80}
 CONF = Path('/etc/nginx/conf.d/backgammon-rehearsal-e2e.conf')
+
+
+def select_services(identity):
+    SERVICES.clear()
+    SERVICES.update(BASE_SERVICES)
+    APPS[:] = BASE_APPS
+    WORKERS[:] = BASE_WORKERS
+    if require_integration_context(identity):
+        SERVICES.update({'analysis-api': 'analysis', 'analysis-worker': 'analysis',
+                         'analysis-migrate': 'analysis', 'push-worker': 'tournaments'})
+        APPS.append('analysis-api')
+        WORKERS.extend(['analysis-worker', 'push-worker'])
 
 
 def require(condition, message):
@@ -76,6 +90,20 @@ def configure_entry_observer(state, tools, identity):
     require_fresh_database_context(identity)
     file = state / 'compose.e2e.json'
     overrides = json.loads(file.read_text())
+    for service, values in overrides['services'].items():
+        if SERVICES.get(service) not in ('game', 'tournaments', 'analysis'):
+            continue
+        volumes = values.setdefault('volumes', [])
+        for volume in volumes:
+            target = volume.get('target', '')
+            if target.startswith('/opt/e2e/') and target.endswith('.py'):
+                source = tools / Path(target).name
+                require(source.is_file() and not source.is_symlink(), 'Missing rehearsal helper')
+                volume['source'] = str(source)
+        for name in ('rehearsal_context.py', 'rehearsal_integrations.py'):
+            target = '/opt/e2e/' + name
+            volumes[:] = [volume for volume in volumes if volume.get('target') != target]
+            volumes.append({'type': 'bind', 'source': str(tools / name), 'target': target, 'read_only': True})
     for kind in ('game', 'tournaments'):
         values = overrides['services'][kind + '-api']
         values.setdefault('environment', {}).update(
@@ -168,6 +196,7 @@ def postgres_query(database, sql):
 
 
 def fresh_databases(args, state, tools, session):
+    require(require_integration_context(session['identity']) is None, 'Integration databases are provisioned by rehearsal_integrations')
     require(not CONF.exists(), 'Stop the test listener before fresh-databases')
     verify_existing_app_identities(session, stopped=True)
     for service in ('postgres', 'redis'):
@@ -409,7 +438,10 @@ def discover_upstreams(session):
                 'Upstream is not the healthy pinned rehearsal container: ' + service)
         attached = json.loads(docker('inspect', PROJECT + '-' + service + '-1', '--format',
                                      '{{json .NetworkSettings.Networks}}', capture=True))
-        require(set(attached) == {name} and attached[name]['NetworkID'] == network['Id'],
+        expected_networks = {name}
+        if require_integration_context(session['identity']) and service == 'tournaments-api':
+            expected_networks.add(PROJECT + '_integrations_egress')
+        require(set(attached) == expected_networks and attached[name]['NetworkID'] == network['Id'],
                 'Upstream network changed: ' + service)
         addresses[service] = attached[name]['IPAddress']
     return upstreams_for_addresses(addresses, subnets)
@@ -483,21 +515,28 @@ def refresh_nginx_candidate(state, session):
 def compose(args, state, *command, capture=False):
     environment = dict(os.environ, TRANSFER_DIR=str(args.rehearsal / 'transfer-v2'),
                        PUBLIC_HOST=HOST, PUBLIC_ORIGIN=ORIGIN)
+    extra = []
+    identity = json.loads((state / 'session.json').read_text())['identity']
+    if require_integration_context(identity):
+        overlay = state / 'compose.integrations.yaml'
+        require(overlay.is_file() and not overlay.is_symlink(), 'Missing integration network overlay')
+        extra = ['-f', overlay]
     return run(['sudo', 'env', f'TRANSFER_DIR={environment["TRANSFER_DIR"]}', f'PUBLIC_HOST={HOST}',
                 f'PUBLIC_ORIGIN={ORIGIN}', 'docker', 'compose', '--profile', 'operations', '--profile', 'live',
                 '--profile', 'workers', '--profile', 'tournament-workers',
                 '--env-file', args.project / 'docker/production.env', '-p', PROJECT,
                 '-f', args.project / 'docker/compose.production.yaml',
-                '-f', args.rehearsal / 'compose.override.yaml', '-f', state / 'compose.e2e.json', *command], capture=capture)
+                '-f', args.rehearsal / 'compose.override.yaml', '-f', state / 'compose.e2e.json', *extra, *command], capture=capture)
 
 
 def verify_config(args, state, database_transition=False):
+    session = json.loads((state / 'session.json').read_text())
+    select_services(session['identity'])
     config = json.loads(compose(args, state, 'config', '--format', 'json', capture=True))
     require(config['name'] == PROJECT and config['networks']['application']['internal'] is True,
             'Expected the isolated copied rehearsal project')
     require(not config['services']['postgres'].get('ports') and not config['services']['redis'].get('ports'),
             'Database/cache ports must not be published')
-    session = json.loads((state / 'session.json').read_text())
     require(session['project_dir'] == str(args.project) and session['rehearsal_dir'] == str(args.rehearsal),
             'Session paths differ from the prepared target')
     context = session['identity'].get('database_context')
@@ -506,9 +545,9 @@ def verify_config(args, state, database_transition=False):
     planned = fresh_database_context(session['identity']['session_id']) if database_transition else None
     for service, image in SERVICES.items():
         require(config['services'][service]['image'] == session['identity']['images'][image], 'Application image differs from verified R2')
-        if service.startswith(('game-', 'tournaments-')) and service not in ('game-frontend', 'tournaments-frontend'):
+        if image in ('game', 'tournaments'):
             env = config['services'][service]['environment']
-            kind = 'game' if service.startswith('game-') else 'tournaments'
+            kind = image
             expected = context['databases'][kind] if context else 'backgammon_' + kind
             names = {expected, 'backgammon_' + kind, planned['databases'][kind]} if planned else {expected}
             expected_redis = f'redis://redis:6379/{context["redis_databases"][kind]}' if context else f'redis://redis:6379/{0 if kind == "game" else 1}'
@@ -518,28 +557,33 @@ def verify_config(args, state, database_transition=False):
                     'Application database/cache is outside the prepared rehearsal')
             key = 'GAMELINK_TOURNAMENTS_URL' if kind == 'game' else 'GAMELINK_BACKGAMMON_URL'
             require(env[key] == ORIGIN, 'Callback origin differs from the test Nginx listener')
+    verify_integration_config(session['identity'], config)
     return session
 
 
 def verify_live(session):
+    select_services(session['identity'])
     context = require_fresh_database_context(session['identity'])
+    integration = require_integration_context(session['identity'])
     for service in APPS + WORKERS:
         state = inspect(service)
         require(state['project'] == PROJECT and state['service'] == service and state['status'] == 'running'
                 and state['image'] == session['identity']['images'][SERVICES[service]], f'Wrong running container: {service}')
         if service in APPS:
             require(state['health'] == 'healthy', f'Unhealthy application: {service}')
-        if service in ('game-api', 'game-tasks', 'tournaments-api', 'tournaments-tasks'):
-            kind = 'game' if service.startswith('game-') else 'tournaments'
+        kind = SERVICES[service]
+        if kind in ('game', 'tournaments', 'analysis'):
             values = json.loads(docker('inspect', PROJECT + '-' + service + '-1', '--format',
                                        '{{json .Config.Env}}', capture=True))
             selected = {key: value for key, value in (item.split('=', 1) for item in values)
                         if key in ('DB_HOST', 'DB_NAME', 'DB_USER', 'REDIS_URL')}
-            require(selected == {'DB_HOST': 'postgres', 'DB_NAME': context['databases'][kind],
-                                 'DB_USER': 'backgammon_' + kind,
-                                 'REDIS_URL': f'redis://redis:6379/{context["redis_databases"][kind]}'},
+            expected = {'DB_HOST': 'postgres', 'DB_NAME': integration['analysis_database'] if kind == 'analysis'
+                        else context['databases'][kind], 'DB_USER': 'backgammon_' + kind}
+            if kind != 'analysis':
+                expected['REDIS_URL'] = f'redis://redis:6379/{context["redis_databases"][kind]}'
+            require(selected == expected,
                     'Running container uses a different database/cache context: ' + service)
-            if service.endswith('-api'):
+            if service in ('game-api', 'tournaments-api'):
                 observer = {key: value for key, value in (item.split('=', 1) for item in values)
                             if key in ('DJANGO_SETTINGS_MODULE', 'E2E_ADMISSION_KIND', 'PYTHONPATH')}
                 require(observer == {'DJANGO_SETTINGS_MODULE': 'rehearsal_settings',
@@ -692,7 +736,7 @@ def main():
         # Retry a partially completed setup only within this pinned rehearsal.
         compose(args, state, 'stop', *WORKERS, *APPS)
         refresh_prepared_harness(state, tools, session)
-        for kind in ('game', 'tournaments'):
+        for kind in ('game', 'tournaments', *(['analysis'] if require_integration_context(session['identity']) else [])):
             compose(args, state, 'run', '-T', '--interactive=false', '--rm', '--no-deps', kind + '-migrate')
         app(args, state, 'tournaments', 'seed')
         for kind in ('game', 'tournaments'):
@@ -702,7 +746,8 @@ def main():
         try:
             # A stopped old container retains its old mounts/command with --no-recreate.
             # Recreate only APIs so the reviewed observer is actually loaded.
-            compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--force-recreate', 'game-api', 'tournaments-api')
+            apis = ['game-api', 'tournaments-api'] + (['analysis-api'] if require_integration_context(session['identity']) else [])
+            compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--force-recreate', *apis)
             compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *APPS)
             wait_application_health(session, deadline, bootstrap=True)
             refresh_nginx_candidate(state, session)
@@ -718,7 +763,8 @@ def main():
                     'target=json.load(open("/opt/e2e/session.json"))["identity"]; '
                     'assert json.load(urllib.request.urlopen(target["origin"]+"/__e2e__/identity",timeout=10))==target; '
                     'print("Container HTTPS callback route verified.")')
-            compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *WORKERS)
+            recreate = '--force-recreate' if require_integration_context(session['identity']) else '--no-recreate'
+            compose(args, state, 'up', '-d', '--no-build', '--no-deps', recreate, *WORKERS)
             wait_application_health(session, deadline)
             verify_live(session)
             check_listener(session)
@@ -771,6 +817,9 @@ def main():
     app(args, state, 'tournaments', 'audit')
     app(args, state, 'game', 'replay')
     app(args, state, 'tournaments', 'audit')
+    if require_integration_context(session['identity']):
+        compose(args, state, 'run', '-T', '--interactive=false', '--rm', '--no-deps', 'analysis-migrate',
+                'python', '/opt/e2e/rehearsal_integrations.py', 'proof')
     print('SERVER DATABASE AND DUPLICATE-RESULT AUDIT PASSED. Combine with the browser performance acceptance report.')
 
 

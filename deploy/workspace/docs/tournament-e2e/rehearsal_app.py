@@ -9,6 +9,7 @@ import uuid
 from decimal import Decimal
 
 from rehearsal_context import require_fresh_database_context
+from rehearsal_integrations import ANALYSIS_URL, require_integration_context
 
 
 def require(condition, message):
@@ -66,19 +67,67 @@ def main():
             'Pending rehearsal migrations')
     origin = (settings.GAMELINK_TOURNAMENTS_URL if kind == 'game' else settings.GAMELINK_BACKGAMMON_URL)
     require(origin == target['origin'] and settings.GAMELINK_ENABLED, 'Callbacks must use the test listener')
-    require(not getattr(settings, 'ANALYSIS_SERVICE_URL', '') and os.environ.get('ANALYSIS_SERVICE_URL') == '',
-            'Analysis must be disabled for this browser test')
+    integration = require_integration_context(target)
+    if integration:
+        require(getattr(settings, 'ANALYSIS_SERVICE_URL', '') == ANALYSIS_URL
+                and os.environ.get('ANALYSIS_SERVICE_URL') == ANALYSIS_URL
+                and os.environ.get('ANALYSIS_API_TOKEN'), 'Analysis must use the isolated internal service')
+        if kind == 'game':
+            require(os.environ.get('AI_SERVICE_URL') == ANALYSIS_URL, 'AI must use the internal analysis service')
+    else:
+        require(not getattr(settings, 'ANALYSIS_SERVICE_URL', '') and os.environ.get('ANALYSIS_SERVICE_URL') == '',
+                'Analysis must be disabled unless explicitly activated')
     if kind == 'tournaments':
         require(not settings.TRANZILA_ENABLED and not settings.TRANZILA_PURCHASES_ENABLED,
                 'Payments must be disabled in the rehearsal')
-        require(settings.EMAIL_BACKEND == 'django.core.mail.backends.dummy.EmailBackend'
-                and not settings.WEB_PUSH_PRIVATE_KEY, 'External notifications must be disabled')
+        require(settings.EMAIL_BACKEND == 'django.core.mail.backends.dummy.EmailBackend', 'Email must remain disabled')
+        if integration:
+            from frontend.push import configured
+            require(configured() and settings.WEB_PUSH_SUBJECT == target['origin'], 'Missing test-scoped Push configuration')
+            require(settings.GOOGLE_CLIENT_ID, 'Google client ID must be configured')
+        else:
+            require(not settings.WEB_PUSH_PRIVATE_KEY, 'Push must be disabled unless explicitly activated')
         from frontend.models import Task
     else:
         from game.models import Task
     directory = Path('/data/e2e-audit')
     baseline_file = directory / f'baseline-{kind}.json'
     User = get_user_model()
+    if action == 'integrations':
+        require(integration, 'Integration readiness requires explicit activation')
+        if kind == 'game':
+            import httpx
+            from game.engine import BackgammonEngine
+            state = BackgammonEngine.get_initial_state()
+            state.update(turn='white', phase='moving', dice=[3, 1], remaining=[3, 1])
+            response = httpx.post(ANALYSIS_URL + '/api/v1/internal/bot/move/',
+                json={'state': state, 'difficulty': 'hard'}, timeout=60,
+                headers={'Authorization': 'Bearer ' + os.environ['ANALYSIS_API_TOKEN']})
+            require(response.status_code == 200, 'Live AI endpoint did not evaluate the opening position')
+            result = response.json()
+            require(result.get('engine') == 'open_sage' and result.get('engine_version')
+                    and len(result.get('board', [])) == 26 and result.get('moves'), 'Live AI response is incomplete')
+            save(directory / 'readiness-ai.json', {'passed': True, 'session_id': target['session_id'],
+                 'engine': result['engine'], 'engine_version': result['engine_version'],
+                 'scope': 'Authenticated game-container to live AI HTTP evaluation; no match or result injected.'})
+            print('Live Open Sage AI HTTP evaluation verified.')
+            return
+        from importlib.util import find_spec
+        from django.utils import timezone
+        from frontend.models import PushWorkerStatus
+        from frontend.analysis_results import read_results
+        require(find_spec('pywebpush') is not None, 'Push delivery library is missing')
+        deadline = time.monotonic() + 45
+        while not PushWorkerStatus.objects.filter(pk=1, expected_by__gt=timezone.now()).exists():
+            require(time.monotonic() < deadline, 'Push worker did not publish a live heartbeat')
+            time.sleep(2)
+        require(isinstance(read_results('', [('staff', '1')]).get('matches'), list), 'Analysis results bridge is unavailable')
+        from google.auth.transport.requests import Request  # noqa: F401
+        from urllib.request import urlopen
+        with urlopen('https://www.googleapis.com/oauth2/v1/certs', timeout=10) as response:
+            require(bool(json.load(response)), 'Google verification certificates are unavailable')
+        print('Authenticated analysis results bridge and live Push worker verified; device delivery remains a separate check.')
+        return
     if action == 'seed':
         require(kind == 'tournaments', 'Only the rehearsal tournament administrator is seeded')
         admin = session['admin']
@@ -93,9 +142,12 @@ def main():
         return
 
     def task_state():
+        tasks = Task.objects.all()
+        if not integration:
+            tasks = tasks.exclude(name__contains='deliver_analysis')
         return {str(task.pk): {'status': task.status, 'attempts': task.attempts,
                 'error_hash': hashlib.sha256(task.last_error.encode()).hexdigest() if task.last_error else ''}
-                for task in Task.objects.exclude(name__contains='deliver_analysis')}
+                for task in tasks}
 
     with transaction.atomic():
         with connection.cursor() as cursor:
@@ -146,7 +198,7 @@ def main():
             report['natural_games'] = len(links)
             frozen = [(link.fixture_id, link.result_body) for link in links]
         else:
-            from tournaments.models import Tournament, Fixture, Participation, WalletTransaction
+            from tournaments.models import Tournament, Fixture, Participation, WalletTransaction, TournamentRegistration
             from gamelink.models import GameLink
             tournament = Tournament.objects.get(pk=tournament_id)
             require_tournament_finished(tournament, summary['tournamentName'])
@@ -174,6 +226,32 @@ def main():
                     and awards[0].user_id == champion.participant.user_id
                     and champion.participant_id == summary['final']['championId'], 'Prize or champion differs from browser proof')
             report.update(fixtures=len(fixtures), prize_awards=1, prize_amount='100.00')
+            fee = Decimal(str(summary.get('entryFeeCoins', 0)))
+            require(tournament.entry_fee == fee, 'Entry fee differs from the browser tournament')
+            if fee > 0:
+                user_ids = {row.participant.user_id for row in participants}
+                charges = list(WalletTransaction.objects.filter(tournament_id=tournament_id, kind='tournament_entry'))
+                require(len(charges) == summary['playerCount'] and {row.user_id for row in charges} == user_ids
+                        and all(row.amount == -fee for row in charges), 'Entry fees are missing or duplicated')
+                require(not WalletTransaction.objects.filter(tournament_id=tournament_id, kind='tournament_refund').exists(),
+                        'Completed tournament contains an unexpected entry refund')
+                registrations = TournamentRegistration.objects.filter(tournament_id=tournament_id)
+                require(registrations.count() == len(user_ids) and all(row.payment_status == 'paid' for row in registrations),
+                        'Registration payment state differs from the ledger')
+                balances = summary['final'].get('balances', [])
+                require(len(balances) == len(user_ids) and {row['userId'] for row in balances} == user_ids,
+                        'Missing per-player wallet proof')
+                for observed_balance in balances:
+                    expected_balance = Decimal(str(observed_balance['initial'])) - fee
+                    if observed_balance['userId'] == champion.participant.user_id:
+                        expected_balance += Decimal('100.00')
+                    actual_balance = WalletTransaction.balance_for_user(User.objects.get(pk=observed_balance['userId']))
+                    require(actual_balance == expected_balance == Decimal(str(observed_balance['final'])),
+                            'Persisted player balance differs from entry/prize accounting')
+                require(summary.get('entryFees', {}).get('registrationReplayVerified') is True,
+                        'Missing duplicate-registration browser proof')
+                report.update(entry_fee=str(fee), entry_debits=len(charges), collected_coins=str(fee * len(charges)),
+                              all_player_balances_verified=True)
     if action == 'replay':
         require(kind == 'game', 'Duplicate-result replay requires the game container')
         import httpx

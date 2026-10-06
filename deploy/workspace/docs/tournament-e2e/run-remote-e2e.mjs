@@ -23,7 +23,9 @@ const runDir = path.join(here, 'runs', runId)
 const runtime = { E2E_DISPOSABLE: true, profile: 'server-rehearsal', database_mode: 'postgresql',
   run_id: runId, run_dir: runDir, workspace, player_count: playerCount, recovery_checks: false,
   urls: { game: target?.origin, tournament: target?.origin }, admin: manifest.admin,
-  remote_target: target, excluded_integrations: ['email', 'payments', 'push', 'analysis'] }
+  remote_target: target, integrations: target?.integrations || {},
+  entry_fee_coins: target?.integrations ? 100 : 0,
+  excluded_integrations: ['email', 'payments', ...(['push', 'analysis'].filter(name => !target?.integrations?.[name]))] }
 runtimeOrigins(runtime)
 if (!/^E2EAdmin_[a-f0-9]{12}$/.test(runtime.admin?.username || '')
   || typeof runtime.admin?.password !== 'string' || runtime.admin.password.length < 32) {

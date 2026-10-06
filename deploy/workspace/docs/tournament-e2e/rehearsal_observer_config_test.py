@@ -17,12 +17,12 @@ class ObserverConfigurationTests(unittest.TestCase):
         return {'session_id': 'a' * 32, 'project': PROJECT, 'origin': ORIGIN,
                 'database_context': fresh_database_context('a' * 32)}
 
-    def test_only_api_overrides_change_and_configuration_is_idempotent(self):
+    def test_helper_mounts_refresh_and_observer_is_idempotent(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             tools = root / 'tools'
             tools.mkdir()
-            for name in ('rehearsal_entry.py', 'rehearsal_settings.py', 'rehearsal_asgi.py', 'rehearsal_context.py'):
+            for name in ('rehearsal_entry.py', 'rehearsal_settings.py', 'rehearsal_asgi.py', 'rehearsal_context.py', 'rehearsal_integrations.py'):
                 (tools / name).write_text('# observer\n')
             original = {'services': {kind: {'environment': {'DB_NAME': 'unchanged'}, 'volumes': [],
                                            'command': ['unchanged']}
@@ -34,14 +34,19 @@ class ObserverConfigurationTests(unittest.TestCase):
             configure_entry_observer(root, tools, self.identity())
             self.assertEqual(file.read_bytes(), once)
             updated = json.loads(once)
-            for kind in ('game-tasks', 'tournaments-tasks', 'postgres'):
-                self.assertEqual(updated['services'][kind], original['services'][kind])
+            self.assertEqual(updated['services']['postgres'], original['services']['postgres'])
+            for kind in ('game-tasks', 'tournaments-tasks'):
+                worker = updated['services'][kind]
+                self.assertEqual(worker['environment'], original['services'][kind]['environment'])
+                self.assertEqual(worker['command'], original['services'][kind]['command'])
+                self.assertEqual({item['target'] for item in worker['volumes']},
+                                 {'/opt/e2e/rehearsal_context.py', '/opt/e2e/rehearsal_integrations.py'})
             for kind in ('game', 'tournaments'):
                 api = updated['services'][kind + '-api']
                 self.assertEqual(api['environment']['DB_NAME'], 'unchanged')
                 self.assertEqual(api['environment']['E2E_ADMISSION_KIND'], kind)
                 self.assertEqual(api['environment']['DJANGO_SETTINGS_MODULE'], 'rehearsal_settings')
-                self.assertEqual(len(api['volumes']), 4)
+                self.assertEqual(len(api['volumes']), 5)
                 self.assertTrue(all(volume['read_only'] for volume in api['volumes']))
 
     def test_production_or_copied_context_is_refused_before_any_file_write(self):

@@ -20,6 +20,7 @@ const { test, expect } = require('@playwright/test')
 const tourOrigin = new URL(runtime.urls.tournament).origin
 const gameOrigin = new URL(runtime.urls.game).origin
 const origins = runtimeOrigins(runtime)
+const entryFee = runtime.entry_fee_coins ?? 0
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const fixturesOf = (progress) => Object.values(progress.stages).flatMap(
   (stage) => stage.levels.flatMap((level) => level.fixtures),
@@ -42,6 +43,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
   const summary = {
     runId: runtime.run_id, startedAt: new Date().toISOString(), status: 'running',
     playerCount: scenario.players, recoveryChecks: scenario.recoveryChecks,
+    entryFeeCoins: entryFee,
     targetSession: runtime.remote_target?.session_id ?? null,
     scope: runtime.profile === 'server-rehearsal'
       ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; fresh browser PostgreSQL databases.'
@@ -103,6 +105,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     await context.route('**/*', async (route) => {
       const url = new URL(route.request().url())
       if (origins.has(url.origin)) return route.continue()
+      if (runtime.integrations?.google && url.origin === 'https://accounts.google.com'
+        && url.pathname.startsWith('/gsi/')) return route.continue()
       record('blockedExternal', { label, path: safePath(url.href) })
       return route.abort('blockedbyclient')
     })
@@ -165,14 +169,14 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     })
     return { label, context, page: await context.newPage() }
   }
-  async function api(user, endpoint, { method = 'GET', data, allowedStatuses = [] } = {}) {
+  async function api(user, endpoint, { method = 'GET', data, allowedStatuses = [], timeout = 0 } = {}) {
     const cookies = await user.context.cookies(tourOrigin)
     const csrf = cookies.find((cookie) => cookie.name === 'csrftoken')?.value
     const begin = Date.now()
     let response
     try {
       response = await user.context.request.fetch(`${tourOrigin}/tournaments-api${endpoint}`, {
-        method, ...(data === undefined ? {} : { data }), timeout: 0, maxRedirects: 0,
+        method, ...(data === undefined ? {} : { data }), timeout, maxRedirects: 0,
         headers: { Accept: 'application/json', Origin: tourOrigin, Referer: `${tourOrigin}/tournaments/`,
           ...(csrf ? { 'X-CSRFToken': csrf } : {}) },
       })
@@ -415,6 +419,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       player.id = identity.id
       player.username = identity.username
       player.initialBalance = Number(identity.balance)
+      expect(player.initialBalance, 'Normal signup credit funds the entry fee').toBeGreaterThanOrEqual(entryFee)
       await api(player, '/auth/logout', { method: 'POST', data: {} })
       await player.page.goto(`${tourOrigin}/tournaments/login`)
       await player.page.getByTestId('login-username').fill(identity.username)
@@ -430,7 +435,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     const tournament = await api(admin, '/admin/tournaments', { method: 'POST', data: {
       name: summary.tournamentName, template: 'knockout', starts_at: startsAt.toISOString(),
       min_players: scenario.players, max_players: scenario.players, target_points: 1, time_control: 'normal', doubling_enabled: false,
-      entry_fee: '0.00', prize_money: '100.00', prize_type: 'coins', open_registration: true,
+      entry_fee: entryFee.toFixed(2), prize_money: '100.00', prize_type: 'coins', open_registration: true,
     } })
     tournamentId = tournament.id
     summary.tournamentId = tournamentId
@@ -444,10 +449,27 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       const response = await joined
       expect(response.status()).toBe(200)
       expect((await response.json()).is_joined).toBe(true)
+      expect(Number((await api(player, '/auth/me')).balance)).toBe(player.initialBalance - entryFee)
       await player.page.evaluate(({ id, name }) => window.__e2eEntryFlow.arm(id, name),
         { id: tournamentId, name: summary.tournamentName })
     }))
     expect((await api(admin, `/admin/tournaments/${tournamentId}`)).participant_count).toBe(scenario.players)
+    if (entryFee > 0) {
+      const endpoint = `/admin/wallet-transactions?tournament_id=${tournamentId}&kind=tournament_entry`
+      const debits = await api(admin, endpoint)
+      expect(debits.count).toBe(scenario.players)
+      expect(new Set(debits.items.map(item => item.user_id)).size).toBe(scenario.players)
+      expect(debits.items.every(item => Number(item.amount) === -entryFee)).toBe(true)
+      // Replay the real registration requests while the tournament is still open.
+      await Promise.all([...players.values()].map(player => api(player, `/tournaments/${tournamentId}/join`, {
+        method: 'POST', data: {}, timeout: 15000,
+      })))
+      const repeated = await api(admin, endpoint)
+      expect(repeated.items.map(item => item.id).sort()).toEqual(debits.items.map(item => item.id).sort())
+      summary.entryFees = { perPlayer: entryFee, chargedPlayers: debits.count,
+        totalCoins: entryFee * scenario.players, registrationReplayVerified: true,
+        transactionIds: debits.items.map(item => item.id) }
+    }
     await expect.poll(async () => {
       const state = (await api(admin, `/admin/tournaments/${tournamentId}`)).state
       if (state === 'open' && Date.now() >= startsAt.getTime()) {
@@ -558,7 +580,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     }).toBe(1)
     expect(wallet.items[0].user_id).toBe(winner.id)
     expect(Number(wallet.items[0].amount)).toBe(100)
-    expect(Number((await api(winner, '/auth/me')).balance)).toBe(winner.initialBalance + 100)
+    expect(Number((await api(winner, '/auth/me')).balance)).toBe(winner.initialBalance - entryFee + 100)
     const awardId = wallet.items[0].id
     for (let check = 0; check < 3; check++) {
       await progress()
@@ -571,6 +593,62 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     summary.final = { fixtures: completed.map((item) => ({ id: item.id, round: item.round_index,
       score1: item.score1, score2: item.score2, winnerId: item.winner_id, roomId: item.external_room_id })),
       championId: completedFinal.winner_id, podium: finalProgress.podium, awardId, awardAmount: 100 }
+    summary.final.balances = await Promise.all([...players.values()].map(async player => {
+      const balance = Number((await api(player, '/auth/me')).balance)
+      expect(balance).toBe(player.initialBalance - entryFee + (player.id === winner.id ? 100 : 0))
+      return { userId: player.id, initial: player.initialBalance, final: balance }
+    }))
+    if (entryFee > 0) {
+      expect((await api(admin, `/admin/wallet-transactions?tournament_id=${tournamentId}&kind=tournament_entry`)).count).toBe(scenario.players)
+      expect((await api(admin, `/admin/wallet-transactions?tournament_id=${tournamentId}&kind=tournament_refund`)).count).toBe(0)
+    }
+    summary.integrations = {}
+    if (runtime.integrations?.google) {
+      const config = await api(admin, '/auth/google/config', { method: 'POST', data: {}, timeout: 15000 })
+      expect(config.enabled).toBe(true)
+      expect(config.client_id).toMatch(/\.apps\.googleusercontent\.com$/)
+      expect(config.nonce.length).toBeGreaterThan(20)
+      summary.integrations.google = { configured: true, challengeVerified: true, realSignInTested: false }
+    }
+    if (runtime.integrations?.analysis) {
+      const deadline = Date.now() + 45 * 60 * 1000
+      const expectedRooms = new Set(summary.matches.map(item => item.roomId))
+      let completedAnalyses = []
+      while (true) {
+        const response = await api(admin, '/analyses', { timeout: 15000 })
+        const rows = response.matches.filter(item => expectedRooms.has(item.room_id))
+        expect(new Set(rows.map(item => item.room_id)).size, 'One analysis per tournament room').toBe(rows.length)
+        if (rows.some(item => item.status === 'failed')) throw new Error('A tournament analysis failed; inspect the server audit.')
+        completedAnalyses = rows.filter(item => item.status === 'completed')
+        observe('analysis_progress', { expected: scenario.matches, received: rows.length, completed: completedAnalyses.length })
+        if (completedAnalyses.length === scenario.matches) break
+        if (Date.now() >= deadline) throw new Error(`Analysis timeout: ${completedAnalyses.length}/${scenario.matches} completed`)
+        await delay(5000)
+      }
+      for (const row of completedAnalyses) {
+        expect(row.engine).toBe('open_sage')
+        expect(row.players.map(item => item.color).sort()).toEqual(['black', 'white'])
+      }
+      const sample = completedAnalyses[0]
+      // Staff list and detail traverse the authenticated tournament -> analysis bridge.
+      const detail = await api(admin, `/analyses/${sample.id}`, { timeout: 15000 })
+      expect(detail.status).toBe('completed')
+      expect(detail.games.length).toBeGreaterThan(0)
+      summary.integrations.analysis = { completed: completedAnalyses.length,
+        engine: 'open_sage', detailVerified: true, analyses: completedAnalyses.map(item => ({
+          id: item.id, roomId: item.room_id, engineVersion: item.engine_version })) }
+    }
+    if (runtime.integrations?.push) {
+      const config = await api(admin, '/push/config', { timeout: 15000 })
+      expect(config.enabled).toBe(true)
+      expect(config.deliveryAvailable).toBe(true)
+      const health = await api(admin, '/admin/push-health', { timeout: 15000 })
+      expect(health.issues).toEqual([])
+      expect(health.last_worker_seen_at).toBeTruthy()
+      summary.integrations.push = { configured: true, workerHealthy: true,
+        lastWorkerSeenAt: health.last_worker_seen_at, deliveryTested: false,
+        limitation: 'No device subscription in this browser run; service workers remain blocked.' }
+    }
     expect(summary.serverErrors, 'No browser/assertion API HTTP 5xx').toHaveLength(0)
     expect(summary.pageErrors, 'No unhandled browser errors').toHaveLength(0)
     summary.status = 'passed'
