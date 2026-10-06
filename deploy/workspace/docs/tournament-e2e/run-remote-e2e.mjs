@@ -8,22 +8,28 @@ import { spawn, execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { isDeepStrictEqual } from 'node:util'
 import { runtimeOrigins } from './destination-policy.mjs'
-import { sourceVersions } from './source-versions.mjs'
+import { findWorkspace, sourceVersions } from './source-versions.mjs'
 import { writePerformanceReport } from './performance-report.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const workspace = path.resolve(here, '../..')
-const [manifestFile, playerArgument = '16'] = process.argv.slice(2)
+const workspace = findWorkspace(here)
+const [manifestFile, playerArgument = '16', checkScope = 'auto'] = process.argv.slice(2)
 const playerCount = Number(playerArgument)
 if (!manifestFile || ![16, 32].includes(playerCount)) throw new Error('Pass the private server-client.json and 16 or 32.')
 const manifest = JSON.parse(fs.readFileSync(path.resolve(manifestFile), 'utf8'))
 const target = manifest.identity
+const comprehensive = checkScope === 'comprehensive' || Boolean(target?.integrations)
+if (!['auto', 'comprehensive'].includes(checkScope)) throw new Error('Unsupported check scope.')
+if (comprehensive && (target?.runtime_checks_version !== 1 ||
+    ['analysis', 'push', 'google', 'ai'].some(name => target?.integrations?.[name] !== true))) {
+  throw new Error('Comprehensive run requires all application services enabled and the updated server harness. No player accounts were created.')
+}
 const runId = `${new Date().toISOString().replace(/[-:.]/g, '')}-${randomUUID().replaceAll('-', '').slice(-8)}`
-const runDir = path.join(here, 'runs', runId)
+const runDir = path.join(workspace, 'docs/tournament-e2e-integrations/runs', runId)
 const runtime = { E2E_DISPOSABLE: true, profile: 'server-rehearsal', database_mode: 'postgresql',
   run_id: runId, run_dir: runDir, workspace, player_count: playerCount, recovery_checks: false,
   urls: { game: target?.origin, tournament: target?.origin }, admin: manifest.admin,
-  remote_target: target, integrations: target?.integrations || {},
+  remote_target: target, integrations: target?.integrations || {}, comprehensive_checks: comprehensive,
   entry_fee_coins: target?.integrations ? 100 : 0,
   excluded_integrations: ['email', 'payments', ...(['push', 'analysis'].filter(name => !target?.integrations?.[name]))] }
 runtimeOrigins(runtime)
@@ -60,7 +66,6 @@ if (process.platform === 'win32') {
 }
 fs.writeFileSync(path.join(runDir, 'config.json'), JSON.stringify(runtime, null, 2), { flag: 'wx', mode: 0o600 })
 fs.writeFileSync(path.join(runDir, 'release-reference.json'), JSON.stringify({ schema_version: 1, sources: target.sources }), { flag: 'wx', mode: 0o600 })
-const sources = sourceVersions(workspace, path.join(runDir, 'release-reference.json'))
 const harnessHash = createHash('sha256')
 for (const file of manifest.harness_files) {
   if (!/^[a-z0-9][a-z0-9_.-]*\.(mjs|ps1|py|Dockerfile)$/.test(file) && file !== 'remote-engine.Dockerfile') {
@@ -68,9 +73,11 @@ for (const file of manifest.harness_files) {
   }
   harnessHash.update(file + '\0').update(fs.readFileSync(path.join(here, file)))
 }
-if (harnessHash.digest('hex') !== target.harness_sha256) throw new Error('Local and server harness versions differ. Pull the reviewed Git commit first.')
+if (harnessHash.digest('hex') !== target.harness_sha256) throw new Error('Local and server harness versions differ. Install the matching reviewed tools and download the current server-client.json.')
+const sources = sourceVersions(workspace, path.join(runDir, 'release-reference.json'), manifest.harness_files)
 fs.writeFileSync(path.join(runDir, 'environment-summary.json'), JSON.stringify({
   profile: runtime.profile, target, sources, browser_machine: process.platform,
+  comprehensive_checks: comprehensive,
   scope: 'Public test listener in existing host Nginx; application images pinned by target.images; separate fresh browser databases in the existing rehearsal PostgreSQL container.',
   exclusions: runtime.excluded_integrations,
   limitation: 'The game return-to-tournaments link in the R2 image was compiled for production port 443. This scenario navigates to the configured test origin directly and does not exercise that link.',
@@ -104,6 +111,7 @@ finally {
   if (!performance.acceptance.passed) failure ||= new Error('Performance acceptance failed.')
   fs.writeFileSync(path.join(runDir, 'run-summary.json'), JSON.stringify({
     passed: false, browserPassed, performanceAcceptance: performance.acceptance,
+    comprehensiveChecks: comprehensive,
     serverVerification: 'required: upload tournament-summary.json and run the server audit',
     runId, targetSession: target.session_id, error: failure?.message || null,
   }, null, 2))

@@ -3,3 +3,5 @@ validation/
 *.zip
 server-preflight.json
 candidate-commits.env
+server-client.json
+server-inventory.json

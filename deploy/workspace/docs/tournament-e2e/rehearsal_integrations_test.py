@@ -2,12 +2,13 @@
 import copy
 import json
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
 from rehearsal_context import ORIGIN, PROJECT, fresh_database_context
-from rehearsal_integrations import candidate, integration_context, prepare_database, require_integration_context, verify_integration_config
+from rehearsal_integrations import ARTIFACTS, application_readiness, candidate, integration_context, prepare_database, preserve_restored_backup, require_integration_context, verify_integration_config
 from server_inventory import safe_environment
 from server_rehearsal import APPS, WORKERS, select_services
 
@@ -72,6 +73,24 @@ class IntegrationIsolationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify_integration_config(self.enabled(), config)
 
+    def test_readiness_uses_the_live_api_network_and_normal_private_runtime_loader(self):
+        docker = Mock()
+        rehearsal = SimpleNamespace(PROJECT=PROJECT, docker=docker)
+        for kind in ('game', 'tournaments'):
+            application_readiness(rehearsal, kind)
+            arguments = docker.call_args.args
+            self.assertEqual(arguments[:2], ('exec', PROJECT + '-' + kind + '-api-1'))
+            self.assertEqual(arguments[2:6], ('python', '/opt/docker/runtime_env.py',
+                                            'python', '/opt/e2e/rehearsal_app.py'))
+            self.assertEqual(arguments[6:], (kind, 'integrations'))
+        self.assertEqual(docker.call_count, 2)
+
+    def test_readiness_rejects_an_unknown_service_before_executing_docker(self):
+        docker = Mock()
+        with self.assertRaises(ValueError):
+            application_readiness(SimpleNamespace(PROJECT=PROJECT, docker=docker), 'analysis-migrate')
+        docker.assert_not_called()
+
     def test_service_inventory_returns_to_original_when_disabled(self):
         try:
             select_services(self.enabled())
@@ -105,6 +124,48 @@ class IntegrationIsolationTests(unittest.TestCase):
         for secret in ('secret-push', 'secret-payments', 'secret-email', 'secret-django', 'password@', 'public-id'):
             self.assertNotIn(secret, encoded)
         self.assertTrue(result['configured']['GOOGLE_CLIENT_ID'])
+
+    def backup(self, root):
+        before = root / 'before-integrations'
+        before.mkdir()
+        for name in ARTIFACTS:
+            value = self.session if name == 'session.json' else {}
+            (before / name).write_text(json.dumps(value) if name.endswith('.json') else 'original')
+        (before / 'plan.json').write_text(json.dumps({'previous_session': 'a' * 32, 'new_session': 'b' * 32}))
+        return before
+
+    def test_retry_preserves_every_original_backup_after_verified_restoration(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            before = self.backup(root)
+            original = {file.name: file.read_bytes() for file in before.iterdir()}
+            restored = copy.deepcopy(self.session)
+            restored['identity'].update(harness_sha256='updated-tools', runtime_checks_version=1)
+            preserve_restored_backup(before, restored)
+            self.assertFalse(before.exists())
+            archived = root / ('before-integrations-restored-' + 'b' * 12)
+            self.assertEqual({file.name: file.read_bytes() for file in archived.iterdir()}, original)
+
+    def test_retry_refuses_a_session_that_was_not_restored(self):
+        with TemporaryDirectory() as directory:
+            before = self.backup(Path(directory))
+            current = copy.deepcopy(self.session)
+            current['identity']['session_id'] = 'b' * 32
+            with self.assertRaises(ValueError):
+                preserve_restored_backup(before, current)
+            self.assertTrue(before.is_dir())
+
+    def test_retry_refuses_changed_images_or_incomplete_backup(self):
+        with TemporaryDirectory() as directory:
+            before = self.backup(Path(directory))
+            changed = copy.deepcopy(self.session)
+            changed['identity']['images']['analysis'] = 'sha256:another-image'
+            with self.assertRaises(ValueError):
+                preserve_restored_backup(before, changed)
+            (before / 'game.json').unlink()
+            with self.assertRaises(ValueError):
+                preserve_restored_backup(before, self.session)
+            self.assertTrue(before.is_dir())
 
 
 if __name__ == '__main__':

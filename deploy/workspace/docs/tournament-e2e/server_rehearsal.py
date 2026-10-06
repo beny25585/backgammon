@@ -1,5 +1,6 @@
 """Prepare/start a test listener in existing host Nginx. Never cut over production."""
 import argparse
+import copy
 import hashlib
 import ipaddress
 import json
@@ -85,6 +86,126 @@ def harness_inventory(tools):
     return files, digest.hexdigest()
 
 
+def same_directory(recorded, selected):
+    """Accept a compatibility link only when it names the same existing directory."""
+    try:
+        recorded, selected = Path(recorded), Path(selected)
+        return recorded.is_dir() and selected.is_dir() and recorded.samefile(selected)
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def installed_tools_path(recorded, state, source):
+    state = Path(state).resolve(strict=True)
+    active = Path(recorded).resolve(strict=True)
+    backup_root = state.parents[2]
+    require(backup_root.name == 'backgammon-backups', 'Unexpected rehearsal backup root')
+    if backup_root.parent.name == 'backups':
+        project_root = backup_root.parent.parent
+        require(project_root.name == 'backgammon-project', 'Unexpected managed project root')
+        expected_parent = project_root / 'tools'
+    else:
+        expected_parent = backup_root.parent
+    require(active.is_dir() and active.parent == expected_parent.resolve(strict=True)
+            and active.name.startswith('backgammon-e2e-tools-') and active != Path(source).resolve(strict=True),
+            'Unexpected active tool installation')
+    return active
+
+
+def refresh_tools(args, state, tools, session):
+    """Deploy reviewed audit/runner changes from Git into the existing tool mounts."""
+    revision = args.tools_revision
+    require(re.fullmatch(r'[a-f0-9]{40}', revision or ''), 'Pass the approved full --tools-revision')
+    repository = tools.parents[3]
+    git = lambda *command: run(['git', '-C', repository, *command], capture=True)
+    require(git('rev-parse', 'HEAD') == revision and not git('status', '--porcelain', '--untracked-files=all'),
+            'Tool source must be the clean approved Git commit')
+    names, digest = harness_inventory(tools)
+    tracked = {Path(name).name for name in git('ls-files', '--', 'deploy/workspace/docs/tournament-e2e').splitlines()}
+    require(set(names) <= tracked and all(not (tools / name).is_symlink() for name in names),
+            'Tool source contains untracked or unsafe files')
+    active = installed_tools_path(session['tools_dir'], state, tools)
+    require(harness_inventory(active) == (session['harness_files'], session['identity']['harness_sha256'])
+            and names == session['harness_files'], 'Installed tool inventory differs from the prepared session')
+    verify_live(session)
+    check_listener(session)
+    if digest == session['identity']['harness_sha256']:
+        print('TOOLS ALREADY CURRENT: ' + revision)
+        return
+    allowed = {'rehearsal_app.py', 'rehearsal_audit_test.py', 'server_rehearsal.py', 'rehearsal_observer_config_test.py',
+               'run-remote-e2e.mjs', 'run-remote-tournament-e2e.ps1',
+               'source-versions.mjs', 'source-versions_test.mjs'}
+    changed = {name for name in names if (tools / name).read_bytes() != (active / name).read_bytes()}
+    require(changed <= allowed, 'Running-session update includes changes requiring a separate deployment: '
+            + ', '.join(sorted(changed - allowed)))
+    files = {name: state / name for name in ('session.json', 'identity.json', 'server-client.json')}
+    require(all(file.is_file() and not file.is_symlink() for file in files.values()), 'Unsafe identity artifact')
+    client = json.loads(files['server-client.json'].read_text())
+    require(session['identity'] == client['identity'] == json.loads(files['identity.json'].read_text())
+            and client['admin'] == session['admin'] and client['harness_files'] == names,
+            'Prepared identity artifacts do not agree')
+    baselines = [state / 'audit' / name for name in
+                 ('baseline-game.json', 'baseline-tournaments.json', 'operations-baseline.json')]
+    require(all(file.is_file() and not file.is_symlink() for file in baselines), 'Missing existing baseline')
+    baseline_hashes = run(['sudo', 'sha256sum', *baselines], capture=True)
+    updated = copy.deepcopy(session)
+    updated['identity']['harness_sha256'] = digest
+    updated_client = copy.deepcopy(client)
+    updated_client['identity'] = updated['identity']
+    encode = lambda value: (json.dumps(value, indent=2) + '\n').encode()
+    replacements = {active / name: (tools / name).read_bytes() for name in changed}
+    replacements.update({files['session.json']: encode(updated), files['identity.json']: encode(updated['identity']),
+                         files['server-client.json']: encode(updated_client)})
+    replacements[active / 'SHA256SUMS'] = ('\n'.join(hashlib.sha256((tools / name).read_bytes()).hexdigest()
+                                        + '  ' + name for name in names) + '\n').encode()
+    replacements[active / 'bundle-info.json'] = encode({'harness_sha256': digest, 'tool_count': len(names),
+        'source_revision': revision, 'source_directory': str(tools), 'application_images_rebuilt': False,
+        'runtime_settings_included': False})
+    require(all(file.is_file() and not file.is_symlink() for file in replacements), 'Unsafe update destination')
+    originals = {file: (file.read_bytes(), file.stat().st_mode & 0o777) for file in replacements}
+    backup = state / 'tool-updates' / revision
+    backup.parent.mkdir(exist_ok=True, mode=0o700)
+    require(not backup.parent.is_symlink(), 'Unsafe tool backup directory')
+    backup_index = [{'path': str(file), 'mode': mode} for file, (data, mode) in originals.items()]
+    if backup.exists():
+        require(not backup.is_symlink() and (backup / 'files.json').is_file()
+                and not (backup / 'files.json').is_symlink()
+                and json.loads((backup / 'files.json').read_text()) == backup_index,
+                'Existing update backup belongs to another operation')
+        for index, (file, (data, mode)) in enumerate(originals.items()):
+            saved = backup / (str(index) + '-' + file.name)
+            require(saved.is_file() and not saved.is_symlink() and saved.read_bytes() == data,
+                    'Existing update backup differs from the restored installation')
+    else:
+        backup.mkdir(mode=0o700)
+        for index, (file, (data, mode)) in enumerate(originals.items()):
+            write(backup / (str(index) + '-' + file.name), data.decode('utf-8'))
+        write(backup / 'files.json', backup_index)
+    public = Path('/var/lib/backgammon-e2e') / session['identity']['session_id'] / 'identity.json'
+    require(public.is_file() and not public.is_symlink()
+            and json.loads(public.read_text()) == session['identity'], 'Public test identity differs from the session')
+    try:
+        for file, data in replacements.items():
+            # Existing bind mounts must keep their inodes; running APIs are not reloaded.
+            file.write_bytes(data)
+            file.chmod(originals[file][1])
+        require(harness_inventory(active) == (names, digest), 'Updated tool bytes do not match Git')
+        run(['sudo', 'install', '-m', '0644', files['identity.json'], public])
+        verify_live(updated)
+        check_listener(updated)
+        require(run(['sudo', 'sha256sum', *baselines], capture=True) == baseline_hashes,
+                'Existing baseline changed during the update')
+    except Exception:
+        for file, (data, mode) in originals.items():
+            file.write_bytes(data)
+            file.chmod(mode)
+        run(['sudo', 'install', '-m', '0644', files['identity.json'], public])
+        raise
+    print('TOOLS UPDATED FROM GIT: ' + revision)
+    print('PRIVATE UPDATE BACKUP: ' + str(backup))
+    print('Existing session, containers, databases and baselines preserved. Audit the SAME completed run.')
+
+
 def configure_entry_observer(state, tools, identity):
     """Only the fresh browser APIs receive the passive observer; images stay pinned."""
     require_fresh_database_context(identity)
@@ -100,7 +221,9 @@ def configure_entry_observer(state, tools, identity):
                 source = tools / Path(target).name
                 require(source.is_file() and not source.is_symlink(), 'Missing rehearsal helper')
                 volume['source'] = str(source)
-        for name in ('rehearsal_context.py', 'rehearsal_integrations.py'):
+        # Runtime snapshots also run in migrate containers for baseline/audit,
+        # and reuse session/validation helpers from rehearsal_entry.
+        for name in ('rehearsal_context.py', 'rehearsal_integrations.py', 'rehearsal_entry.py', 'rehearsal_runtime.py'):
             target = '/opt/e2e/' + name
             volumes[:] = [volume for volume in volumes if volume.get('target') != target]
             volumes.append({'type': 'bind', 'source': str(tools / name), 'target': target, 'read_only': True})
@@ -166,6 +289,7 @@ def refresh_prepared_harness(state, tools, session, context_change=False):
             and hashlib.sha256(engine.read_bytes()).hexdigest() == session['identity']['engine_sha256'],
             'Prepared engine differs from the pinned build')
     configure_entry_observer(state, tools, session['identity'])
+    session['identity']['runtime_checks_version'] = 1
     session['harness_files'], session['identity']['harness_sha256'] = harness_inventory(tools)
     (state / 'session.json').write_text(json.dumps(session, indent=2) + '\n', encoding='utf-8')
     identity_file.write_text(json.dumps(session['identity'], indent=2) + '\n', encoding='utf-8')
@@ -537,7 +661,8 @@ def verify_config(args, state, database_transition=False):
             'Expected the isolated copied rehearsal project')
     require(not config['services']['postgres'].get('ports') and not config['services']['redis'].get('ports'),
             'Database/cache ports must not be published')
-    require(session['project_dir'] == str(args.project) and session['rehearsal_dir'] == str(args.rehearsal),
+    require(same_directory(session['project_dir'], args.project)
+            and same_directory(session['rehearsal_dir'], args.rehearsal),
             'Session paths differ from the prepared target')
     context = session['identity'].get('database_context')
     if context is not None:
@@ -613,6 +738,84 @@ def wait_application_health(session, deadline, bootstrap=False):
 def app(args, state, kind, action):
     compose(args, state, 'run', '-T', '--interactive=false', '--rm', '--no-deps', kind + '-migrate',
             'python', '/opt/e2e/rehearsal_app.py', kind, action)
+
+
+def run_database_audits(args, state, session, summary, operations_file):
+    """Persist every independent audit; an earlier failure cannot hide later checks."""
+    operations = json.loads(operations_file.read_text())
+    steps = {}
+    operations.update(database_audits_passed=False, audit_steps=steps)
+
+    def save_operations():
+        operations_file.write_text(json.dumps(operations, indent=2) + '\n', encoding='utf-8')
+        operations_file.chmod(0o600)
+
+    def step(label, kind, action, operation):
+        report_file = state / 'audit' / (summary['runId'] + '-' + kind + '-' + action + '.json')
+        require(not report_file.is_symlink(), 'Unsafe audit report')
+        previous_time = report_file.stat().st_mtime_ns if report_file.exists() else None
+        previous_content = run(['sudo', 'cat', report_file], capture=True) if report_file.exists() else None
+        value = {'status': 'running'}
+        steps[label] = value
+        save_operations()
+        try:
+            operation()
+        except subprocess.CalledProcessError as exc:
+            value.update(status='failed', exit_code=exc.returncode)
+        else:
+            value['status'] = 'passed'
+        current_content = run(['sudo', 'cat', report_file], capture=True) if report_file.exists() else None
+        if current_content is not None and (current_content != previous_content
+                                            or report_file.stat().st_mtime_ns != previous_time):
+            report = json.loads(current_content)
+            require(report.get('session_id') == session['identity']['session_id']
+                    and report.get('run_id') == summary['runId'] and report.get('kind') == kind,
+                    'Saved audit report belongs to another run')
+            value['report'] = report
+            if report.get('passed') is not True:
+                value['status'] = 'failed'
+        elif value['status'] == 'passed':
+            value.update(status='failed', reason='No fresh structured report was saved')
+        save_operations()
+        return value['status'] == 'passed'
+
+    game = step('game', 'game', 'audit', lambda: app(args, state, 'game', 'audit'))
+    tournaments = step('tournaments', 'tournaments', 'audit', lambda: app(args, state, 'tournaments', 'audit'))
+    if require_integration_context(session['identity']):
+        step('analysis', 'analysis', 'audit', lambda: compose(args, state,
+            'run', '-T', '--interactive=false', '--rm', '--no-deps', 'analysis-migrate',
+            'python', '/opt/e2e/rehearsal_integrations.py', 'proof'))
+    if game and tournaments:
+        replay = step('duplicate_results', 'game', 'replay', lambda: app(args, state, 'game', 'replay'))
+        if replay:
+            step('wallet_after_replay', 'tournaments', 'audit', lambda: app(args, state, 'tournaments', 'audit'))
+        else:
+            steps['wallet_after_replay'] = {'status': 'skipped', 'reason': 'Duplicate-result replay failed'}
+    else:
+        steps['duplicate_results'] = {'status': 'skipped', 'reason': 'Initial database audit failed'}
+        steps['wallet_after_replay'] = {'status': 'skipped', 'reason': 'Duplicate-result replay was not performed'}
+    operations['database_audits_passed'] = all(value['status'] == 'passed' for value in steps.values())
+    operations['background_workers'] = {kind: steps[kind].get('report', {}).get('background_workers')
+                                        for kind in ('game', 'tournaments')}
+    save_operations()
+    print('SERVER AUDIT RESULT: ' + str(operations_file))
+    require(operations['database_audits_passed'], 'Server audit failed; details and skipped checks are saved in audit_steps')
+
+
+def collect_operations(args, state, session, label):
+    from server_inventory import collect as inventory
+    from server_schedule_audit import collect as schedules
+    require(re.fullmatch(r'[A-Za-z0-9_-]+', label), 'Unsafe operations report label')
+    report = {'session_id': session['identity']['session_id'], 'run_id': label,
+              'read_only': True, 'inventory': inventory(args), 'schedules': schedules()}
+    path = state / 'audit' / ('operations-' + label + '.json')
+    require(not path.is_symlink(), 'Unsafe operations report path')
+    path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    path.chmod(0o600)
+    print('COMPREHENSIVE SERVER OPERATIONS REPORT: ' + str(path))
+    require(not report['inventory']['findings'] and report['inventory'].get('harness_matches') is True,
+            'Application inventory alignment failed; inspect the saved operations report')
+    return path
 
 
 def validate_listener_response(path, response, identity):
@@ -706,10 +909,11 @@ def restore_monitoring(state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'entry-report', 'stop'))
+    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'entry-report', 'stop', 'refresh-tools'))
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--rehearsal', required=True, type=Path)
     parser.add_argument('--summary', type=Path)
+    parser.add_argument('--tools-revision', help='Full approved clean Git commit for a running-session tool update')
     args = parser.parse_args()
     args.project, args.rehearsal = args.project.resolve(), args.rehearsal.resolve()
     require(args.project.name == TAG and args.rehearsal.name == 'docker-rehearsal'
@@ -720,6 +924,9 @@ def main():
         prepare(args, state, tools)
         return
     session = verify_config(args, state, database_transition=args.action == 'fresh-databases')
+    if args.action == 'refresh-tools':
+        refresh_tools(args, state, tools, session)
+        return
     if args.action == 'fresh-databases':
         fresh_databases(args, state, tools, session)
         return
@@ -792,6 +999,7 @@ def main():
     if args.action == 'baseline':
         for kind in ('game', 'tournaments'):
             app(args, state, kind, 'baseline')
+        collect_operations(args, state, session, 'baseline')
         print('Idle baseline ready. Start a NEW browser run before refreshing this baseline again.')
         return
     if args.action == 'check':
@@ -808,18 +1016,13 @@ def main():
     export_entry_report(state, session, summary)
     if args.action == 'entry-report':
         return
+    operations_file = collect_operations(args, state, session, summary['runId'])
     destination = state / 'audit/tournament-summary.json'
     if destination.exists():
         destination.unlink()
     write(destination, summary)
     destination.chmod(0o644)
-    app(args, state, 'game', 'audit')
-    app(args, state, 'tournaments', 'audit')
-    app(args, state, 'game', 'replay')
-    app(args, state, 'tournaments', 'audit')
-    if require_integration_context(session['identity']):
-        compose(args, state, 'run', '-T', '--interactive=false', '--rm', '--no-deps', 'analysis-migrate',
-                'python', '/opt/e2e/rehearsal_integrations.py', 'proof')
+    run_database_audits(args, state, session, summary, operations_file)
     print('SERVER DATABASE AND DUPLICATE-RESULT AUDIT PASSED. Combine with the browser performance acceptance report.')
 
 

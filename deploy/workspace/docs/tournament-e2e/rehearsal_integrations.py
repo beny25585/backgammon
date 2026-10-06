@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import subprocess
 import sys
 import uuid
 
@@ -153,8 +154,80 @@ def prepare_database(rehearsal, identity, kind='analysis'):
 
 
 def server_action(rehearsal, args, tools, action):
-    rehearsal.run(['python3', tools / 'server_rehearsal.py', action,
-                   '--project', args.project, '--rehearsal', args.rehearsal])
+    command = ['python3', str(tools / 'server_rehearsal.py'), action,
+               '--project', str(args.project), '--rehearsal', str(args.rehearsal)]
+    if action != 'start':
+        rehearsal.run(command)
+        return
+    # Preserve the first child failure even when rollback removes its containers.
+    state = args.rehearsal / 'browser-e2e-r2'
+    directory = state / 'activation-logs'
+    require(not directory.is_symlink(), 'Unsafe activation log directory')
+    directory.mkdir(mode=0o700, exist_ok=True)
+    file = directory / ('start-' + uuid.uuid4().hex + '.private.log')
+    with file.open('x', encoding='utf-8') as log:
+        file.chmod(0o600)
+        with subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, bufsize=1) as child:
+            for line in child.stdout:
+                log.write(line)
+                log.flush()
+                print(line, end='', flush=True)
+            code = child.wait()
+    if code:
+        print('PRIVATE activation failure log preserved: ' + str(file))
+        raise subprocess.CalledProcessError(code, command)
+
+
+def application_readiness(rehearsal, kind):
+    """Use the live API's network and its normal private runtime configuration."""
+    require(kind in ('game', 'tournaments'), 'Unexpected readiness service')
+    # Docker exec does not repeat ENTRYPOINT. Explicitly use the same runtime
+    # loader so DB credentials and analysis/Google/Push settings stay private.
+    rehearsal.docker('exec', rehearsal.PROJECT + '-' + kind + '-api-1',
+                     'python', '/opt/docker/runtime_env.py',
+                     'python', '/opt/e2e/rehearsal_app.py', kind, 'integrations')
+
+
+def preserve_restored_backup(before, session):
+    require(before.is_dir() and not before.is_symlink(), 'Unsafe previous activation backup')
+    original, plan = read(before / 'session.json'), read(before / 'plan.json')
+    require(session['identity']['session_id'] == plan['previous_session']
+            == original['identity']['session_id'], 'Previous test environment has not been restored')
+    def application_identity(value):
+        return {key: item for key, item in value.items()
+                if key not in ('harness_sha256', 'runtime_checks_version')}
+    require(application_identity(session['identity']) == application_identity(original['identity']),
+            'Restored application identity changed')
+    require(re.fullmatch(r'[a-f0-9]{32}', plan['new_session']), 'Invalid previous activation plan')
+    for name in ARTIFACTS:
+        read(before / name) if name.endswith('.json') else require(
+            (before / name).is_file() and not (before / name).is_symlink(), 'Incomplete previous backup')
+    destination = before.with_name('before-integrations-restored-' + plan['new_session'][:12])
+    require(not destination.exists(), 'Previous integration backup already archived')
+    before.rename(destination)
+    print('Restored activation backup preserved: ' + str(destination))
+
+
+def failure_inventory(rehearsal, args, state, phase):
+    from server_inventory import collect
+    try:
+        report = {'failed_phase': phase, 'read_only': True, 'inventory': collect(args)}
+        # Private child/container logs can contain request credentials; export only
+        # state metadata in this report, and retain raw logs as private files.
+        file = state / ('activation-failure-' + uuid.uuid4().hex + '.json')
+        save(file, report, 0o600)
+        print('SANITIZED ACTIVATION FAILURE REPORT (' + phase + '): ' + str(file))
+        for service in rehearsal.APPS + rehearsal.WORKERS:
+            result = subprocess.run(['sudo', 'docker', 'logs', '--tail', '300', rehearsal.PROJECT + '-' + service + '-1'],
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15)
+            if result.returncode == 0:
+                file = state / 'activation-logs' / (service + '-' + uuid.uuid4().hex + '.private.log')
+                with file.open('x', encoding='utf-8') as stream:
+                    file.chmod(0o600)
+                    stream.write(result.stdout)
+    except Exception:
+        print('Some activation diagnostics could not be collected; the original startup log remains preserved.')
 
 
 def google_client(rehearsal, args):
@@ -211,7 +284,9 @@ def enable(rehearsal, args, state, tools):
     require(built_analysis == session['identity']['images']['analysis'], 'Pinned analysis image is missing')
     client_id = google_client(rehearsal, args)
     before = state / 'before-integrations'
-    require(not before.exists(), 'An integration backup exists; inspect or run restore before another enable')
+    if before.exists():
+        require(args.retry_restored, 'An integration backup exists; use --retry-restored only after successful restoration')
+        preserve_restored_backup(before, session)
     for name in ARTIFACTS:
         require((state / name).is_file() and not (state / name).is_symlink(), 'Missing integration input')
     before.mkdir(mode=0o700)
@@ -251,6 +326,7 @@ def enable(rehearsal, args, state, tools):
     for kind in ('game', 'tournaments', 'analysis'):
         prepare_database(rehearsal, updated['identity'], kind)
     server_action(rehearsal, args, Path(session['tools_dir']), 'stop')
+    phase = 'configuration'
     try:
         save(state / 'game.json', game)
         save(state / 'tournaments.json', tournaments)
@@ -272,13 +348,19 @@ def enable(rehearsal, args, state, tools):
         (state / 'nginx.candidate.conf').write_text(rehearsal.nginx(updated['identity']), encoding='utf-8')
         rehearsal.select_services(updated['identity'])
         rehearsal.verify_config(args, state)
+        phase = 'application_start'
         server_action(rehearsal, args, tools, 'start')
+        phase = 'application_health'
         server_action(rehearsal, args, tools, 'check')
-        rehearsal.app(args, state, 'game', 'integrations')
-        rehearsal.app(args, state, 'tournaments', 'integrations')
+        phase = 'ai_readiness'
+        application_readiness(rehearsal, 'game')
+        phase = 'analysis_push_google_readiness'
+        application_readiness(rehearsal, 'tournaments')
+        phase = 'comprehensive_baseline'
         server_action(rehearsal, args, tools, 'baseline')
     except Exception:
         print('Integration activation failed. Restoring the previous test environment.')
+        failure_inventory(rehearsal, args, state, phase)
         restore(rehearsal, args, state, tools)
         raise
     print('ALL APPLICATION SERVICES READY: new game/tournament/analysis databases, isolated Redis, analysis/AI/Push enabled.')
@@ -350,6 +432,7 @@ def main():
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--rehearsal', required=True, type=Path)
     parser.add_argument('--google-client-id', help='Optional public Web client ID; defaults to the captured server configuration')
+    parser.add_argument('--retry-restored', action='store_true', help='Preserve the previous failed-attempt backup after verifying its original session is restored')
     args = parser.parse_args()
     args.project, args.rehearsal = args.project.resolve(), args.rehearsal.resolve()
     require(args.project.name == rehearsal.TAG and args.rehearsal.name == 'docker-rehearsal'

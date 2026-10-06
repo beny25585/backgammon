@@ -44,6 +44,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     runId: runtime.run_id, startedAt: new Date().toISOString(), status: 'running',
     playerCount: scenario.players, recoveryChecks: scenario.recoveryChecks,
     entryFeeCoins: entryFee,
+    comprehensiveChecks: Boolean(runtime.comprehensive_checks),
     targetSession: runtime.remote_target?.session_id ?? null,
     scope: runtime.profile === 'server-rehearsal'
       ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; fresh browser PostgreSQL databases.'
@@ -89,6 +90,32 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       && event.status === 503 && event.method === 'GET'
       && new URL(event.path).pathname === '/tournaments-api/analyses'
     record(excludedAnalysis ? 'excludedIntegrationErrors' : 'serverErrors', event)
+  }
+  async function backgroundSnapshot(player) {
+    const snapshots = {}
+    for (const [kind, prefix] of [['game', '/backgammon/api'], ['tournaments', '/tournaments-api']]) {
+      const response = await player.context.request.get(`${tourOrigin}${prefix}/__e2e__/background-tasks/`, {
+        headers: { 'X-E2E-Session': runtime.remote_target.session_id }, timeout: 15000,
+      })
+      expect(response.status(), `${kind} read-only background monitor`).toBe(200)
+      const value = await response.json()
+      expect(value.schema_version).toBe(1)
+      expect(value.session_id).toBe(runtime.remote_target.session_id)
+      expect(value.kind).toBe(kind)
+      expect(value.tasks.length, `${kind} recurring jobs exist`).toBeGreaterThan(0)
+      expect(value.tasks.every(item => item.has_error === false), `${kind} recurring jobs have no errors`).toBe(true)
+      if (kind === 'tournaments') {
+        for (const name of ['reconcile_searches', 'expire_unstarted_games', 'start_scheduled_tournaments', 'expire_tournament_entry_deadlines']) {
+          const jobs = value.tasks.filter(item => item.name === name)
+          expect(jobs.length, `${name} has exactly one recurring task`).toBe(1)
+          expect(jobs[0].last_finished_at, `${name} has already completed a cycle`).toBeTruthy()
+        }
+        expect(value.push?.last_seen_at, 'Push worker has a heartbeat').toBeTruthy()
+        expect(Date.parse(value.push.expected_by), 'Push worker heartbeat is current').toBeGreaterThan(Date.parse(value.observed_at))
+      }
+      snapshots[kind] = value
+    }
+    return snapshots
   }
   const isGameFrontendRequest = (request) => {
     const url = new URL(request.url())
@@ -399,6 +426,14 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     admin = await newUser('admin')
     await api(admin, '/csrf/')
     await api(admin, '/auth/login', { method: 'POST', data: runtime.admin })
+    if (runtime.comprehensive_checks) {
+      summary.backgroundWorkers = { before: await backgroundSnapshot(admin) }
+      const health = await api(admin, '/admin/push-health', { timeout: 15000 })
+      expect(health.issues, 'Push worker is ready before creating player accounts').toEqual([])
+      expect(health.last_worker_seen_at).toBeTruthy()
+      const analyses = await api(admin, '/analyses', { timeout: 15000 })
+      expect(Array.isArray(analyses.matches), 'Authenticated analysis bridge is ready').toBe(true)
+    }
     const suffix = String(runtime.run_id).replace(/[^a-z0-9]/gi, '').slice(-12)
     const password = `E2E!${randomBytes(16).toString('hex')}z9`
     const phonePrefix = randomBytes(3).readUIntBE(0, 3).toString().padStart(5, '0').slice(-5)
@@ -472,7 +507,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     }
     await expect.poll(async () => {
       const state = (await api(admin, `/admin/tournaments/${tournamentId}`)).state
-      if (state === 'open' && Date.now() >= startsAt.getTime()) {
+      if (!runtime.comprehensive_checks && state === 'open' && Date.now() >= startsAt.getTime()) {
         // Use the normal start API when the product's scheduled time is due.
         // A competing scheduler may already have started it and return 412.
         await api(admin, `/admin/tournaments/${tournamentId}/start`, {
@@ -650,6 +685,31 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
         limitation: 'No device subscription in this browser run; service workers remain blocked.' }
     }
     expect(summary.serverErrors, 'No browser/assertion API HTTP 5xx').toHaveLength(0)
+    if (runtime.comprehensive_checks) {
+      summary.backgroundWorkers.after = await backgroundSnapshot(admin)
+      for (const kind of ['game', 'tournaments']) {
+        const before = summary.backgroundWorkers.before[kind]
+        const after = summary.backgroundWorkers.after[kind]
+        const names = kind === 'game' ? ['game.inactivity.check_inactivity_watchdog'] : [
+          'reconcile_searches', 'expire_unstarted_games', 'start_scheduled_tournaments', 'expire_tournament_entry_deadlines',
+        ]
+        for (const name of names) {
+          const first = before.tasks.find(item => item.name === name)
+          const last = after.tasks.find(item => item.name === name)
+          expect(first, `${name} baseline exists`).toBeTruthy()
+          expect(last, `${name} final sample exists`).toBeTruthy()
+          const field = kind === 'game' ? 'run_at' : 'last_finished_at'
+          expect(Date.parse(last[field]), `${name} successful recurring cycles advanced`).toBeGreaterThan(Date.parse(first[field]))
+        }
+      }
+      const { admin_commands: commands, push } = summary.backgroundWorkers.after.tournaments
+      expect(commands.error_tasks, 'Admin command queue has no failures').toBe(0)
+      expect(commands.pending_without_task, 'All pending admin commands have durable tasks').toBe(0)
+      expect(Date.parse(push.last_seen_at), 'Push heartbeat advanced during the tournament').toBeGreaterThan(
+        Date.parse(summary.backgroundWorkers.before.tournaments.push.last_seen_at))
+      summary.backgroundWorkers.passed = true
+      summary.scheduledStart = { completedByWorker: true, manualStartFallbackUsed: false }
+    }
     expect(summary.pageErrors, 'No unhandled browser errors').toHaveLength(0)
     summary.status = 'passed'
   } catch (error) {

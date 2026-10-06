@@ -374,6 +374,9 @@ class AdmissionASGI:
 
     async def __call__(self, scope, receive, send):
         path = scope.get('path', '')
+        if scope['type'] == 'http' and path == '/api/__e2e__/background-tasks/':
+            from rehearsal_runtime import serve
+            return await serve(scope, send)
         if scope['type'] == 'websocket' and path == '/ws/club/updates/':
             async def measured_receive():
                 message = await receive()
