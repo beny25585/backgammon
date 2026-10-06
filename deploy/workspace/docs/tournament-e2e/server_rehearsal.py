@@ -71,6 +71,54 @@ def harness_inventory(tools):
     return files, digest.hexdigest()
 
 
+def configure_entry_observer(state, tools, identity):
+    """Only the fresh browser APIs receive the passive observer; images stay pinned."""
+    require_fresh_database_context(identity)
+    file = state / 'compose.e2e.json'
+    overrides = json.loads(file.read_text())
+    for kind in ('game', 'tournaments'):
+        values = overrides['services'][kind + '-api']
+        values.setdefault('environment', {}).update(
+            DJANGO_SETTINGS_MODULE='rehearsal_settings', E2E_ADMISSION_KIND=kind, PYTHONPATH='/opt/e2e')
+        volumes = values.setdefault('volumes', [])
+        for name in ('rehearsal_entry.py', 'rehearsal_settings.py', 'rehearsal_asgi.py', 'rehearsal_context.py'):
+            source = tools / name
+            require(source.is_file() and not source.is_symlink(), 'Missing or unsafe entry observer')
+            target = '/opt/e2e/' + name
+            volumes[:] = [volume for volume in volumes if volume.get('target') != target]
+            volumes.append({'type': 'bind', 'source': str(source), 'target': target, 'read_only': True})
+        values['command'] = ['sh', '-c', 'python manage.py migrate --check && exec daphne '
+                             '-b 0.0.0.0 -p 8000 --access-log - rehearsal_asgi:application']
+    file.write_text(json.dumps(overrides, indent=2) + '\n', encoding='utf-8')
+
+
+def export_entry_report(state, session, summary):
+    from entry_flow_report import build_report, parse_events
+    fresh = require_fresh_database_context(session['identity'])
+    require(type(summary.get('tournamentId')) is int and summary['tournamentId'] > 0,
+            'Entry report requires a created tournament')
+    events = []
+    for kind in ('game', 'tournaments'):
+        # Python console logging goes to stderr; keep both streams private.
+        output = subprocess.run(['sudo', 'docker', 'logs', '--tail', '100000', f'{PROJECT}-{kind}-api-1'],
+                                check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        events.extend(parse_events(output.stdout, session['identity']['session_id'], kind))
+    # Activation may have run in the normal worker, which is not instrumented.
+    # One read after the run preserves its authoritative write-once timestamp.
+    availability = json.loads(postgres_query(fresh['databases']['tournaments'],
+        "SELECT COALESCE(json_agg(json_build_object('fixtureId', f.id, 'playableAt', "
+        "to_char(f.playable_at AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"'))), '[]'::json) "
+        "FROM tournaments_fixture f JOIN tournaments_mode m ON m.id = f.mode_id "
+        f"WHERE m.tournament_id = {summary['tournamentId']}"))
+    report = build_report(summary, events, availability)
+    file = state / 'audit' / ('entry-flow-' + summary['runId'] + '.json')
+    require(not file.is_symlink(), 'Entry report cannot be a symlink')
+    file.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    file.chmod(0o600)
+    print('Entry phase report: ' + str(file))
+    print(json.dumps({'coverage': report['coverage'], 'serverMetrics': report['serverMetrics']}, indent=2))
+
+
 def refresh_prepared_harness(state, tools, session, context_change=False):
     # A reviewed tool fix can resume this same stopped session without rebuilding images.
     require(not CONF.exists(), 'Do not update a harness while its test listener is installed')
@@ -89,6 +137,7 @@ def refresh_prepared_harness(state, tools, session, context_change=False):
     require(engine.is_file() and not engine.is_symlink()
             and hashlib.sha256(engine.read_bytes()).hexdigest() == session['identity']['engine_sha256'],
             'Prepared engine differs from the pinned build')
+    configure_entry_observer(state, tools, session['identity'])
     session['harness_files'], session['identity']['harness_sha256'] = harness_inventory(tools)
     (state / 'session.json').write_text(json.dumps(session, indent=2) + '\n', encoding='utf-8')
     identity_file.write_text(json.dumps(session['identity'], indent=2) + '\n', encoding='utf-8')
@@ -490,6 +539,12 @@ def verify_live(session):
                                  'DB_USER': 'backgammon_' + kind,
                                  'REDIS_URL': f'redis://redis:6379/{context["redis_databases"][kind]}'},
                     'Running container uses a different database/cache context: ' + service)
+            if service.endswith('-api'):
+                observer = {key: value for key, value in (item.split('=', 1) for item in values)
+                            if key in ('DJANGO_SETTINGS_MODULE', 'E2E_ADMISSION_KIND', 'PYTHONPATH')}
+                require(observer == {'DJANGO_SETTINGS_MODULE': 'rehearsal_settings',
+                                     'E2E_ADMISSION_KIND': kind, 'PYTHONPATH': '/opt/e2e'},
+                        'Running API is missing the entry observer: ' + service)
 
 
 def wait_application_health(session, deadline, bootstrap=False):
@@ -607,7 +662,7 @@ def restore_monitoring(state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'stop'))
+    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'entry-report', 'stop'))
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--rehearsal', required=True, type=Path)
     parser.add_argument('--summary', type=Path)
@@ -645,6 +700,9 @@ def main():
         deadline = time.monotonic() + 180
         installed = False
         try:
+            # A stopped old container retains its old mounts/command with --no-recreate.
+            # Recreate only APIs so the reviewed observer is actually loaded.
+            compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--force-recreate', 'game-api', 'tournaments-api')
             compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--no-recreate', *APPS)
             wait_application_health(session, deadline, bootstrap=True)
             refresh_nginx_candidate(state, session)
@@ -701,6 +759,9 @@ def main():
     summary = json.loads(args.summary.read_text(encoding='utf-8'))
     require(summary.get('targetSession') == session['identity']['session_id']
             and re.fullmatch(r'[A-Za-z0-9_-]{10,80}', summary.get('runId', '')), 'Invalid uploaded browser run')
+    export_entry_report(state, session, summary)
+    if args.action == 'entry-report':
+        return
     destination = state / 'audit/tournament-summary.json'
     if destination.exists():
         destination.unlink()

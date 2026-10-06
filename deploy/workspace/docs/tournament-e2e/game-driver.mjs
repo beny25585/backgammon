@@ -162,12 +162,34 @@ export async function installGameObserver(context) {
         result: null, revision: 0, change: 0, waiters: new Set(), stateAt: 0, lastSent: null,
         pending: [], terminalMove: null, driverSending: false, events: [], errors: [],
         timing: { socketConstructedAt: constructedAt, socketOpenedAt: null, initialStateAt: null,
-          firstRoomStatusAt: null, firstBothConnectedAt: null }, documentTiming: null,
+          firstRoomStatusAt: null, firstBothConnectedAt: null, boardAvailableAt: null }, documentTiming: null,
         metrics: { sent: 0, driverActions: 0, appActions: 0, moves: 0, rolls: 0,
           endTurns: 0, snapshots: 0, serverErrors: 0, forbiddenActions: 0,
           closes: 0, socketErrors: 0, acknowledged: 0, maxAckMs: 0, totalAckMs: 0 },
       };
       sockets.push(entry);
+      let boardObserver = null;
+      function checkBoard() {
+        if (entry.timing.boardAvailableAt !== null || entry.timing.initialStateAt === null || !window.document) return;
+        const frame = window.document.querySelector('[data-testid="board-frame"]');
+        if (!frame) return;
+        const rect = frame.getBoundingClientRect();
+        const style = window.getComputedStyle(frame);
+        if (rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden') {
+          entry.timing.boardAvailableAt = now();
+          boardObserver?.disconnect();
+          changed(entry);
+        }
+      }
+      function watchBoard() {
+        if (!window.document || entry.timing.boardAvailableAt !== null) return;
+        if (!boardObserver) {
+          boardObserver = new window.MutationObserver(checkBoard);
+          boardObserver.observe(window.document, { childList: true, subtree: true, attributes: true,
+            attributeFilter: ['class', 'style', 'hidden'] });
+        }
+        window.requestAnimationFrame(checkBoard);
+      }
       const originalSend = socket.send;
       socket.send = function (data) {
         let message;
@@ -213,6 +235,7 @@ export async function installGameObserver(context) {
             entry.timing.initialStateAt ??= now();
             entry.color = color(message.playerColor);
             entry.initialState = clone(state);
+            watchBoard();
             entry.targetPoints = message.targetPoints ?? null;
           }
           if (entry.state && Number(state.version ?? 0) < Number(entry.state.version ?? 0)) return;
@@ -269,6 +292,7 @@ export async function installGameObserver(context) {
         changed(entry);
       });
       socket.addEventListener('close', event => {
+        boardObserver?.disconnect();
         entry.metrics.closes++;
         record(entry, { kind: 'close', code: event.code });
         changed(entry);
@@ -511,6 +535,13 @@ export async function driveMatch(pages, {
       lastProgressAt = Date.now();
     }
     const observation = games.map(game => `${game.state?.phase}:${game.state?.turn}:${Boolean(game.result)}`).join('|');
+    // The DOM can become visible after the first both-connected callback.
+    // Preserve the original admission clock while retaining this later milestone.
+    if (admissionTiming) {
+      for (const seat of admissionTiming.seats) {
+        seat.boardAvailableAt ??= games.find(game => game.color === seat.color)?.timing?.boardAvailableAt ?? null;
+      }
+    }
     if (observation !== previousObservation) {
       previousObservation = observation;
       await onObservation?.({ event: 'game_progress', elapsedMs: Date.now() - startedAt,

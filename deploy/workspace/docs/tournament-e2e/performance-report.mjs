@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { scenarioConfig } from './scenario-config.mjs'
 import { evaluatePerformance } from './performance-policy.mjs'
+import { browserEntryFlow } from './entry-flow.mjs'
 
 function distribution(values) {
   const sorted = values.filter(Number.isFinite).sort((a, b) => a - b)
@@ -21,7 +22,7 @@ export function admissionDiagnostics(summary) {
       const document = seat.document
       return { color: seat.color, clickCommandStartedAt: clickedAt,
         socketConstructedAt: seat.socketConstructedAt, socketOpenedAt: seat.socketOpenedAt,
-        initialStateAt: seat.initialStateAt, firstRoomStatusAt: seat.firstRoomStatusAt,
+        initialStateAt: seat.initialStateAt, firstRoomStatusAt: seat.firstRoomStatusAt, boardAvailableAt: seat.boardAvailableAt ?? null,
         firstBothConnectedAt: seat.firstBothConnectedAt,
         phases: {
           clickToNavigationMs: elapsed(document?.navigationStartedAt, clickedAt),
@@ -31,6 +32,7 @@ export function admissionDiagnostics(summary) {
           socketOpenMs: elapsed(seat.socketOpenedAt, seat.socketConstructedAt),
           openToInitialStateMs: elapsed(seat.initialStateAt, seat.socketOpenedAt),
           openToBothConnectedMs: elapsed(seat.firstBothConnectedAt, seat.socketOpenedAt),
+          initialStateToBoardMs: elapsed(seat.boardAvailableAt, seat.initialStateAt),
         }, document: document ?? null }
     })
     const bothTimes = seats.map(seat => seat.firstBothConnectedAt)
@@ -45,7 +47,7 @@ export function admissionDiagnostics(summary) {
       nodeObservedAt: diagnostic?.observedAt ?? null, browserBothConnectedAt: browserBothAt, seats }
   })
   const phaseNames = ['clickToNavigationMs', 'navigationToHtmlEndMs', 'htmlTransferMs',
-    'htmlEndToSocketConstructionMs', 'socketOpenMs', 'openToInitialStateMs', 'openToBothConnectedMs']
+    'htmlEndToSocketConstructionMs', 'socketOpenMs', 'openToInitialStateMs', 'openToBothConnectedMs', 'initialStateToBoardMs']
   return { version: 1,
     scope: 'Diagnostic timestamps on this PC. Browser callbacks precede Node observation. Do not subtract these timestamps from server log clocks without clock alignment.',
     limitations: ['Click time is the start of the existing Playwright click command, not the DOM click event.',
@@ -107,6 +109,7 @@ export function writePerformanceReport(runDir) {
   const report = {
     acceptance: evaluatePerformance(summary, scenario),
     admissionDiagnostics: admissionDiagnostics(summary),
+    entryFlowDiagnostics: browserEntryFlow(summary),
     scope: runtime.profile === 'server-rehearsal'
       ? 'Browser load from this PC through public host Nginx HTTPS to R2 server images and fresh browser PostgreSQL databases. ACK timings include this network connection. Server log samples are not collected by this browser runner.'
       : 'This machine and isolated databases; no production capacity guarantee. Slow DB log samples are threshold-selected.',

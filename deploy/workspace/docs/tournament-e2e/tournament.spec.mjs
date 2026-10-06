@@ -7,6 +7,7 @@ import { createEventJournal } from './event-journal.mjs'
 import { scenarioConfig } from './scenario-config.mjs'
 import { createSharedProgress } from './shared-progress.mjs'
 import { runtimeOrigins } from './destination-policy.mjs'
+import { installEntryFlowObserver } from './entry-flow.mjs'
 
 const runDir = process.env.E2E_RUN_DIR
 if (!runDir || !path.isAbsolute(runDir)) throw new Error('E2E_RUN_DIR is required.')
@@ -59,7 +60,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
         ? `Final acceptance requires a separate server audit and ${scenario.matches * 2} unchanged signed result replays.`
         : `Wallet award is checked across normal workers; the orchestrator then repeats all ${scenario.matches} unchanged signed results twice and verifies the final database.`],
     observations: [], matches: [], requests: [], failedRequests: [], serverErrors: [], excludedIntegrationErrors: [],
-    console: [], pageErrors: [], blockedExternal: [], frontendRequests: [],
+    console: [], pageErrors: [], blockedExternal: [], frontendRequests: [], entryFlowEvents: [],
     earlySemifinalObserved: false,
   }
   const contexts = []
@@ -110,6 +111,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       socket.close()
     })
     await installGameObserver(context)
+    await installEntryFlowObserver(context, { tourOrigin,
+      onEvent: event => record('entryFlowEvents', { label, ...event }) })
     context.on('request', (request) => {
       const now = Date.now()
       requestStarts.set(request, now)
@@ -127,6 +130,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       const event = { label, method: response.request().method(), path: safePath(response.url()),
         startedAt: requestStarts.get(response.request()) ?? null,
         status: response.status(), elapsedMs: Date.now() - (requestStarts.get(response.request()) ?? Date.now()) }
+      const traceId = response.headers()['x-e2e-trace-id']
+      if (/^[a-f0-9]{32}$/.test(traceId ?? '')) event.serverTraceId = traceId
       if (event.path.includes('/tournaments-api/') || event.path.includes('/api/link/')) record('requests', event)
       if (isGameFrontendRequest(response.request())) {
         record('frontendRequests', { ...event, resourceType: response.request().resourceType(), phase: 'response_headers' })
@@ -202,8 +207,12 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     }, { message, timeout: 0, intervals: [250] }).toBe(true)
     return found
   }
-  async function entryButton(player, fixtureId, gate) {
-    await player.page.goto(`${tourOrigin}/tournaments/tournaments/${tournamentId}`)
+  async function entryButton(player, fixtureId, gate, reload = false) {
+    // First-round users already opened this page before activation. Preserve
+    // natural cache/WS updates; only the intentional recovery route needs a new socket.
+    if (!gate || reload) await player.page.goto(`${tourOrigin}/tournaments/tournaments/${tournamentId}`)
+    await player.page.evaluate(({ id, name, fixture }) => window.__e2eEntryFlow.arm(id, name, fixture),
+      { id: tournamentId, name: summary.tournamentName, fixture: fixtureId })
     const own = await current(player)
     expect(own.fixture?.id, `${player.label} personal fixture`).toBe(fixtureId)
     expect(own.fixture.can_play, `${player.label} can play own fixture`).toBe(true)
@@ -216,6 +225,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       ? picker.getByRole('button').filter({ hasText: summary.tournamentName }) : quick
     // Prepare every real control before releasing any first-round click.
     await button.click({ trial: true })
+    observe('entry_button_prepared', { label: player.label, fixtureId, preparedAt: Date.now() })
     if (gate) await gate.arrive(player.label)
     const clickedAt = Date.now()
     await button.click()
@@ -296,7 +306,7 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     // No synthetic ready calls or tickets: the first round releases all UI
     // clicks together; later pairs also click concurrently once prepared.
     const clickTimes = await Promise.all([
-      entryButton(first, fixture.id, gate), entryButton(second, fixture.id, gate),
+      entryButton(first, fixture.id, gate), entryButton(second, fixture.id, gate, delayedSecond),
     ])
     await waitForGame(first.page, { timeoutMs: Infinity })
     evidence.firstRoomAt = Date.now()
@@ -325,7 +335,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     evidence.roomId = one.roomId
     // Start when both users have clicked, excluding ordinary opponent wait.
     admissions.set(fixture.id, { clickedAt: Math.max(...clickTimes), observedAt: Date.now(),
-      clicks: clickTimes.map((clickedAt, index) => ({ color: [one, two][index].color, clickedAt })),
+      clicks: clickTimes.map((clickedAt, index) => ({ color: [one, two][index].color,
+        label: [first, second][index].label, clickedAt })),
       ...(delayedSecond ? { excludedReason: 'intentional_recovery_delay' } : {}) })
     evidence.firstRoundEntryElapsedMs = fixture.round_index === 0 ? Date.now() - tournamentStartedAt : null
     if (fixture.round_index === 0) expect(evidence.firstRoundEntryElapsedMs).toBeLessThan(10 * 60_000)
@@ -433,6 +444,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       const response = await joined
       expect(response.status()).toBe(200)
       expect((await response.json()).is_joined).toBe(true)
+      await player.page.evaluate(({ id, name }) => window.__e2eEntryFlow.arm(id, name),
+        { id: tournamentId, name: summary.tournamentName })
     }))
     expect((await api(admin, `/admin/tournaments/${tournamentId}`)).participant_count).toBe(scenario.players)
     await expect.poll(async () => {

@@ -5,7 +5,7 @@ import { installGameObserver } from './game-driver.mjs';
 
 const roomId = 'd830ca8f-9954-47b5-b537-79265f9b5a11';
 
-async function observer({ clock = Date.now, performance } = {}) {
+async function observer({ clock = Date.now, performance, windowExtras = {} } = {}) {
   class Socket {
     static OPEN = 1;
     readyState = 1;
@@ -19,7 +19,7 @@ async function observer({ clock = Date.now, performance } = {}) {
     emit(type, event) { for (const listener of this.listeners.get(type) ?? []) listener(event); }
     send(raw) { this.sent.push(JSON.parse(raw)); }
   }
-  const window = { WebSocket: Socket, location: { href: 'https://127.0.0.1/backgammon/' }, performance };
+  const window = { WebSocket: Socket, location: { href: 'https://127.0.0.1/backgammon/' }, performance, ...windowExtras };
   await installGameObserver({
     async addInitScript(initializer, options) {
       vm.runInNewContext(`(${initializer.toString()})(options)`,
@@ -115,6 +115,31 @@ test('a both-connected payload cannot stamp an unopened socket', async () => {
   socket.readyState = 1;
   socket.emit('open', {});
   assert.ok(api.inspect(roomId).timing.firstBothConnectedAt !== null);
+});
+
+test('board availability waits for visible DOM and preserves the first timestamp', async () => {
+  let clock = 1000;
+  let visible = false;
+  let callback;
+  let disconnected = 0;
+  const frame = { getBoundingClientRect: () => ({ width: visible ? 400 : 0, height: 300 }) };
+  const { api, socket } = await observer({ clock: () => clock, windowExtras: {
+    document: { querySelector: () => frame },
+    getComputedStyle: () => ({ display: 'block', visibility: 'visible' }),
+    MutationObserver: class { constructor(listener) { callback = listener; } observe() {} disconnect() { disconnected++; } },
+    requestAnimationFrame: listener => listener(),
+  } });
+  assert.equal(api.inspect(roomId).timing.boardAvailableAt, null);
+  clock = 1500;
+  visible = true;
+  callback();
+  assert.equal(api.inspect(roomId).timing.boardAvailableAt, 1500);
+  clock = 9000;
+  callback();
+  assert.equal(api.inspect(roomId).timing.boardAvailableAt, 1500);
+  assert.equal(api.inspect(roomId).timing.initialStateAt, 1000);
+  assert.equal(socket.sent.length, 0);
+  assert.equal(disconnected, 1);
 });
 
 test('document evidence excludes credentials, API traffic and off-origin assets', async () => {
