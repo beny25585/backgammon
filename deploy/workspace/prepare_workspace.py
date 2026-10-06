@@ -38,7 +38,19 @@ def existing_sources(root, sources, pull=False):
         if git(checkout, 'remote', 'get-url', 'origin').decode().strip() != source['url']:
             raise ValueError('Existing repository origin differs: ' + str(checkout))
         if git(checkout, 'status', '--porcelain', '--untracked-files=no').strip():
-            raise ValueError('Commit or reconcile tracked server edits before pull: ' + str(checkout))
+            # Preserve the observed legacy service's DEBUG=False until Docker cutover.
+            # This file is not used by the Docker settings or copied from the live tree.
+            config_path = 'tournaments/tournaments/settings/development.py'
+            changed = git(checkout, 'diff', 'HEAD', '--name-only').decode().splitlines()
+            allowed = source['path'] == 'backgammon-tournaments-backend' and changed == [config_path]
+            if allowed:
+                path = checkout / config_path
+                committed = git(checkout, 'show', 'HEAD:' + config_path).replace(b'\r\n', b'\n')
+                allowed = (not path.is_symlink() and committed.count(b'\nDEBUG = True\n') == 1
+                           and path.read_bytes().replace(b'\r\n', b'\n')
+                           == committed.replace(b'\nDEBUG = True\n', b'\nDEBUG = False\n'))
+            if not allowed:
+                raise ValueError('Commit or reconcile tracked server edits before pull: ' + str(checkout))
         if pull and not git(checkout, 'branch', '--show-current').strip():
             raise ValueError('Pull requires a checked-out branch: ' + str(checkout))
         repositories[source['path']] = checkout
