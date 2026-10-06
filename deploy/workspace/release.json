@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "image_tag": "backgammon-production-candidate-20261007-r6",
+  "image_tag": "backgammon-production-candidate-20261007-r7",
   "sources": [
     {
       "path": "Backgammon Game",

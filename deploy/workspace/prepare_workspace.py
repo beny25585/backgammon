@@ -27,6 +27,15 @@ SERVER_SOURCE_NAMES = {
 }
 
 
+def github_repository(url):
+    match = re.fullmatch(
+        r'(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)'
+        r'([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/?', url, re.IGNORECASE)
+    if match is None:
+        raise ValueError('Unsupported GitHub origin format')
+    return match[1].lower(), match[2].removesuffix('.git').lower()
+
+
 def existing_sources(root, sources, pull=False):
     repositories = {}
     for source in sources:
@@ -35,7 +44,8 @@ def existing_sources(root, sources, pull=False):
             raise ValueError('Existing Git repository not found: ' + str(checkout))
         if Path(git(checkout, 'rev-parse', '--show-toplevel').decode().strip()).resolve() != checkout.resolve():
             raise ValueError('Unexpected repository root: ' + str(checkout))
-        if git(checkout, 'remote', 'get-url', 'origin').decode().strip() != source['url']:
+        origin = git(checkout, 'remote', 'get-url', 'origin').decode().strip()
+        if github_repository(origin) != github_repository(source['url']):
             raise ValueError('Existing repository origin differs: ' + str(checkout))
         if git(checkout, 'status', '--porcelain', '--untracked-files=no').strip():
             # Preserve the observed legacy service's DEBUG=False until Docker cutover.
@@ -175,7 +185,8 @@ def prepare(destination, resume=False, source_root=None, pull=False):
         if not checkout.exists():
             git(destination, "clone", "--filter=blob:none", "--no-checkout", "--", source["url"], str(checkout), capture=False)
         elif (checkout.is_symlink() or not (checkout / '.git').is_dir()
-              or git(checkout, 'remote', 'get-url', 'origin').decode().strip() != source['url']):
+              or github_repository(git(checkout, 'remote', 'get-url', 'origin').decode().strip())
+              != github_repository(source['url'])):
             raise ValueError('Partial source checkout is unsafe: ' + source['path'])
         current = git(checkout, 'rev-parse', 'HEAD').decode().strip()
         status = git(checkout, 'status', '--porcelain', '--untracked-files=all').decode()

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from prepare_workspace import existing_sources, export_source
+from prepare_workspace import existing_sources, export_source, github_repository
 
 
 def archive(name, content=b'committed code'):
@@ -21,6 +21,16 @@ def archive(name, content=b'committed code'):
 
 
 class ExistingSourceTests(unittest.TestCase):
+    def test_ssh_and_https_identify_the_same_repository(self):
+        expected = github_repository('https://github.com/beny25585/backgammon-tournament-ui.git')
+        for url in ('git@github.com:beny25585/backgammon-tournament-ui.git',
+                    'ssh://git@github.com/beny25585/backgammon-tournament-ui.git'):
+            with self.subTest(url=url):
+                self.assertEqual(github_repository(url), expected)
+        self.assertNotEqual(github_repository('git@github.com:other/backgammon-tournament-ui.git'), expected)
+        with self.assertRaises(ValueError):
+            github_repository('https://github.com.example/beny25585/backgammon-tournament-ui.git')
+
     def test_dirty_repository_stops_before_any_pull(self):
         sources = [
             {'path': 'Backgammon Game', 'url': 'https://github.com/example/game.git'},
