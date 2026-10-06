@@ -100,6 +100,11 @@ class Validation:
         old = read(OLD_REHEARSAL / 'browser-e2e-r2/session.json')
         require(old['identity']['project'] == OLD_PROJECT and old['identity']['origin'] == ORIGIN,
                 'The old browser rehearsal identity differs')
+        from rehearsal_context import require_fresh_database_context
+        from rehearsal_integrations import require_integration_context
+        context = require_fresh_database_context(old['identity'])
+        integration = require_integration_context(old['identity'])
+        require(integration is not None, 'Snapshot requires the existing complete integration rehearsal')
         db = Postgres(OLD_PROJECT)
         folder = self.rehearsal / ('backup-' + uuid.uuid4().hex[:8])
         folder.mkdir(mode=0o700, parents=True)
@@ -122,8 +127,7 @@ class Validation:
                     roots.add(str(Path(mount['Source']).resolve(strict=True)))
         require(writers and roots, 'Missing rehearsal writers or declared secret/media mounts')
         names = {'backgammon_game', 'backgammon_tournaments', 'backgammon_analysis',
-                 *old['identity']['database_context']['databases'].values(),
-                 old['identity']['integration_context']['analysis_database']}
+                 *context['databases'].values(), integration['analysis_database']}
         save(folder / 'asset-roots.json', sorted(roots))
         records = {}
         stopped = False
