@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "image_tag": "backgammon-production-candidate-20261007-r2",
+  "image_tag": "backgammon-production-candidate-20261007-r3",
   "sources": [
     {
       "path": "Backgammon Game",
       "url": "https://github.com/beny25585/backgammon.git",
-      "revision": "8447f74e2004e16ef8614896297213e1aa3bfa42"
+      "revision": "0c755d0477b1439bd408c7548aaf21edf07b5d86"
     },
     {
       "path": "backgammon-analysis-service",
