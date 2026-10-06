@@ -1,6 +1,6 @@
 # גרסה מועמדת: שלבים 1–4 בפקודה אחת
 
-המועמד `r3` מקבע את קוד המשחק ל־`0c755d0`, הכולל טעינה קבועה של מודלי GameLink בעת טעינת המודלים של Django. במועמד `r2` שבע התמונות נבנו, אך אימות המיגרציות נעצר משום שבדיקת המודלים לא זיהתה את שלושת מודלי הקישור. דוחותיו נשמרים; אין להחיל את מיגרציית המחיקה שהוצגה ב־dry-run. ההרצה החדשה בונה שבע תמונות מהמקורות המדויקים ב־`release.json` בסביבה נפרדת. המשתמש מפעיל tests, build ו־E2E; מעבר הייצור מתבצע בנפרד אחרי הקבלה.
+המועמד `r4` מקבע את קוד המשחק ל־`0c755d0`, הכולל טעינה קבועה של מודלי GameLink בעת טעינת המודלים של Django. במועמד `r2` שבע התמונות נבנו, אך אימות המיגרציות נעצר משום שבדיקת המודלים לא זיהתה את שלושת מודלי הקישור. ב־`r3` בדיקות כלי העבודה נעצרו בגלל ייבוא שם הפונקציה הישן בבדיקת הלוגים; הבדיקה עודכנה לפלט המסוף ב־`r4`. דוחות ההרצות הקודמות נשמרים; אין להחיל את מיגרציית המחיקה שהוצגה ב־dry-run. ההרצה החדשה בונה שבע תמונות מהמקורות המדויקים ב־`release.json` בסביבה נפרדת. המשתמש מפעיל tests, build ו־E2E; מעבר הייצור מתבצע בנפרד אחרי הקבלה.
 
 מהשורש `C:\Users\User\Desktop\projects\backgammon`:
 
@@ -28,13 +28,13 @@ python3 -u /home/dev/backgammon-project/tools/backgammon-tool-source/deploy/work
 
 ספי הביצועים נשמרים, כולל סף כניסה של 15 שניות. סיום משחקים אינו מסמן את הבדיקה כעוברת אם הביצועים או אימות המסדים נכשלו. הפעלה מחדש בסוף מוכיחה שמירת נתונים של טורניר שהסתיים; היא אינה הוכחה להתאוששות באמצע משחק פעיל.
 
-התמונות המועמדות מקובעות ל־`backgammon-production-candidate-20261007-r3`. ה־API והעובדים חייבים להתאים לתמונות המאומתות; הזהות הציבורית כוללת גם commit של כלי הפריסה. שינוי מקורות לאחר התחלת הכנה מחייב תג חדש. תיקייה חלקית ניתנת להמשך רק אם היא מסומנת כשייכת לאותן גרסאות מדויקות.
+התמונות המועמדות מקובעות ל־`backgammon-production-candidate-20261007-r4`. ה־API והעובדים חייבים להתאים לתמונות המאומתות; הזהות הציבורית כוללת גם commit של כלי הפריסה. שינוי מקורות לאחר התחלת הכנה מחייב תג חדש. תיקייה חלקית ניתנת להמשך רק אם היא מסומנת כשייכת לאותן גרסאות מדויקות.
 
 ממצאי `r1` נשמרים בדוח המקורי: בדיקות הכלים עברו, אך הגיבוי נכשל לפני עצירת הכותבים ולפני בניית תמונות בגלל גישה לא מורשית ל־`/var/lib/docker/volumes`. ב־`r2` איסוף מקורות Docker אינו נוגע במערכת הקבצים; אימות הנתיבים, קריאת הסודות והמדיה והשחזור נשארים ברכיב הגיבוי הקיים שרץ עם `sudo`. הרשאות המקור נשמרות.
 
 ## דוח אחד והמשך מאותה נקודה
 
-הדוח המקומי נמצא ב־`docs/release-validation/backgammon-production-candidate-20261007-r3/report.json`. בשרת הוא נמצא ב־`/home/dev/backgammon-project/reports/release-validation/backgammon-production-candidate-20261007-r3/report.json`. הדוח שומר את תוצאות כל שלב; פלט פקודות ההכנה מוצג ישירות בטרמינל. פרטי מנהל הבדיקה נשמרים בתיקייה המקומית המוגנת ואינם חומר לשיתוף. דוח הדפדפנים ואימותי השרת נשמרים גם בתיקיית ההרצה המקורית שלהם.
+הדוח המקומי נמצא ב־`docs/release-validation/backgammon-production-candidate-20261007-r4/report.json`. בשרת הוא נמצא ב־`/home/dev/backgammon-project/reports/release-validation/backgammon-production-candidate-20261007-r4/report.json`. הדוח שומר את תוצאות כל שלב; פלט פקודות ההכנה מוצג ישירות בטרמינל. פרטי מנהל הבדיקה נשמרים בתיקייה המקומית המוגנת ואינם חומר לשיתוף. דוח הדפדפנים ואימותי השרת נשמרים גם בתיקיית ההרצה המקורית שלהם.
 
 פלט הפקודות שמפעיל validate_release.py מוצג ישירות בטרמינל, ללא יצירת קובצי private.log. בכשל מוצגים שם הפעולה וקוד היציאה. דוחות השלבים ותוצאות הבדיקות נשמרים לצורך המשך ואימות.
 
@@ -42,7 +42,7 @@ python3 -u /home/dev/backgammon-project/tools/backgammon-tool-source/deploy/work
 
 ```powershell
 $taskTools = '.\Backgammon Game\deploy\workspace\docs\tournament-e2e'
-$taskLocation = Get-Content '.\docs\release-validation\backgammon-production-candidate-20261007-r3\client-location.json' -Raw | ConvertFrom-Json
+$taskLocation = Get-Content '.\docs\release-validation\backgammon-production-candidate-20261007-r4\client-location.json' -Raw | ConvertFrom-Json
 # מציבים את תיקיית ההרצה המדויקת שהודפסה.
 & "$taskTools\run-remote-tournament-e2e.ps1" -AuditOnly -RunDirectory $taskRun -ValidationId $taskLocation.validation_id
 # אותה פקודת prepare עם -RunDirectory אוספת מחדש את הדוח ששופר, בלי להריץ דפדפנים.

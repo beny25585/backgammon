@@ -1,81 +1,47 @@
 """User-run checks of safety/resume semantics; no server, Docker or database access."""
-import io
-import itertools
-import os
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 import unittest
 from unittest.mock import Mock, patch
 
 from validation_support import Postgres, Stages, declared_asset_sources, read, save
-from validate_release import private_command
+from validate_release import console_command
 
 
 class CommandOutputTests(unittest.TestCase):
-    def test_build_progress_reaches_console_before_child_exits_and_keeps_sudo_alive(self):
+    def test_child_output_inherits_console_without_creating_private_logs(self):
+        process = Mock(returncode=0)
+        process.poll.side_effect = [None, 0]
         with tempfile.TemporaryDirectory() as directory:
-            acknowledgement = Path(directory, 'displayed')
-            permission_refreshed = Path(directory, 'sudo-refreshed')
-            log = Path(directory, 'build.private.log')
+            with patch('validate_release.subprocess.Popen') as launch, \
+                    patch('validate_release.print'):
+                launch.return_value.__enter__.return_value = process
+                console_command(['python3', '-u', 'checks.py'], 'migrate')
+            launch.assert_called_once_with(['python3', '-u', 'checks.py'], stderr=subprocess.STDOUT)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            process.wait.assert_called_once_with(timeout=30)
 
-            class ConsoleBuffer(io.BytesIO):
-                def write(self, value):
-                    written = super().write(value)
-                    if b'building layer\r' in self.getvalue():
-                        acknowledgement.touch()
-                    return written
+    def test_long_running_command_keeps_sudo_alive(self):
+        process = Mock(returncode=0)
+        process.poll.side_effect = [None, None, 0]
+        process.wait.side_effect = [subprocess.TimeoutExpired('checks', 30), 0]
+        with patch('validate_release.subprocess.Popen') as launch, \
+                patch('validate_release.subprocess.run') as keepalive, \
+                patch('validate_release.print'):
+            launch.return_value.__enter__.return_value = process
+            console_command(['python3', 'checks.py'], 'migrate')
+        keepalive.assert_called_once_with(['sudo', '-n', '-v'],
+                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            child = (
-                "import sys, time\nfrom pathlib import Path\n"
-                "sys.stdout.buffer.write(b'building layer\\r'); sys.stdout.buffer.flush()\n"
-                "deadline = time.monotonic() + 5\n"
-                "while not (Path(sys.argv[1]).exists() and Path(sys.argv[2]).exists()):\n"
-                "    if time.monotonic() >= deadline: raise SystemExit(7)\n"
-                "    time.sleep(0.01)\n"
-                "sys.stderr.buffer.write(b'next layer\\n'); sys.stderr.buffer.flush()\n"
-            )
-            with io.TextIOWrapper(ConsoleBuffer(), encoding='utf-8') as console:
-                with patch('validate_release.sys.stdout', console), \
-                        patch('validate_release.time.monotonic', side_effect=itertools.count(0, 31)), \
-                        patch('validate_release.subprocess.run',
-                              side_effect=lambda *args, **kwargs: permission_refreshed.touch()) as keepalive:
-                    private_command([sys.executable, '-u', '-c', child, acknowledgement, permission_refreshed], log,
-                                    live_output=True)
-                visible = console.buffer.getvalue()
-            self.assertTrue(acknowledgement.is_file())
-            self.assertIn(b'building layer\rnext layer\n', visible)
-            self.assertNotIn(b'Still working', visible)
-            self.assertEqual(log.read_bytes(), b'building layer\rnext layer\n')
-            keepalive.assert_called_with(['sudo', '-n', '-v'],
-                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if os.name != 'nt':
-                self.assertEqual(log.stat().st_mode & 0o777, 0o600)
-
-    def test_private_child_output_is_saved_without_being_displayed(self):
-        with tempfile.TemporaryDirectory() as directory:
-            log = Path(directory, 'private.log')
-            with io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as console:
-                with patch('validate_release.sys.stdout', console), patch('validate_release.subprocess.run'):
-                    private_command([sys.executable, '-c',
-                                     "import sys; sys.stdout.buffer.write(b'private child output\\n')"], log)
-                visible = console.buffer.getvalue()
-            self.assertEqual(log.read_bytes(), b'private child output\n')
-            self.assertNotIn(b'private child output', visible)
-
-    def test_failed_build_displays_and_preserves_its_final_output(self):
-        with tempfile.TemporaryDirectory() as directory:
-            log = Path(directory, 'failed-build.private.log')
-            with io.TextIOWrapper(io.BytesIO(), encoding='utf-8') as console:
-                with patch('validate_release.sys.stdout', console), patch('validate_release.subprocess.run'):
-                    with self.assertRaisesRegex(ValueError, 'Child command failed'):
-                        private_command([sys.executable, '-c',
-                                         "import sys; sys.stderr.buffer.write(b'failed layer\\n'); sys.exit(7)"],
-                                        log, live_output=True)
-                visible = console.buffer.getvalue()
-            self.assertEqual(log.read_bytes(), b'failed layer\n')
-            self.assertIn(b'failed layer\n', visible)
+    def test_failed_command_reports_action_and_exit_code(self):
+        process = Mock(returncode=7)
+        process.poll.side_effect = [None, 7]
+        with patch('validate_release.subprocess.Popen') as launch, \
+                patch('validate_release.print'):
+            launch.return_value.__enter__.return_value = process
+            with self.assertRaisesRegex(ValueError, 'migrate failed with exit code 7'):
+                console_command(['python3', 'checks.py'], 'migrate')
 
 
 class ValidationSupportTests(unittest.TestCase):
