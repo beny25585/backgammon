@@ -30,6 +30,19 @@ def verify():
         if not re.fullmatch(r"[0-9a-f]{40}", source["revision"]):
             raise ValueError("Invalid source revision.")
         directory = root / source["path"]
+        if 'source_files' in record:
+            expected_files = record['source_files'][source['path']]
+            if not expected_files or directory.is_symlink():
+                raise ValueError('Missing or unsafe committed source export: ' + source['path'])
+            actual_files = {}
+            for path in directory.rglob('*'):
+                if path.is_symlink():
+                    raise ValueError('Source export contains a symlink: ' + str(path))
+                if path.is_file():
+                    actual_files[path.relative_to(directory).as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
+            if actual_files != expected_files:
+                raise ValueError('Committed source export changed: ' + source['path'])
+            continue
         command = ["git", "-C", str(directory)]
         revision = subprocess.check_output([*command, "rev-parse", "HEAD"], text=True).strip()
         status = subprocess.check_output([*command, "status", "--porcelain"], text=True).strip()

@@ -188,7 +188,8 @@ class Validation:
     def workspace_and_build(self):
         if not (self.project / '.workspace-release.json').exists():
             self.run('prepare-workspace', ['python3', self.workspace / 'prepare_workspace.py',
-                                           '--destination', self.project, '--resume'])
+                                           '--destination', self.project, '--resume',
+                                           '--source-root', ROOT.parent, '--pull'])
         record = read(self.project / '.workspace-release.json')
         require(record['infrastructure_revision'] == self.revision and record['sources'] == self.release['sources'],
                 'Prepared candidate source revisions differ')

@@ -6,6 +6,18 @@
 
 ## הכנה בשרת
 
+ב־Bot1 משתמשים במאגרים הקיימים: `/home/dev/backgammon`,
+`/home/dev/backgammon-tournament-ui`, `/home/dev/backgammon-tournaments-backend`
+ו־`/home/dev/backgammon-analysis-service`. תהליך `validate_release.py prepare`
+מפעיל את ההכנה עם `--source-root /home/dev --pull`: קודם נבדקים כל המאגרים,
+אחר כך מתבצע `git pull --ff-only`, והקוד המחויב הנבחר ב־`release.json` מיוצא
+לתיקיית בניית Docker. אין clone חדש ואין העתקה של שינויים לא מחויבים או קבצים
+מקומיים לא מנוהלים. לפני pull יש להסדיר שינויים בקבצים מנוהלים בשרת.
+הייצוא נבדק לפי hashes לפני כל בנייה. עדכון קוד המקור עדיין אינו החלפת
+השירותים; מעבר הנתונים והפניית Nginx נעשים לפי מדריך הפרודקשן.
+
+המסלול הבא עם clone מיועד לשרת חדש שאין בו מאגרי מקור קיימים.
+
 Docker כבר הותקן ב־Bot1. הכנת הקוד והבנייה אינן מחליפות את השירותים הפעילים.
 יש להריץ את הפקודות כ־administrator, ללא sudo עבור Git או הכנת תיקיות הקוד.
 הסקריפט משתמש רק ב־Python הסטנדרטי וב־Git.
