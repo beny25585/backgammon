@@ -28,19 +28,18 @@ MANUAL = {
 }
 
 
-def private_command(args, log):
-    print('PRIVATE LOG: ' + str(log), flush=True)
-    with Path(log).open('xb') as stream:
-        os.chmod(log, 0o600)
-        with subprocess.Popen([str(item) for item in args], stdout=stream, stderr=subprocess.STDOUT) as process:
-            while process.poll() is None:
-                try:
-                    process.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    # Keep the already granted sudo ticket alive during a long user-run build.
-                    subprocess.run(['sudo', '-n', '-v'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    print('Still working; private log: ' + str(log), flush=True)
-            require(process.returncode == 0, 'Child command failed; inspect the preserved private log')
+def console_command(args, label):
+    print('RUN: ' + label, flush=True)
+    with subprocess.Popen([str(item) for item in args], stderr=subprocess.STDOUT) as process:
+        while process.poll() is None:
+            try:
+                process.wait(timeout=30)
+            except subprocess.TimeoutExpired:
+                # Keep the already granted sudo ticket alive during a long user-run build.
+                subprocess.run(['sudo', '-n', '-v'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                print('Still working: ' + label, flush=True)
+        require(process.returncode == 0,
+                f'{label} failed with exit code {process.returncode}; see output above')
 
 
 class Validation:
@@ -75,13 +74,11 @@ class Validation:
         self.name = 'backgammon-candidate-' + self.id
         self.tools = self.project / 'docs/tournament-e2e'
         self.stages = Stages(self.directory, self.plan)
-        self.logs = self.directory / 'logs'
-        self.logs.mkdir(mode=0o700, exist_ok=True)
-        self.stages.report['private_logs_directory'] = str(self.logs)
+        self.stages.report.pop('private_logs_directory', None)
         save(self.stages.file, self.stages.report)
 
     def run(self, label, args):
-        private_command(args, self.logs / (label + '-' + uuid.uuid4().hex[:8] + '.private.log'))
+        console_command(args, label)
 
     def base_compose(self, *args):
         return ['sudo', 'env', 'TRANSFER_DIR=' + str(self.rehearsal / 'transfer-v2'),
