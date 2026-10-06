@@ -8,6 +8,7 @@ import json
 PHASES = {'operation_complete', 'http_processing_complete', 'http_asgi_complete',
           'http_request_received', 'http_processing_started',
           'ready_state_processed', 'entry_join_received', 'entry_change_received',
+          'entry_change_published', 'entry_change_publish_complete',
           'entry_state_sent', 'presence_join_saved', 'pair_authorization_committed',
           'fixture_available_committed', 'game_seat_committed', 'room_started_committed',
           'club_entry_frame_received', 'game_socket_accepted', 'game_initial_state_sent', 'game_connection_started'}
@@ -47,7 +48,7 @@ def parse_events(text, session_id, service):
         for key in ('tournamentId', 'fixtureId', 'userId'):
             if type(row.get(key)) is int and row[key] > 0:
                 safe[key] = row[key]
-        for key in ('traceId', 'attemptId'):
+        for key in ('traceId', 'attemptId', 'notificationId'):
             if isinstance(row.get(key), str) and re.fullmatch(r'[a-f0-9]{32}', row[key]):
                 safe[key] = row[key]
         if isinstance(row.get('roomId'), str) and re.fullmatch(r'[a-f0-9-]{36}', row['roomId']):
@@ -58,6 +59,8 @@ def parse_events(text, session_id, service):
             safe['operation'] = row['operation']
         if instant(row.get('playableAt')) is not None:
             safe['playableAt'] = row['playableAt']
+        if instant(row.get('publishedAt')) is not None:
+            safe['publishedAt'] = row['publishedAt']
         for key in NUMBERS:
             if type(row.get(key)) in (int, float) and math.isfinite(row[key]) and row[key] >= 0:
                 safe[key] = row[key]
@@ -152,6 +155,23 @@ def build_report(summary, events, availability=()):
         metrics[operation] = {metric: distribution([row.get(metric) for row in rows])
                               for metric in ('queueMs', 'executionMs', 'sqlMs', 'sqlCount', 'lockStatementMs')}
     browser = summary.get('entryFlowEvents', [])
+    publications = {row['notificationId']: row for row in relevant
+                    if row['phase'] == 'entry_change_publish_complete'
+                    and row.get('succeeded') is True and 'notificationId' in row}
+    notifications = []
+    for row in relevant:
+        if row['phase'] != 'entry_change_received':
+            continue
+        publication = publications.get(row.get('notificationId'), {})
+        notifications.append({
+            'notificationId': row.get('notificationId'), 'fixtureId': row.get('fixtureId'),
+            'seat': row.get('seat'), 'traceId': row.get('traceId'),
+            'serverPhasesMs': {
+                'publishToHandlerMs': elapsed(instant(row['serverAt']), instant(row.get('publishedAt'))),
+                'publishCallMs': publication.get('executionMs'),
+                'publishCompleteToHandlerMs': elapsed(instant(row['serverAt']), instant(publication.get('serverAt'))),
+            },
+        })
     return {'version': 1, 'runId': summary['runId'], 'tournamentId': summary['tournamentId'],
             'sessionId': summary['targetSession'], 'browserClock': 'PC epoch milliseconds',
             'serverClock': 'server UTC epoch milliseconds', 'limitations': [
@@ -161,12 +181,14 @@ def build_report(summary, events, availability=()):
                 'Availability callbacks observe a committed playable fixture; a restart or already-playable save may be a later observation.',
                 'serverPlayableStoredAt is the persisted assignment timestamp, read once after the run; it is not a commit timestamp.',
                 'lastPresenceToAuthorizationMs requires both distinct seats; opponent wait is not processing latency.',
+                'Notification timing uses server wall clocks, which require alignment across hosts. Publication completion is not broker arrival; a handler may start before group_send returns.',
                 'Missing evidence stays null. Logging and browser observers add some measurement overhead.'],
             'coverage': {'serverEvents': len(relevant), 'browserEvents': len(browser),
                          'fixtures': len(fixtures), 'fixturesWithPairCommit': sum(row['pairAuthorizationCommittedAt'] is not None for row in fixtures),
                          'seatsWithCommit': sum(seat['serverPhasesMs']['authorizationToCommittedSeatMs'] is not None
                                                for row in fixtures for seat in row['seats'])},
             'serverMetrics': metrics, 'fixtures': fixtures, 'requests': requests, 'gameConnections': connections,
+            'entryNotifications': notifications,
             'serverEvents': relevant,
             'browserEvents': browser, 'requestCorrelations': [
                 {key: row.get(key) for key in ('label', 'path', 'startedAt', 'elapsedMs', 'serverTraceId')}

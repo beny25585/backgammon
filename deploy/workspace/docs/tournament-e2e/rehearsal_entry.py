@@ -198,9 +198,35 @@ def install():
 
 def install_tournament():
     from gamelink import consumers, views, entry_presence
+    from channels.layers import get_channel_layer
     from django.db import transaction
     from django.db.models.signals import post_save
     from tournaments.models import Fixture
+
+    layer = get_channel_layer()
+    original_group_send = layer.group_send
+
+    @wraps(original_group_send)
+    async def group_send(group, event):
+        if event.get('type') != 'club.entry_changed':
+            return await original_group_send(group, event)
+        token = context.set({'fixtureId': event['fixture_id']})
+        started = perf_counter()
+        succeeded = False
+        try:
+            emit('entry_change_published', notificationId=event.get('notification_id'),
+                 publishedAt=event.get('published_at'))
+            result = await original_group_send(group, event)
+            succeeded = True
+            return result
+        finally:
+            try:
+                emit('entry_change_publish_complete', notificationId=event.get('notification_id'),
+                     publishedAt=event.get('published_at'), succeeded=succeeded,
+                     executionMs=round((perf_counter() - started) * 1000, 3))
+            finally:
+                context.reset(token)
+    layer.group_send = group_send
 
     views._resolve_current_fixture = sync_span('resolve_current_fixture', views._resolve_current_fixture, identity_from_fixture)
     views._issue_game_ticket = sync_span('issue_ticket', views._issue_game_ticket)
@@ -313,7 +339,11 @@ def install_tournament():
                             values[dest] = event[source]
                 token = context.set(values)
                 try:
-                    emit('entry_join_received' if is_join else 'entry_change_received')
+                    fields = {} if is_join else {
+                        'notificationId': event.get('notification_id'),
+                        'publishedAt': event.get('published_at'),
+                    }
+                    emit('entry_join_received' if is_join else 'entry_change_received', **fields)
                     return await function(self, event, **kwargs)
                 finally:
                     context.reset(token)

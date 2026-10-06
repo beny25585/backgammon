@@ -15,6 +15,27 @@ class EntryReportTests(unittest.TestCase):
         return {'runId': 'run_test_123', 'tournamentId': 1, 'targetSession': 'a' * 32,
                 'matches': [{'fixtureId': 2}], 'entryFlowEvents': [], 'requests': []}
 
+    def test_notification_publication_is_correlated_to_each_handler(self):
+        notification = 'c' * 32
+        published = '2026-10-06T00:00:01+00:00'
+        rows = [self.event('entry_change_publish_complete', 2, notificationId=notification,
+                           publishedAt=published, succeeded=True, executionMs=1000),
+                self.event('entry_change_received', 5, notificationId=notification,
+                           publishedAt=published, seat='p1'),
+                self.event('entry_change_received', 6, notificationId=notification,
+                           publishedAt=published, seat='p2')]
+        parsed = parse_events('\n'.join('E2E_ADMISSION ' + json.dumps(row) for row in rows),
+                              'a' * 32, 'tournaments')
+        notifications = build_report(self.summary(), parsed)['entryNotifications']
+        self.assertEqual(notifications[0]['serverPhasesMs'], {
+            'publishToHandlerMs': 4000, 'publishCallMs': 1000, 'publishCompleteToHandlerMs': 3000})
+        self.assertEqual(notifications[1]['serverPhasesMs']['publishToHandlerMs'], 5000)
+
+    def test_missing_publication_does_not_invent_a_broker_delay(self):
+        rows = [self.event('entry_change_received', 5, notificationId='c' * 32)]
+        phases = build_report(self.summary(), rows)['entryNotifications'][0]['serverPhasesMs']
+        self.assertTrue(all(value is None for value in phases.values()))
+
     def test_parser_discards_secrets_other_sessions_and_raw_access_logs(self):
         event = self.event('game_seat_committed', 5, seat='p1', ticket='secret', path='?token=secret')
         text = 'GET /api/link/enter/?ticket=secret\nE2E_ADMISSION ' + json.dumps(event)
