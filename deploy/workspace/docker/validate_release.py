@@ -11,7 +11,7 @@ import uuid
 from types import SimpleNamespace
 from urllib.parse import urlsplit
 
-from validation_support import Postgres, Stages, command, read, require, save, sha, timestamp
+from validation_support import Postgres, Stages, command, declared_asset_sources, read, require, save, sha, timestamp
 
 ROOT = Path('/home/dev/backgammon-project')
 OLD_PROJECT = 'backgammon-rehearsal-20261005t184922z'
@@ -119,12 +119,7 @@ class Validation:
             require(value['project'] == OLD_PROJECT and value['service'] == service, 'Wrong snapshot container')
             if value['running'] and service not in ('postgres', 'tournaments-frontend'):
                 writers.append(name)
-            for mount in value['mounts']:
-                destination = mount['Destination']
-                if destination.startswith('/run/secrets/') or destination in (
-                        '/data/media', '/srv/media', '/opt/e2e/game.json', '/opt/e2e/tournaments.json',
-                        '/opt/e2e/analysis.json', '/opt/e2e/session.json'):
-                    roots.add(str(Path(mount['Source']).resolve(strict=True)))
+            roots.update(declared_asset_sources(value['mounts']))
         require(writers and roots, 'Missing rehearsal writers or declared secret/media mounts')
         names = {'backgammon_game', 'backgammon_tournaments', 'backgammon_analysis',
                  *context['databases'].values(), integration['analysis_database']}

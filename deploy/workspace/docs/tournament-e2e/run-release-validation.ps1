@@ -38,12 +38,15 @@ tools = root / 'tools/backgammon-tool-source'
 revision = data['revision']
 if not re.fullmatch('[a-f0-9]{40}', revision) or tools.is_symlink() or not (tools / '.git').is_file():
     raise ValueError('Expected the existing dedicated tool worktree and a published revision')
+print('SERVER CONNECTED: authorizing sudo; enter its password here if requested.', flush=True)
 subprocess.run(['sudo', '-v'], check=True)
+print('SUDO READY: checking the dedicated tool worktree.', flush=True)
 git = ['sudo', 'git', '-c', 'safe.directory=' + str(tools), '-C', str(tools)]
 top = subprocess.check_output(git + ['rev-parse', '--show-toplevel'], text=True).strip()
 if Path(top).resolve() != tools or subprocess.check_output(git + ['status', '--porcelain', '--untracked-files=all'], text=True).strip():
     raise ValueError('The permanent tool worktree is different or has local changes')
 if data['install']:
+    print('UPDATING TOOLS: ' + revision, flush=True)
     subprocess.run(git + ['fetch', 'origin', revision], check=True)
     subprocess.run(git + ['checkout', '--detach', revision], check=True)
     subprocess.run(git + ['sparse-checkout', 'set', 'deploy/workspace'], check=True)
@@ -54,15 +57,19 @@ release = json.loads((workspace / 'release.json').read_text())
 if release['image_tag'] != data['tag']:
     raise ValueError('Server and local release tags differ')
 os.umask(0o077)
-command = ['python3', str(workspace / 'docker/validate_release.py'), data['action']]
+command = ['python3', '-u', str(workspace / 'docker/validate_release.py'), data['action']]
 if data['action'] == 'manual':
     command += ['--check', data.get('check') or '', '--evidence', data.get('evidence') or '']
 subprocess.run(command, check=True)
 '@
     $taskProgram = $taskProgram.Replace('PAYLOAD64', $taskPayload64)
     $taskEncoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($taskProgram))
-    & ssh.exe -t $taskDestination "printf %s $taskEncoded | base64 --decode | python3" | Out-Host
-    return $LASTEXITCODE
+    # Interactive SSH inherits the current console; capture only its process/exit code.
+    # Piping stdout through Out-Host buffers prompts without a newline, including sudo.
+    $taskSsh = (Get-Command ssh.exe -ErrorAction Stop).Source
+    $taskSshArguments = '-t ' + $taskDestination + ' "printf %s ' + $taskEncoded + ' | base64 --decode | python3 -u"'
+    $taskSshProcess = Start-Process -FilePath $taskSsh -ArgumentList $taskSshArguments -NoNewWindow -Wait -PassThru
+    return $taskSshProcess.ExitCode
 }
 function Receive-ValidationFile([string]$Name) {
     & scp.exe "${taskDestination}:${taskRemoteReport}/$Name" (Join-Path $taskLocal $Name)

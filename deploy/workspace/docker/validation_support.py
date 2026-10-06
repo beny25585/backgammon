@@ -2,7 +2,7 @@
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -173,6 +173,21 @@ class Postgres:
                             'pg_restore', '-U', 'postgres', '-d', name, '--role', role,
                             '--single-transaction', '--exit-on-error', '--no-owner', '--no-acl'],
                            stdin=stream, check=True)
+
+
+def declared_asset_sources(mounts):
+    """Collect Docker paths; resolve/read them only in the privileged asset worker."""
+    roots = set()
+    for mount in mounts:
+        destination = mount['Destination']
+        if destination.startswith('/run/secrets/') or destination in (
+                '/data/media', '/srv/media', '/opt/e2e/game.json', '/opt/e2e/tournaments.json',
+                '/opt/e2e/analysis.json', '/opt/e2e/session.json'):
+            source = mount['Source']
+            require(isinstance(source, str) and PurePosixPath(source).is_absolute()
+                    and '..' not in PurePosixPath(source).parts, 'Invalid declared asset mount source')
+            roots.add(source)
+    return roots
 
 
 def asset_snapshot(roots, output):
