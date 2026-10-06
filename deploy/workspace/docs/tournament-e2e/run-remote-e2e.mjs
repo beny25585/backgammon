@@ -69,7 +69,7 @@ for (const file of manifest.harness_files) {
 if (harnessHash.digest('hex') !== target.harness_sha256) throw new Error('Local and server harness versions differ. Pull the reviewed Git commit first.')
 fs.writeFileSync(path.join(runDir, 'environment-summary.json'), JSON.stringify({
   profile: runtime.profile, target, sources, browser_machine: process.platform,
-  scope: 'Public test listener in existing host Nginx; R2 application images; separate fresh browser databases in the existing rehearsal PostgreSQL container.',
+  scope: 'Public test listener in existing host Nginx; application images pinned by target.images; separate fresh browser databases in the existing rehearsal PostgreSQL container.',
   exclusions: runtime.excluded_integrations,
   limitation: 'The game return-to-tournaments link in the R2 image was compiled for production port 443. This scenario navigates to the configured test origin directly and does not exercise that link.',
 }, null, 2))
