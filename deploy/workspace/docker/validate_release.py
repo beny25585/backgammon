@@ -28,19 +28,37 @@ MANUAL = {
 }
 
 
-def private_command(args, log):
+def private_command(args, log, *, live_output=False):
     print('PRIVATE LOG: ' + str(log), flush=True)
     with Path(log).open('xb') as stream:
         os.chmod(log, 0o600)
-        with subprocess.Popen([str(item) for item in args], stdout=stream, stderr=subprocess.STDOUT) as process:
-            while process.poll() is None:
-                try:
-                    process.wait(timeout=30)
-                except subprocess.TimeoutExpired:
-                    # Keep the already granted sudo ticket alive during a long user-run build.
-                    subprocess.run(['sudo', '-n', '-v'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    print('Still working; private log: ' + str(log), flush=True)
-            require(process.returncode == 0, 'Child command failed; inspect the preserved private log')
+        with Path(log).open('rb') as output:
+            def display_available_output():
+                # Read bytes so progress without a newline is also displayed immediately.
+                chunk = output.read(64 * 1024)
+                if not chunk:
+                    return False
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+                return True
+
+            with subprocess.Popen([str(item) for item in args], stdout=stream, stderr=subprocess.STDOUT) as process:
+                refresh_at = time.monotonic() + 30
+                while process.poll() is None:
+                    displayed = live_output and display_available_output()
+                    try:
+                        process.wait(timeout=0 if displayed else 0.2 if live_output else 30)
+                    except subprocess.TimeoutExpired:
+                        if time.monotonic() >= refresh_at:
+                            # Keep the already granted sudo ticket alive during a long user-run build.
+                            subprocess.run(['sudo', '-n', '-v'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            refresh_at = time.monotonic() + 30
+                            if not live_output:
+                                print('Still working; private log: ' + str(log), flush=True)
+                if live_output:
+                    while display_available_output():
+                        pass
+                require(process.returncode == 0, 'Child command failed; inspect the preserved private log')
 
 
 class Validation:
@@ -80,8 +98,9 @@ class Validation:
         self.stages.report['private_logs_directory'] = str(self.logs)
         save(self.stages.file, self.stages.report)
 
-    def run(self, label, args):
-        private_command(args, self.logs / (label + '-' + uuid.uuid4().hex[:8] + '.private.log'))
+    def run(self, label, args, *, live_output=False):
+        private_command(args, self.logs / (label + '-' + uuid.uuid4().hex[:8] + '.private.log'),
+                        live_output=live_output)
 
     def base_compose(self, *args):
         return ['sudo', 'env', 'TRANSFER_DIR=' + str(self.rehearsal / 'transfer-v2'),
@@ -215,7 +234,7 @@ class Validation:
         environment_file.write_text(environment, encoding='utf-8')
         environment_file.chmod(0o600)
         if not (self.project / '.built-images.json').exists():
-            self.run('build-seven-images', ['bash', self.project / 'docker/build_on_server.sh'])
+            self.run('build-seven-images', ['bash', self.project / 'docker/build_on_server.sh'], live_output=True)
         self.run('verify-images', ['python3', self.project / 'docker/release_images.py', '--sudo-docker'])
         built = read(self.project / '.built-images.json')
         require(built['infrastructure_revision'] == self.revision and built['sources'] == self.release['sources'],
