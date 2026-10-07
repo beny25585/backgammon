@@ -164,12 +164,21 @@ rehearsal = root / 'backups/backgammon-backups' / ('validation-' + plan['validat
 tools = root / 'sources/backgammon/deploy/workspace/docs/tournament-e2e'
 # Use the full published tools commit after tests pass and the canonical checkout is updated.
 approved_tools_revision = 'APPROVED_FULL_TOOL_COMMIT'
+subprocess.run(['python3', str(tools / 'copied_runtime.py'),
+    '--project', str(project), '--rehearsal', str(rehearsal),
+    '--tools-revision', approved_tools_revision], check=True)
 subprocess.run(['python3', str(tools / 'server_rehearsal.py'),
     'prepare-load', '--copied-load', '--project', str(project), '--rehearsal', str(rehearsal),
     '--tools-revision', approved_tools_revision], check=True)
 print('DOWNLOAD MANIFEST:', rehearsal / 'browser-load/server-client.json')
 PY
 ```
+
+`copied_runtime.py` מיועד ל־candidate שה־APIs שלו פועלים ושני עובדי הטורנירים שלו עדיין חסרים. הוא מאמת את מקור הכלים, תוכנית הפריסה, תמונות ה־APIs, מסדים/Redis, מקורות הסודות ונתיבי המאזין לפני שינוי שירותים. הוא יוצר `copied-runtime/tournaments.json` פרטי עם backend דואר מסוג dummy, תשלומים כבויים ומפתחות Push חדשים עם subject של כתובת הבדיקה. יתר ערכי הקובץ נשמרים. קובץ `/etc/backgammon-docker/tournaments.json` המשותף לתרגול הישן אינו משתנה. תוספת Compose נשמרת לצד הקובץ, ומוסיפה רשת יציאה רק ל־tournaments-api ול־push-worker. אין שינוי במקורות הפריסה או בנייה מחדש של תמונות.
+
+שלושת APIs של ה־candidate נוצרים מחדש כדי לתעד אותם קובצי Compose; רק שירותי הטורנירים מקבלים קובץ runtime אחר. כתובות ה־API במאזין 18443 מתעדכנות לאחר בדיקת בריאות. בכשל מתבצע ניסיון שחזור של שלושת APIs ושל המאזין, והעובדים שנוצרו בפעולה מוסרים ללא מחיקת volumes. קובצי ההכנה והקבלה נשמרים גם בכשל; אם השחזור נכשל, ההכנה נעצרת ואינה מתחילה שוב אוטומטית. העובדים הרגילים יכולים לעבד גם תורים קיימים בעותק הנתונים; ניקוי בדיקת הדפדפנים מכסה רק את משאבי ההרצה ואינו מבטל עיבוד רגיל של תורים.
+
+לפני הפעולה המשתמש מריץ `python3 -m unittest discover -s deploy/workspace/docs/tournament-e2e -p copied_runtime_test.py`. אלו בדיקות תצורה ללא Docker או גישה לנתונים. בדיקות תחביר/config בלבד אינן ראיית הפעלה בשרת או משלוח Push למכשיר.
 
 מורידים את `server-client.json` מהנתיב שההכנה הדפיסה אל קובץ פרטי חדש במחשב, למשל `docs/tournament-e2e-integrations/server-client-r7-load.json`. הקובץ כולל פרטי מנהל בדיקה; אין לשתף אותו. אין להשתמש בזהות מהרצה קודמת.
 
