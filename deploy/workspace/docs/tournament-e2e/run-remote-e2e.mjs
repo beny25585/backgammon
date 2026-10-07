@@ -145,7 +145,11 @@ finally {
       failure ||= error
       const reportFile = path.join(runDir, 'share-report/cleanup-report.json')
       if (fs.existsSync(reportFile)) serverReport = JSON.parse(fs.readFileSync(reportFile, 'utf8'))
-      console.error(`Load finalization needs attention. Retry: run-remote-tournament-e2e.ps1 -CleanupOnly -RunDirectory "${runDir}"`)
+      if (serverReport?.cleanup?.passed === true && serverReport.cleanup.servicesRestored === true) {
+        console.error('Browser/server verification failed; run data cleanup completed and services were restored.')
+      } else {
+        console.error(`Load finalization needs attention. Retry: run-remote-tournament-e2e.ps1 -CleanupOnly -RunDirectory "${runDir}"`)
+      }
     }
   }
   if (!performance.acceptance.passed) failure ||= new Error('Performance acceptance failed.')

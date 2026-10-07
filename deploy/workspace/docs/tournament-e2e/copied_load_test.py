@@ -12,6 +12,23 @@ import copied_load as load
 
 
 class CopiedLoadPreflightTests(unittest.TestCase):
+    def test_listener_api_role_and_session_are_checked(self):
+        session = {'identity': {'session_id': 'a' * 32}}
+        server = SimpleNamespace(HOST='test.invalid', ORIGIN='https://test.invalid:18443',
+            run=Mock(side_effect=[json.dumps({'kind': kind, 'schema_version': 1,
+                'session_id': 'a' * 32}) for kind in ('game', 'tournaments')]))
+        def require(value, message):
+            if not value:
+                raise ValueError(message)
+        server.require = require
+        load.check_api_roles(server, session)
+        self.assertEqual(server.run.call_count, 2)
+        for change in ({'kind': 'tournaments'}, {'session_id': 'b' * 32}, {'schema_version': 2}):
+            server.run = Mock(return_value=json.dumps(
+                dict(kind='game', schema_version=1, session_id='a' * 32) | change))
+            with self.assertRaisesRegex(ValueError, 'role differs'):
+                load.check_api_roles(server, session)
+
     def fixture(self, directory):
         root = Path(directory)
         state, tools = root / 'state', root / 'tools'

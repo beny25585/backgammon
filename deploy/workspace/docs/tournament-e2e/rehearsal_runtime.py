@@ -1,11 +1,70 @@
-"""Sanitized, read-only task evidence restricted to fresh browser databases."""
-from datetime import datetime, timezone
+"""Sanitized, read-only task evidence restricted to pinned browser databases."""
+from datetime import datetime, timedelta, timezone
 from contextlib import nullcontext
 import json
 
 RECURRING = ('reconcile_searches', 'expire_unstarted_games',
              'start_scheduled_tournaments', 'expire_tournament_entry_deadlines')
 RUNTIME_PATH = '/api/__e2e__/background-tasks/'
+PUSH_MODELS = ('frontend.pushdelivery', 'frontend.fixturepushdelivery',
+               'frontend.tablepushdelivery', 'frontend.tournamentreminderdelivery')
+
+
+def push_baseline(plan, baseline, identity):
+    """A copied queue exemption must come from this run's complete saved inventory."""
+    from load_cleanup import validate_plan
+    validate_plan(plan, identity)
+    if baseline.get('runId') != plan['runId'] or baseline.get('targetSession') != identity['session_id']:
+        raise ValueError('Push baseline belongs to another run or session')
+    models = baseline.get('models', {})
+    if any(not isinstance(models.get(label), list)
+           or any(not isinstance(pk, str) or not pk.isdecimal() for pk in models[label])
+           for label in PUSH_MODELS):
+        raise ValueError('Push baseline inventory is incomplete')
+    return {label: set(models[label]) for label in PUSH_MODELS}
+
+
+def push_queue_counts(rows, previous_ids, now):
+    """Use the staff health endpoint's queue thresholds, preserving old/new counts."""
+    result = {scope: dict(failed=0, retrying=0, delayed=0) for scope in ('inherited', 'new')}
+    for pk, attempts, next_attempt in rows:
+        counts = result['inherited' if str(pk) in previous_ids else 'new']
+        if next_attempt <= now:
+            if attempts >= 5:
+                counts['failed'] += 1
+            elif attempts > 0:
+                counts['retrying'] += 1
+        if attempts < 5 and next_attempt < now - timedelta(minutes=2):
+            counts['delayed'] += 1
+    return result
+
+
+def copied_push_snapshot(identity, now):
+    from pathlib import Path
+    from django.apps import apps
+    from load_cleanup import read
+    directory = Path('/data/e2e-audit')
+    plan_file = directory / 'load-plan.json'
+    # Preparation checks the service role before a browser run has a baseline.
+    if not plan_file.exists():
+        return None
+    plan = read(plan_file)
+    from load_cleanup import validate_plan
+    validate_plan(plan, identity)
+    baseline = read(directory / ('load-' + plan['runId'] + '-tournaments-baseline.json'))
+    previous = push_baseline(plan, baseline, identity)
+    counts = {scope: dict(failed=0, retrying=0, delayed=0) for scope in ('inherited', 'new')}
+    for label in PUSH_MODELS:
+        rows = apps.get_model(label).objects.filter(
+            delivered_at=None, discarded_at=None, next_attempt_at__lte=now
+        ).values_list('pk', 'attempts', 'next_attempt_at').iterator(chunk_size=1000)
+        model_counts = push_queue_counts(rows, previous[label], now)
+        for scope in counts:
+            for code in counts[scope]:
+                counts[scope][code] += model_counts[scope][code]
+    return {'run_id': plan['runId'], 'target_session': identity['session_id'],
+            **{scope + '_issues': [{'code': code, 'count': count} for code, count in values.items() if count]
+               for scope, values in counts.items()}}
 
 
 def snapshot(kind):
@@ -39,6 +98,8 @@ def snapshot(kind):
                 'name', 'status', 'updated_at', 'run_at', 'last_finished_at', 'last_error')
             push = PushWorkerStatus.objects.filter(pk=1).values('last_seen_at', 'expected_by').first()
             result['push'] = push
+            if identity.get('load_cleanup_version') == 1:
+                result['copied_push_health'] = copied_push_snapshot(identity, datetime.now(timezone.utc))
             result['admin_commands'] = {
                 'error_tasks': Task.objects.filter(name='deliver_admin_command').exclude(last_error='').count(),
                 'completed_tasks': Task.objects.filter(name='deliver_admin_command', status='done').count(),
@@ -73,6 +134,14 @@ def progress(before, after, push_required=False):
         if not advanced or not clean:
             issues.append(name + (': no successful progress observed' if clean else ': missing or task error'))
     if after['kind'] == 'tournaments':
+        scoped = after.get('copied_push_health')
+        if 'copied_push_health' in before or 'copied_push_health' in after:
+            first = before.get('copied_push_health')
+            if not first or not scoped or first['run_id'] != scoped['run_id'] or scoped['target_session'] != after['session_id']:
+                raise ValueError('Push snapshots belong to different runs')
+            checks['copied_push_queue'] = scoped
+            if scoped['new_issues']:
+                issues.append('push: deliveries created after the run baseline are unhealthy')
         admin = after['admin_commands']
         checks['admin_commands'] = {**admin, 'business_command_triggered': admin['completed_tasks'] > 0}
         if admin['error_tasks'] or admin['pending_without_task']:

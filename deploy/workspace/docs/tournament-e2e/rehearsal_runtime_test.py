@@ -1,8 +1,63 @@
 """Task progress checks: no Docker, application setup or database access."""
 import copy
 import unittest
+from datetime import datetime, timedelta, timezone
 
-from rehearsal_runtime import RECURRING, progress
+from rehearsal_runtime import RECURRING, PUSH_MODELS, progress, push_baseline, push_queue_counts
+
+
+class CopiedPushQueueTests(unittest.TestCase):
+    def fixture(self):
+        identity = {'session_id': 'a' * 32}
+        run = '20261007T112409900Z-014332a2'
+        suffix = ''.join(letter for letter in run if letter.isalnum())[-12:]
+        plan = {'runId': run, 'targetSession': identity['session_id'], 'playerCount': 32,
+                'usernames': [f'E2E{suffix}P{index + 1}' for index in range(32)],
+                'tournamentName': 'Disposable E2E ' + suffix}
+        baseline = {'runId': run, 'targetSession': identity['session_id'],
+                    'models': {label: ['7'] for label in PUSH_MODELS}}
+        return identity, plan, baseline
+
+    def test_complete_matching_inventory_exempts_only_exact_existing_ids(self):
+        identity, plan, baseline = self.fixture()
+        self.assertEqual(push_baseline(plan, baseline, identity)[PUSH_MODELS[0]], {'7'})
+        now = datetime.now(timezone.utc)
+        counts = push_queue_counts([(7, 5, now), (8, 5, now)], {'7'}, now)
+        self.assertEqual(counts['inherited']['failed'], 1)
+        self.assertEqual(counts['new']['failed'], 1)
+
+    def test_other_run_session_and_incomplete_inventory_are_rejected(self):
+        for field, value in [('runId', 'another-run'), ('targetSession', 'b' * 32), ('models', {})]:
+            identity, plan, baseline = self.fixture()
+            baseline[field] = value
+            with self.assertRaises(ValueError):
+                push_baseline(plan, baseline, identity)
+        identity, plan, baseline = self.fixture()
+        baseline['models'][PUSH_MODELS[0]] = [7]
+        with self.assertRaises(ValueError):
+            push_baseline(plan, baseline, identity)
+
+    def test_due_retry_and_delay_thresholds_match_staff_health(self):
+        now = datetime.now(timezone.utc)
+        counts = push_queue_counts([
+            (1, 0, now), (2, 1, now), (3, 4, now - timedelta(minutes=3)),
+            (4, 5, now), (5, 5, now + timedelta(seconds=1)),
+            (6, 0, now - timedelta(minutes=2)), (7, 0, now - timedelta(minutes=3)),
+        ], set(), now)
+        self.assertEqual(counts['new'], {'failed': 1, 'retrying': 2, 'delayed': 2})
+
+    def test_audit_preserves_inherited_issues_but_fails_new_queue_issues(self):
+        before, after = RuntimeProgressTests().snapshots()
+        scoped = {'run_id': 'current-run', 'target_session': before['session_id'],
+                  'inherited_issues': [{'code': 'failed', 'count': 37}], 'new_issues': []}
+        before['copied_push_health'] = copy.deepcopy(scoped)
+        after['copied_push_health'] = copy.deepcopy(scoped)
+        self.assertTrue(progress(before, after, push_required=True)['passed'])
+        after['copied_push_health']['new_issues'] = [{'code': 'failed', 'count': 1}]
+        self.assertFalse(progress(before, after, push_required=True)['passed'])
+        after['copied_push_health']['run_id'] = 'other-run'
+        with self.assertRaises(ValueError):
+            progress(before, after, push_required=True)
 
 
 class RuntimeProgressTests(unittest.TestCase):

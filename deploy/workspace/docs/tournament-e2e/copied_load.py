@@ -9,6 +9,7 @@ import uuid
 
 from rehearsal_context import require_browser_database_context
 from load_cleanup import validate_plan, save as save_receipt
+from copied_runtime import listener_content
 
 CONTAINER_CODE = frozenset(('rehearsal_app.py', 'load_cleanup.py', 'rehearsal_context.py',
     'rehearsal_integrations.py', 'rehearsal_entry.py', 'rehearsal_runtime.py',
@@ -68,6 +69,17 @@ def verify_prepared_tools(server, session):
                    'Prepared load tooling no longer uses the clean pinned source')
 
 
+def check_api_roles(server, session):
+    for kind, prefix in (('game', '/backgammon/api'), ('tournaments', '/tournaments-api')):
+        value = json.loads(server.run(['curl', '--fail', '--silent', '--show-error', '--max-time', '15',
+            '--noproxy', '*', '--resolve', server.HOST + ':18443:127.0.0.1',
+            '-H', 'X-E2E-Session: ' + session['identity']['session_id'],
+            server.ORIGIN + prefix + '/__e2e__/background-tasks/'], capture=True))
+        server.require(value.get('kind') == kind and value.get('schema_version') == 1
+                       and value.get('session_id') == session['identity']['session_id'],
+                       'Test listener API role differs: ' + kind)
+
+
 def prepare(server, args, state, tools):
     target = server.configure_target(args)
     server.require(target is not None, 'Copied load requires a managed release candidate')
@@ -91,6 +103,7 @@ def prepare(server, args, state, tools):
             server.verify_config(args, state)
             server.verify_live(previous)
             server.check_listener(previous)
+            check_api_roles(server, previous)
             print('COPIED LOAD ALREADY PREPARED; download ' + str(state / 'server-client.json'))
             return
         server.require((state / 'preparation-restored.json').is_file(),
@@ -242,9 +255,7 @@ def prepare(server, args, state, tools):
             server.run(['sudo', 'install', '-m', '0644', file, public / file.name])
         # Preserve routing; refresh the two recreated API addresses when Docker changes them.
         current_upstreams = server.discover_upstreams(session)
-        for service in ('game-api', 'tournaments-api'):
-            original = original.replace('http://' + previous_upstreams[service] + '/',
-                                        'http://' + current_upstreams[service] + '/')
+        original = listener_content(original, previous_upstreams, current_upstreams)
         # Replace only the two helper locations.
         listener = re.sub(r'\s*location = /(?:__e2e__/identity|backgammon/__e2e__/engine.js)\s*\{[^}]*\}', '', original)
         listener = re.sub(r'^# Session [a-f0-9]{32}[^\n]*\n', '', listener)
@@ -257,6 +268,7 @@ def prepare(server, args, state, tools):
         server.run(['sudo', 'systemctl', 'reload', 'nginx'])
         server.verify_live(session)
         server.check_listener(session)
+        check_api_roles(server, session)
         server.write(state / 'server-client.json', {'identity': identity, 'admin': session['admin'],
             'harness_files': session['harness_files'], 'load_control': {
                 'destination': 'administrator@38.247.146.17', 'project': str(args.project),
@@ -268,8 +280,7 @@ def prepare(server, args, state, tools):
         server.compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--force-recreate', 'game-api', 'tournaments-api')
         server.wait_application_health(session, time.monotonic() + 180, bootstrap=True)
         restored = (state / 'listener.before.conf').read_text()
-        for service, address in server.discover_upstreams(session).items():
-            restored = restored.replace('http://' + previous_upstreams[service] + '/', 'http://' + address + '/')
+        restored = listener_content(restored, previous_upstreams, server.discover_upstreams(session))
         server.write(state / 'listener.rollback.conf', restored)
         server.run(['sudo', 'install', '-m', '0644', state / 'listener.rollback.conf', server.CONF])
         server.run(['sudo', 'nginx', '-t'])

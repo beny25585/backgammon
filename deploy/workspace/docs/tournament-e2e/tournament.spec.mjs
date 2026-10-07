@@ -8,6 +8,7 @@ import { scenarioConfig } from './scenario-config.mjs'
 import { createSharedProgress } from './shared-progress.mjs'
 import { runtimeOrigins } from './destination-policy.mjs'
 import { installEntryFlowObserver } from './entry-flow.mjs'
+import { pushReadiness } from './push-readiness.mjs'
 
 const runDir = process.env.E2E_RUN_DIR
 if (!runDir || !path.isAbsolute(runDir)) throw new Error('E2E_RUN_DIR is required.')
@@ -438,7 +439,12 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     if (runtime.comprehensive_checks) {
       summary.backgroundWorkers = { before: await backgroundSnapshot(admin) }
       const health = await api(admin, '/admin/push-health', { timeout: 15000 })
-      expect(health.issues, 'Push worker is ready before creating player accounts').toEqual([])
+      const readiness = pushReadiness(health, summary.backgroundWorkers.before.tournaments, {
+        copied: runtime.remote_target?.load_cleanup_version === 1,
+        runId: runtime.run_id, sessionId: runtime.remote_target?.session_id,
+      })
+      summary.pushReadiness = { before: readiness }
+      expect(readiness.issues, 'Push worker and new deliveries are ready before creating player accounts').toEqual([])
       expect(health.last_worker_seen_at).toBeTruthy()
       const analyses = await api(admin, '/analyses', { timeout: 15000 })
       expect(Array.isArray(analyses.matches), 'Authenticated analysis bridge is ready').toBe(true)
@@ -694,7 +700,14 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       expect(config.enabled).toBe(true)
       expect(config.deliveryAvailable).toBe(true)
       const health = await api(admin, '/admin/push-health', { timeout: 15000 })
-      expect(health.issues).toEqual([])
+      const snapshot = runtime.remote_target?.load_cleanup_version === 1
+        ? (await backgroundSnapshot(admin)).tournaments : null
+      const readiness = pushReadiness(health, snapshot, {
+        copied: runtime.remote_target?.load_cleanup_version === 1,
+        runId: runtime.run_id, sessionId: runtime.remote_target?.session_id,
+      })
+      summary.pushReadiness = { ...summary.pushReadiness, after: readiness }
+      expect(readiness.issues, 'Push worker and deliveries created during this run are healthy').toEqual([])
       expect(health.last_worker_seen_at).toBeTruthy()
       summary.integrations.push = { configured: true, workerHealthy: true,
         lastWorkerSeenAt: health.last_worker_seen_at, deliveryTested: false,
