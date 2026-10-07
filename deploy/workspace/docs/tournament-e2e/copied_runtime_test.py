@@ -102,6 +102,16 @@ class CopiedRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'network'):
             runtime.verify_plan(effective, base, images, 'config', Path('/private/tournaments.json'))
 
+    def test_existing_outbound_network_is_preserved_without_network_override(self):
+        base, effective, images, overlay = self.overlay_fixture()
+        base['networks']['application']['internal'] = False
+        effective['networks']['application']['internal'] = False
+        self.assertNotIn('application', overlay['networks'])
+        runtime.verify_plan(effective, base, images, 'config', Path('/private/tournaments.json'), False)
+        effective['networks']['application']['internal'] = True
+        with self.assertRaisesRegex(ValueError, 'network'):
+            runtime.verify_plan(effective, base, images, 'config', Path('/private/tournaments.json'), False)
+
     def listener_fixture(self):
         before = {name: f'172.20.0.{index + 2}:{port}' for index, (name, port) in enumerate(runtime.server.UPSTREAM_PORTS.items())}
         after = dict(before)
@@ -139,19 +149,20 @@ class CopiedRuntimeTests(unittest.TestCase):
             return 'a' * 40 if 'rev-parse' in arguments else ''
         return args, target, tools, run
 
-    def test_non_internal_network_stops_before_files_or_containers_change(self):
+    def test_unverified_network_stops_before_files_or_containers_change(self):
         with TemporaryDirectory() as root:
             args, target, tools, run = self.preflight_fixture(root)
-            network = {'Name': runtime.server.PROJECT + '_application', 'Driver': 'bridge', 'Internal': False}
             with patch.object(runtime, '__file__', str(tools / 'copied_runtime.py')), \
                  patch.object(runtime.server, 'MANAGED_ROOT', Path(root)), \
                  patch.object(runtime.server, 'configure_target', return_value=target), \
                  patch.object(runtime.server, 'run', side_effect=run) as commands, \
-                 patch.object(runtime.server, 'docker', return_value=json.dumps([network])) as docker:
-                with self.assertRaisesRegex(ValueError, 'internal'):
+                 patch.object(runtime.server, 'verify_copied_network', side_effect=ValueError('candidate-owned bridge')) as network_check, \
+                 patch.object(runtime.server, 'docker') as docker:
+                with self.assertRaisesRegex(ValueError, 'candidate-owned'):
                     runtime.prepare(args)
             self.assertFalse((args.rehearsal / 'copied-runtime').exists())
-            self.assertEqual(docker.call_count, 1)
+            self.assertEqual(network_check.call_count, 1)
+            self.assertEqual(docker.call_count, 0)
             self.assertFalse(any('up' in call.args[0] for call in commands.call_args_list))
 
     def test_existing_browser_load_stops_runtime_reconfiguration(self):
@@ -163,11 +174,12 @@ class CopiedRuntimeTests(unittest.TestCase):
                  patch.object(runtime.server, 'MANAGED_ROOT', Path(root)), \
                  patch.object(runtime.server, 'configure_target', return_value=target), \
                  patch.object(runtime.server, 'run', side_effect=run) as commands, \
-                 patch.object(runtime.server, 'docker', return_value=json.dumps([network])) as docker:
+                 patch.object(runtime.server, 'verify_copied_network', return_value=(network, {'internal': True})), \
+                 patch.object(runtime.server, 'docker') as docker:
                 with self.assertRaisesRegex(ValueError, 'already has state'):
                     runtime.prepare(args)
             self.assertFalse((args.rehearsal / 'copied-runtime').exists())
-            self.assertEqual(docker.call_count, 1)
+            self.assertEqual(docker.call_count, 0)
             self.assertFalse(any('up' in call.args[0] for call in commands.call_args_list))
 
 

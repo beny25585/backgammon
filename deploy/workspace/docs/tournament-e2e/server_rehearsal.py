@@ -12,7 +12,8 @@ import subprocess
 import time
 import uuid
 
-from rehearsal_context import fresh_database_context, require_fresh_database_context, require_browser_database_context, rehearsal_project
+from rehearsal_context import (fresh_database_context, require_fresh_database_context,
+    require_browser_database_context, rehearsal_project, require_copied_network_context, require_copied_network_config)
 from rehearsal_integrations import require_integration_context, verify_integration_config
 
 PROJECT = 'backgammon-rehearsal-20261005t184922z'
@@ -619,11 +620,35 @@ def upstreams_for_addresses(addresses, subnets):
     return upstreams
 
 
+def verify_copied_network(identity):
+    """Read ownership, port bindings and all users of the candidate data volumes."""
+    project = rehearsal_project(identity)
+    require('validation_id' in identity, 'Copied network checks require a managed candidate')
+    network = json.loads(docker('network', 'inspect', project + '_application', capture=True))[0]
+    names = [project + '_' + kind + '_data' for kind in ('postgres', 'redis')]
+    volumes = json.loads(docker('volume', 'inspect', *names, capture=True))
+    identifiers = set(network.get('Containers', {}))
+    for name in names:
+        identifiers.update(docker('ps', '-aq', '--filter', 'volume=' + name, capture=True).splitlines())
+    require(identifiers, 'Candidate network has no containers')
+    # docker ps prints short IDs; network inspect uses full IDs. Deduplicate after inspect.
+    selected = ('{"Id":{{json .Id}},"Config":{"Labels":{{json .Config.Labels}}},'
+                '"HostConfig":{"PortBindings":{{json .HostConfig.PortBindings}}},"Mounts":{{json .Mounts}},'
+                '"NetworkSettings":{"Networks":{{json .NetworkSettings.Networks}},"Ports":{{json .NetworkSettings.Ports}}}}')
+    containers = [json.loads(line) for line in docker('inspect', *sorted(identifiers),
+                  '--type', 'container', '--format', selected, capture=True).splitlines()]
+    context = require_copied_network_context(identity, network, containers, {item['Name']: item for item in volumes})
+    return network, context
+
+
 def discover_upstreams(session):
     name = PROJECT + '_application'
-    network = json.loads(docker('network', 'inspect', name, capture=True))[0]
-    require(network['Name'] == name and network['Driver'] == 'bridge' and network['Internal'] is True,
-            'Expected the existing internal rehearsal bridge')
+    if session['identity'].get('load_cleanup_version') == 1 and 'network_context' in session['identity']:
+        network, _ = verify_copied_network(session['identity'])
+    else:
+        network = json.loads(docker('network', 'inspect', name, capture=True))[0]
+        require(network['Name'] == name and network['Driver'] == 'bridge' and network['Internal'] is True,
+                'Expected the existing internal rehearsal bridge')
     subnets = [item['Subnet'] for item in network['IPAM']['Config'] if item.get('Subnet')]
     addresses = {}
     for service in UPSTREAM_PORTS:
@@ -734,8 +759,11 @@ def verify_config(args, state, database_transition=False):
     session = json.loads((state / 'session.json').read_text())
     select_services(session['identity'])
     config = json.loads(compose(args, state, 'config', '--format', 'json', capture=True))
-    require(config['name'] == PROJECT and config['networks']['application']['internal'] is True,
-            'Expected the isolated copied rehearsal project')
+    if session['identity'].get('load_cleanup_version') == 1 and 'network_context' in session['identity']:
+        require_copied_network_config(session['identity'], config)
+    else:
+        require(config['name'] == PROJECT and config['networks']['application']['internal'] is True,
+                'Expected the isolated copied rehearsal project')
     require(not config['services']['postgres'].get('ports') and not config['services']['redis'].get('ports'),
             'Database/cache ports must not be published')
     require(same_directory(session['project_dir'], args.project)
@@ -767,6 +795,8 @@ def verify_live(session):
     select_services(session['identity'])
     context = require_browser_database_context(session['identity'])
     integration = require_integration_context(session['identity'])
+    if session['identity'].get('load_cleanup_version') == 1 and 'network_context' in session['identity']:
+        verify_copied_network(session['identity'])
     for service in APPS + WORKERS:
         state = inspect(service)
         require(state['project'] == PROJECT and state['service'] == service and state['status'] == 'running'

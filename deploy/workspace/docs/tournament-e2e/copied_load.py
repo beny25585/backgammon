@@ -121,8 +121,7 @@ def prepare(server, args, state, tools):
             target['project'] + '-' + service + '-1', '--format', '{{json .Config.Env}}', capture=True)))
         server.require(env['DB_HOST'] == 'postgres' and env['DB_NAME'] == context['databases'][kind]
                        and env['DB_USER'] == 'backgammon_' + kind, 'Candidate worker database differs')
-    network = json.loads(server.docker('network', 'inspect', target['project'] + '_application', capture=True))[0]
-    server.require(network['Internal'] is True, 'Candidate application network must stay internal')
+    _, identity['network_context'] = server.verify_copied_network(identity)
     server.require(server.CONF.exists(), 'Copied load only attaches to an existing test listener')
     original = server.run(['sudo', 'cat', server.CONF], capture=True)
     previous_upstreams = server.discover_upstreams({'identity': identity})

@@ -87,7 +87,7 @@ def runtime_overlay(images, secret, configuration):
     for name in ('tournaments-api', 'push-worker'):
         services[name]['networks'] = ['application', 'integrations_egress']
     return {'services': services, 'secrets': {secret: {'file': str(configuration)}},
-            'networks': {'application': {'internal': True}, 'integrations_egress': {'internal': False}}}
+            'networks': {'integrations_egress': {'internal': False}}}
 
 
 def listener_content(original, before, after):
@@ -176,9 +176,9 @@ def check_runtime():
                   '/opt/docker/runtime_env.py', 'python', '-c', RUNTIME_CHECK)
 
 
-def verify_plan(config, base, images, secret, configuration):
+def verify_plan(config, base, images, secret, configuration, network_internal=True):
     server.require(config['name'] == base['name'] == server.PROJECT
-                   and config['networks']['application']['internal'] is True, 'Candidate network differs')
+                   and config['networks']['application'].get('internal', False) is network_internal, 'Candidate network differs')
     for name, item in config['services'].items():
         previous = base['services'][name]
         server.require(item.get('environment') == previous.get('environment')
@@ -216,16 +216,16 @@ def prepare(args):
     built = json.loads((args.project / '.built-images.json').read_text())
     images = {kind: value['id'] for kind, value in built['images'].items()}
     server.require(built['image_tag'] == target['image_tag'] and built['sources'] == target['sources'], 'Candidate image inventory differs')
-    network = json.loads(server.docker('network', 'inspect', server.PROJECT + '_application', capture=True))[0]
-    server.require(network['Name'] == server.PROJECT + '_application' and network['Driver'] == 'bridge'
-                   and network['Internal'] is True, 'Candidate application network must be internal')
+    network, network_context = server.verify_copied_network(target)
+    network_identity = dict(target, network_context=network_context)
     state = args.rehearsal / 'copied-runtime'
     server.require(not state.is_symlink(), 'Unsafe runtime preparation directory')
     if state.exists():
         receipt = json.loads((state / 'receipt.json').read_text())
         server.require(receipt['validation_id'] == target['validation_id'], 'Runtime state belongs to another candidate')
         if receipt['status'] == 'ready':
-            server.require(digest(private_read(state / 'tournaments.json')) == receipt['configuration_sha256']
+            server.require(receipt.get('network_context') == network_context
+                           and digest(private_read(state / 'tournaments.json')) == receipt['configuration_sha256']
                            and digest((state / 'compose.runtime.json').read_text().strip()) == receipt['overlay_sha256']
                            and (state / 'compose.isolation.yaml').read_text() == ISOLATION_OVERLAY, 'Prepared runtime files changed')
             for name in ('tournaments-api',) + NEW_WORKERS:
@@ -253,6 +253,7 @@ def prepare(args):
         server.require(not server.docker('ps', '-aq', '--filter', 'label=com.docker.compose.project=' + server.PROJECT,
                        '--filter', 'label=com.docker.compose.service=' + name, capture=True), 'Worker already exists: ' + name)
     base = json.loads(compose(args, files, 'config', '--format', 'json', capture=True))
+    server.require_copied_network_config(network_identity, base)
     context = {'purpose': 'copied-browser-e2e', 'databases': {}, 'markers': {}, 'redis_databases': {}}
     for name in APIS:
         value = container(name)
@@ -319,6 +320,7 @@ def prepare(args):
     server.write(state / 'compose.isolation.yaml', ISOLATION_OVERLAY)
     server.write(state / 'listener.before.conf', original_listener)
     receipt = {'validation_id': target['validation_id'], 'status': 'staged', 'base_files': list(map(str, files)),
+               'network_context': network_context,
                'configuration_sha256': digest(private_read(state / 'tournaments.json')),
                'overlay_sha256': digest((state / 'compose.runtime.json').read_text().strip())}
     receipt_file = state / 'receipt.json'
@@ -327,7 +329,8 @@ def prepare(args):
     changed = False
     try:
         config = json.loads(compose(args, modified_files, 'config', '--format', 'json', capture=True))
-        verify_plan(config, base, images, secret, state / 'tournaments.json')
+        verify_plan(config, base, images, secret, state / 'tournaments.json', network_context['internal'])
+        server.require_copied_network_config(network_identity, config)
         # Pin APIs to the existing images; all three receive the same recorded Compose files.
         changed = True
         compose(args, modified_files, 'up', '-d', '--no-build', '--no-deps', '--force-recreate', *APIS)
@@ -344,6 +347,7 @@ def prepare(args):
                                and mount['Destination'] == api_environment['RUNTIME_CONFIG_FILE']
                                for mount in container(name)['Mounts']), 'Worker private configuration is missing')
         server.require(private_read(source) == original_configuration, 'Shared runtime file changed during preparation')
+        server.verify_copied_network(network_identity)
         receipt['status'] = 'ready'
     except BaseException:
         if changed:
