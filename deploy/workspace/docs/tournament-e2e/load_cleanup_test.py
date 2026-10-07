@@ -99,7 +99,7 @@ class CollectorTests(unittest.TestCase):
 
 
 class CleanupRestorationTests(unittest.TestCase):
-    def scenario(self, *, fail=False, interrupted=False, audit_fail=False):
+    def scenario(self, *, fail=False, interrupted=False, audit_fail=False, routing_fail=False):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         state = Path(temporary.name)
@@ -148,16 +148,27 @@ class CleanupRestorationTests(unittest.TestCase):
                 (state / 'audit' / ('load-' + run + '-' + kind + '-cleanup.json')).write_text(json.dumps({
                     'runId': run, 'targetSession': plan['targetSession'], 'kind': kind, 'passed': True}))
         session = {'identity': {'session_id': plan['targetSession'], 'images': {kind: kind for kind in services.values()}}}
+        def routing(_server, _state, _session):
+            self.assertIs(_server, server)
+            self.assertEqual(_state, state)
+            self.assertIs(_session, session)
+            self.assertTrue(all(value == 'running' for value in statuses.values()))
+            calls.append('restore_routing')
+            if routing_fail:
+                raise ValueError('Injected routing failure')
+            return {'upstreamsChanged': False, 'apiRolesVerified': True}
         args = SimpleNamespace(summary=None)
         if audit_fail:
             args.summary = state / 'browser-summary.json'
             args.summary.write_text(json.dumps({'runId': run, 'targetSession': plan['targetSession'], 'status': 'passed'}))
-        with patch('copied_load.run_app', app):
-            if fail or audit_fail:
+        with patch('copied_load.run_app', app), patch(
+                'copied_load.refresh_restored_listener', side_effect=routing) as restore_routing:
+            if fail or audit_fail or routing_fail:
                 with self.assertRaises(ValueError):
                     finish_locked(server, args, state, session, cleanup_only=not audit_fail)
             else:
                 finish_locked(server, args, state, session, cleanup_only=True)
+            restore_routing.assert_called_once_with(server, state, session)
         return calls, statuses, lock, json.loads((state / ('load-' + run + '-report.json')).read_text())
 
     def test_failed_delete_restores_services_and_retains_recovery_lock(self):
@@ -166,6 +177,9 @@ class CleanupRestorationTests(unittest.TestCase):
         self.assertTrue(all(value == 'running' for value in statuses.values()))
         self.assertTrue(lock.exists())
         self.assertFalse(report['cleanup']['passed'])
+        self.assertEqual(report['cleanup']['status'], 'failed')
+        self.assertEqual(report['cleanup']['phase'], 'cleanup_game')
+        self.assertTrue(report['cleanup']['servicesRestored'])
 
     def test_retry_after_a_killed_process_restores_originally_running_services(self):
         calls, statuses, lock, report = self.scenario(interrupted=True)
@@ -173,6 +187,8 @@ class CleanupRestorationTests(unittest.TestCase):
         self.assertTrue(all(value == 'running' for value in statuses.values()))
         self.assertFalse(lock.exists())
         self.assertTrue(report['cleanup']['passed'])
+        self.assertTrue(report['cleanup']['servicesRestored'])
+        self.assertTrue(report['cleanup']['routingRestoration']['apiRolesVerified'])
         self.assertFalse(report['passed'])
 
     def test_an_audit_failure_still_cleans_and_preserves_the_failed_result(self):
@@ -181,6 +197,18 @@ class CleanupRestorationTests(unittest.TestCase):
         self.assertFalse(report['serverVerification']['passed'])
         self.assertFalse(report['passed'])
         self.assertFalse(lock.exists())
+
+    def test_failed_routing_restoration_retains_recovery_lock_and_failed_result(self):
+        calls, statuses, lock, report = self.scenario(routing_fail=True)
+        self.assertIn('start', calls)
+        self.assertIn('restore_routing', calls)
+        self.assertTrue(all(value == 'running' for value in statuses.values()))
+        self.assertTrue(lock.exists())
+        self.assertFalse(report['cleanup']['passed'])
+        self.assertFalse(report['cleanup']['servicesRestored'])
+        self.assertEqual(report['cleanup']['status'], 'restore_failed')
+        self.assertEqual(report['cleanup']['restoreErrorType'], 'ValueError')
+        self.assertFalse(report['passed'])
 
 
 if __name__ == '__main__':
