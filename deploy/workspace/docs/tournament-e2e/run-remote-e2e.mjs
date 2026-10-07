@@ -10,14 +10,22 @@ import { isDeepStrictEqual } from 'node:util'
 import { runtimeOrigins } from './destination-policy.mjs'
 import { findWorkspace, sourceVersions } from './source-versions.mjs'
 import { writePerformanceReport } from './performance-report.mjs'
+import { serverAction, validateControl, cleanupSavedRun } from './remote-load-control.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const workspace = findWorkspace(here)
+if (process.argv[2] === '--cleanup-only') {
+  await cleanupSavedRun(process.argv[3])
+  console.log('Saved run cleanup completed; reports preserved.')
+  process.exit(0)
+}
 const [manifestFile, playerArgument = '16', checkScope = 'auto'] = process.argv.slice(2)
 const playerCount = Number(playerArgument)
 if (!manifestFile || ![16, 32].includes(playerCount)) throw new Error('Pass the private server-client.json and 16 or 32.')
 const manifest = JSON.parse(fs.readFileSync(path.resolve(manifestFile), 'utf8'))
 const target = manifest.identity
+const copiedLoad = target?.load_cleanup_version === 1
+if (copiedLoad) validateControl(manifest)
 const comprehensive = checkScope === 'comprehensive' || Boolean(target?.integrations)
 if (!['auto', 'comprehensive'].includes(checkScope)) throw new Error('Unsupported check scope.')
 if (comprehensive && (target?.runtime_checks_version !== 1 ||
@@ -68,7 +76,8 @@ fs.writeFileSync(path.join(runDir, 'config.json'), JSON.stringify(runtime, null,
 fs.writeFileSync(path.join(runDir, 'release-reference.json'), JSON.stringify({ schema_version: 1, sources: target.sources }), { flag: 'wx', mode: 0o600 })
 const harnessHash = createHash('sha256')
 for (const file of manifest.harness_files) {
-  if (!/^[a-z0-9][a-z0-9_.-]*\.(mjs|ps1|py|Dockerfile)$/.test(file) && file !== 'remote-engine.Dockerfile') {
+  if (!/^[a-z0-9][a-z0-9_.-]*\.(mjs|ps1|py|Dockerfile)$/.test(file) && file !== 'remote-engine.Dockerfile'
+    && !(copiedLoad && file === 'INTEGRATIONS.he.md')) {
     throw new Error('Invalid public harness file name.')
   }
   harnessHash.update(file + '\0').update(fs.readFileSync(path.join(here, file)))
@@ -78,7 +87,8 @@ const sources = sourceVersions(workspace, path.join(runDir, 'release-reference.j
 fs.writeFileSync(path.join(runDir, 'environment-summary.json'), JSON.stringify({
   profile: runtime.profile, target, sources, browser_machine: process.platform,
   comprehensive_checks: comprehensive,
-  scope: 'Public test listener in existing host Nginx; application images pinned by target.images; separate fresh browser databases in the existing rehearsal PostgreSQL container.',
+  scope: copiedLoad ? 'Copied candidate databases; exact run-owned data is cleaned after the server audit; previous rows are protected.'
+    : 'Public test listener in existing host Nginx; application images pinned by target.images; separate fresh browser databases in the existing rehearsal PostgreSQL container.',
   exclusions: runtime.excluded_integrations,
   limitation: target.validation_id
     ? 'The return link is compiled as a relative path; verify it manually on the physical device.'
@@ -87,11 +97,24 @@ fs.writeFileSync(path.join(runDir, 'environment-summary.json'), JSON.stringify({
 const require = createRequire(path.join(workspace, 'Backgammon Game/frontend/package.json'))
 let failure
 let browserPassed = false
+let serverReport
+let loadBeginAttempted = false
+if (copiedLoad) {
+  const suffix = runId.replace(/[^a-z0-9]/gi, '').slice(-12)
+  fs.writeFileSync(path.join(runDir, 'load-plan.json'), JSON.stringify({ runId, targetSession: target.session_id,
+    playerCount, usernames: Array.from({ length: playerCount }, (_, index) => `E2E${suffix}P${index + 1}`),
+    tournamentName: `Disposable E2E ${suffix}` }, null, 2), { flag: 'wx', mode: 0o600 })
+  fs.writeFileSync(path.join(runDir, 'load-control.private.json'), JSON.stringify(manifest), { flag: 'wx', mode: 0o600 })
+}
 let child
 const stop = () => child?.kill()
 process.on('SIGINT', stop)
 process.on('SIGTERM', stop)
 try {
+  if (copiedLoad) {
+    loadBeginAttempted = true
+    await serverAction(manifest, 'begin-load', runDir, path.join(runDir, 'load-plan.json'))
+  }
   console.log(`${playerCount} players through ${target.origin}; no local databases or services. Artifacts: ${runDir}`)
   const exitCode = await new Promise((resolve, reject) => {
     child = spawn(process.execPath, [require.resolve('@playwright/test/cli'), 'test', '--config', path.join(here, 'playwright.config.mjs')], {
@@ -109,20 +132,38 @@ try {
 finally {
   process.removeListener('SIGINT', stop)
   process.removeListener('SIGTERM', stop)
-  const performance = writePerformanceReport(runDir)
+  let performance = { acceptance: { passed: false, reason: 'Performance report unavailable' } }
+  try { performance = writePerformanceReport(runDir) }
+  catch (error) { failure ||= error }
+  if (copiedLoad && loadBeginAttempted) {
+    try {
+      const summaryFile = path.join(runDir, 'tournament-summary.json')
+      if (!fs.existsSync(summaryFile)) fs.writeFileSync(summaryFile, JSON.stringify({ runId,
+        targetSession: target.session_id, status: 'failed', matches: [], playerCount }))
+      serverReport = await serverAction(manifest, 'finish-load', runDir, summaryFile)
+    } catch (error) {
+      failure ||= error
+      const reportFile = path.join(runDir, 'share-report/cleanup-report.json')
+      if (fs.existsSync(reportFile)) serverReport = JSON.parse(fs.readFileSync(reportFile, 'utf8'))
+      console.error(`Load finalization needs attention. Retry: run-remote-tournament-e2e.ps1 -CleanupOnly -RunDirectory "${runDir}"`)
+    }
+  }
   if (!performance.acceptance.passed) failure ||= new Error('Performance acceptance failed.')
   fs.writeFileSync(path.join(runDir, 'run-summary.json'), JSON.stringify({
-    passed: false, browserPassed, performanceAcceptance: performance.acceptance,
+    passed: !failure && copiedLoad && browserPassed && performance.acceptance.passed === true && serverReport?.passed === true,
+    browserPassed, performanceAcceptance: performance.acceptance,
     comprehensiveChecks: comprehensive,
-    serverVerification: 'required: upload tournament-summary.json and run the server audit',
+    serverVerification: copiedLoad ? serverReport?.serverVerification || { passed: false, status: 'incomplete' }
+      : 'required: upload tournament-summary.json and run the server audit',
+    ...(copiedLoad ? { cleanup: serverReport?.cleanup || { passed: false, status: 'incomplete' } } : {}),
     runId, targetSession: target.session_id, error: failure?.message || null,
   }, null, 2))
   const share = path.join(runDir, 'share-report')
-  fs.mkdirSync(share)
+  fs.mkdirSync(share, { recursive: true })
   for (const file of ['run-summary.json', 'tournament-summary.json', 'performance-summary.json', 'environment-summary.json', 'browser-events.ndjson']) {
     if (fs.existsSync(path.join(runDir, file))) fs.copyFileSync(path.join(runDir, file), path.join(share, file))
   }
-  console.log(`UPLOAD FOR SERVER AUDIT: ${path.join(runDir, 'tournament-summary.json')}`)
+  if (!copiedLoad) console.log(`UPLOAD FOR SERVER AUDIT: ${path.join(runDir, 'tournament-summary.json')}`)
   console.log(`SAFE REPORT DIRECTORY: ${share}`)
 }
 process.exitCode = failure ? 1 : 0

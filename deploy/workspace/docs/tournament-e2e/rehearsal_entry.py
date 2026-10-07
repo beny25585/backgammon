@@ -15,7 +15,7 @@ import re
 from time import perf_counter
 import uuid
 
-from rehearsal_context import require_fresh_database_context
+from rehearsal_context import require_browser_database_context
 
 
 context = ContextVar('e2e_entry_context', default=None)
@@ -26,7 +26,7 @@ KINDS = {'game': 'backgammon_project.settings_docker', 'tournaments': 'tournamen
 
 
 def validate_settings(identity, kind, database, redis_url):
-    expected = require_fresh_database_context(identity)
+    expected = require_browser_database_context(identity)
     if kind not in KINDS or database.get('ENGINE') != 'django.db.backends.postgresql' \
             or database.get('NAME') != expected['databases'][kind] \
             or database.get('HOST') != 'postgres' or database.get('USER') != 'backgammon_' + kind \
@@ -183,6 +183,15 @@ def install():
     if kind == 'game':
         from game.link import views
         from game import entry_lifecycle
+        if identity.get('load_cleanup_version') == 1:
+            from load_cleanup import guard_retired_ticket
+            original_verify = views.verify_ticket
+            @wraps(original_verify)
+            def verify_active_ticket(*args, **kwargs):
+                ticket = original_verify(*args, **kwargs)
+                guard_retired_ticket(ticket)
+                return ticket
+            views.verify_ticket = verify_active_ticket
         for name, operation, update in (
             ('verify_ticket', 'verify_ticket', identity_from_ticket),
             ('resolve_user', 'resolve_identity', None),

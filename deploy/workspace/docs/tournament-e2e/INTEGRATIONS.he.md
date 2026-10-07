@@ -2,6 +2,8 @@
 
 לבנייה וקבלה של הגרסה המועמדת בשלבים 1–4 בפקודה אחת: [RELEASE_VALIDATION.he.md](RELEASE_VALIDATION.he.md). היא כוללת בניית תמונות חדשות ואיסוף אוטומטי של הדוחות. ההוראות בהמשך מסמך זה מתייחסות להרצה ההיסטורית `backgammon-rehearsal-20261005t184922z`. האתר הרגיל ב־443 דורש מעבר נפרד; פרסום תיקונים ב־Git אינו ראיה להפעלתם ב־Docker.
 
+להרצת 32 שחקנים על עותק הנתונים הקיים של `r7`, עם ניקוי אוטומטי, משתמשים בסעיף „בדיקת 32 שחקנים על עותק הנתונים של r7” שבהמשך. פרסום הכלים ב־Git אושר ב־07.10.2026; הם טרם הותקנו או הורצו בשרת.
+
 ## מקור קבוע ואימות ההרצה הקיימת
 
 המקור היחיד הוא `deploy/workspace/docs/tournament-e2e` במאגר `beny25585/backgammon`, בענף `master`. תיקיות `docs/tournament-e2e*` בשורש סביבת העבודה שומרות דוחות והגדרות פרטיות; המפעילים הישנים מפנים למקור הזה. אין להעתיק שוב את קוד הכלים או ליצור חבילת tar.
@@ -119,3 +121,73 @@ python3 "$taskTools/rehearsal_integrations.py" restore --project "$taskProject" 
 ```
 
 השחזור מאמת את תוכנית הפעולה, עוצר את שירותי הבדיקה, מחזיר את ההגדרות והכלים הקודמים ומפעיל שוב את סביבת הבדיקה הקודמת. אין מחיקת מסדים או נפחים.
+# בדיקת 32 שחקנים על עותק הנתונים של r7
+
+נוסף מסלול `copied-browser-e2e` עם ניקוי לפי הרצה. הוא הוכן מקומית ב־07.10.2026 לפי אישור המשתמש. בדיקות התחביר אינן הוכחת הרצה: tests, הכנת השרת, בדיקת 32 השחקנים והמחיקה בפועל עדיין לא הורצו. ניסיון הקריאה של העוזר בשרת נעצר באימות SSH.
+
+המסלול משתמש באותו תרחיש דפדפן: 32 חשבונות, 16 משחקים בסיבוב הראשון ו־31 משחקים עד הזוכה. הוא מתייחס למסדי `r7` המועתקים במפורש; המסלול הישן עדיין דורש מסדים חדשים ומסרב לקבל מסדים מועתקים.
+
+לפני ההרצה נשמרים שמות מדויקים של החשבונות והטורניר ותמונת מזהים של הרשומות הקיימות בשלושת המסדים. בסיום נאספים דוחות, נבדקים המשחקים והארנק, ונמחקים נתוני ההרצה בלבד: חשבונות השחקנים ומנהל הבדיקה, המשתתפים, הטורניר, הדירוגים, תנועות הארנק, החדרים, ההיסטוריה, התוצאות, האנליזות, משימות המסירה, הסשנים, כרטיסי הכניסה ומזהי callbacks. בדיקת מחיקות נגררות ו־SET_NULL עוצרת מחיקה שתשפיע על רשומה שהייתה קיימת לפני ההרצה. דוחות, קבלות ניקוי ומזהי חשבונות שפרשו מהבדיקה נשמרים כראיות; האחרונים מונעים כניסה חוזרת עם כרטיס ישן אחרי הניקוי.
+
+אין איפוס מסד, איפוס sequences, מחיקת volumes או flush של Redis. תשתית משותפת כגון עבודות מחזוריות, פעימות עובדים ומספר גרסת הלובי נשארת חלק מהמערכת. הניקוי אינו מבטל עדכונים רגילים שביצעו העובדים בזמן הבדיקה. בזמן המחיקה שירותי הכתיבה של ה־candidate נעצרים זמנית; רשימת השירותים שפעלו נשמרת לפני העצירה ומוחזרת גם בניסיון חוזר אחרי ניתוק. השירותים הציבוריים בפורט 443 אינם חלק מהפעולה.
+
+## אימות הכלים במחשב לפני התקנה
+
+המשתמש מריץ tests לפי חלוקת העבודה:
+
+```powershell
+$taskTools = 'C:\Users\User\Desktop\projects\backgammon\Backgammon Game\deploy\workspace\docs\tournament-e2e'
+$taskPython = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe'
+& $taskPython -m unittest discover -s $taskTools -p '*_test.py'
+node.exe --test "$taskTools\remote-load-control.test.mjs" "$taskTools\destination-policy.test.mjs"
+```
+
+נוספו בדיקות להגנות המסדים, לשמות המדויקים, למחיקות נגררות של רשומות קיימות, ל־SET_NULL, לניקוי חוזר ולשחזור שירותים אחרי כשל או ניתוק. הן משתמשות בדמויי שירותים/Collector; הן אינן הוכחת Django/PostgreSQL או מחיקה בשרת. נדרש תרגול נוסף על candidate מבודד עם כשל באמצע הרשמה, טורניר חלקי, כשל אנליזה וניקוי חוזר לפני הסתמכות על ההרצה המלאה. אין צורך לבנות מחדש את שבע תמונות היישום בשביל השינוי הזה.
+
+## התקנת הכלים והכנה בשרת — המשתמש מריץ
+
+פרסום הכלים ב־Git אושר במפורש ב־07.10.2026. אחרי הרצת tests צריך לעדכן את ה־checkout הקבוע בשרת: `/home/dev/backgammon-project/sources/backgammon`. אין להעתיק עותק כלים נוסף אל תיקיית הפריסה. פרסום ב־Git אינו התקנה או הפעלה בשרת. ההכנה דורשת SHA מלא של מקור כלים נקי שפורסם באישור, ותתעד אותו בנפרד מגרסאות תמונות `r7`. הקוד והמחשב חייבים להתאים גם לחתימת מלאי הכלים שמופיעה בזהות ההרצה.
+
+אין להחליף קבצים בזמן שהרצת בדיקה פעילה. ההכנה הבאה מאמתת את תמונות היישום, פרויקט Docker, מסדים/סמני שחזור, כתובות callbacks, רשת פנימית ותצורת האינטגרציות. היא מסרבת לתשלומים או דואר פעילים. היא מתקינה observer על שני APIs של הבדיקה ועל נתיבי העזר ב־Nginx שבפורט 18443; ה־APIs נוצרים מחדש. רק עזר המשחק הטהור נבנה בנפרד, באמצעות builder מוגבל משאבים שכבר קיים ל־r7. כשל במהלך ההפעלה גורר ניסיון שחזור של תצורת ה־APIs וה־listener הקודמים; מצב חלקי והראיות נשמרים.
+
+בטרמינל השרת:
+
+```bash
+cd /home/dev/backgammon-project/sources/backgammon
+python3 - <<'PY'
+import json, subprocess
+from pathlib import Path
+root = Path('/home/dev/backgammon-project')
+project = root / 'deploy/backgammon-deploy/backgammon-production-candidate-20261007-r7'
+plan = json.loads((root / 'reports/release-validation' / project.name / 'plan.json').read_text())
+rehearsal = root / 'backups/backgammon-backups' / ('validation-' + plan['validation_id']) / 'docker-rehearsal'
+tools = root / 'sources/backgammon/deploy/workspace/docs/tournament-e2e'
+# Use the full published tools commit after tests pass and the canonical checkout is updated.
+approved_tools_revision = 'APPROVED_FULL_TOOL_COMMIT'
+subprocess.run(['python3', str(tools / 'server_rehearsal.py'),
+    'prepare-load', '--copied-load', '--project', str(project), '--rehearsal', str(rehearsal),
+    '--tools-revision', approved_tools_revision], check=True)
+print('DOWNLOAD MANIFEST:', rehearsal / 'browser-load/server-client.json')
+PY
+```
+
+מורידים את `server-client.json` מהנתיב שההכנה הדפיסה אל קובץ פרטי חדש במחשב, למשל `docs/tournament-e2e-integrations/server-client-r7-load.json`. הקובץ כולל פרטי מנהל בדיקה; אין לשתף אותו. אין להשתמש בזהות מהרצה קודמת.
+
+## הרצה וניקוי חוזר
+
+```powershell
+& 'C:\Users\User\Desktop\projects\backgammon\docs\tournament-e2e\run-remote-tournament-e2e.ps1' `
+    -ServerManifest 'C:\Users\User\Desktop\projects\backgammon\docs\tournament-e2e-integrations\server-client-r7-load.json' `
+    -Players 32 -Headed -Comprehensive
+```
+
+מסלול זה מבצע את אימות השרת והניקוי אוטומטית; אין להוסיף אחריו `-AuditOnly`. הסיכום הכולל עובר רק אם הדפדפן, ספי הביצועים, אימות השרת והניקוי עברו. כשל בבדיקה עדיין מפעיל ניסיון ניקוי, ושומר תוצאה נכשלת. כשל בניקוי נשאר `cleanup.passed: false` ואינו מוסתר. הרשומות נשמרות עם קבלות ההרצה לצורך התאוששות.
+
+אם SSH נותק, התהליך נסגר בכוח, או שהניקוי נכשל, משתמשים בתיקיית ההרצה המדויקת שהודפסה:
+
+```powershell
+& 'C:\Users\User\Desktop\projects\backgammon\docs\tournament-e2e\run-remote-tournament-e2e.ps1' `
+    -CleanupOnly -RunDirectory 'C:\Users\User\Desktop\projects\backgammon\docs\tournament-e2e-integrations\runs\RUN_ID'
+```
+
+הפעולה חוזרת לאותה זהות ולאותה הרצה. נעילת ההרצה מונעת התחלת בדיקה חדשה לפני השלמת הניקוי; נעילת פעולה נפרדת מונעת שני ניסיונות ניקוי במקביל. פקודת ניקוי חוזרת אינה הופכת בדיקה שלא אומתה לבדיקה שעברה. לשיתוף משתמשים רק ב־`share-report`, ובמיוחד ב־`run-summary.json`, ב־`cleanup-report.json` ובדוחות השרת. בדיקת מכשיר נייד ופוש פיזי נשארות נפרדות.

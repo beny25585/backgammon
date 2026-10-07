@@ -1,8 +1,10 @@
 [CmdletBinding(DefaultParameterSetName='Browser')]
 param(
     [Parameter(Mandatory=$true, ParameterSetName='Browser')][string]$ServerManifest,
-    [Parameter(Mandatory=$true, ParameterSetName='Audit')][string]$RunDirectory,
+    [Parameter(Mandatory=$true, ParameterSetName='Audit')]
+    [Parameter(Mandatory=$true, ParameterSetName='Cleanup')][string]$RunDirectory,
     [Parameter(Mandatory=$true, ParameterSetName='Audit')][switch]$AuditOnly,
+    [Parameter(Mandatory=$true, ParameterSetName='Cleanup')][switch]$CleanupOnly,
     [ValidateSet(16,32)][int]$Players = 16,
     [ValidateSet('chrome','msedge','chromium')][string]$Browser = 'chrome',
     [switch]$Headed,
@@ -26,6 +28,16 @@ function Save-CombinedRunReport($Directory, $Value) {
     [IO.File]::WriteAllText((Join-Path $taskShareDirectory 'run-summary.json'), $taskEncoded, $taskUtf8)
 }
 try {
+    if ($CleanupOnly) {
+        & $taskNode (Join-Path $PSScriptRoot 'run-remote-e2e.mjs') '--cleanup-only' (Resolve-Path -LiteralPath $RunDirectory).Path
+        exit $LASTEXITCODE
+    }
+    if ($AuditOnly) {
+        $taskSavedRuntime = Get-Content -LiteralPath (Join-Path $RunDirectory 'config.json') -Raw | ConvertFrom-Json
+        if ($taskSavedRuntime.remote_target.load_cleanup_version -eq 1) {
+            throw 'Copied load was audited before cleanup. Use the saved share-report or -CleanupOnly for this run.'
+        }
+    }
     $taskWorkspace = [IO.DirectoryInfo]$PSScriptRoot
     $taskRepositories = @('Backgammon Game','backgammon-tournaments','backgammon-tournaments-backend','backgammon-analysis-service')
     while ($taskWorkspace) {
@@ -40,9 +52,10 @@ try {
         $env:E2E_BROWSER = $Browser
         $env:E2E_HEADED = $(if ($Headed) { '1' } else { '0' })
         $taskScope = $(if ($Comprehensive) { 'comprehensive' } else { 'auto' })
+        $taskManifest = Get-Content -LiteralPath $ServerManifest -Raw | ConvertFrom-Json
         & $taskNode (Join-Path $PSScriptRoot 'run-remote-e2e.mjs') (Resolve-Path -LiteralPath $ServerManifest).Path ([string]$Players) $taskScope
         $taskExitCode = $LASTEXITCODE
-        if (-not $Comprehensive) { exit $taskExitCode }
+        if (-not $Comprehensive -or $taskManifest.identity.load_cleanup_version -eq 1) { exit $taskExitCode }
         $taskNew = @(Get-ChildItem -LiteralPath $taskRuns -Directory | Where-Object { $_.Name -notin $taskExisting })
         if ($taskNew.Count -ne 1) { throw 'Cannot identify exactly one new browser run for the server audit.' }
         $RunDirectory = $taskNew[0].FullName

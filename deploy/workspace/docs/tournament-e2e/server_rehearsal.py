@@ -12,7 +12,7 @@ import subprocess
 import time
 import uuid
 
-from rehearsal_context import fresh_database_context, require_fresh_database_context, rehearsal_project
+from rehearsal_context import fresh_database_context, require_fresh_database_context, require_browser_database_context, rehearsal_project
 from rehearsal_integrations import require_integration_context, verify_integration_config
 
 PROJECT = 'backgammon-rehearsal-20261005t184922z'
@@ -93,6 +93,8 @@ def write(file, value, private=True):
     encoded = value if isinstance(value, str) else json.dumps(value, indent=2) + '\n'
     with file.open('x', encoding='utf-8', newline='\n') as stream:
         stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
     file.chmod(0o600 if private else 0o644)
 
 
@@ -105,9 +107,10 @@ def inspect(service):
         '"service":{{json (index .Config.Labels "com.docker.compose.service")}}}', capture=True))
 
 
-def harness_inventory(tools):
+def harness_inventory(tools, include_documentation=False):
     files = sorted(file.name for file in tools.iterdir() if file.is_file()
-                   and file.suffix in ('.mjs', '.py', '.ps1', '.Dockerfile'))
+                   and (file.suffix in ('.mjs', '.py', '.ps1', '.Dockerfile')
+                        or include_documentation and file.name == 'INTEGRATIONS.he.md'))
     digest = hashlib.sha256()
     for name in files:
         digest.update((name + '\0').encode())
@@ -237,7 +240,7 @@ def refresh_tools(args, state, tools, session):
 
 def configure_entry_observer(state, tools, identity):
     """Only the fresh browser APIs receive the passive observer; images stay pinned."""
-    require_fresh_database_context(identity)
+    require_browser_database_context(identity)
     file = state / 'compose.e2e.json'
     overrides = json.loads(file.read_text())
     for service, values in overrides['services'].items():
@@ -274,7 +277,7 @@ def configure_entry_observer(state, tools, identity):
 
 def export_entry_report(state, session, summary):
     from entry_flow_report import build_report, parse_events
-    fresh = require_fresh_database_context(session['identity'])
+    fresh = require_browser_database_context(session['identity'])
     require(type(summary.get('tournamentId')) is int and summary['tournamentId'] > 0,
             'Entry report requires a created tournament')
     events = []
@@ -673,17 +676,22 @@ def compose(args, state, *command, capture=False):
     environment = dict(os.environ, TRANSFER_DIR=str(args.rehearsal / 'transfer-v2'),
                        PUBLIC_HOST=HOST, PUBLIC_ORIGIN=ORIGIN)
     extra = []
-    identity = json.loads((state / 'session.json').read_text())['identity']
-    if require_integration_context(identity):
+    session = json.loads((state / 'session.json').read_text())
+    identity = session['identity']
+    copied = identity.get('load_cleanup_version') == 1
+    if require_integration_context(identity) and not copied:
         overlay = state / 'compose.integrations.yaml'
         require(overlay.is_file() and not overlay.is_symlink(), 'Missing integration network overlay')
         extra = ['-f', overlay]
+    files = session['compose_files'] if copied else [args.project / 'docker/compose.production.yaml',
+                                                    args.rehearsal / 'compose.override.yaml']
+    if not session.get('load_overlay_disabled'):
+        files = [*files, state / 'compose.e2e.json']
     return run(['sudo', 'env', f'TRANSFER_DIR={environment["TRANSFER_DIR"]}', f'PUBLIC_HOST={HOST}',
                 f'PUBLIC_ORIGIN={ORIGIN}', 'docker', 'compose', '--profile', 'operations', '--profile', 'live',
                 '--profile', 'workers', '--profile', 'tournament-workers',
                 '--env-file', args.project / 'docker/production.env', '-p', PROJECT,
-                '-f', args.project / 'docker/compose.production.yaml',
-                '-f', args.rehearsal / 'compose.override.yaml', '-f', state / 'compose.e2e.json', *extra, *command], capture=capture)
+                *(item for file in files for item in ('-f', str(file))), *extra, *command], capture=capture)
 
 
 def verify_config(args, state, database_transition=False):
@@ -699,7 +707,7 @@ def verify_config(args, state, database_transition=False):
             'Session paths differ from the prepared target')
     context = session['identity'].get('database_context')
     if context is not None:
-        require_fresh_database_context(session['identity'])
+        require_browser_database_context(session['identity'])
     planned = fresh_database_context(session['identity']['session_id']) if database_transition else None
     for service, image in SERVICES.items():
         require(config['services'][service]['image'] == session['identity']['images'][image], 'Application image differs from the pinned release')
@@ -721,7 +729,7 @@ def verify_config(args, state, database_transition=False):
 
 def verify_live(session):
     select_services(session['identity'])
-    context = require_fresh_database_context(session['identity'])
+    context = require_browser_database_context(session['identity'])
     integration = require_integration_context(session['identity'])
     for service in APPS + WORKERS:
         state = inspect(service)
@@ -877,7 +885,10 @@ def validate_listener_response(path, response, identity):
 
 def check_listener(session):
     active = run(['sudo', 'cat', CONF], capture=True)
-    require(active.strip() == nginx(session['identity'], discover_upstreams(session)).strip(),
+    expected = nginx(session['identity'], discover_upstreams(session))
+    if session['identity'].get('load_cleanup_version') == 1:
+        expected = (Path(session['rehearsal_dir']) / 'browser-load/nginx.candidate.conf').read_text()
+    require(active.strip() == expected.strip(),
             'Test Nginx upstreams differ from current containers; use stop then start to refresh them')
     # Force the local host gateway without relying on public hairpin routing.
     for path in ('/__e2e__/identity', '/backgammon/api/health/', '/tournaments-api/health/',
@@ -942,20 +953,40 @@ def restore_monitoring(state):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'entry-report', 'stop', 'refresh-tools'))
+    parser.add_argument('action', choices=('prepare', 'finish-prepare', 'fresh-databases', 'start', 'check', 'baseline', 'monitoring', 'monitoring-restore', 'audit', 'entry-report', 'stop', 'refresh-tools', 'prepare-load', 'begin-load', 'finish-load', 'cleanup-load'))
     parser.add_argument('--project', required=True, type=Path)
     parser.add_argument('--rehearsal', required=True, type=Path)
     parser.add_argument('--summary', type=Path)
+    parser.add_argument('--copied-load', action='store_true', help='Use the opt-in browser-load state on copied candidate data')
     parser.add_argument('--tools-revision', help='Full approved clean Git commit for a running-session tool update')
     args = parser.parse_args()
     args.project, args.rehearsal = args.project.resolve(), args.rehearsal.resolve()
     configure_target(args)
     tools = Path(__file__).resolve().parent
-    state = args.rehearsal / 'browser-e2e-r2'
+    load_action = args.action in ('prepare-load', 'begin-load', 'finish-load', 'cleanup-load')
+    require(not load_action or args.copied_load, 'Load actions require --copied-load')
+    require(not args.copied_load or args.action in ('prepare-load', 'begin-load', 'finish-load', 'cleanup-load', 'check'),
+            'Copied load cannot reset databases, start a different session, or refresh audit baselines')
+    state = args.rehearsal / ('browser-load' if args.copied_load else 'browser-e2e-r2')
+    if args.action == 'prepare-load':
+        from copied_load import prepare as prepare_load
+        prepare_load(__import__(__name__), args, state, tools)
+        return
     if args.action == 'prepare':
         prepare(args, state, tools)
         return
     session = verify_config(args, state, database_transition=args.action == 'fresh-databases')
+    if args.action in ('begin-load', 'finish-load', 'cleanup-load'):
+        from copied_load import begin as begin_load, finish as finish_load
+        require_browser_database_context(session['identity'])
+        if args.action == 'begin-load':
+            require(args.summary and args.summary.is_file(), 'Pass the new browser load plan')
+            verify_live(session)
+            check_listener(session)
+            begin_load(__import__(__name__), args, state, session)
+        else:
+            finish_load(__import__(__name__), args, state, session, cleanup_only=args.action == 'cleanup-load')
+        return
     if args.action == 'refresh-tools':
         refresh_tools(args, state, tools, session)
         return

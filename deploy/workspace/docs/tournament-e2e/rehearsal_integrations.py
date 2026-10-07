@@ -11,7 +11,7 @@ import subprocess
 import sys
 import uuid
 
-from rehearsal_context import fresh_database_context, require_fresh_database_context
+from rehearsal_context import fresh_database_context, require_fresh_database_context, require_browser_database_context
 
 ANALYSIS_URL = 'http://analysis-api:8000'
 ARTIFACTS = ('session.json', 'identity.json', 'server-client.json', 'compose.e2e.json',
@@ -36,9 +36,11 @@ def require(condition, message):
 
 
 def integration_context(identity):
-    require_fresh_database_context(identity)
-    return {'analysis_database': 'backgammon_analysis_e2e_' + identity['session_id'][:12],
-            'analysis_url': ANALYSIS_URL, 'push_key_scope': 'browser-e2e'}
+    context = require_browser_database_context(identity)
+    copied = context['purpose'] == 'copied-browser-e2e'
+    return {'analysis_database': context['databases']['analysis'] if copied else
+            'backgammon_analysis_e2e_' + identity['session_id'][:12],
+            'analysis_url': ANALYSIS_URL, 'push_key_scope': 'candidate-load' if copied else 'browser-e2e'}
 
 
 def require_integration_context(identity):
@@ -61,7 +63,8 @@ def verify_integration_config(identity, config):
         env = values['environment']
         require(env['DB_HOST'] == 'postgres' and env['DB_NAME'] == context['analysis_database']
                 and env['DB_USER'] == 'backgammon_analysis'
-                and env['RUNTIME_CONFIG_FILE'] == '/opt/e2e/analysis.json',
+                and env['RUNTIME_CONFIG_FILE'] == (identity.get('runtime_files', {}).get('analysis')
+                    if identity.get('load_cleanup_version') == 1 else '/opt/e2e/analysis.json'),
                 'Analysis must use its dedicated browser database and configuration')
         require(not values.get('ports') and set(values['networks']) == {'application'},
                 'Analysis must remain on the internal application network without published ports')

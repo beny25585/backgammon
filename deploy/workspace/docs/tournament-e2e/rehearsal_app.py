@@ -10,7 +10,7 @@ import time
 import uuid
 from decimal import Decimal
 
-from rehearsal_context import require_fresh_database_context
+from rehearsal_context import require_browser_database_context
 from rehearsal_integrations import ANALYSIS_URL, require_integration_context
 
 
@@ -146,7 +146,7 @@ def main():
     require(kind in ('game', 'tournaments'), 'Unknown rehearsal service')
     session = json.loads(Path('/opt/e2e/session.json').read_text())
     target = session['identity']
-    context = require_fresh_database_context(target)
+    context = require_browser_database_context(target)
     sys.path.insert(0, os.getcwd())
     import django
     django.setup()
@@ -187,6 +187,10 @@ def main():
     directory = Path('/data/e2e-audit')
     baseline_file = directory / f'baseline-{kind}.json'
     User = get_user_model()
+    if action.startswith('load-'):
+        from load_cleanup import operation
+        operation(kind, action[5:], session, directory)
+        return
     if action == 'integrations':
         require(integration, 'Integration readiness requires explicit activation')
         if kind == 'game':

@@ -20,19 +20,40 @@ export function runtimeOrigins(runtime) {
   if (remote) {
     const context = runtime.remote_target.database_context
     const suffix = runtime.remote_target.session_id.slice(0, 12)
+    const copied = context?.purpose === 'copied-browser-e2e'
     const integrations = Object.hasOwn(runtime.remote_target, 'integrations')
     if (integrations ? !isDeepStrictEqual(runtime.remote_target.integrations,
       { analysis: true, push: true, ai: true, google: true })
       || !isDeepStrictEqual(runtime.remote_target.integration_context,
-        { analysis_database: `backgammon_analysis_e2e_${suffix}`,
-          analysis_url: 'http://analysis-api:8000', push_key_scope: 'browser-e2e' })
+        { analysis_database: copied ? context.databases?.analysis : `backgammon_analysis_e2e_${suffix}`,
+          analysis_url: 'http://analysis-api:8000', push_key_scope: copied ? 'candidate-load' : 'browser-e2e' })
       : Object.hasOwn(runtime.remote_target, 'integration_context')) {
       throw new Error('Remote browser runs require the complete isolated integration context.')
     }
     const expectedContext = { purpose: 'browser-e2e',
       databases: { game: `backgammon_game_e2e_${suffix}`, tournaments: `backgammon_tournaments_e2e_${suffix}` },
       redis_databases: integrations ? { game: 10, tournaments: 11 } : { game: 8, tournaments: 9 } }
-    if (!isDeepStrictEqual(context, expectedContext)) {
+    if (copied) {
+      if (!candidate || runtime.remote_target.load_cleanup_version !== 1 || !integrations
+        || !/^[a-f0-9]{40}$/.test(runtime.remote_target.tools_revision || '')
+        || !isDeepStrictEqual(Object.keys(context).sort(), ['databases', 'markers', 'purpose', 'redis_databases'])
+        || !isDeepStrictEqual(Object.keys(context.databases || {}).sort(), ['analysis', 'game', 'tournaments'])
+        || !isDeepStrictEqual(Object.keys(context.markers || {}).sort(), ['analysis', 'game', 'tournaments'])
+        || !isDeepStrictEqual(Object.keys(context.redis_databases || {}).sort(), ['game', 'tournaments'])) {
+        throw new Error('Copied load requires a prepared candidate and scoped cleanup.')
+      }
+      for (const [kind, name] of Object.entries(context.databases)) {
+        const restored = new RegExp(`^bgv_restore_${validation.slice(0, 12)}_[a-z0-9_]{1,22}$`).test(name)
+        if (restored ? context.markers[kind] !== `backgammon-validation:${validation}:restore:${name}`
+          : name !== `backgammon_${kind}` || context.markers[kind] !== null) {
+          throw new Error('Unexpected copied candidate database or restoration marker.')
+        }
+      }
+      const indexes = Object.values(context.redis_databases)
+      if (indexes.some(value => !Number.isInteger(value) || value < 0 || value > 15) || new Set(indexes).size !== 2) {
+        throw new Error('Invalid copied candidate Redis database.')
+      }
+    } else if (!isDeepStrictEqual(context, expectedContext)) {
       throw new Error('Remote browser runs require the fresh browser database context.')
     }
   }

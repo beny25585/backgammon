@@ -47,7 +47,9 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     comprehensiveChecks: Boolean(runtime.comprehensive_checks),
     targetSession: runtime.remote_target?.session_id ?? null,
     scope: runtime.profile === 'server-rehearsal'
-      ? 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; fresh browser PostgreSQL databases.'
+      ? runtime.remote_target?.load_cleanup_version === 1
+        ? 'Prepared copied candidate through host Nginx HTTPS; run-owned data is removed after server verification.'
+        : 'Prepared server rehearsal through host Nginx HTTPS; browser load from this PC; fresh browser PostgreSQL databases.'
       : 'Disposable local HTTPS; signup/login/registration/admission through UI; legal gameplay over the UI real WebSocket.',
     adminSetup: 'Seeded administrator; tournament creation and scheduled start use authenticated APIs, not admin UI.',
     browserInstrumentation: { headless: process.env.E2E_HEADED !== '1',
@@ -72,6 +74,11 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
   const admissions = new Map()
   const eventsFile = path.join(runDir, 'browser-events.ndjson')
   const summaryFile = path.join(runDir, 'tournament-summary.json')
+  const resourcesFile = path.join(runDir, 'load-resources.json')
+  const resources = { runId: runtime.run_id, targetSession: runtime.remote_target?.session_id, accounts: [], rooms: [] }
+  const saveResources = () => {
+    if (runtime.remote_target?.load_cleanup_version === 1) fs.writeFileSync(resourcesFile, JSON.stringify(resources, null, 2) + '\n')
+  }
   const journal = createEventJournal(eventsFile)
   const observe = (kind, details = {}) => {
     const event = { at: new Date().toISOString(), elapsedMs: Date.now() - started, kind, ...details }
@@ -364,6 +371,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     expect(one.roomId).toBe(two.roomId)
     expect(new Set([one.color, two.color]).size).toBe(2)
     evidence.roomId = one.roomId
+    resources.rooms.push({ fixtureId: fixture.id, roomId: one.roomId })
+    saveResources()
     // Start when both users have clicked, excluding ordinary opponent wait.
     admissions.set(fixture.id, { clickedAt: Math.max(...clickTimes), observedAt: Date.now(),
       clicks: clickTimes.map((clickedAt, index) => ({ color: [one, two][index].color,
@@ -441,6 +450,9 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     for (let index = 0; index < scenario.players; index++) {
       const player = await newUser(`player${index + 1}`)
       const username = `E2E${suffix}P${index + 1}`
+      const resource = { username, status: 'planned' }
+      resources.accounts.push(resource)
+      saveResources()
       await player.page.goto(`${tourOrigin}/tournaments/account/signup`)
       await player.page.locator('input[autocomplete="username"]').fill(username)
       await player.page.locator('input[type="email"]').fill(`${username.toLowerCase()}@example.invalid`)
@@ -451,6 +463,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       expect((await signup).status()).toBe(201)
       await expect(player.page).toHaveURL(/\/tournaments\/(?:home|tournaments)(?:[/?#]|$)/)
       const identity = await api(player, '/auth/me')
+      Object.assign(resource, { id: identity.id, status: 'created' })
+      saveResources()
       player.id = identity.id
       player.username = identity.username
       player.initialBalance = Number(identity.balance)
@@ -474,6 +488,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
     } })
     tournamentId = tournament.id
     summary.tournamentId = tournamentId
+    resources.tournamentId = tournamentId
+    saveResources()
     expect(tournament.state).toBe('open')
     // Registration uses real Vue buttons, with all accounts prepared concurrently.
     await Promise.all([...players.values()].map(async (player) => {
