@@ -8,7 +8,7 @@ import uuid
 
 from asgiref.sync import async_to_sync
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 
 from game.consumers import event_game_id, record_event_and_advance
 from game.engine import BackgammonEngine
@@ -46,7 +46,7 @@ class GameIdGenerationTests(TestCase):
         self.assertNotEqual(first['gameId'], second['gameId'])
 
 
-class EventGameIdStampingTests(TestCase):
+class EventGameIdStampingTests(TransactionTestCase):
     def test_event_persistence_stamps_payload_game_id(self):
         room = make_room('STAMP1')
         payload = {
