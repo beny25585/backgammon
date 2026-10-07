@@ -19,6 +19,30 @@ def require(value, message):
         raise ValueError(message)
 
 
+def require_base_api_config(config, session, origin, private_configuration):
+    """Only recreated APIs need image-ID pins; untouched base services may use tags."""
+    from copied_runtime import secret_source
+    identity = session['identity']
+    context = identity['database_context']
+    require(config.get('name') == identity['project'], 'Base Compose project differs')
+    modules = {'game': 'backgammon_project.settings_docker', 'tournaments': 'tournaments.settings.docker'}
+    for kind, module in modules.items():
+        service = config['services'][kind + '-api']
+        env = service['environment']
+        callback = 'GAMELINK_TOURNAMENTS_URL' if kind == 'game' else 'GAMELINK_BACKGAMMON_URL'
+        require(service['image'] == identity['images'][kind] and not service.get('ports')
+                and env.get('DJANGO_SETTINGS_MODULE') == module and not env.get('E2E_ADMISSION_KIND')
+                and env.get('DB_HOST') == 'postgres' and env.get('DB_USER') == 'backgammon_' + kind
+                and env.get('DB_NAME') == context['databases'][kind]
+                and env.get('REDIS_URL') == f'redis://redis:6379/{context["redis_databases"][kind]}'
+                and env.get('RUNTIME_CONFIG_FILE') == identity['runtime_files'][kind]
+                and env.get(callback) == origin, 'Base API context or pinned image differs: ' + kind)
+        require(not any(volume.get('target', '').startswith('/opt/e2e/')
+                        for volume in service.get('volumes', [])), 'Base API still mounts an observer')
+    _, source = secret_source(config, 'tournaments-api', identity['runtime_files']['tournaments'])
+    require(source == str(private_configuration), 'Base API must retain its private tournaments configuration')
+
+
 def refresh(revision):
     import fcntl
     require(re.fullmatch(r'[a-f0-9]{40}', revision), 'Pass the full published tools revision')
@@ -95,7 +119,10 @@ def refresh(revision):
             session['load_overlay_disabled'] = True
             # Preserve the inode bind-mounted in the current APIs until recreation.
             (state / 'session.json').write_text(json.dumps(session, indent=2) + '\n', encoding='utf-8')
-            server.verify_config(args, state)
+            base = json.loads(server.compose(args, state, 'config', '--format', 'json', capture=True))
+            require_base_api_config(base, session, server.ORIGIN, rehearsal / 'copied-runtime/tournaments.json')
+            server.require_copied_network_config(session['identity'], base)
+            server.verify_integration_config(session['identity'], base)
             server.compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--force-recreate',
                            'game-api', 'tournaments-api')
             server.wait_application_health(session, time.monotonic() + 180, bootstrap=True)
@@ -122,7 +149,7 @@ def refresh(revision):
             'Updated canonical source must be the exact clean published revision')
     # Tests are run by the human operator executing this program, never by the assistant.
     for pattern in ('copied_load_test.py', 'copied_runtime_test.py', 'copied_network_test.py',
-                    'rehearsal_context_test.py', 'rehearsal_runtime_test.py'):
+                    'rehearsal_context_test.py', 'rehearsal_runtime_test.py', 'refresh_r7_load_test.py'):
         subprocess.run(['python3', '-m', 'unittest', 'discover', '-s', str(tools), '-p', pattern], check=True)
     # Node readiness tests run on the PC before dispatch; no Bot1 Node install is required.
     common = ['--project', str(project), '--rehearsal', str(rehearsal), '--tools-revision', revision]

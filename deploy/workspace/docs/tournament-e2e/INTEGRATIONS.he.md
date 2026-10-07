@@ -137,8 +137,11 @@ python3 "$taskTools/rehearsal_integrations.py" restore --project "$taskProject" 
 python3 -m unittest discover -s deploy/workspace/docs/tournament-e2e -p copied_load_test.py
 python3 -m unittest discover -s deploy/workspace/docs/tournament-e2e -p copied_runtime_test.py
 python3 -m unittest discover -s deploy/workspace/docs/tournament-e2e -p rehearsal_runtime_test.py
+python3 -m unittest discover -s deploy/workspace/docs/tournament-e2e -p refresh_r7_load_test.py
 node --test deploy/workspace/docs/tournament-e2e/push-readiness.test.mjs
 ```
+
+בעת פרישת ה־observer מאמתים בנפרד את תצורת הבסיס הפרטית ואת מזהי התמונות של שני APIs שנוצרים מחדש. שירותים שלא משתנים יכולים לשמור תגי תמונה מקוריים בקובצי Compose; אין לחייב אותם להשתמש במזהי התמונות של overlay הבדיקה שהוסר. לפני recreation עדיין נדרשת אותה זהות פרויקט, מסד, Redis, callbacks, רשת, הגדרות Django מקוריות וקובץ runtime פרטי; פורטים או mounts של observer בתצורת הבסיס נדחים.
 
 נוסף מסלול `copied-browser-e2e` עם ניקוי לפי הרצה. הוא הוכן מקומית ב־07.10.2026 לפי אישור המשתמש. בדיקות התחביר אינן הוכחת הרצה: tests, בדיקת 32 השחקנים והמחיקה בפועל עדיין לא אומתו. המשתמש עדכן את מקור השרת; ניסיון ההכנה הראשון נעצר לפני שינוי שירותים משום ש־`validation-target.json` מהתרגול הקודם אינו קיים. במסלול copied-load בלבד, אפשר כעת לקרוא את זהות ה־candidate מה־`plan.json` הקיים, עם התאמה מלאה של הנתיבים, המקורות וגרסת התשתית מול `.workspace-release.json` ו־`.built-images.json`. לא יוצרים סמן תרגול חלופי. ההכנה המתוקנת עדיין לא אומתה בשרת; ניסיון הקריאה של העוזר בשרת נעצר באימות SSH.
 
