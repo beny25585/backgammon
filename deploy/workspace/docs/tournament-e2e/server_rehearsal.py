@@ -30,24 +30,60 @@ BASE_SERVICES, BASE_APPS, BASE_WORKERS = SERVICES.copy(), APPS.copy(), WORKERS.c
 UPSTREAM_PORTS = {'game-api': 8000, 'tournaments-api': 8000,
                   'game-frontend': 80, 'tournaments-frontend': 80, 'admin-frontend': 80}
 CONF = Path('/etc/nginx/conf.d/backgammon-rehearsal-e2e.conf')
+MANAGED_ROOT = Path('/home/dev/backgammon-project')
+
+
+def copied_target_from_plan(args):
+    """Read the running candidate's immutable plan without an old E2E marker."""
+    root = MANAGED_ROOT
+    require(args.project.parent == root / 'deploy/backgammon-deploy'
+            and re.fullmatch(r'backgammon-[a-z0-9-]{1,64}', args.project.name),
+            'Copied candidate project is outside the managed layout')
+    plan_file = root / 'reports/release-validation' / args.project.name / 'plan.json'
+    require(plan_file.is_file() and not plan_file.is_symlink(), 'Missing or unsafe copied candidate plan')
+    plan = json.loads(plan_file.read_text())
+    require(re.fullmatch(r'[a-f0-9]{32}', plan.get('validation_id', ''))
+            and re.fullmatch(r'[a-f0-9]{40}', plan.get('infrastructure_revision', ''))
+            and plan['release']['image_tag'] == args.project.name,
+            'Copied candidate plan identity differs')
+    require(args.rehearsal == root / 'backups/backgammon-backups' /
+            ('validation-' + plan['validation_id']) / 'docker-rehearsal',
+            'Copied candidate rehearsal differs from its plan')
+    for name in ('.workspace-release.json', '.built-images.json'):
+        file = args.project / name
+        require(file.is_file() and not file.is_symlink(), 'Missing or unsafe candidate artifact: ' + name)
+        artifact = json.loads(file.read_text())
+        require(artifact['image_tag'] == plan['release']['image_tag']
+                and artifact['infrastructure_revision'] == plan['infrastructure_revision']
+                and artifact['sources'] == plan['release']['sources'],
+                'Copied candidate artifact differs from its plan: ' + name)
+    return {'validation_id': plan['validation_id'],
+            'project': 'backgammon-candidate-' + plan['validation_id'], 'origin': ORIGIN,
+            'image_tag': plan['release']['image_tag'],
+            'infrastructure_revision': plan['infrastructure_revision'],
+            'sources': plan['release']['sources'], 'project_dir': str(args.project)}
 
 
 def configure_target(args):
     """Select the historical rehearsal or a sealed stage-1--4 candidate."""
     global PROJECT, TAG
     target_file = args.rehearsal / 'validation-target.json'
-    if not target_file.exists():
-        require(args.project.name == 'bg-20261005-git-r2'
-                and args.rehearsal.name == 'docker-rehearsal'
-                and args.rehearsal.parent.name == 'rehearsal-20261005T184922Z',
-                'Unexpected release or rehearsal directory')
-        PROJECT, TAG = 'backgammon-rehearsal-20261005t184922z', 'bg-20261005-git-r2'
-        return None
     require(not target_file.is_symlink(), 'Unsafe validation target')
-    target = json.loads(target_file.read_text())
+    if not target_file.exists():
+        if getattr(args, 'copied_load', False):
+            target = copied_target_from_plan(args)
+        else:
+            require(args.project.name == 'bg-20261005-git-r2'
+                    and args.rehearsal.name == 'docker-rehearsal'
+                    and args.rehearsal.parent.name == 'rehearsal-20261005T184922Z',
+                    'Unexpected release or rehearsal directory')
+            PROJECT, TAG = 'backgammon-rehearsal-20261005t184922z', 'bg-20261005-git-r2'
+            return None
+    else:
+        target = json.loads(target_file.read_text())
     project = rehearsal_project(target)
     root = args.project.parents[2]
-    require(root == Path('/home/dev/backgammon-project')
+    require(root == MANAGED_ROOT
             and args.project.parent == root / 'deploy/backgammon-deploy'
             and args.project.name == target['image_tag']
             and args.rehearsal == root / 'backups/backgammon-backups' /
