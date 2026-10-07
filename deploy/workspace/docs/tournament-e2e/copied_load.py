@@ -10,6 +10,51 @@ import uuid
 from rehearsal_context import require_browser_database_context
 from load_cleanup import validate_plan, save as save_receipt
 
+CONTAINER_CODE = frozenset(('rehearsal_app.py', 'load_cleanup.py', 'rehearsal_context.py',
+    'rehearsal_integrations.py', 'rehearsal_entry.py', 'rehearsal_runtime.py',
+    'rehearsal_settings.py', 'rehearsal_asgi.py'))
+
+STARTUP_CHECK = '''
+import django
+django.setup()
+from django.core.management import call_command
+call_command('migrate', check=True, interactive=False)
+import rehearsal_asgi
+print('COPIED LOAD STARTUP CHECK PASSED')
+'''
+
+
+def prepare_container_code(server, state, tools):
+    """Make only published, read-only mounted Python helpers container-readable."""
+    overlay = json.loads((state / 'compose.e2e.json').read_text())
+    files = set()
+    for service in overlay['services'].values():
+        for volume in service.get('volumes', []):
+            target = volume.get('target', '')
+            if not (target.startswith('/opt/e2e/') and target.endswith('.py')):
+                continue
+            name = Path(target).name
+            source = tools / name
+            server.require(name in CONTAINER_CODE and target == '/opt/e2e/' + name
+                           and volume.get('type') == 'bind' and volume.get('read_only') is True
+                           and volume.get('source') == str(source)
+                           and source.is_file() and not source.is_symlink(),
+                           'Unsafe container helper mount: ' + target)
+            files.add(source)
+    server.require(files, 'Missing container helper mounts')
+    # These files contain published source code, never session/configuration data.
+    # Docker mounts remain read-only and file contents/ownership are unchanged.
+    server.run(['sudo', 'chmod', '0644', '--', *sorted(files)])
+
+
+def preflight_api_startup(server, args, state):
+    """Load real observer settings/ASGI before replacing either healthy API."""
+    for service in ('game-api', 'tournaments-api'):
+        print('COPIED LOAD STARTUP CHECK: ' + service, flush=True)
+        server.compose(args, state, 'run', '-T', '--rm', '--no-deps', '--pull', 'never',
+                       '--entrypoint', 'python', service,
+                       '/opt/docker/runtime_env.py', 'python', '-c', STARTUP_CHECK)
+
 
 def verify_prepared_tools(server, session):
     tools = Path(session['tools_dir'])
@@ -160,8 +205,10 @@ def prepare(server, args, state, tools):
     # Validate effective configuration against live databases before any container changes.
     try:
         server.verify_config(args, state)
+        prepare_container_code(server, state, tools)
+        preflight_api_startup(server, args, state)
     except BaseException:
-        server.write(state / 'preparation-restored.json', {'no_containers_changed': True})
+        server.write(state / 'preparation-restored.json', {'no_application_services_recreated': True})
         raise
     try:
         server.compose(args, state, 'up', '-d', '--no-build', '--no-deps', '--force-recreate', 'game-api', 'tournaments-api')
