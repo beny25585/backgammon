@@ -80,6 +80,53 @@ def check_api_roles(server, session):
                        'Test listener API role differs: ' + kind)
 
 
+def refresh_restored_listener(server, state, session):
+    """Docker start can reassign API addresses; resolve roles before HTTP checks."""
+    candidate = state / 'nginx.candidate.conf'
+    server.require(candidate.is_file() and not candidate.is_symlink() and not server.CONF.is_symlink(),
+                   'Unsafe prepared test listener')
+    original = server.run(['sudo', 'cat', server.CONF], capture=True)
+    server.require(original.strip() == candidate.read_text().strip()
+                   and 'Session ' + session['identity']['session_id'] in original,
+                   'Prepared test listener changed during cleanup')
+    prefixes = {'game-api': '/backgammon/api/', 'tournaments-api': '/tournaments-api/',
+                'game-frontend': '/backgammon/', 'tournaments-frontend': '/tournaments/',
+                'admin-frontend': '/tournaments-admin/'}
+    active = '\n'.join(line.split('#', 1)[0] for line in original.splitlines())
+    before = {}
+    for service, prefix in prefixes.items():
+        matches = re.findall(r'location\s+' + re.escape(prefix)
+            + r'\s*\{\s*proxy_pass\s+http://([^/;\s]+)', active)
+        server.require(len(matches) == 1, 'Ambiguous prepared upstream role: ' + service)
+        before[service] = matches[0]
+    destinations = re.findall(r'\bproxy_pass\s+http://([^/;\s]+)', active)
+    targets = re.findall(r'\bproxy_pass\s+([^;\s]+)', active)
+    server.require(len(targets) == len(destinations) and len(set(before.values())) == len(before)
+                   and set(destinations) == set(before.values()), 'Unexpected prepared proxy destinations')
+    after = server.discover_upstreams(session)
+    replacement = listener_content(original, before, after)
+    changed = before != after
+    backup = state / ('routing-after-restart-' + uuid.uuid4().hex + '.conf')
+    if changed:
+        server.write(backup, original)
+    try:
+        if changed:
+            candidate.write_text(replacement, encoding='utf-8')
+            server.run(['sudo', 'install', '-m', '0644', candidate, server.CONF])
+            server.run(['sudo', 'nginx', '-t'])
+            server.run(['sudo', 'systemctl', 'reload', 'nginx'])
+        server.check_listener(session)
+        check_api_roles(server, session)
+    except BaseException:
+        if changed:
+            candidate.write_text(original, encoding='utf-8')
+            server.run(['sudo', 'install', '-m', '0644', backup, server.CONF])
+            server.run(['sudo', 'nginx', '-t'])
+            server.run(['sudo', 'systemctl', 'reload', 'nginx'])
+        raise
+    return {'upstreamsChanged': changed, 'apiRolesVerified': True}
+
+
 def prepare(server, args, state, tools):
     target = server.configure_target(args)
     server.require(target is not None, 'Copied load requires a managed release candidate')
@@ -436,7 +483,7 @@ def finish_locked(server, args, state, session, cleanup_only=False):
                     server.docker('start', *(server.PROJECT + '-' + service + '-1' for service in running))
                     server.wait_application_health(session, time.monotonic() + 180, bootstrap=True)
                     server.verify_live(session)
-                    server.check_listener(session)
+                    report['cleanup']['routingRestoration'] = refresh_restored_listener(server, state, session)
                 report['cleanup']['servicesRestored'] = True
             except Exception as exc:
                 report['cleanup'].update(passed=False, status='restore_failed', restoreErrorType=type(exc).__name__)

@@ -6,7 +6,7 @@ import subprocess
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import copied_load as load
 
@@ -123,6 +123,85 @@ class CopiedLoadPreflightTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             load.preflight_api_startup(server, object(), Path('/state'))
         self.assertEqual(server.compose.call_count, 1)
+
+
+class CopiedLoadRoutingRestorationTests(unittest.TestCase):
+    def fixture(self, directory, swapped=True):
+        state = Path(directory)
+        identity = {'session_id': 'a' * 32}
+        prefixes = ('/backgammon/api/', '/tournaments-api/', '/backgammon/', '/tournaments/', '/tournaments-admin/')
+        services = ('game-api', 'tournaments-api', 'game-frontend', 'tournaments-frontend', 'admin-frontend')
+        before = {name: f'172.22.0.{index + 2}:{8000 if index < 2 else 80}' for index, name in enumerate(services)}
+        after = dict(before)
+        if swapped:
+            after['game-api'], after['tournaments-api'] = before['tournaments-api'], before['game-api']
+        original = '# Session ' + identity['session_id'] + '\nserver {\nlisten 18443 ssl;\n' + '\n'.join(
+            'location ' + prefix + ' { proxy_pass http://' + before[name] + '/; }'
+            for name, prefix in zip(services, prefixes)) + '\n}\n'
+        candidate = state / 'nginx.candidate.conf'
+        candidate.write_text(original)
+        server = SimpleNamespace(CONF=state / 'active.conf', run=Mock(return_value=original),
+            discover_upstreams=Mock(return_value=after), check_listener=Mock(), write=Mock())
+        def require(value, message):
+            if not value:
+                raise ValueError(message)
+        server.require = require
+        return state, {'identity': identity}, candidate, original, after, server
+
+    def test_swapped_roles_are_refreshed_before_listener_and_api_checks(self):
+        with TemporaryDirectory() as directory:
+            state, session, candidate, _, after, server = self.fixture(directory)
+            with patch.object(load, 'check_api_roles') as check:
+                result = load.refresh_restored_listener(server, state, session)
+            text = candidate.read_text()
+            self.assertIn('location /backgammon/api/ { proxy_pass http://' + after['game-api'], text)
+            self.assertIn('location /tournaments-api/ { proxy_pass http://' + after['tournaments-api'], text)
+            self.assertEqual(result, {'upstreamsChanged': True, 'apiRolesVerified': True})
+            server.check_listener.assert_called_once_with(session)
+            check.assert_called_once_with(server, session)
+
+    def test_unchanged_addresses_are_verified_without_install_or_reload(self):
+        with TemporaryDirectory() as directory:
+            state, session, candidate, original, _, server = self.fixture(directory, swapped=False)
+            with patch.object(load, 'check_api_roles') as check:
+                self.assertFalse(load.refresh_restored_listener(server, state, session)['upstreamsChanged'])
+            server.run.assert_called_once_with(['sudo', 'cat', server.CONF], capture=True)
+            server.write.assert_not_called()
+            check.assert_called_once()
+            self.assertEqual(candidate.read_text(), original)
+
+    def test_independent_listener_change_is_rejected_before_install(self):
+        with TemporaryDirectory() as directory:
+            state, session, candidate, _, _, server = self.fixture(directory)
+            candidate.write_text('changed')
+            with self.assertRaisesRegex(ValueError, 'changed during cleanup'):
+                load.refresh_restored_listener(server, state, session)
+            self.assertEqual(server.run.call_count, 1)
+            server.write.assert_not_called()
+
+    def test_failed_role_check_restores_saved_listener_and_propagates_failure(self):
+        with TemporaryDirectory() as directory:
+            state, session, candidate, original, _, server = self.fixture(directory)
+            with patch.object(load, 'check_api_roles', side_effect=ValueError('role mismatch')):
+                with self.assertRaisesRegex(ValueError, 'role mismatch'):
+                    load.refresh_restored_listener(server, state, session)
+            self.assertEqual(candidate.read_text(), original)
+            installed = [call.args[0] for call in server.run.call_args_list if 'install' in call.args[0]]
+            self.assertEqual(len(installed), 2)
+            self.assertTrue(installed[1][-2].name.startswith('routing-after-restart-'))
+
+    def test_additional_unobserved_proxy_is_rejected_before_install(self):
+        for destination in ('http://172.22.0.99:8000/', 'https://outside.invalid/'):
+            with TemporaryDirectory() as directory:
+                state, session, candidate, original, _, server = self.fixture(directory)
+                original = original.replace('listen 18443 ssl;',
+                    'listen 18443 ssl;\nlocation /unexpected/ { proxy_pass ' + destination + '; }')
+                candidate.write_text(original)
+                server.run.return_value = original
+                with self.assertRaisesRegex(ValueError, 'Unexpected prepared proxy'):
+                    load.refresh_restored_listener(server, state, session)
+                self.assertEqual(server.run.call_count, 1)
+                server.discover_upstreams.assert_not_called()
 
 
 if __name__ == '__main__':

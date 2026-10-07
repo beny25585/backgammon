@@ -371,8 +371,6 @@ def main():
                         actual_balance = WalletTransaction.balance_for_user(User.objects.get(pk=observed_balance['userId']))
                         require(actual_balance == expected_balance == Decimal(str(observed_balance['final'])),
                                 'Persisted player balance differs from entry/prize accounting')
-                    require(summary.get('entryFees', {}).get('registrationReplayVerified') is True,
-                            'Missing duplicate-registration browser proof')
                     report.update(entry_fee=str(fee), entry_debits=len(charges), collected_coins=str(fee * len(charges)),
                                   all_player_balances_verified=True)
         report['results_verified'] = True

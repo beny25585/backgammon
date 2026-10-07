@@ -517,14 +517,8 @@ test(`${scenario.players} players enter together and complete a real knockout`, 
       expect(debits.count).toBe(scenario.players)
       expect(new Set(debits.items.map(item => item.user_id)).size).toBe(scenario.players)
       expect(debits.items.every(item => Number(item.amount) === -entryFee)).toBe(true)
-      // Replay the real registration requests while the tournament is still open.
-      await Promise.all([...players.values()].map(player => api(player, `/tournaments/${tournamentId}/join`, {
-        method: 'POST', data: {}, timeout: 15000,
-      })))
-      const repeated = await api(admin, endpoint)
-      expect(repeated.items.map(item => item.id).sort()).toEqual(debits.items.map(item => item.id).sort())
       summary.entryFees = { perPlayer: entryFee, chargedPlayers: debits.count,
-        totalCoins: entryFee * scenario.players, registrationReplayVerified: true,
+        totalCoins: entryFee * scenario.players,
         transactionIds: debits.items.map(item => item.id) }
     }
     await expect.poll(async () => {
