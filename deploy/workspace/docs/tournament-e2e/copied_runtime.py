@@ -90,6 +90,35 @@ def runtime_overlay(images, secret, configuration):
             'networks': {'integrations_egress': {'internal': False}}}
 
 
+def listener_addresses(original, direct, containers):
+    """Recognize current bridge targets or observed IPv4 loopback port bindings."""
+    server.require(set(direct) == set(containers) == set(server.UPSTREAM_PORTS),
+                   'Incomplete listener container inventory')
+    active = '\n'.join(line.split('#', 1)[0] for line in original.splitlines())
+    targets = re.findall(r'\bproxy_pass\s+([^;\s]+)', active)
+    endpoints = set()
+    for target in targets:
+        match = re.fullmatch(r'http://([^/]+)(?:/[^\s]*)?', target)
+        server.require(match, 'Unexpected test listener proxy target')
+        endpoints.add(match[1])
+    selected = {}
+    for service, port in server.UPSTREAM_PORTS.items():
+        candidates = {direct[service]}
+        bindings = containers[service]['NetworkSettings'].get('Ports') or {}
+        for binding in bindings.get(str(port) + '/tcp') or []:
+            host_port = str(binding.get('HostPort', ''))
+            if (binding.get('HostIp') == '127.0.0.1'
+                    and re.fullmatch(r'[1-9][0-9]{0,4}', host_port)
+                    and int(host_port) <= 65535):
+                candidates.add('127.0.0.1:' + host_port)
+        present = candidates & endpoints
+        server.require(len(present) == 1, 'Listener does not uniquely use the current candidate: ' + service)
+        selected[service] = present.pop()
+    server.require(len(set(selected.values())) == len(selected)
+                   and endpoints == set(selected.values()), 'Listener has ambiguous or unobserved upstreams')
+    return selected
+
+
 def listener_content(original, before, after):
     server.require(set(before) == set(after) == set(server.UPSTREAM_PORTS), 'Incomplete listener addresses')
     server.require(len(re.findall(r'\blisten\s+18443\s+ssl;', original)) == 1
@@ -127,10 +156,10 @@ def compose(args, files, *command, capture=False):
         *(item for file in files for item in ('-f', str(file))), *command], capture=capture)
 
 
-def addresses(images, network):
+def addresses(images, network, containers=None):
     result = {}
     for service in server.UPSTREAM_PORTS:
-        value = container(service)
+        value = container(service) if containers is None else containers[service]
         labels = value['Config']['Labels']
         server.require(labels['com.docker.compose.project'] == server.PROJECT
                        and labels['com.docker.compose.service'] == service
@@ -240,7 +269,8 @@ def prepare(args):
         server.require(not (args.rehearsal / 'browser-load').exists(), 'Browser load already has state; do not change its runtime')
         state.rename(state.with_name('copied-runtime-restored-' + uuid.uuid4().hex))
     server.require(not (args.rehearsal / 'browser-load').exists(), 'Browser load already has state; do not change its runtime')
-    before = addresses(images, network)
+    upstream_containers = {name: container(name) for name in server.UPSTREAM_PORTS}
+    before = addresses(images, network, upstream_containers)
     files = None
     for name in APIS:
         value = container(name)
@@ -310,6 +340,7 @@ def prepare(args):
     keys = json.loads(server.docker('exec', server.PROJECT + '-tournaments-api-1', 'python', '-c', KEY_CODE, capture=True))
     settings = private_settings(original_settings, keys, server.ORIGIN)
     original_listener = private_read(server.CONF)
+    before = listener_addresses(original_listener, before, upstream_containers)
     listener_content(original_listener, before, before)
     overlay = runtime_overlay(images, secret, state / 'tournaments.json')
     state.mkdir(mode=0o700)

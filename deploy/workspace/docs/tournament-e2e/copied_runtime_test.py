@@ -134,6 +134,77 @@ class CopiedRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'current candidate'):
             runtime.listener_content(original.replace(before['game-api'], '172.20.0.99:8000'), before, after)
 
+    def published_listener_fixture(self):
+        original, direct, after = self.listener_fixture()
+        ports = {'game-api': '18005', 'tournaments-api': '18006',
+                 'game-frontend': '18105', 'tournaments-frontend': '18106', 'admin-frontend': '18108'}
+        published = {name: '127.0.0.1:' + ports[name] for name in direct}
+        containers = {name: {'NetworkSettings': {'Ports': {str(port) + '/tcp': [
+            {'HostIp': '127.0.0.1', 'HostPort': ports[name]}]}}}
+            for name, port in runtime.server.UPSTREAM_PORTS.items()}
+        for name, target in direct.items():
+            original = original.replace('http://' + target + '/', 'http://' + published[name] + '/')
+        # Frontends also use proxy_pass without a URI in the observed r7 listener.
+        original = original.replace('http://' + published['game-frontend'] + '/',
+                                    'http://' + published['game-frontend'])
+        return original, direct, after, published, containers
+
+    def test_published_listener_migrates_observed_loopback_bindings_and_preserves_routes(self):
+        original, direct, after, published, containers = self.published_listener_fixture()
+        before = runtime.listener_addresses(original, direct, containers)
+        self.assertEqual(before, published)
+        changed = runtime.listener_content(original, before, after)
+        for name, target in after.items():
+            suffix = ';' if name == 'game-frontend' else '/;'
+            self.assertIn(f'location /{name}/ {{ proxy_pass http://{target}{suffix}', changed)
+        self.assertNotIn('http://127.0.0.1:', changed)
+        self.assertEqual(original.count('location '), changed.count('location '))
+
+    def test_bridge_listener_does_not_require_published_ports(self):
+        original, direct, _ = self.listener_fixture()
+        containers = {name: {'NetworkSettings': {'Ports': {}}} for name in direct}
+        self.assertEqual(runtime.listener_addresses(original, direct, containers), direct)
+
+    def test_loopback_listener_rejects_missing_wrong_public_or_wrong_protocol_binding(self):
+        original, direct, _, _, containers = self.published_listener_fixture()
+        mutations = (
+            {},
+            {'8000/tcp': [{'HostIp': '127.0.0.1', 'HostPort': '18099'}]},
+            {'8000/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '18005'}]},
+            {'8000/udp': [{'HostIp': '127.0.0.1', 'HostPort': '18005'}]},
+        )
+        for ports in mutations:
+            with self.subTest(ports=ports):
+                changed = copy.deepcopy(containers)
+                changed['game-api']['NetworkSettings']['Ports'] = ports
+                with self.assertRaisesRegex(ValueError, 'game-api'):
+                    runtime.listener_addresses(original, direct, changed)
+
+    def test_listener_rejects_extra_target_duplicate_modes_and_comment_only_target(self):
+        original, direct, _, published, containers = self.published_listener_fixture()
+        mutations = (
+            original + '\nlocation /extra/ { proxy_pass http://127.0.0.1:18099/; }',
+            original + '\nlocation /extra/ { proxy_pass http://' + direct['game-api'] + '/; }',
+            original.replace('proxy_pass http://' + published['game-api'] + '/',
+                             '# proxy_pass http://' + published['game-api'] + '/'),
+            original.replace(published['game-api'], published['game-api'] + '0'),
+        )
+        for changed in mutations:
+            with self.subTest(listener=changed):
+                with self.assertRaises(ValueError):
+                    runtime.listener_addresses(changed, direct, containers)
+
+    def test_listener_rejects_duplicate_container_targets_and_incomplete_inventory(self):
+        original, direct, _, published, containers = self.published_listener_fixture()
+        changed = copy.deepcopy(containers)
+        changed['tournaments-api']['NetworkSettings']['Ports']['8000/tcp'][0]['HostPort'] = '18005'
+        original = original.replace(published['tournaments-api'], published['game-api'])
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            runtime.listener_addresses(original, direct, changed)
+        del containers['game-api']
+        with self.assertRaisesRegex(ValueError, 'inventory'):
+            runtime.listener_addresses(original, direct, containers)
+
     def preflight_fixture(self, root):
         root = Path(root)
         project, rehearsal = root / 'candidate', root / 'rehearsal'
