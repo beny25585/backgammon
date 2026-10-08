@@ -3,9 +3,11 @@ ENV CI=true
 RUN npm install --global pnpm@10.33.2
 ARG APP_DIR
 WORKDIR /app
-# Include workspace overrides and package-manager configuration before installing.
-COPY ["${APP_DIR}/", "/app/"]
+# Include the lockfile and optional workspace overrides before installing.
+# All three apps have pnpm-lock.yaml; pnpm-workspace.yaml is optional.
+COPY ["${APP_DIR}/package.json", "${APP_DIR}/pnpm-*.yaml", "/app/"]
 RUN --mount=type=cache,target=/pnpm/store pnpm install --frozen-lockfile --store-dir=/pnpm/store
+COPY ["${APP_DIR}/", "/app/"]
 
 FROM dependencies AS development
 CMD ["pnpm", "exec", "vite", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]

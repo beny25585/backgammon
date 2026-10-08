@@ -546,6 +546,14 @@ def prepare(args, state, tools):
     finish_prepare(args, state, tools, session)
 
 
+def release_builder(tag):
+    """Preserve old prepared releases; new builds use the shared cache builder."""
+    legacy = 'backgammon-build-' + tag
+    result = subprocess.run(['sudo', 'docker', 'buildx', 'inspect', legacy],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return legacy if result.returncode == 0 else 'backgammon-build'
+
+
 def finish_prepare(args, state, tools, session):
     identity = session['identity']
     require(not CONF.exists(), 'A test listener is already installed')
@@ -556,7 +564,7 @@ def finish_prepare(args, state, tools, session):
         return
     # Keep the public engine outside private backups; no credential file is served.
     output = state / 'engine'
-    builder = 'backgammon-build-' + TAG
+    builder = release_builder(TAG)
     try:
         docker('buildx', 'inspect', builder, '--bootstrap')
         limits = docker('inspect', f'buildx_buildkit_{builder}0', '--format',

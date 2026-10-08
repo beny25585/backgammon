@@ -4,7 +4,8 @@ set -euo pipefail
 project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 cd "$project_root"
 release_tag="$(python3 docker/verify_workspace.py --print-tag)"
-builder="backgammon-build-${release_tag}"
+# Reuse the same BuildKit cache across release tags.
+builder="backgammon-build"
 compose=(sudo docker compose --env-file docker/production.env -f docker/compose.production.yaml --profile live)
 
 "${compose[@]}" config --quiet

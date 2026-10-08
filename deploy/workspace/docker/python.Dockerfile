@@ -1,8 +1,4 @@
 FROM python:3.12-slim-bookworm
-ARG SOURCE_REVISION=unversioned
-ARG RELEASE_TAG=unversioned
-LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG
-
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 ARG APP_DIR
 WORKDIR /app
@@ -15,3 +11,8 @@ COPY docker/runtime_env.py docker/prepare_local.py /opt/docker/
 COPY docker/tournaments_transfer.py docker/service_runtime.py /opt/docker/
 USER app
 ENTRYPOINT ["python", "/opt/docker/runtime_env.py"]
+
+# Release metadata must not invalidate dependency or application layers.
+ARG SOURCE_REVISION=unversioned
+ARG RELEASE_TAG=unversioned
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG

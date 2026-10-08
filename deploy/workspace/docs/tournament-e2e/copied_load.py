@@ -276,7 +276,7 @@ def prepare(server, args, state, tools):
         for kind in ('game', 'tournaments'):
             server.app(args, state, kind, 'integrations')
         # Helper exporter is intentionally separate from the seven application images.
-        builder = 'backgammon-build-' + target['image_tag']
+        builder = server.release_builder(target['image_tag'])
         try:
             server.docker('buildx', 'inspect', builder, '--bootstrap')
             limits = server.docker('inspect', 'buildx_buildkit_' + builder + '0', '--format',
