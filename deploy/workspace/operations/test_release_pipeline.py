@@ -1,0 +1,254 @@
+"""Release safety checks with fake services; no application tests or real publication."""
+import contextlib
+import copy
+import io
+import json
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import unittest
+from unittest.mock import Mock, patch
+
+import release_pipeline as release
+
+
+def manifest():
+    return {'schema_version': 1, 'release_id': 'bg-release-20261008t120000z-1234abcd', 'sources': {
+        name: {'revision': 'a' * 40, 'branch': branch, 'url': 'https://github.com/' + origin + '.git'}
+        for name, (branch, origin, _) in release.SOURCES.items()
+    }}
+
+
+class ManifestTests(unittest.TestCase):
+    def test_all_four_sources_required(self):
+        value = manifest()
+        release.validate_manifest(value)
+        del value['sources']['Backgammon Game']
+        with self.assertRaisesRegex(RuntimeError, 'source set'):
+            release.validate_manifest(value)
+
+    def test_wrong_branch_and_revision_rejected(self):
+        for field, value in (('branch', 'main'), ('revision', 'HEAD'), ('url', 'https://evil.example/code.git')):
+            data = manifest()
+            data['sources']['Backgammon Game'][field] = value
+            with self.assertRaises(RuntimeError):
+                release.validate_manifest(data)
+
+    def test_unsafe_release_directory_rejected(self):
+        data = manifest()
+        data['release_id'] = '../../production'
+        with self.assertRaises(RuntimeError):
+            release.validate_manifest(data)
+
+    def test_github_https_ssh_and_credentials(self):
+        for url in ('https://github.com/Owner/Repo.git', 'git@github.com:Owner/Repo.git', 'ssh://git@github.com/Owner/Repo.git'):
+            self.assertEqual(release.github_repository(url), 'owner/repo')
+        with self.assertRaises(RuntimeError):
+            release.github_repository('https://secret@github.com/Owner/Repo.git')
+
+
+class PublicationTests(unittest.TestCase):
+    def test_any_remote_preflight_failure_prevents_all_pushes(self):
+        runner = Mock()
+        sources = manifest()['sources']
+        def fake_git(repository, *args):
+            if args[0] == 'ls-remote':
+                return 'a' * 40 + '\trefs/heads/master'
+            if repository.name == 'backgammon-tournaments' and args[0] == 'merge-base':
+                raise RuntimeError('remote diverged')
+            return ''
+        with patch.object(release, 'assert_sources'), patch.object(release, 'git', side_effect=fake_git):
+            with self.assertRaisesRegex(RuntimeError, 'remote diverged'):
+                release.publish(Path('/workspace'), sources, runner, {})
+        runner.run.assert_not_called()
+
+    def test_push_failure_keeps_receipts_for_already_published_commits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner = Mock(directory=Path(directory))
+            runner.run.side_effect = [None, RuntimeError('push denied')]
+            receipt = {}
+            def fake_git(repository, *args):
+                return 'a' * 40 + '\trefs/heads/master' if args[0] == 'ls-remote' else ''
+            with patch.object(release, 'assert_sources'), patch.object(release, 'git', side_effect=fake_git):
+                with self.assertRaisesRegex(RuntimeError, 'push denied'):
+                    release.publish(Path('/workspace'), manifest()['sources'], runner, receipt)
+            self.assertEqual(len(receipt['published']), 1)
+            self.assertEqual(runner.run.call_count, 2)
+            self.assertEqual(json.loads((Path(directory) / 'status.json').read_text()), receipt)
+            commands = [call.args[1] for call in runner.run.call_args_list]
+            self.assertTrue(all('commit' not in command and '--force' not in command for command in commands))
+
+
+class RuntimeTests(unittest.TestCase):
+    def config(self):
+        return {'name': release.PROJECT, 'services': {
+            'game-api': {'image': 'old-game', 'environment': {'DB_NAME': 'live', 'REDIS_URL': 'redis://redis:6379/15'},
+                         'volumes': [{'source': 'media', 'target': '/data/media'}]},
+            'game-tasks': {'image': 'old-game', 'environment': {'DB_NAME': 'live'}},
+            'postgres': {'image': 'postgres:16', 'volumes': [{'source': 'data', 'target': '/var/lib/postgresql/data'}]},
+        }, 'volumes': {'data': {'name': 'production-data'}, 'media': {'name': 'production-media'}}}
+
+    def test_only_images_change_api_and_worker_together(self):
+        before = self.config()
+        original = copy.deepcopy(before)
+        after = release.updated_config(before, {'game': 'sha256:new'})
+        self.assertEqual(before, original)
+        self.assertEqual(after['services']['game-api']['image'], 'sha256:new')
+        self.assertEqual(after['services']['game-tasks']['image'], 'sha256:new')
+        self.assertEqual(after['services']['postgres'], before['services']['postgres'])
+        self.assertEqual(after['services']['game-api']['environment'], before['services']['game-api']['environment'])
+        self.assertEqual(after['volumes'], before['volumes'])
+
+    def test_maintenance_preserves_other_applications(self):
+        locations = '\n'.join('  location /backgammon/p' + str(index) + '/ { proxy_pass http://127.0.0.1:8005; }' for index in range(10))
+        other = '  location /calendar/ { proxy_pass http://127.0.0.1:9000; }'
+        text = 'server {\n' + locations + '\n' + other + '\n}'
+        result = release.maintenance_config(text)
+        self.assertEqual(result.count('return 503;'), 10)
+        self.assertIn(other, result)
+        self.assertEqual(result.replace('\n    if ($remote_addr != 127.0.0.1) { return 503; }\n', ''), text)
+
+    def test_small_or_malformed_nginx_inventory_refused(self):
+        for text in ('server { location /calendar/ { } }', 'location /backgammon/ {'):
+            with self.assertRaises(RuntimeError):
+                release.maintenance_config(text)
+
+    def production(self):
+        production = release.Production.__new__(release.Production)
+        production.runner = Mock(directory=Path('/receipts'), stage='testing')
+        production.compose = lambda file: ['docker', 'compose', '-f', str(file)]
+        production.old_file = Path('/old.json')
+        production.new_file = Path('/new.json')
+        production.original_nginx = 'original'
+        production.status = {}
+        production.checkpoint = Mock()
+        production.nginx_apply = Mock()
+        production.maintenance = False
+        production.stopped = False
+        production.migrations_started = False
+        production.writes_opened = False
+        return production
+
+    def test_failure_before_maintenance_does_not_restart_services(self):
+        production = self.production()
+        production.failed()
+        self.assertEqual(production.runner.run.call_count, 1)
+        self.assertIn('logs', production.runner.run.call_args.args[1])
+        production.nginx_apply.assert_not_called()
+
+    def test_failure_before_migration_restores_old_runtime_without_db_restore(self):
+        production = self.production()
+        production.maintenance = True
+        production.failed()
+        commands = [call.args[1] for call in production.runner.run.call_args_list]
+        self.assertEqual(production.status['compose_file'], str(Path('/old.json')))
+        self.assertTrue(all('pg_restore' not in command for command in commands))
+        production.nginx_apply.assert_called_once_with('original', 'restore-original-routing')
+
+    def test_migration_or_worker_write_failure_never_reopens_or_restores_old_data(self):
+        for changed in ('migrations_started', 'writes_opened'):
+            production = self.production()
+            production.maintenance = True
+            setattr(production, changed, True)
+            production.failed()
+            production.nginx_apply.assert_not_called()
+            self.assertEqual(production.runner.run.call_count, 1)
+            production.checkpoint.assert_called_once_with('maintenance_requires_attention')
+
+    def test_deploy_detects_runtime_drift_before_maintenance(self):
+        production = self.production()
+        production.nginx = Path('/etc/nginx/production.conf')
+        with patch.object(release, 'capture', return_value=b'changed'):
+            with self.assertRaisesRegex(RuntimeError, 'Nginx changed'):
+                production.deploy()
+        self.assertFalse(production.maintenance)
+        production.runner.run.assert_not_called()
+
+
+class OutputTests(unittest.TestCase):
+    def test_application_test_failure_blocks_push_and_deployment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = Mock(root=Path(directory), preflight_only=False, checks_only=False)
+            def failed_tests(root, runner):
+                runner.stage = 'tournaments-frontend-tests'
+                raise RuntimeError('application test failed')
+            with patch.object(release, 'source_inventory', return_value=manifest()['sources']), \
+                 patch.object(release.shutil, 'which', return_value='tool'), \
+                 patch.object(release, 'capture', return_value=b'linux'), \
+                 patch.object(release, 'frontend_checks', side_effect=failed_tests), \
+                 patch.object(release, 'publish') as publish, \
+                 patch.object(release, 'upload_and_deploy') as deploy:
+                with self.assertRaisesRegex(RuntimeError, 'application test failed'):
+                    release.local_main(arguments)
+                publish.assert_not_called()
+                deploy.assert_not_called()
+            status = json.loads(next(Path(directory).glob('artifacts/auto-releases/*/status.json')).read_text())
+            self.assertEqual(status['failed_stage'], 'tournaments-frontend-tests')
+            self.assertEqual(status['published'], {})
+
+    def test_failed_command_prints_stderr_and_saves_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runner = release.Runner(Path(directory))
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                with self.assertRaisesRegex(RuntimeError, 'exit 7'):
+                    runner.run('synthetic-failure', [sys.executable, '-c',
+                        "import sys; print('TEST_ERROR_DETAIL', file=sys.stderr); sys.exit(7)"])
+            self.assertIn('TEST_ERROR_DETAIL', output.getvalue())
+            self.assertIn('TEST_ERROR_DETAIL', next(Path(directory).glob('*.log')).read_text())
+
+    def test_test_settings_refuse_runtime_use(self):
+        code = Path(release.__file__).with_name('release_test_settings.py').read_text()
+        with patch.dict('os.environ', {}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'explicitly isolated'):
+                exec(compile(code, 'release_test_settings.py', 'exec'), {})
+
+    def test_test_settings_refuse_external_database_host(self):
+        code = Path(release.__file__).with_name('release_test_settings.py').read_text()
+        with patch.dict('os.environ', {'BACKGAMMON_RELEASE_TEST': '1', 'DB_HOST': 'production'}, clear=True):
+            with self.assertRaisesRegex(RuntimeError, 'disposable PostgreSQL'):
+                exec(compile(code, 'release_test_settings.py', 'exec'), {})
+
+    def test_clean_source_changes_stop_before_publication(self):
+        with patch.object(release, 'source_inventory', return_value={'changed': True}):
+            with self.assertRaisesRegex(RuntimeError, 'Source changed'):
+                release.assert_sources(Path('/workspace'), manifest()['sources'])
+
+
+@unittest.skipUnless(shutil.which('docker'), 'Docker Compose CLI unavailable')
+class ComposeRoundTripTests(unittest.TestCase):
+    def test_real_production_compose_survives_snapshot_and_image_update(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            environment = folder / 'release.env'
+            environment.write_text('IMAGE_TAG=synthetic-check\nPUBLIC_HOST=example.test\nPUBLIC_ORIGIN=https://example.test\n'
+                                   + 'CONFIG_DIR=' + folder.as_posix() + '\nTRANSFER_DIR=' + folder.as_posix() + '\n')
+            recipe = Path(release.__file__).resolve().parents[1] / 'docker/compose.production.yaml'
+            before = json.loads(release.capture(['docker', 'compose', '--env-file', environment,
+                '-p', release.PROJECT, '-f', recipe, *release.PROFILES, 'config', '--format', 'json']))
+            images = {kind: 'sha256:' + 'a' * 64 for kind in release.IMAGES}
+            after = release.updated_config(before, images)
+            snapshot = folder / 'runtime.json'
+            release.save(snapshot, after)
+            actual = json.loads(release.capture(['docker', 'compose', '-p', release.PROJECT,
+                '-f', snapshot, *release.PROFILES, 'config', '--format', 'json']))
+            self.assertEqual(actual, after)
+
+    def test_runtime_dollars_and_volumes_survive_real_compose_round_trip(self):
+        with tempfile.TemporaryDirectory() as directory:
+            original = Path(directory) / 'original.json'
+            snapshot = Path(directory) / 'snapshot.json'
+            release.save(original, {'name': 'bg-release-roundtrip', 'services': {'probe': {
+                'image': 'alpine:3', 'environment': {'TOKEN': 'literal$$value'},
+                'command': ['sh', '-c', 'echo $$TOKEN'], 'labels': {'sample': 'label$$literal'},
+                'volumes': [{'type': 'volume', 'source': 'data', 'target': '/data'}],
+            }}, 'volumes': {'data': {'name': 'bg-release-roundtrip-data'}}})
+            first = json.loads(release.capture(['docker', 'compose', '-f', original, 'config', '--format', 'json']))
+            release.save(snapshot, first)
+            second = json.loads(release.capture(['docker', 'compose', '-f', snapshot, 'config', '--format', 'json']))
+            self.assertEqual(first, second)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -32,24 +32,10 @@ class RematchGameTests(TestCase):
         with self.assertRaises(ValueError):
             create_private_rematch_room(room)
 
-    def test_tournament_linked_room_rejects_rematch(self):
-        # tournament link with tournament_id !=0 should be considered tournament
-        room = self._make_room(status='completed')
-        from game.link.models import TournamentLink
-        TournamentLink.objects.create(issuer='test', tournament_id=1, fixture_id=1, room=room)
-        # both_players_connected would be false without presence, but tournament guard should trigger unavailable
-        self.assertTrue(True)
-
-    def test_direct_play_room_allows_request(self):
-        self.assertTrue(True)
-
     def test_opponent_disconnected_rejects_request(self):
         room = self._make_room(status='completed')
         # no presence both connected -> both_players_connected false
         self.assertFalse(both_players_connected(room))
-
-    def test_opponent_disconnect_after_request_makes_unavailable(self):
-        self.assertTrue(True)
 
     def test_private_accept_creates_new_room(self):
         room = self._make_room(status='completed')

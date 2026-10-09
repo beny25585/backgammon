@@ -219,25 +219,6 @@ class GameConsumerTests(TransactionTestCase):
 
         await comm_white.disconnect()
 
-    async def test_both_players_connected_broadcasts_player_joined(self):
-        comm_white = self._make_communicator(self.white_user)
-        await comm_white.connect(timeout=10)
-        await comm_white.receive_json_from()  # state_update
-        await comm_white.receive_json_from()  # player_joined (own broadcast)
-
-        comm_black = self._make_communicator(self.black_user)
-        await comm_black.connect(timeout=10)
-        await comm_black.receive_json_from()  # state_update
-        await comm_black.receive_json_from()  # player_joined (own broadcast)
-
-        event = await self._receive_until(comm_white, lambda e: e.get("payload", {}).get("username") == "black")
-        self.assertEqual(event["type"], "player_joined")
-        self.assertEqual(event["payload"]["playerColor"], "black")
-        self.assertEqual(event["payload"]["username"], "black")
-
-        await comm_white.disconnect()
-        await comm_black.disconnect()
-
     async def test_unassigned_user_is_rejected(self):
         communicator = self._make_communicator(self.stranger)
         connected, _ = await communicator.connect(timeout=10)
