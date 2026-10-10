@@ -701,6 +701,15 @@ export function Board({
 
   const handleClick = useCallback((idx: Source) => {
     if (interactionBlocked || autoPointRunRef.current !== null) return;
+    if (idx === BAR) {
+      if (myColor === null || !legalFromPoints.includes(BAR)) return;
+      const move = preferredDirectMove(
+        legalMovesFrom(state, BAR, myColor),
+        [...state.remaining].sort((a, b) => b - a),
+      );
+      if (move) triggerFly(BAR, move.to);
+      return;
+    }
     // Destination-click make-point shortcut (no source selected)
     if (
       selected === null &&
@@ -752,7 +761,7 @@ export function Board({
     if (selected === idx) {
       if (legalTargets.length === 1) {
         triggerFly(selected, legalTargets[0]);
-      } else if (idx !== BAR || legalFromPoints.length > 1) {
+      } else {
         onSelect(null);
       }
     } else if (legalFromPoints.includes(idx)) {

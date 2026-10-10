@@ -2,7 +2,7 @@ import { test, expect, type ComponentFixtures } from "@playwright/experimental-c
 import type { ComponentProps } from "react";
 import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
-import { applyMove, BAR, newGame, OFF } from "@/lib/backgammon/engine";
+import { allLegalMoves, applyMove, BAR, newGame, OFF } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage, MakeMoveOptions } from "../../types/context";
 import { Board } from "../Board/Board";
@@ -161,6 +161,60 @@ test("auto-moves with the larger die when a checker has multiple legal targets",
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([23, 19]);
 });
+
+for (const color of ["white", "black"] as const) {
+  for (const dice of [[1, 3], [4, 5]]) {
+    test(`bar click uses the higher legal die for ${color} with ${dice.join("/")}`, async ({ mount }) => {
+      const state = movingState({
+        points: new Array(24).fill(0),
+        bar: { white: color === "white" ? 2 : 0, black: color === "black" ? 2 : 0 },
+        turn: color,
+        dice,
+        remaining: [...dice],
+      });
+      const moves = allLegalMoves(state, color);
+      const calls: Array<{ from: Source | undefined; to: Target }> = [];
+      const component = await mount(
+        <Board state={state} myColor={color} selected={BAR}
+          legalTargets={moves.map((move) => move.to)} legalFromPoints={[BAR]}
+          onSelect={() => {}} onMove={(to, from) => calls.push({ from, to })} />,
+      );
+      await component.locator('[data-point-idx="bar"]').click();
+      await expect.poll(() => calls.length).toBe(1);
+      const higherDie = Math.max(...dice);
+      expect(calls[0]).toEqual({ from: BAR, to: color === "white" ? 24 - higherDie : higherDie - 1 });
+    });
+  }
+
+  for (const bothBlocked of [false, true]) {
+    test(`bar click ${bothBlocked ? "does not move when both entries are blocked" : "uses the lower die when the higher entry is blocked"} for ${color}`, async ({ mount }) => {
+      const points = new Array(24).fill(0);
+      points[color === "white" ? 19 : 4] = color === "white" ? -2 : 2;
+      if (bothBlocked) points[color === "white" ? 20 : 3] = color === "white" ? -2 : 2;
+      const state = movingState({
+        points,
+        bar: { white: color === "white" ? 2 : 0, black: color === "black" ? 2 : 0 },
+        turn: color,
+        dice: [5, 4],
+        remaining: [5, 4],
+      });
+      const moves = allLegalMoves(state, color);
+      const calls: Array<{ from: Source | undefined; to: Target }> = [];
+      const component = await mount(
+        <Board state={state} myColor={color} selected={BAR}
+          legalTargets={moves.map((move) => move.to)} legalFromPoints={moves.length ? [BAR] : []}
+          onSelect={() => {}} onMove={(to, from) => calls.push({ from, to })} />,
+      );
+      await component.locator('[data-point-idx="bar"]').click();
+      if (bothBlocked) {
+        expect(calls).toHaveLength(0);
+      } else {
+        await expect.poll(() => calls.length).toBe(1);
+        expect(calls[0]).toEqual({ from: BAR, to: color === "white" ? 20 : 3 });
+      }
+    });
+  }
+}
 
 test("shows a forced-move message at the undo position before auto-moving", async ({
   mount,
