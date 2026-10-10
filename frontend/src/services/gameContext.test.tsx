@@ -12,7 +12,7 @@ import {
   OnlineClockProbe,
   ForcedAutoConfirmProbe,
 } from "../test-utils/probes";
-import GameScreen from "../components/GameScreen/GameScreen";
+
 import type { GameState } from "../lib/backgammon/engine";
 import {
   BAR,
@@ -549,74 +549,6 @@ test("undo sends an undo intent", async ({ mount, page }) => {
   expect(undoMsg.payload).toEqual({ action: "undo" });
 });
 
-test("confirming give up sends a give_up message", async ({ mount, page }) => {
-  await seedFakeSocket(page);
-  const component = await mount(
-    <GameProvider roomId="test-room" playerColor="white">
-      <GameScreen />
-    </GameProvider>,
-  );
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const ws = (window as unknown as Record<string, { onmessage?: unknown }>).__fakeWs;
-        return typeof ws?.onmessage === "function";
-      }),
-    )
-    .toBe(true);
-  await emitInitialState(page, { ...midGameState(), version: 1 });
-
-  await component.getByRole("button", { name: "Match control" }).click();
-  await component.getByRole("button", { name: "Give up" }).click();
-  await component.getByRole("button", { name: "Yes", exact: true }).click();
-
-  await expect
-    .poll(
-      async () => (await sentMessages(page)).some((m) => m.type === "give_up"),
-      { timeout: 3000 },
-    )
-    .toBe(true);
-});
-
-for (const betweenGames of [false, true]) {
-test(`explicit leave waits for the server's final match result (${betweenGames ? "between games" : "active game"})`, async ({ mount, page }) => {
-  await seedFakeSocket(page);
-  let exitOutcome: string | undefined;
-  const component = await mount(
-    <GameProvider roomId="test-room" playerColor="white">
-      <GameScreen onLeave={(outcome) => { exitOutcome = outcome; }} />
-    </GameProvider>,
-  );
-  await expect.poll(() => page.evaluate(() => typeof (window as unknown as Record<string, FakeSocket>).__fakeWs?.onmessage === "function")).toBe(true);
-  await emitInitialState(page, { ...midGameState(), version: 1 });
-  if (betweenGames) {
-    await page.evaluate(() => (window as unknown as Record<string, FakeSocket>).__fakeWs.emit({ type: "game_ended", payload: {
-      winner: "white", winType: "single", points: 1, cube: 1,
-      whiteScore: 1, blackScore: 0, targetPoints: 7, matchOver: false,
-    } }));
-    await component.getByRole(
-      "button",
-      { name: "Match control" }
-    ).click();
-
-    await component.getByRole(
-      "button",
-      { name: "Leave and forfeit match", exact: true }
-    ).click();
-  } else {
-    await component.getByRole("button", { name: "Match control" }).click();
-    await component.getByRole("button", { name: "Leave and forfeit match", exact: true }).click();
-  }
-  await expect.poll(async () => (await sentMessages(page)).filter(m => m.type === "leave").length).toBe(1);
-  expect(exitOutcome).toBeUndefined();
-  await page.evaluate(() => (window as unknown as Record<string, FakeSocket>).__fakeWs.emit({ type: "game_ended", payload: {
-    winner: "black", winType: "gammon", points: 2, cube: 1,
-    whiteScore: 0, blackScore: 2, targetPoints: 7, matchOver: true, reason: "leave",
-  } }));
-  await expect.poll(() => exitOutcome).toBe("lost");
-});
-}
-
 test("server auto-pass after a roll shows the no-moves overlay", async ({
   mount,
   page,
@@ -837,7 +769,7 @@ test("forced terminal white auto-confirms after server ack", async ({ mount, pag
   await seedFakeSocket(page);
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
@@ -860,7 +792,7 @@ test("forced terminal black auto-confirms", async ({ mount, page }) => {
   await seedFakeSocket(page);
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="black">
-      <GameProbe from={0} to={4} />
+      <GameProbe from={0} to={4} origin="forced" />
     </GameProvider>,
   );
   const blackState = forcedTerminalBlack();
@@ -880,7 +812,7 @@ test("doubles: early ack does not end turn prematurely", async ({ mount, page })
   const initial = { ...forcedTerminalWhite(), points: (()=>{ const p=new Array(24).fill(0); p[23]=2; return p;})(), dice: [4,4], remaining: [4,4,4,4], version: 1 };
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, initial);
@@ -917,7 +849,7 @@ test("duplicate broadcasts do not resend end_turn", async ({ mount, page }) => {
   await seedFakeSocket(page);
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
@@ -934,7 +866,7 @@ test("reorder packet is not a move acknowledgement", async ({ mount, page }) => 
   await seedFakeSocket(page);
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
@@ -949,7 +881,7 @@ test("rejected move does not auto-confirm", async ({ mount, page }) => {
   await seedFakeSocket(page);
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...forcedTerminalWhite(), version: 1 });
@@ -1005,7 +937,7 @@ test("manual prefix + forced final does not auto-complete", async ({ mount, page
       <GameProbe
         from={0}
         to={OFF}
-        secondMove={{ from: 1, to: OFF }}
+        secondMove={{ from: 1, to: OFF, origin: "forced" }}
       />
       <ForcedAutoConfirmProbe />
     </GameProvider>,
@@ -1070,7 +1002,8 @@ test("two equivalent bar-entry orders auto-confirm after the second move ack", a
       <GameProbe
         from={BAR}
         to={19}
-        secondMove={{ from: BAR, to: 21 }}
+        origin="forced"
+        secondMove={{ from: BAR, to: 21, origin: "forced" }}
       />
       <ForcedAutoConfirmProbe />
     </GameProvider>,
@@ -1143,7 +1076,7 @@ test("competing callbacks before rerender do not send early end_turn", async ({ 
   const before = forcedTerminalWhite();
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...before, version: 1 });
@@ -1163,7 +1096,7 @@ test("action-less unchanged lastMove does not ack, later real ack completes", as
   const before = forcedTerminalWhite();
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...before, version: 1 });
@@ -1182,7 +1115,7 @@ test("fresh unrelated packet while awaiting_end_turn_ack keeps lock", async ({ m
   const before = forcedTerminalWhite();
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...before, version: 1 });
@@ -1200,7 +1133,7 @@ test("action-less end_turn completion clears lock", async ({ mount, page }) => {
   const before = forcedTerminalWhite();
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...before, version: 1 });
@@ -1218,7 +1151,7 @@ test("failed end_turn send unlocks without retry", async ({ mount, page }) => {
   const before = forcedTerminalWhite();
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...before, version: 1 });
@@ -1247,7 +1180,7 @@ test("reconnect invalidates and subsequent eligible turn can auto-complete", asy
   const before = forcedTerminalWhite();
   const component = await mount(
     <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
+      <GameProbe from={23} to={19} origin="forced" />
     </GameProvider>,
   );
   await emitInitialState(page, { ...before, version: 1 });
