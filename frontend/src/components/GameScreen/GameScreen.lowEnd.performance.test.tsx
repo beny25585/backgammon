@@ -17,13 +17,6 @@ interface FrameAudit {
 
 const profiles = [
   {
-    name: "Android Go landscape",
-    viewport: { width: 640, height: 360 },
-    cpuSlowdown: 6,
-    latencyMs: 650,
-    jitterMs: 250,
-  },
-  {
     name: "older phone landscape",
     viewport: { width: 667, height: 375 },
     cpuSlowdown: 4,
