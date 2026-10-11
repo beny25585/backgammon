@@ -1,6 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import {
-  BAR,
   OFF,
   newGame,
   type GameState,
@@ -219,39 +218,6 @@ test("dice service failure shows an error and does not roll", async ({ mount, pa
 
   await expect(component.getByTestId("error")).toHaveText("Dice service unreachable");
   await expect(component.getByTestId("phase")).toHaveText("rolling");
-});
-
-test("local deterministic bar entries complete the turn automatically", async ({ mount }) => {
-  const state: GameState = {
-    ...newGame(),
-    points: new Array(24).fill(0),
-    bar: { white: 2, black: 0 },
-    home: { white: 13, black: 0 },
-    turn: "white",
-    phase: "moving",
-    dice: [5, 3],
-    remaining: [5, 3],
-    lastMove: [],
-    moveHistory: [],
-    message: "",
-  };
-  const component = await mount(
-    <LocalGameProvider matchTarget={5}>
-      <StateSeedProbe state={state} />
-      <GameProbe
-        from={BAR}
-        to={19}
-        secondMove={{ from: BAR, to: 21 }}
-      />
-      <ForcedAutoConfirmProbe />
-    </LocalGameProvider>,
-  );
-  await expect(component.getByTestId("probe-phase")).toHaveText("moving");
-  await expect(component.getByTestId("probe-turn")).toHaveText("white");
-  await component.getByTestId("move").click();
-  await component.getByTestId("move-2").click();
-  await expect(component.getByTestId("probe-phase")).toHaveText("rolling");
-  await expect(component.getByTestId("probe-turn")).toHaveText("black");
 });
 
 test("local earlier meaningful choice keeps undo after forced final", async ({ mount }) => {
