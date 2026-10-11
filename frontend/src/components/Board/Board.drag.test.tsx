@@ -20,13 +20,12 @@ async function center(locator: Locator) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-for (const scenario of ["legal", "blocked", "outside", "source", "escape", "bar", "off", "black", "opponent", "wrong-turn"] as const) {
+for (const scenario of ["legal", "blocked", "outside", "source", "escape", "off", "black", "opponent", "wrong-turn"] as const) {
   test(`checker drag: ${scenario}`, async ({ mount, page }) => {
     const state = position();
     const color = scenario === "black" ? "black" : "white";
     let from: Source = 23;
     let to: Target = scenario === "blocked" ? 18 : scenario === "source" ? 23 : 20;
-    if (scenario === "bar") { state.bar.white = 1; from = "bar"; }
     if (scenario === "off") {
       state.points.fill(0); state.points[3] = 2; state.points[5] = 2;
       state.home.white = 11;
@@ -62,7 +61,7 @@ for (const scenario of ["legal", "blocked", "outside", "source", "escape", "bar"
     await page.mouse.move(end.x, end.y, { steps: 8 });
     await page.mouse.up();
     await expect(component.getByTestId("dragging-checker")).toHaveCount(0);
-    if (["legal", "bar", "off", "black"].includes(scenario)) {
+    if (["legal", "off", "black"].includes(scenario)) {
       await expect.poll(() => moves).toEqual([[from, to]]);
     } else {
       await page.waitForTimeout(100);

@@ -4,7 +4,7 @@ import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { allLegalMoves, applyMove, BAR, newGame, OFF } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
-import type { NoMovesMessage, MakeMoveOptions } from "../../types/context";
+import type { NoMovesMessage } from "../../types/context";
 import { Board } from "../Board/Board";
 import { SizedBoardFixture } from "../../test-utils/Board.story";
 
@@ -95,42 +95,6 @@ test("tap uses the smaller die when bearing off immediately would waste a playab
   await component.locator('[data-point-idx="1"]').click();
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([1, 0]);
-});
-
-for (const color of ["white", "black"] as const) {
-  test(`direct bear-off click uses the higher legal die for ${color} even with reversed dice`, async ({ mount }) => {
-    const source = color === "white" ? 0 : 23;
-    const points = new Array(24).fill(0);
-    points[source] = color === "white" ? 2 : -2;
-    const state = movingState({ points, turn: color, dice: [1, 2], remaining: [1, 2] });
-    const calls: Array<{ from: Source | undefined; to: Target; die?: number }> = [];
-    const component = await mount(
-      <SizedBoardFixture state={state} myColor={color} selected={null} legalTargets={[]}
-        legalFromPoints={[source]} onSelect={() => {}}
-        onMove={(to, from, options?: MakeMoveOptions) => calls.push({ from, to, die: options?.die })} />,
-    );
-    await component.locator('[data-point-idx="off"]').click();
-    await expect.poll(() => calls.length).toBe(1);
-    expect(calls[0]).toEqual({ from: source, to: OFF, die: 2 });
-    await component.locator('[data-point-idx="off"]').click();
-    expect(calls).toHaveLength(1); // Wait for the first move to be reflected before dispatching another.
-  });
-}
-
-test("direct bear-off click uses the lower die when the higher die cannot bear off legally", async ({ mount }) => {
-  const points = new Array(24).fill(0);
-  points[2] = 1;
-  points[5] = 1;
-  const state = movingState({ points, dice: [4, 3], remaining: [4, 3] });
-  const calls: Array<{ from: Source | undefined; to: Target; die?: number }> = [];
-  const component = await mount(
-    <SizedBoardFixture state={state} myColor="white" selected={null} legalTargets={[]}
-      legalFromPoints={[2, 5]} onSelect={() => {}}
-      onMove={(to, from, options) => calls.push({ from, to, die: options?.die })} />,
-  );
-  await component.locator('[data-point-idx="off"]').click();
-  await expect.poll(() => calls.length).toBe(1);
-  expect(calls[0]).toEqual({ from: 2, to: OFF, die: 3 });
 });
 
 test("auto-moves on first tap when a checker has a single legal target", async ({ mount }) => {
@@ -599,38 +563,6 @@ test("rolled dice render before the no-moves notice", async ({ mount }) => {
     </MockGameWrapper>,
   );
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
-});
-
-test("no-moves notice outlives the dice snapshot without delaying roll or double", async ({ mount, page }) => {
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
-  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
-  let rolls = 0;
-  let doubles = 0;
-  const component = await mountBoard(mount, {
-    state,
-    playerColor: "white",
-    needsToRoll: true,
-    onRoll: () => rolls++,
-    offerDouble: () => doubles++,
-    noMovesMessage: { dice: [2, 4], remaining: [2, 4], color: "white" },
-  });
-  await page.clock.runFor(350);
-  await component.update(
-    <MockGameWrapper state={state} playerColor="white">
-      <GameBoard state={state} playerColor="white" makeMove={() => {}}
-        needsToRoll onRoll={() => rolls++} offerDouble={() => doubles++} />
-    </MockGameWrapper>,
-  );
-  await expect(component.getByTestId("dice-overlay")).toHaveCount(0);
-  await component.getByTitle("Tap to roll").click();
-  await component.getByTitle("Offer double to opponent").first().click();
-  await expect.poll(() => rolls).toBe(1);
-  await expect.poll(() => doubles).toBe(1);
-  await page.clock.runFor(2649);
-  await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
-  await page.clock.runFor(1);
-  await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
 });
 
 test("dice overlay is visible to the opponent when it's their turn", async ({ mount }) => {

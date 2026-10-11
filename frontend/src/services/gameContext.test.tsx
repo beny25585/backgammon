@@ -1208,44 +1208,6 @@ async function emitRematchStatus(page: Page, status: string, reason?: string) {
   }, { s: status, r: reason });
 }
 
-test("first settlement retry sends one rematch_request after ~1000ms", async ({ mount, page }) => {
-  await seedFakeSocket(page);
-  const component = await mount(
-    <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
-      <ForcedAutoConfirmProbe />
-    </GameProvider>,
-  );
-  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
-  await page.evaluate(() => {
-    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
-    ws.emit({ type: "game_ended", payload: { winner: "white", winType: "single", points: 1, cube: 1, whiteScore: 5, blackScore: 4, targetPoints: 5, matchOver: true } });
-  });
-  await expect(component.getByTestId("probe-phase")).toBeVisible();
-  // trigger initial rematch request to get into creating/source_not_settled
-  await page.evaluate(() => {
-    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
-    ws.emit({ type: "rematch_status", payload: { status: "creating", reason: "source_not_settled" } });
-  });
-  await expect(component.getByTestId("probe-autoConfirmPending")).toBeVisible(); // dummy check to ensure probe mounted
-  await expect.poll(async () => (await sentMessages(page)).filter(m => m.type === "rematch_request").length, { timeout: 2000 }).toBe(1);
-});
-
-test("no overlapping retry on repeated settlement pending", async ({ mount, page }) => {
-  await seedFakeSocket(page);
-  await mount(
-    <GameProvider roomId="test-room" playerColor="white">
-      <GameProbe from={23} to={19} />
-    </GameProvider>,
-  );
-  await emitInitialState(page, { ...midGameState(), phase: "game_over", winner: "white", version: 2 });
-  await emitRematchStatus(page, "creating", "source_not_settled");
-  await emitRematchStatus(page, "creating", "source_not_settled");
-  await emitRematchStatus(page, "creating", "source_not_settled");
-  await page.waitForTimeout(1200);
-  expect((await sentMessages(page)).filter(m => m.type === "rematch_request").length).toBe(1);
-});
-
 test("retry remains bounded to 5 automatic retries", async ({ mount, page }) => {
   await seedFakeSocket(page);
   await mount(

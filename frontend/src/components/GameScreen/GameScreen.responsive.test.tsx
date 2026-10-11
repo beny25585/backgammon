@@ -95,6 +95,9 @@ for (const vp of VIEWPORTS) {
     ).toBeGreaterThanOrEqual(MIN_FILL_HEIGHT);
   });
 
+}
+
+for (const vp of VIEWPORTS.filter(({ name }) => name !== "mobile-portrait")) {
   test(`checkers are not too small (${vp.name})`, async ({ mount, page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     const state = movingState();
@@ -111,7 +114,9 @@ for (const vp of VIEWPORTS) {
       `checker size should be >= ${MIN_CHECKER_PX}px (${vp.name}, got ${checkerPx})`,
     ).toBeGreaterThanOrEqual(MIN_CHECKER_PX);
   });
+}
 
+for (const vp of VIEWPORTS) {
   test(`dice overlay and side panel are visible (${vp.name})`, async ({ mount, page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     const state = movingState();

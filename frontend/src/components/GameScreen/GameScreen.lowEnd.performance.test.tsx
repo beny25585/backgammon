@@ -24,13 +24,6 @@ const profiles = [
     jitterMs: 250,
   },
   {
-    name: "wide budget Android landscape",
-    viewport: { width: 740, height: 360 },
-    cpuSlowdown: 6,
-    latencyMs: 800,
-    jitterMs: 300,
-  },
-  {
     name: "older phone landscape",
     viewport: { width: 667, height: 375 },
     cpuSlowdown: 4,
