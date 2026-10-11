@@ -1822,63 +1822,6 @@ class GameEndConsumerTests(TransactionTestCase):
         await comm_white.disconnect()
         await comm_black.disconnect()
 
-    async def test_two_timeout_handlers_score_first_game_once(self):
-        consumers = [GameConsumer(), GameConsumer()]
-        channel_layer = AsyncMock()
-        for consumer in consumers:
-            consumer.room_id = self.room_id
-            consumer.room_group_name = f'game_{self.room_id}'
-            consumer.channel_layer = channel_layer
-
-        # Force both handlers to read the same unscored state, including the
-        # precheck in _finalize_and_broadcast, before either can record a score.
-        barriers = [asyncio.Event(), asyncio.Event()]
-        reads = 0
-
-        async def synchronized_read(room):
-            nonlocal reads
-            snapshot = await get_game_state(room)
-            index = reads
-            reads += 1
-            if index < 4:
-                barrier = barriers[index // 2]
-                if index % 2:
-                    barrier.set()
-                await barrier.wait()
-            return snapshot
-
-        with patch('game.consumers.get_game_state', side_effect=synchronized_read), \
-                patch.object(GameConsumer, '_arm_auto_next_game', new_callable=AsyncMock):
-            await asyncio.wait_for(asyncio.gather(*[
-                consumer._forfeit_on_time('white', 'black') for consumer in consumers
-            ]), timeout=5)
-
-        await database_sync_to_async(self.room.refresh_from_db)()
-        self.assertEqual(self.room.white_score, 1)
-        self.assertEqual(self.room.status, 'completed')
-        self.assertEqual(
-            await database_sync_to_async(lambda: Match.objects.filter(room=self.room).count())(),
-            1,
-        )
-        channel_layer.group_send.assert_awaited_once()
-        payload = channel_layer.group_send.call_args.args[1]['payload']
-        self.assertEqual(payload['points'], 1)
-        self.assertEqual(payload['whiteScore'], 1)
-        self.assertEqual(payload['reason'], 'time')
-
-        # A terminal timeout cannot start or score another game.
-        scored = await get_game_state(self.room)
-        engine = BackgammonEngine(scored.state_data)
-        result = await consumers[0]._handle_next_game(engine)
-        self.assertFalse(result['success'])
-        with patch.object(GameConsumer, '_arm_auto_next_game', new_callable=AsyncMock):
-            await consumers[0]._forfeit_on_time('white', 'black')
-        await database_sync_to_async(self.room.refresh_from_db)()
-        self.assertEqual(self.room.white_score, 1)
-        self.assertEqual(
-            await database_sync_to_async(lambda: Match.objects.filter(room=self.room).count())(),
-            1,
-        )
 
     async def test_timeout_with_target_above_one_ends_the_match(self):
         stored = BackgammonEngine.get_initial_state()

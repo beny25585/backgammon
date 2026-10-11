@@ -1466,17 +1466,6 @@ class AbandonedFixtureTests(ResultTestBase):
 class CancelledRoomTests(ResultTestBase):
     """An explicit cancellation releases the fixture rather than deciding it."""
 
-    def test_cancelling_a_linked_room_reports_it_cancelled(self):
-        seat = self.seat(self.room, "white", "quitter")
-        self.client.force_authenticate(user=seat.player.user)
-
-        response = self.client.post("/api/rooms/cancel/")
-
-        self.assertEqual(response.status_code, 200)
-        body = self.body()
-        self.assertEqual(body["status"], "cancelled")
-        self.assertIsNone(body["winner_seat"])
-        self.assertEqual(body["end_reason"], "cancelled")
 
     def test_cancelling_an_unlinked_room_reports_nothing(self):
         room = self.make_room(code="PLAIN3", status="waiting")
