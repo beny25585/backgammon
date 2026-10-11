@@ -441,6 +441,21 @@ Start-DevProcess `
 
 
     # ========================================================
+    # TOURNAMENTS ADMIN FRONTEND
+    # ========================================================
+
+    Start-DevProcess `
+        -Name "Admin Frontend" `
+        -WorkingDirectory $adminFrontend `
+        -FilePath $env:ComSpec `
+        -Arguments @(
+            "/d",
+            "/s",
+            "/c",
+            "set VITE_API_URL=http://${tournamentsBackendHost}:${tournamentsBackendPort}&& pnpm exec vite --host $adminFrontendHost --port $adminFrontendPort --strictPort"
+        )
+
+    # ========================================================
     # TOURNAMENTS BACKEND
     # ========================================================
 
@@ -514,7 +529,7 @@ Start-DevProcess `
     Write-Host ""
     Write-Host " Game Frontend:       http://${gameFrontendHost}:${gameFrontendPort}"
     Write-Host " Tournaments:         http://${tournamentsFrontendHost}:${tournamentsFrontendPort}/tournaments/"
-    Write-Host " Admin Frontend:      http://${adminFrontendHost}:${adminFrontendPort}"
+    Write-Host " Admin Frontend:      http://${adminFrontendHost}:${adminFrontendPort}/tournaments-admin/"
     Write-Host ""
     Write-Host " Game Backend:        http://${gameBackendHost}:${gameBackendPort}"
     Write-Host " Tournaments Backend: http://${tournamentsBackendHost}:${tournamentsBackendPort}"
