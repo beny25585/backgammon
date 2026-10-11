@@ -9,7 +9,8 @@ test("unconfigured analysis stops polling while the result remains visible", asy
     return route.fulfill({ status: 503, json: { code: "analysis_not_configured", retryable: false } });
   });
   const component = await mount(<QuickGameResult roomId="disabled" winner="white"
-    whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />);
+    whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />,
+    { hooksConfig: { locale: "en" } });
   await expect.poll(() => calls).toBe(1);
   await page.clock.runFor(300_000);
   expect(calls).toBe(1);
@@ -24,7 +25,8 @@ test("temporary analysis failures back off instead of polling every five seconds
     return route.fulfill({ status: 503, json: { retryable: true } });
   });
   await mount(<QuickGameResult roomId="offline" winner="white"
-    whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />);
+    whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />,
+    { hooksConfig: { locale: "en" } });
   await expect.poll(() => calls).toBe(1);
   await page.clock.runFor(15_000);
   expect(calls).toBe(1);
@@ -50,8 +52,8 @@ test("result maps analysis to black self, preserves zero coins, and links to thi
             created_at: "2026-09-19",
             status: "completed",
             players: [
-              { color: "white", pr: "8.5", luck: "-0.12" },
-              { color: "black", pr: "2.1", luck: "0.12" },
+              { color: "white", game_rating: 1300, pr: "8.5", luck: "-0.12" },
+              { color: "black", game_rating: 1600, pr: "2.1", luck: "0.12" },
             ],
           },
         ],
@@ -73,11 +75,16 @@ test("result maps analysis to black self, preserves zero coins, and links to thi
       onClose={() => {}}
       onRematch={() => {}}
     />,
+    { hooksConfig: { locale: "en" } },
   );
   await expect(component.getByTestId("score-left")).toHaveText("1");
   await expect(component.getByText("2.10", { exact: true })).toBeVisible();
-  const row = component.getByText("Game rating (PR)").locator("..");
+  const row = component.getByText("PR", { exact: true }).locator("..");
   await expect(row.locator("span").first()).toHaveText("2.10");
+  await expect(row.locator("span").last()).toHaveText("8.50");
+  const ratingRow = component.getByText("Game Rating", { exact: true }).locator("..");
+  await expect(ratingRow.locator("span").first()).toHaveText("1600");
+  await expect(ratingRow.locator("span").last()).toHaveText("1300");
   await expect(component.getByText("1500", { exact: true })).toBeVisible();
   await expect(component.getByText("02:05", { exact: true })).toBeVisible();
   await expect(
@@ -95,21 +102,26 @@ test("pending analysis hides partial metrics until completed", async ({
   mount,
   page,
 }) => {
-  await page.route("**/tournaments-api/analyses?room=pending", (route) =>
-    route.fulfill({
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let completed = false;
+  let calls = 0;
+  await page.route("**/tournaments-api/analyses?room=pending", (route) => {
+    calls++;
+    return route.fulfill({
       json: {
         matches: [
           {
             id: "pending-id",
             room_id: "pending",
             created_at: "2026-09-19",
-            status: "processing",
-            players: [{ color: "white", pr: 0, luck: 0 }],
+            status: completed ? "completed" : "processing",
+            players: [{ color: "white", game_rating: 1400, pr: 9.75, luck: 0.125 }],
           },
         ],
       },
-    }),
-  );
+    });
+  });
   const component = await mount(
     <QuickGameResult
       roomId="pending"
@@ -119,12 +131,31 @@ test("pending analysis hides partial metrics until completed", async ({
       onClose={() => {}}
       onRematch={() => {}}
     />,
+    { hooksConfig: { locale: "en" } },
   );
+  await expect.poll(() => calls).toBe(1);
   await expect(
-    component.getByRole("status").filter({ hasText: "Loading game results" }),
+    component.getByRole("status").filter({ hasText: "Analysis in progress —" }),
   ).toBeVisible();
-  await expect(component.getByText("Game rating (PR)")).toHaveCount(0);
-  await expect(component.getByText("Analysis in progress —")).toBeVisible();
+  const prRow = component.getByText("PR", { exact: true }).locator("..");
+  const ratingRow = component.getByText("Game Rating", { exact: true }).locator("..");
+  await expect(component.getByRole("link", { name: "Full analysis" })).toHaveAttribute(
+    "href",
+    /\/analysis\/pending-id\?room=pending$/,
+  );
+  await expect(prRow.locator("span").first()).toHaveText("—");
+  await expect(prRow.locator("span").last()).toHaveText("—");
+  await expect(ratingRow.locator("span").first()).toHaveText("—");
+  await expect(ratingRow.locator("span").last()).toHaveText("—");
+  await expect(component.getByText("9.75", { exact: true })).toHaveCount(0);
+  await expect(component.getByText("0.125", { exact: true })).toHaveCount(0);
+
+  completed = true;
+  await page.clock.runFor(5000);
+  await expect(prRow.locator("span").first()).toHaveText("9.75");
+  await expect(ratingRow.locator("span").first()).toHaveText("1400");
+  await expect(component.getByText("0.125", { exact: true })).toBeVisible();
+  await expect(component.getByText("Analysis in progress —")).toHaveCount(0);
 });
 
 test("result card fits a narrow phone viewport", async ({ mount, page }) => {
@@ -158,9 +189,11 @@ test("result card fits a narrow phone viewport", async ({ mount, page }) => {
       onClose={() => {}}
       onRematch={() => {}}
     />,
+    { hooksConfig: { locale: "en" } },
   );
   const card = component.getByTestId("game-result-card");
-  await expect(component.getByText("Game rating (PR)")).toBeVisible();
+  await expect(component.getByText("PR", { exact: true })).toBeVisible();
+  await expect(component.getByText("1.20", { exact: true })).toBeVisible();
   expect(
     await card.evaluate(
       (element) => element.scrollWidth <= element.clientWidth,

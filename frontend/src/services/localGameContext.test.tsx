@@ -5,6 +5,8 @@ import {
   type GameState,
 } from "../lib/backgammon/engine";
 import { LocalGameProvider } from "./localGameContext";
+import { MemoryRouter } from "react-router-dom";
+import GameScreen from "../components/GameScreen/GameScreen";
 import {
   ClockMatchLifecycleProbe,
   ClockProbe,
@@ -30,12 +32,19 @@ test("clock does not run during the opening roll", async ({ mount, page }) => {
 
 test("timeout ends a local match even when the target is above one", async ({ mount, page }) => {
   await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  await page.route("**/api/matches/", (route) => route.fulfill({ json: { id: 1 } }));
   const component = await mount(
-    <LocalGameProvider matchTarget={5} timeControl={{ base: 300, delay: 0 }}>
-      <StartMidGame />
-      <ClockProbe />
-    </LocalGameProvider>,
+    <MemoryRouter>
+      <LocalGameProvider matchTarget={5} timeControl={{ base: 300, delay: 0 }}>
+        <StartMidGame />
+        <ClockProbe />
+        <GameScreen />
+      </LocalGameProvider>
+    </MemoryRouter>,
+    { hooksConfig: { locale: "en" } },
   );
+  await expect(component.getByText(/started:\d+$/)).toBeVisible();
   await page.clock.fastForward(2000);
   await expect(component.getByText("Match Result")).toBeVisible();
   await expect(component.getByText(/clock:\{"white":0,/)).toBeVisible();
@@ -91,9 +100,13 @@ test("local give up with no borne-off checker awards gammon times cube", async (
 test("one-point local result caps the displayed score while saving all awarded points", async ({ mount, page }) => {
   await page.route("**/api/matches/", (route) => route.fulfill({ json: { id: 1 } }));
   const component = await mount(
-    <LocalGameProvider matchTarget={1}>
-      <LocalGiveUpProbe />
-    </LocalGameProvider>,
+    <MemoryRouter>
+      <LocalGameProvider matchTarget={1}>
+        <LocalGiveUpProbe />
+        <GameScreen />
+      </LocalGameProvider>
+    </MemoryRouter>,
+    { hooksConfig: { locale: "en" } },
   );
   await component.getByTestId("seed-resignation").click();
   await expect(component.getByTestId("local-phase")).toHaveText("moving");

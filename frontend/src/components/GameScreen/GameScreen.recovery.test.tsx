@@ -7,7 +7,7 @@ test('closing an existing match requires explicit confirmation and server comple
   let exits = 0;
   await mount(<MockGameWrapper context={{leaveGame: () => {leaves++;}}}>
     <GameScreen closeExisting onLeave={() => {exits++;}} />
-  </MockGameWrapper>);
+  </MockGameWrapper>, { hooksConfig: { locale: "he" } });
   await expect(page.getByRole('heading', {name: 'לסיים את המשחק הקיים?'})).toBeVisible();
   expect(leaves).toBe(0);
   await page.getByRole('button', {name: 'אישור פרישה וסיום המשחק'}).click();
@@ -19,7 +19,7 @@ test('a player can dismiss closure without forfeiting', async ({mount, page}) =>
   let leaves = 0;
   await mount(<MockGameWrapper context={{leaveGame: () => {leaves++;}}}>
     <GameScreen closeExisting />
-  </MockGameWrapper>);
+  </MockGameWrapper>, { hooksConfig: { locale: "he" } });
   await page.getByRole('button', {name: 'להמשיך במשחק'}).click();
   await expect(page.getByRole('heading', {name: 'לסיים את המשחק הקיים?'})).toHaveCount(0);
   expect(leaves).toBe(0);

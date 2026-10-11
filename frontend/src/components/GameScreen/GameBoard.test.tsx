@@ -6,7 +6,7 @@ import { allLegalMoves, applyMove, BAR, newGame, OFF } from "@/lib/backgammon/en
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage, MakeMoveOptions } from "../../types/context";
 import { Board } from "../Board/Board";
-import styles from "./GameScreen.module.css";
+import { SizedBoardFixture } from "../../test-utils/Board.story";
 
 function simpleWhiteState(): GameState {
   const points = new Array(24).fill(0);
@@ -28,18 +28,6 @@ function simpleWhiteState(): GameState {
 
 function movingState(overrides: Partial<GameState> = {}): GameState {
   return { ...simpleWhiteState(), ...overrides };
-}
-
-function SizedBoardFixture(props: ComponentProps<typeof Board>) {
-  return (
-    <div className={styles.container}>
-      <div className={styles.gameFrame}>
-        <div className={styles.boardArea}>
-          <Board {...props} />
-        </div>
-      </div>
-    </div>
-  );
 }
 
 interface MountProps {
