@@ -12,6 +12,8 @@ globals().update({name: getattr(base, name) for name in dir(base) if name.isuppe
 SECRET_KEY = 'release-test-only-key-not-a-production-credential-0123456789'
 DEBUG = True
 ALLOWED_HOSTS = ['testserver', 'localhost', '127.0.0.1']
+CORS_ALLOWED_ORIGINS = []
+CSRF_TRUSTED_ORIGINS = []
 DATABASES = {'default': {
     'ENGINE': 'django.db.backends.postgresql', 'NAME': 'postgres',
     'USER': 'postgres', 'PASSWORD': 'disposable-release-tests',
