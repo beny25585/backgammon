@@ -75,10 +75,16 @@ RESUME_COMPLETED_STAGES = (
     'test-network', 'test-postgres', 'test-redis',
 )
 RESUME_TOURNAMENT_TEST_FILES = {
+    'tournaments/billing/test_payment_operations.py',
     'tournaments/frontend/test_head_to_head.py',
+    'tournaments/frontend/test_incident_recovery.py',
+    'tournaments/frontend/test_mode_rules.py',
     'tournaments/frontend/test_push_health.py',
     'tournaments/frontend/test_tournament_reminders.py',
+    'tournaments/frontend/tests.py',
+    'tournaments/gamelink/test_loss_settlement.py',
     'tournaments/gamelink/test_rematch_settlement.py',
+    'tournaments/gamelink/tests.py',
     'tournaments/tournaments/tests.py',
 }
 TOURNAMENT_RESUME_STAGES = (
