@@ -332,6 +332,147 @@ class FrontendResumeTests(unittest.TestCase):
                 deploy.assert_not_called()
 
 
+class TournamentResumeTests(unittest.TestCase):
+    def fixture(self, root):
+        parent_directory, parent = FrontendResumeTests().fixture(root)
+        previous = manifest()
+        previous['release_id'] = 'bg-release-20261011t110345z-500d296c'
+        directory = root / 'artifacts/auto-releases' / previous['release_id']
+        directory.mkdir()
+        with patch.object(release, 'git', return_value=''):
+            _, evidence = release.resume_checks(root, parent['release_id'], previous['sources'])
+        for index, stage in enumerate(release.TOURNAMENT_RESUME_STAGES, 1):
+            contents = 'completed\n'
+            if stage.startswith('build-'):
+                contents = 'exporting config sha256:' + 'b' * 64 + '\nexporting manifest list sha256:' + 'c' * 64 + '\n'
+            if stage == 'game-tests':
+                contents = 'Ran 475 tests\n\nOK (skipped=1)\n'
+            (directory / f'{index:03d}-{stage}.log').write_text(contents)
+        failed_log = directory / '019-tournaments-tests.log'
+        failed_log.write_text('FAILED (failures=86, errors=45, skipped=82)\n')
+        status = dict(previous, stage='failed', failed_stage='tournaments-tests', published={},
+                      error='tournaments-tests failed (exit 1). Log: ' + str(failed_log), resumed_from=evidence)
+        release.save(directory / 'status.json', status)
+        return directory, status, parent_directory
+
+    def changes(self, paths):
+        def changed(repository, *args):
+            # Equal revisions also occur while validating the earlier receipt.
+            if args[-3] == args[-2]:
+                return ''
+            return '\0'.join(paths.get(repository.name, []))
+        return changed
+
+    def test_only_changed_tournament_test_image_is_rebuilt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            directory, previous, _ = self.fixture(root)
+            current = copy.deepcopy(previous['sources'])
+            current['backgammon-tournaments-backend']['revision'] = 'd' * 40
+            before = (directory / 'status.json').read_bytes()
+            paths = {'backgammon-tournaments-backend': ['tournaments/frontend/test_push_health.py']}
+            with patch.object(release, 'git', side_effect=self.changes(paths)), \
+                 patch.object(release, 'capture', side_effect=ResumeTests().fake_capture(previous)):
+                images, evidence = release.resume_checks(root, previous['release_id'], current)
+            self.assertEqual(set(images), set(release.IMAGES))
+            self.assertEqual(evidence['rebuild_images'], ['tournaments'])
+            self.assertEqual(evidence['resume_backend'], 'tournaments')
+            self.assertEqual(len(evidence['completed_log_sha256']), 19)
+            self.assertEqual((directory / 'status.json').read_bytes(), before)
+
+    def test_unrelated_inputs_and_shared_game_settings_are_rejected(self):
+        for name, path in (
+            ('Backgammon Game', 'deploy/workspace/operations/release_test_settings.py'),
+            ('Backgammon Game', 'backend/game/models.py'),
+            ('backgammon-tournaments-backend', 'tournaments/tournaments/models.py'),
+            ('backgammon-tournaments-backend', 'admin-frontend/src/App.vue'),
+            ('backgammon-tournaments', 'src/App.vue'),
+        ):
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                _, previous, _ = self.fixture(root)
+                current = copy.deepcopy(previous['sources'])
+                current[name]['revision'] = 'd' * 40
+                with patch.object(release, 'git', side_effect=self.changes({name: [path]})):
+                    with self.assertRaisesRegex(RuntimeError, 'outside tournament test fixes'):
+                        release.resume_checks(root, previous['release_id'], current)
+
+    def test_missing_game_success_and_changed_frontend_evidence_are_rejected(self):
+        for failure in ('game-failed', 'missing-stage', 'changed-parent', 'published', 'parent-self'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                directory, previous, parent_directory = self.fixture(root)
+                if failure == 'game-failed':
+                    (directory / '017-game-tests.log').write_text('FAILED\n')
+                elif failure == 'missing-stage':
+                    (directory / '003-tournaments-frontend-build.log').unlink()
+                elif failure == 'changed-parent':
+                    (parent_directory / '003-game-frontend-tests.log').write_text('altered\n')
+                else:
+                    if failure == 'published':
+                        previous['published'] = {'Backgammon Game': 'commit-url'}
+                    else:
+                        previous['resumed_from']['release_id'] = previous['release_id']
+                    release.save(directory / 'status.json', previous)
+                with patch.object(release, 'git', return_value=''):
+                    with self.assertRaises(RuntimeError):
+                        release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_changed_retained_image_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, previous, _ = self.fixture(root)
+            with patch.object(release, 'git', return_value=''), \
+                 patch.object(release, 'capture', side_effect=ResumeTests().fake_capture(previous, digest='f')):
+                with self.assertRaisesRegex(RuntimeError, 'Retained image identity differs'):
+                    release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_local_resume_skips_frontends_and_game_and_rebuilds_only_tournaments(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'docker').mkdir()
+            (root / 'docker/dice.Dockerfile').write_text('FROM elixir:1.17\nFROM debian:bookworm-slim\n')
+            args = Mock(root=root, preflight_only=False, checks_only=True, resume_from=manifest()['release_id'])
+            images = {kind: 'retained-' + kind for kind in release.IMAGES}
+            evidence = {'release_id': args.resume_from, 'resume_backend': 'tournaments', 'rebuild_images': ['tournaments']}
+            with patch.object(release, 'source_inventory', return_value=manifest()['sources']), \
+                 patch.object(release.shutil, 'which', return_value='tool'), \
+                 patch.object(release, 'capture', return_value=b'linux'), \
+                 patch.object(release, 'resume_checks', return_value=(images, evidence)), \
+                 patch.object(release, 'frontend_checks') as frontend, \
+                 patch.object(release, 'image_builds', return_value={'tournaments': 'rebuilt'}) as builds, \
+                 patch.object(release, 'exported_workspace', return_value=root), \
+                 patch.object(release, 'backend_checks') as backend, \
+                 patch.object(release.Runner, 'run'), \
+                 patch.object(release, 'publish') as publish:
+                release.local_main(args)
+                frontend.assert_not_called()
+                self.assertEqual(builds.call_args.kwargs['kinds'], ['tournaments'])
+                self.assertEqual(backend.call_args.kwargs['only'], ('tournaments', 'analysis'))
+                self.assertEqual(backend.call_args.args[1]['tournaments'], 'rebuilt')
+                self.assertEqual(backend.call_args.args[1]['game'], 'retained-game')
+                self.assertEqual(images['tournaments'], 'retained-tournaments')
+                publish.assert_not_called()
+
+    def test_callback_keys_only_reach_tournament_test_containers(self):
+        with tempfile.TemporaryDirectory() as folder:
+            images = {kind: 'image-' + kind for kind in release.IMAGES}
+            runner = Mock(directory=Path(folder))
+            owned = {'Config': {'Labels': {'io.backgammon.release-test': 'owned'}}}
+            result = Mock(returncode=0, stdout=json.dumps([owned]).encode())
+            network = json.dumps([{'Labels': {'io.backgammon.release-test': 'owned'}}]).encode()
+            with patch.object(release.uuid, 'uuid4', return_value=Mock(hex='owned')), \
+                 patch.object(release.subprocess, 'run', return_value=result), \
+                 patch.object(release, 'capture', return_value=network):
+                release.backend_checks(Path(folder), images, runner)
+            for call in runner.run.call_args_list:
+                stage, command = call.args
+                if stage.endswith(('-migrations', '-tests')):
+                    keys = [arg for arg in command if str(arg).startswith(('GAMELINK_TICKET_SECRET=', 'GAMELINK_RESULT_SECRETS=', 'GAMELINK_COMMAND_SECRET='))]
+                    self.assertEqual(len(keys), 3 if stage.startswith('tournaments-') else 0)
+                    self.assertEqual(len({arg.split('=', 1)[1] for arg in keys}), len(keys))
+
+
 class TestDiceServiceTests(unittest.TestCase):
     def test_built_image_runs_in_isolated_network_before_readiness(self):
         runner = Mock()

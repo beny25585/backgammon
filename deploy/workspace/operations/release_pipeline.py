@@ -74,6 +74,19 @@ RESUME_COMPLETED_STAGES = (
     *('build-' + kind for kind in IMAGES),
     'test-network', 'test-postgres', 'test-redis',
 )
+RESUME_TOURNAMENT_TEST_FILES = {
+    'tournaments/frontend/test_head_to_head.py',
+    'tournaments/frontend/test_push_health.py',
+    'tournaments/frontend/test_tournament_reminders.py',
+    'tournaments/gamelink/test_rematch_settlement.py',
+    'tournaments/tournaments/tests.py',
+}
+TOURNAMENT_RESUME_STAGES = (
+    'tournaments-dependencies', 'tournaments-frontend-tests', 'tournaments-frontend-build',
+    *('build-' + kind for kind in IMAGES),
+    'test-network', 'test-postgres', 'test-redis', 'game-migrations',
+    'test-dice', 'test-dice-ready', 'game-tests', 'tournaments-migrations',
+)
 
 
 def require(value, message):
@@ -263,6 +276,8 @@ def resume_checks(root, release_id, sources):
     validate_manifest(previous)
     if status.get('failed_stage') == 'admin-frontend-build':
         return resume_frontends(root, directory, release_id, sources, previous, status)
+    if status.get('failed_stage') == 'tournaments-tests':
+        return resume_tournaments(root, directory, release_id, sources, previous, status)
     require(previous['release_id'] == release_id and status.get('stage') == 'failed'
             and status.get('failed_stage') == 'game-migrations' and status.get('published') == {},
             'Resume requires an unpublished local attempt that failed at game-migrations')
@@ -288,25 +303,85 @@ def resume_checks(root, release_id, sources):
         changes[name] = sorted(paths)
     images = {}
     for index, (kind, (source, _, _)) in enumerate(IMAGES.items(), 11):
-        log = directory / f'{index:03d}-build-{kind}.log'
-        configs = re.findall(r'exporting config (sha256:[a-f0-9]{64})', log.read_text(encoding='utf-8'))
-        require(len(configs) == 1, 'Missing or ambiguous built image digest: ' + kind)
-        # Classic Docker exposes the config digest as Id; Docker Desktop's
-        # containerd store exposes the manifest/index digest instead.
-        digests = re.findall(r'exporting (?:config|manifest(?: list)?) (sha256:[a-f0-9]{64})',
-                             log.read_text(encoding='utf-8'))
-        image = f'backgammon-production-{kind}:{release_id}'
-        items = json.loads(capture(['docker', 'image', 'inspect', image]))
-        require(len(items) == 1, 'Ambiguous retained image: ' + kind)
-        item = items[0]
-        labels = item['Config'].get('Labels') or {}
-        require(item['Id'] in digests and item['Os'] == 'linux' and item['Architecture'] == 'amd64'
-                and labels.get('org.opencontainers.image.revision') == previous['sources'][source]['revision']
-                and labels.get('io.backgammon.release') == release_id,
-                'Retained image identity differs; run the full checks: ' + kind)
-        images[kind] = item['Id']
+        images[kind] = retained_image(directory, previous, kind, index)
     return images, {'release_id': release_id, 'sources': previous['sources'], 'images': images,
                     'tool_changes': changes, 'completed_log_sha256': log_hashes}
+
+
+def retained_image(directory, previous, kind, index):
+    log = directory / f'{index:03d}-build-{kind}.log'
+    contents = log.read_text(encoding='utf-8')
+    configs = re.findall(r'exporting config (sha256:[a-f0-9]{64})', contents)
+    require(len(configs) == 1, 'Missing or ambiguous built image digest: ' + kind)
+    # Docker Desktop may expose a manifest/index digest rather than the config.
+    digests = re.findall(r'exporting (?:config|manifest(?: list)?) (sha256:[a-f0-9]{64})', contents)
+    items = json.loads(capture(['docker', 'image', 'inspect',
+                               f"backgammon-production-{kind}:{previous['release_id']}"]))
+    require(len(items) == 1, 'Ambiguous retained image: ' + kind)
+    item = items[0]
+    labels = item['Config'].get('Labels') or {}
+    source = IMAGES[kind][0]
+    require(item['Id'] in digests and item['Os'] == 'linux' and item['Architecture'] == 'amd64'
+            and labels.get('org.opencontainers.image.revision') == previous['sources'][source]['revision']
+            and labels.get('io.backgammon.release') == previous['release_id'],
+            'Retained image identity differs; run the full checks: ' + kind)
+    return item['Id']
+
+
+def resume_tournaments(root, directory, release_id, sources, previous, status):
+    """Continue the known frontend-resume layout after successful game tests."""
+    failed_log = directory / '019-tournaments-tests.log'
+    require(previous['release_id'] == release_id and status.get('stage') == 'failed'
+            and status.get('published') == {} and failed_log.is_file()
+            and str(failed_log) in status.get('error', ''),
+            'Tournament resume requires an unpublished attempt with the expected failed test log')
+    parent_evidence = status.get('resumed_from') or {}
+    parent_release = parent_evidence.get('release_id')
+    require(isinstance(parent_release, str) and parent_release != release_id
+            and re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', parent_release),
+            'Invalid original frontend release')
+    parent_directory = directory.parent / parent_release
+    require(parent_directory.is_dir() and not parent_directory.is_symlink()
+            and parent_directory.resolve().parent == directory.parent.resolve(),
+            'Missing or redirected original frontend release')
+    parent_status = json.loads((parent_directory / 'status.json').read_text(encoding='utf-8'))
+    parent_previous = {'schema_version': 1, 'release_id': parent_status.get('release_id'),
+                       'sources': parent_status.get('sources')}
+    validate_manifest(parent_previous)
+    require(parent_status.get('failed_stage') == 'admin-frontend-build', 'Unexpected original frontend stage')
+    parent_images, verified_parent = resume_frontends(
+        root, parent_directory, parent_release, previous['sources'], parent_previous, parent_status)
+    require(parent_images is None and verified_parent == parent_evidence,
+            'Original game/admin frontend evidence differs')
+    hashes = {}
+    for index, stage in enumerate(TOURNAMENT_RESUME_STAGES, 1):
+        log = directory / f'{index:03d}-{stage}.log'
+        require(log.is_file() and not log.is_symlink(), 'Missing completed-stage log: ' + stage)
+        hashes[log.name] = sha(log)
+    game_log = (directory / '017-game-tests.log').read_text(encoding='utf-8')
+    require(re.search(r'(?m)^OK(?: \(skipped=\d+\))?\s*$', game_log), 'Game test success is missing')
+    changes = {}
+    for name, source in previous['sources'].items():
+        require(sources[name]['branch'] == source['branch'] and sources[name]['url'] == source['url'],
+                'Resume source identity differs: ' + name)
+        changed = git(root / name, 'diff', '--no-ext-diff', '--no-textconv', '--name-only',
+                      '--no-renames', '-z', source['revision'], sources[name]['revision'], '--')
+        paths = set(filter(None, changed.split('\0')))
+        allowed = set()
+        if name == 'Backgammon Game':
+            # Shared settings must stay unchanged to retain passed game tests.
+            allowed = RESUME_TOOL_FILES - {'deploy/workspace/operations/release_test_settings.py'}
+        elif name == 'backgammon-tournaments-backend':
+            allowed = RESUME_TOURNAMENT_TEST_FILES
+        require(paths <= allowed, 'Inputs outside tournament test fixes changed; run full checks: ' + name)
+        changes[name] = sorted(paths)
+    images = {kind: retained_image(directory, previous, kind, index)
+              for index, kind in enumerate(IMAGES, 4)}
+    hashes[failed_log.name] = sha(failed_log)
+    return images, {'release_id': release_id, 'sources': previous['sources'], 'images': images,
+                    'source_changes': changes, 'completed_log_sha256': hashes,
+                    'frontend_evidence': parent_evidence, 'resume_backend': 'tournaments',
+                    'rebuild_images': ['tournaments'] if changes['backgammon-tournaments-backend'] else []}
 
 
 def resume_frontends(root, directory, release_id, sources, previous, status):
@@ -357,7 +432,7 @@ def start_test_dice(images, runner, docker, network, labels, created):
     runner.run('test-dice-ready', [*docker, 'exec', container, 'sh', '-c', health])
 
 
-def backend_checks(workspace, images, runner, sudo=False):
+def backend_checks(workspace, images, runner, sudo=False, only=None):
     docker = ['sudo', '-n', 'docker'] if sudo else ['docker']
     token = uuid.uuid4().hex
     network = 'bg-release-tests-' + token
@@ -404,7 +479,16 @@ def backend_checks(workspace, images, runner, sudo=False):
             'TRANZILA_ENABLED': '0', 'TRANZILA_PURCHASES_ENABLED': '0', 'ACCOUNT_EMAIL_ACTIONS_ENABLED': '0',
         }
         for kind, (directory, base) in BACKENDS.items():
-            environment['RELEASE_BASE_SETTINGS'] = base
+            if only is not None and kind not in only:
+                continue
+            service_environment = dict(environment, RELEASE_BASE_SETTINGS=base)
+            if kind == 'tournaments':
+                # Distinct disposable keys only for this test service.
+                service_environment.update(
+                    GAMELINK_TICKET_SECRET='release-test-only-ticket-key-0123456789abcdef',
+                    GAMELINK_RESULT_SECRETS='release-test-only-result-key-0123456789abcdef',
+                    GAMELINK_COMMAND_SECRET='release-test-only-command-key-0123456789abcdef',
+                )
             for action, command in (
                 ('migrations', ['makemigrations', '--check', '--dry-run']),
                 ('tests', ['test', '--noinput', '--verbosity', '2']),
@@ -416,7 +500,7 @@ def backend_checks(workspace, images, runner, sudo=False):
                 args = [*docker, 'run', '--name', container, *labels, '--network', network,
                     '--memory', '1536m', '--cpus', '1', '--entrypoint', 'python', '--workdir', directory,
                     '--mount', 'type=bind,source=' + str(test_tools) + ',target=/opt/release,readonly']
-                for key, value in environment.items():
+                for key, value in service_environment.items():
                     args += ['-e', key + '=' + value]
                 runner.run(kind + '-' + action, [*args, images[kind], 'manage.py', *command])
     finally:
@@ -859,7 +943,11 @@ def local_main(args):
         receipt['resumed_from'] = reused[1]
     save(runner.directory / 'status.json', receipt)
     try:
-        if reused and reused[0] is None:
+        if reused and reused[1].get('resume_backend') == 'tournaments':
+            print('RESUMING LOCAL CHECKS from ' + args.resume_from
+                  + ': all frontend checks and game backend tests already completed. '
+                  'Rebuilding changed tournament test image, then checking tournaments, analysis and dice.', flush=True)
+        elif reused and reused[0] is None:
             print('RESUMING LOCAL CHECKS from ' + args.resume_from
                   + ': game/admin frontend tests and builds already completed. '
                   'Rechecking changed tournaments frontend, then building images and running backend checks.', flush=True)
@@ -872,8 +960,14 @@ def local_main(args):
             frontend_checks(root, runner)
         assert_sources(root, sources)
         workspace = exported_workspace(root, manifest, runner.directory / 'source')
-        images = reused[0] if reused and reused[0] is not None else image_builds(workspace, manifest, runner)
-        backend_checks(workspace, images, runner)
+        images = dict(reused[0]) if reused and reused[0] is not None else image_builds(workspace, manifest, runner)
+        if reused and reused[1].get('resume_backend') == 'tournaments':
+            rebuild = reused[1]['rebuild_images']
+            if rebuild:
+                images.update(image_builds(workspace, manifest, runner, kinds=rebuild))
+            backend_checks(workspace, images, runner, only=('tournaments', 'analysis'))
+        else:
+            backend_checks(workspace, images, runner)
         # Elixir's tests run in a dedicated build stage with the committed test directory.
         recipe = workspace / 'docker/dice.Dockerfile'
         test_recipe = runner.directory / 'dice-tests.Dockerfile'
