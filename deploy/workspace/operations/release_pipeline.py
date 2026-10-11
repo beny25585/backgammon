@@ -58,6 +58,22 @@ SERVICE_IMAGE = {
 APPS = ('game-api', 'tournaments-api', 'analysis-api', 'game-frontend', 'tournaments-frontend', 'admin-frontend', 'dice')
 WORKERS = ('game-tasks', 'tournaments-tasks', 'analysis-worker', 'push-worker')
 PROFILES = ('--profile', 'live', '--profile', 'workers', '--profile', 'tournament-workers', '--profile', 'operations')
+# These files are outside the application/image inputs. Backend checks still rerun
+# with the current release-test settings mounted into the retained images.
+RESUME_TOOL_FILES = {
+    'deploy/workspace/operations/release_pipeline.py',
+    'deploy/workspace/operations/release_test_settings.py',
+    'deploy/workspace/operations/test_release_pipeline.py',
+    'deploy/workspace/operations/publish_and_deploy.ps1',
+    'deploy/workspace/operations/AUTOMATIC_RELEASE.he.md',
+}
+RESUME_COMPLETED_STAGES = (
+    'game-dependencies', 'playwright-browser', 'game-frontend-tests', 'game-frontend-build',
+    'tournaments-dependencies', 'tournaments-frontend-tests', 'tournaments-frontend-build',
+    'admin-dependencies', 'admin-frontend-tests', 'admin-frontend-build',
+    *('build-' + kind for kind in IMAGES),
+    'test-network', 'test-postgres', 'test-redis',
+)
 
 
 def require(value, message):
@@ -232,6 +248,63 @@ def image_builds(workspace, manifest, runner, sudo=False, kinds=None):
     finally:
         if sudo:
             subprocess.run([*docker, 'buildx', 'stop', builder], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def resume_checks(root, release_id, sources):
+    """Reuse only a local attempt stopped at its first backend check, before push."""
+    require(isinstance(release_id, str) and re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', release_id),
+            'ResumeFrom must be a local release ID, not a directory path')
+    parent = (root / 'artifacts/auto-releases').resolve()
+    directory = parent / release_id
+    require(directory.is_dir() and not directory.is_symlink() and directory.resolve().parent == parent,
+            'Missing or redirected local release directory')
+    status = json.loads((directory / 'status.json').read_text(encoding='utf-8'))
+    previous = {'schema_version': 1, 'release_id': status.get('release_id'), 'sources': status.get('sources')}
+    validate_manifest(previous)
+    require(previous['release_id'] == release_id and status.get('stage') == 'failed'
+            and status.get('failed_stage') == 'game-migrations' and status.get('published') == {},
+            'Resume requires an unpublished local attempt that failed at game-migrations')
+    # The original runner is sequential and stops on any nonzero exit. Reaching
+    # its 21st stage proves the preceding 20 commands returned successfully.
+    failed_log = directory / '021-game-migrations.log'
+    require(failed_log.is_file() and str(failed_log) in status.get('error', ''),
+            'Receipt does not identify the expected first backend-check log')
+    log_hashes = {}
+    for index, stage in enumerate(RESUME_COMPLETED_STAGES, 1):
+        log = directory / f'{index:03d}-{stage}.log'
+        require(log.is_file(), 'Missing completed-stage log: ' + stage)
+        log_hashes[log.name] = sha(log)
+    changes = {}
+    for name, source in previous['sources'].items():
+        require(sources[name]['branch'] == source['branch'] and sources[name]['url'] == source['url'],
+                'Resume source identity differs: ' + name)
+        changed = git(root / name, 'diff', '--no-ext-diff', '--no-textconv', '--name-only',
+                      '--no-renames', '-z', source['revision'], sources[name]['revision'], '--')
+        paths = set(filter(None, changed.split('\0')))
+        allowed = RESUME_TOOL_FILES if name == 'Backgammon Game' else set()
+        require(paths <= allowed, 'Application/build inputs changed; run the full checks: ' + name)
+        changes[name] = sorted(paths)
+    images = {}
+    for index, (kind, (source, _, _)) in enumerate(IMAGES.items(), 11):
+        log = directory / f'{index:03d}-build-{kind}.log'
+        configs = re.findall(r'exporting config (sha256:[a-f0-9]{64})', log.read_text(encoding='utf-8'))
+        require(len(configs) == 1, 'Missing or ambiguous built image digest: ' + kind)
+        # Classic Docker exposes the config digest as Id; Docker Desktop's
+        # containerd store exposes the manifest/index digest instead.
+        digests = re.findall(r'exporting (?:config|manifest(?: list)?) (sha256:[a-f0-9]{64})',
+                             log.read_text(encoding='utf-8'))
+        image = f'backgammon-production-{kind}:{release_id}'
+        items = json.loads(capture(['docker', 'image', 'inspect', image]))
+        require(len(items) == 1, 'Ambiguous retained image: ' + kind)
+        item = items[0]
+        labels = item['Config'].get('Labels') or {}
+        require(item['Id'] in digests and item['Os'] == 'linux' and item['Architecture'] == 'amd64'
+                and labels.get('org.opencontainers.image.revision') == previous['sources'][source]['revision']
+                and labels.get('io.backgammon.release') == release_id,
+                'Retained image identity differs; run the full checks: ' + kind)
+        images[kind] = item['Id']
+    return images, {'release_id': release_id, 'sources': previous['sources'], 'images': images,
+                    'tool_changes': changes, 'completed_log_sha256': log_hashes}
 
 
 def backend_checks(workspace, images, runner, sudo=False):
@@ -717,19 +790,29 @@ def local_main(args):
         require(shutil.which(executable), 'Required executable missing: ' + executable)
     require(shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm'), 'pnpm is required')
     require(capture(['docker', 'info', '--format', '{{.OSType}}']).strip() == b'linux', 'Docker must use Linux containers')
+    reused = resume_checks(root, args.resume_from, sources) if args.resume_from else None
     if args.preflight_only:
         print('PREFLIGHT PASSED. No tests, builds, push, SSH or production changes were performed.')
+        if reused:
+            print('RESUME PREFLIGHT PASSED. Retained images and unchanged application inputs verified.')
         return
     release = 'bg-release-' + datetime.now(timezone.utc).strftime('%Y%m%dt%H%M%Sz') + '-' + uuid.uuid4().hex[:8]
     manifest = {'schema_version': 1, 'release_id': release, 'sources': sources}
     runner = Runner(root / 'artifacts/auto-releases' / release)
     receipt = {'stage': 'checking', 'release_id': release, 'sources': sources, 'published': {}}
+    if reused:
+        receipt['resumed_from'] = reused[1]
     save(runner.directory / 'status.json', receipt)
     try:
-        frontend_checks(root, runner)
+        if reused:
+            print('RESUMING LOCAL CHECKS from ' + args.resume_from
+                  + ': frontend tests/builds and seven local image builds already completed. '
+                  'Continuing at game-migrations. Server builds/checks still run during deployment.', flush=True)
+        else:
+            frontend_checks(root, runner)
         assert_sources(root, sources)
         workspace = exported_workspace(root, manifest, runner.directory / 'source')
-        images = image_builds(workspace, manifest, runner)
+        images = reused[0] if reused else image_builds(workspace, manifest, runner)
         backend_checks(workspace, images, runner)
         # Elixir's tests run in a dedicated build stage with the committed test directory.
         recipe = workspace / 'docker/dice.Dockerfile'
@@ -771,11 +854,13 @@ def main():
     parser.add_argument('--root', type=Path, default=Path.cwd())
     parser.add_argument('--checks-only', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
+    parser.add_argument('--resume-from', help='Reuse completed local frontend checks/images from a failed game-migrations release')
     parser.add_argument('--server', action='store_true')
     parser.add_argument('--manifest', type=Path)
     args = parser.parse_args()
     try:
         if args.server:
+            require(not args.resume_from, 'ResumeFrom is available only for local checks, never server deployment recovery')
             os.umask(0o077)
             def interrupted(signum, frame):
                 raise RuntimeError('Deployment interrupted by signal ' + str(signum))

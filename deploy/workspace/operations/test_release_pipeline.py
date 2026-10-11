@@ -48,6 +48,187 @@ class ManifestTests(unittest.TestCase):
             release.github_repository('https://secret@github.com/Owner/Repo.git')
 
 
+class ResumeTests(unittest.TestCase):
+    def fixture(self, root):
+        previous = manifest()
+        directory = root / 'artifacts/auto-releases' / previous['release_id']
+        directory.mkdir(parents=True)
+        status = dict(previous, stage='failed', failed_stage='game-migrations', published={},
+                      error='game-migrations failed (exit 1). Log: ' + str(directory / '021-game-migrations.log'))
+        release.save(directory / 'status.json', status)
+        for index, stage in enumerate(release.RESUME_COMPLETED_STAGES, 1):
+            text = 'completed\n'
+            if stage.startswith('build-'):
+                text = ('exporting config sha256:' + 'b' * 64 + '\n'
+                        'exporting manifest list sha256:' + 'c' * 64 + '\n')
+            (directory / f'{index:03d}-{stage}.log').write_text(text)
+        (directory / '021-game-migrations.log').write_text('corsheaders.E013')
+        return directory, status
+
+    def image(self, kind, previous, digest='c'):
+        source = release.IMAGES[kind][0]
+        return {'Id': 'sha256:' + digest * 64, 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'Labels': {
+            'org.opencontainers.image.revision': previous['sources'][source]['revision'],
+            'io.backgammon.release': previous['release_id'],
+        }}}
+
+    def fake_capture(self, previous, digest='c'):
+        def inspect(args):
+            kind = str(args[-1]).split(':')[0].removeprefix('backgammon-production-')
+            return json.dumps([self.image(kind, previous, digest)]).encode()
+        return inspect
+
+    def test_tool_only_commit_reuses_pinned_images_and_records_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            directory, previous = self.fixture(root)
+            current = copy.deepcopy(previous['sources'])
+            current['Backgammon Game']['revision'] = 'd' * 40
+            def changes(repository, *args):
+                return 'deploy/workspace/operations/release_test_settings.py\0' if repository.name == 'Backgammon Game' else ''
+            before = (directory / 'status.json').read_bytes()
+            with patch.object(release, 'git', side_effect=changes), \
+                 patch.object(release, 'capture', side_effect=self.fake_capture(previous)):
+                images, evidence = release.resume_checks(root, previous['release_id'], current)
+            self.assertEqual(set(images), set(release.IMAGES))
+            self.assertEqual(len(evidence['completed_log_sha256']), 20)
+            self.assertEqual(evidence['sources'], previous['sources'])
+            self.assertEqual(evidence['tool_changes']['Backgammon Game'],
+                             ['deploy/workspace/operations/release_test_settings.py'])
+            self.assertEqual((directory / 'status.json').read_bytes(), before)
+
+    def test_classic_docker_config_digest_also_supported(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, previous = self.fixture(root)
+            with patch.object(release, 'git', return_value=''), \
+                 patch.object(release, 'capture', side_effect=self.fake_capture(previous, 'b')):
+                images, _ = release.resume_checks(root, previous['release_id'], previous['sources'])
+            self.assertEqual(images['game'], 'sha256:' + 'b' * 64)
+
+    def test_application_docker_and_other_repository_changes_refused_before_image_inspection(self):
+        for name, path in (('Backgammon Game', 'backend/backgammon_project/settings.py'),
+                           ('Backgammon Game', 'deploy/workspace/docker/python.Dockerfile'),
+                           ('backgammon-tournaments', 'src/App.vue')):
+            with self.subTest(path=path), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                _, previous = self.fixture(root)
+                def changes(repository, *args):
+                    return path + '\0' if repository.name == name else ''
+                with patch.object(release, 'git', side_effect=changes), patch.object(release, 'capture') as inspect:
+                    with self.assertRaisesRegex(RuntimeError, 'inputs changed'):
+                        release.resume_checks(root, previous['release_id'], previous['sources'])
+                    inspect.assert_not_called()
+
+    def test_wrong_stage_or_published_attempt_refused(self):
+        for field, value in (('stage', 'checks_passed'), ('failed_stage', 'game-tests'),
+                             ('published', {'game': 'commit-url'})):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                directory, previous = self.fixture(root)
+                previous[field] = value
+                release.save(directory / 'status.json', previous)
+                with self.assertRaisesRegex(RuntimeError, 'unpublished local attempt'):
+                    release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_missing_completed_log_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            directory, previous = self.fixture(root)
+            (directory / '003-game-frontend-tests.log').unlink()
+            with self.assertRaisesRegex(RuntimeError, 'Missing completed-stage log'):
+                release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_retagged_or_relabelled_image_refused(self):
+        for field, value in (('Id', 'sha256:' + 'e' * 64), ('Architecture', 'arm64'),
+                             ('revision', 'e' * 40), ('release', 'different-release')):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                _, previous = self.fixture(root)
+                item = self.image('game', previous)
+                if field in ('revision', 'release'):
+                    key = 'org.opencontainers.image.revision' if field == 'revision' else 'io.backgammon.release'
+                    item['Config']['Labels'][key] = value
+                else:
+                    item[field] = value
+                with patch.object(release, 'git', return_value=''), \
+                     patch.object(release, 'capture', return_value=json.dumps([item]).encode()):
+                    with self.assertRaisesRegex(RuntimeError, 'image identity differs'):
+                        release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_missing_docker_image_refused(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, previous = self.fixture(root)
+            with patch.object(release, 'git', return_value=''), \
+                 patch.object(release, 'capture', side_effect=RuntimeError('No such image')):
+                with self.assertRaisesRegex(RuntimeError, 'No such image'):
+                    release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_path_instead_of_release_id_refused(self):
+        with self.assertRaisesRegex(RuntimeError, 'local release ID'):
+            release.resume_checks(Path('/workspace'), '../../production', manifest()['sources'])
+
+    def test_resume_backend_failure_still_blocks_publication_and_keeps_old_checks_skipped(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            args = Mock(root=root, preflight_only=False, checks_only=False, resume_from=manifest()['release_id'])
+            images = {kind: 'sha256:' + 'b' * 64 for kind in release.IMAGES}
+            def fail(workspace, actual_images, runner):
+                self.assertEqual(actual_images, images)
+                runner.stage = 'game-migrations'
+                raise RuntimeError('backend check failed')
+            with patch.object(release, 'source_inventory', return_value=manifest()['sources']), \
+                 patch.object(release.shutil, 'which', return_value='tool'), \
+                 patch.object(release, 'capture', return_value=b'linux'), \
+                 patch.object(release, 'resume_checks', return_value=(images, {'release_id': args.resume_from})), \
+                 patch.object(release, 'frontend_checks') as frontend, \
+                 patch.object(release, 'image_builds') as builds, \
+                 patch.object(release, 'exported_workspace', return_value=root), \
+                 patch.object(release, 'backend_checks', side_effect=fail), \
+                 patch.object(release, 'publish') as publish, \
+                 patch.object(release, 'upload_and_deploy') as deploy:
+                with self.assertRaisesRegex(RuntimeError, 'backend check failed'):
+                    release.local_main(args)
+                frontend.assert_not_called()
+                builds.assert_not_called()
+                publish.assert_not_called()
+                deploy.assert_not_called()
+            status = json.loads(next(root.glob('artifacts/auto-releases/*/status.json')).read_text())
+            self.assertEqual(status['failed_stage'], 'game-migrations')
+            self.assertEqual(status['resumed_from']['release_id'], args.resume_from)
+
+    def test_resume_checks_only_finishes_backend_and_dice_without_publication(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / 'docker').mkdir()
+            (root / 'docker/dice.Dockerfile').write_text('FROM elixir:1.17\nFROM debian:bookworm-slim\n')
+            args = Mock(root=root, preflight_only=False, checks_only=True, resume_from=manifest()['release_id'])
+            images = {kind: 'sha256:' + 'b' * 64 for kind in release.IMAGES}
+            with patch.object(release, 'source_inventory', return_value=manifest()['sources']), \
+                 patch.object(release.shutil, 'which', return_value='tool'), \
+                 patch.object(release, 'capture', return_value=b'linux'), \
+                 patch.object(release, 'resume_checks', return_value=(images, {'release_id': args.resume_from})), \
+                 patch.object(release, 'frontend_checks') as frontend, \
+                 patch.object(release, 'image_builds') as builds, \
+                 patch.object(release, 'exported_workspace', return_value=root), \
+                 patch.object(release, 'backend_checks') as backend, \
+                 patch.object(release.Runner, 'run') as run, \
+                 patch.object(release, 'publish') as publish, \
+                 patch.object(release, 'upload_and_deploy') as deploy:
+                release.local_main(args)
+                frontend.assert_not_called()
+                builds.assert_not_called()
+                backend.assert_called_once()
+                self.assertEqual(backend.call_args.args[1], images)
+                self.assertEqual(run.call_args.args[0], 'dice-tests')
+                publish.assert_not_called()
+                deploy.assert_not_called()
+            status = json.loads(next(root.glob('artifacts/auto-releases/*/status.json')).read_text())
+            self.assertEqual(status['stage'], 'checks_passed')
+            self.assertEqual(status['published'], {})
+
+
 class PublicationTests(unittest.TestCase):
     def test_any_remote_preflight_failure_prevents_all_pushes(self):
         runner = Mock()
@@ -169,7 +350,7 @@ class RuntimeTests(unittest.TestCase):
 class OutputTests(unittest.TestCase):
     def test_application_test_failure_blocks_push_and_deployment(self):
         with tempfile.TemporaryDirectory() as directory:
-            arguments = Mock(root=Path(directory), preflight_only=False, checks_only=False)
+            arguments = Mock(root=Path(directory), preflight_only=False, checks_only=False, resume_from=None)
             def failed_tests(root, runner):
                 runner.stage = 'tournaments-frontend-tests'
                 raise RuntimeError('application test failed')

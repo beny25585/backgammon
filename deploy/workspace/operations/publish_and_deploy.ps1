@@ -2,7 +2,8 @@
 param(
     [string]$WorkspaceRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path,
     [switch]$ChecksOnly,
-    [switch]$PreflightOnly
+    [switch]$PreflightOnly,
+    [string]$ResumeFrom
 )
 $ErrorActionPreference = 'Stop'
 $taskTool = Join-Path $PSScriptRoot 'release_pipeline.py'
@@ -25,5 +26,6 @@ if (-not $taskPython) { throw 'Python 3.12+ is required. No tests, Git publicati
 $taskArguments = @($taskTool, '--root', $WorkspaceRoot)
 if ($ChecksOnly) { $taskArguments += '--checks-only' }
 if ($PreflightOnly) { $taskArguments += '--preflight-only' }
+if ($ResumeFrom) { $taskArguments += @('--resume-from', $ResumeFrom) }
 & $taskPython @taskArguments
 if ($LASTEXITCODE -ne 0) { throw 'Publication/deployment stopped. Read the stage, error and log path printed above before retrying.' }
