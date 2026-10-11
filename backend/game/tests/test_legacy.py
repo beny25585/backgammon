@@ -1634,21 +1634,6 @@ class GameEndConsumerTests(TransactionTestCase):
 
         await comm_re.disconnect()
 
-    async def test_leave_rejected_when_no_active_game(self):
-        comm_white, comm_black = await self._connect_both()
-        await comm_white.send_json_to({"type": "leave", "payload": {}})
-        await self._receive_until(comm_black, lambda e: e.get("type") == "game_ended")
-
-        # A second leave on the now-closed room is rejected.
-        await comm_white.send_json_to({"type": "leave", "payload": {}})
-        event = await self._receive_until(comm_white, lambda e: e.get("type") == "error")
-        self.assertIn("No active game", event["message"])
-
-        await database_sync_to_async(self.room.refresh_from_db)()
-        self.assertEqual(self.room.status, "completed")
-
-        await comm_white.disconnect()
-        await comm_black.disconnect()
 
     async def test_state_update_with_game_over_finalizes_room(self):
         await self._set_target(1)

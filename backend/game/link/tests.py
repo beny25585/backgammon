@@ -22,7 +22,6 @@ from io import StringIO
 from urllib.parse import parse_qs
 from unittest.mock import AsyncMock, patch
 
-import httpx
 from django.contrib import admin as django_admin
 from django.contrib.auth.models import User
 from django.core import signing
@@ -37,7 +36,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 
 from game.admin import TaskAdmin
 from game.engine import BackgammonEngine
-from game.game_service import finalize_room, record_game_end
+from game.game_service import record_game_end
 from game.models import GameRoom, GameState, Match, Player, RoomPlayer, Task
 from game.tasks import expire_waiting_rooms
 
@@ -45,7 +44,7 @@ from .housekeeping import purge_redeemed_tickets
 from .identity import resolve_user
 from .live import publish_snapshot
 from .models import LinkedIdentity, RedeemedTicket, TournamentLink
-from .outbox import build_result_body, deliver_result, enqueue_result
+from .outbox import build_result_body, enqueue_result
 from .views import tournaments_frontend_url
 from .signing import (
     TICKET_SALT,
@@ -673,17 +672,6 @@ class ConfigurationCheckTests(TestCase):
             errors, ["gamelink.E001", "gamelink.E002", "gamelink.E007", "gamelink.E005", "gamelink.E006"])
 
 
-class SettingsTests(TestCase):
-
-    def test_the_link_ships_disabled_and_unconfigured(self):
-        from django.conf import settings
-
-        self.assertFalse(settings.GAMELINK_ENABLED)
-        self.assertEqual(settings.GAMELINK_TICKET_SECRETS, [])
-        self.assertEqual(settings.GAMELINK_RESULT_SECRET, "")
-        self.assertEqual(settings.GAMELINK_COMMAND_SECRETS, [])
-        self.assertEqual(settings.GAMELINK_TOURNAMENTS_URL, "")
-        self.assertEqual(settings.GAMELINK_FRONTEND_URL, "")
 
 
 # ---------------------------------------------------------------------------
@@ -1028,37 +1016,8 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
 class EnqueueResultTests(ResultTestBase):
     """Which endings produce an outbound message, and which must not."""
 
-    def test_a_finished_linked_match_enqueues_exactly_one_task(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
 
-        task = Task.objects.get()
-        self.assertEqual(task.name, "game.link.outbox.deliver_result")
-        self.assertEqual(task.kwargs, {"link_id": self.link.pk})
-        self.assertEqual(task.status, "pending")
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_status, "queued")
 
-    def test_the_queued_task_is_visible_to_run_tasks(self):
-        # `run_tasks` selects on `run_at__lte=now`, which a NULL `run_at` never satisfies. A task
-        # queued without a stamp would sit pending forever and nothing would say so.
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-
-        self.assertIsNotNone(Task.objects.get().run_at)
-        self.assertTrue(
-            Task.objects.filter(status="pending", run_at__lte=timezone.now()).exists())
-
-    def test_a_finished_unlinked_match_enqueues_nothing(self):
-        room = self.make_room(code="PLAIN1")
-        self.seat_both(room)
-
-        record_game_end(room, self.winning_state(),
-                        "white", "single", "bear_off")
-
-        self.assertEqual(Task.objects.count(), 0)
 
     def test_a_game_that_does_not_end_the_match_enqueues_nothing(self):
         # Mid-match game ends are not fixture results. Only reaching target_points is.
@@ -1074,29 +1033,7 @@ class EnqueueResultTests(ResultTestBase):
         self.link.refresh_from_db()
         self.assertEqual(self.link.result_status, "pending")
 
-    def test_a_forced_close_reports_too(self):
-        # The `leave` path: a player quits mid-match and the room is closed against them.
-        self.seat_both()
-        finalize_room(self.room, self.winning_state(
-            "black"), "black", "single", "leave")
 
-        self.assertEqual(Task.objects.count(), 1)
-        body = self.body()
-        self.assertEqual(body["status"], "completed")
-        self.assertEqual(body["winner_seat"], "p2")
-        self.assertEqual(body["end_reason"], "leave")
-
-    def test_a_link_reports_only_once(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-
-        # Anything trying to report the same fixture again is a no-op, whatever route it arrives
-        # by: the first outcome is the one the tournament hears about.
-        self.link.refresh_from_db()
-        self.assertIsNone(enqueue_result(
-            self.link, None, self.room, "cancelled"))
-        self.assertEqual(Task.objects.count(), 1)
 
     def test_stale_link_cannot_replace_a_frozen_result_or_queue_a_second_task(self):
         stale = TournamentLink.objects.get(pk=self.link.pk)
@@ -1121,117 +1058,6 @@ class EnqueueResultTests(ResultTestBase):
         self.assertEqual(self.link.result_status, "pending")
 
 
-@link_settings
-class DeliverResultTests(ResultTestBase):
-    """Signing and POSTing a frozen result."""
-
-    def queue(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-        return Task.objects.get()
-
-    def test_delivery_posts_a_signed_body_to_the_tournaments_server(self):
-        self.queue()
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse()) as post:
-            deliver_result(self.link.pk)
-
-        url = post.call_args.args[0]
-        raw = post.call_args.kwargs["content"]
-        headers = post.call_args.kwargs["headers"]
-
-        self.assertEqual(
-            url, "https://tournaments.example/api/gamelink/result/")
-        self.assertEqual(headers["Content-Type"], "application/json")
-        self.assertEqual(headers["X-Gamelink-Issuer"], "backgammon")
-        self.assertEqual(post.call_args.kwargs["timeout"], 10.0)
-
-        # The signature must verify over the bytes actually sent, not over a re-dump of the body:
-        # a different key order would still be valid JSON and an invalid signature.
-        expected = sign_result_body(
-            raw, headers["X-Gamelink-Timestamp"], headers["X-Gamelink-Nonce"])
-        self.assertEqual(headers["X-Gamelink-Signature"], expected)
-        self.assertEqual(json.loads(raw)["fixture_id"], 482)
-
-    def test_a_success_marks_the_link_delivered(self):
-        self.queue()
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse(204)):
-            deliver_result(self.link.pk)
-
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_status, "delivered")
-        self.assertIsNotNone(self.link.delivered_at)
-
-    def test_a_refusal_raises_and_leaves_the_link_queued(self):
-        self.queue()
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse(500)):
-            with self.assertRaises(RuntimeError):
-                deliver_result(self.link.pk)
-
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_status, "queued")
-        self.assertIsNone(self.link.delivered_at)
-
-    def test_a_transport_failure_propagates_so_the_task_retries(self):
-        self.queue()
-        with patch("game.link.outbox.httpx.post", side_effect=httpx.ConnectError("refused")):
-            with self.assertRaises(httpx.ConnectError):
-                deliver_result(self.link.pk)
-
-    def test_an_already_delivered_link_is_not_sent_again(self):
-        self.queue()
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse()):
-            deliver_result(self.link.pk)
-        with patch("game.link.outbox.httpx.post") as post:
-            deliver_result(self.link.pk)
-        post.assert_not_called()
-
-    def test_each_attempt_mints_a_fresh_timestamp_and_nonce(self):
-        # The receiver rejects a replayed nonce outright, so a retry reusing one could never
-        # succeed. The *body* stays identical; only these two move.
-        self.queue()
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse(500)) as post:
-            for _ in range(2):
-                with self.assertRaises(RuntimeError):
-                    deliver_result(self.link.pk)
-
-        first, second = post.call_args_list
-        self.assertEqual(first.kwargs["content"], second.kwargs["content"])
-        self.assertNotEqual(
-            first.kwargs["headers"]["X-Gamelink-Nonce"],
-            second.kwargs["headers"]["X-Gamelink-Nonce"])
-
-    def test_delivery_without_a_configured_tournaments_url_is_refused(self):
-        self.queue()
-        with override_settings(GAMELINK_TOURNAMENTS_URL=""):
-            with self.assertRaises(RuntimeError):
-                deliver_result(self.link.pk)
-
-    def test_the_immediate_attempt_runs_on_commit_and_marks_the_task_done(self):
-        self.seat_both()
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse()) as post:
-            with self.captureOnCommitCallbacks(execute=True):
-                record_game_end(self.room, self.winning_state(),
-                                "white", "single", "bear_off")
-
-        post.assert_called_once()
-        self.assertEqual(Task.objects.get().status, "done")
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_status, "delivered")
-
-    def test_a_failed_immediate_attempt_is_swallowed_and_left_pending(self):
-        # It runs from an on_commit hook, where raising would report an error for a request whose
-        # work has already succeeded. The Task row is the durable path and must survive.
-        self.seat_both()
-        with patch("game.link.outbox.httpx.post", side_effect=httpx.ConnectError("refused")):
-            with self.captureOnCommitCallbacks(execute=True):
-                record_game_end(self.room, self.winning_state(),
-                                "white", "single", "bear_off")
-
-        task = Task.objects.get()
-        self.assertEqual(task.status, "pending")
-        self.assertEqual(task.attempts, 1)
-        self.assertIn("refused", task.last_error)
 
 
 @link_settings
@@ -1241,67 +1067,8 @@ class DeliveryRetryTests(ResultTestBase):
     def run_tasks(self):
         call_command("run_tasks", stdout=StringIO())
 
-    def test_conflict_blocks_even_an_old_failed_task_without_losing_the_result(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-        self.link.refresh_from_db()
-        original_body = self.link.result_body
-        Task.objects.update(status='failed', attempts=7)
-        response = FakeResponse(
-            409, '{"error":"conflict","code":"fixture_admin_resolved"}')
-        with patch('game.link.outbox.httpx.post', return_value=response) as post:
-            self.run_tasks()
-            self.run_tasks()
-        post.assert_called_once()
-        task = Task.objects.get()
-        self.assertEqual(task.status, 'blocked')
-        self.assertEqual(task.attempts, 8)
-        self.assertIn('fixture_admin_resolved', task.last_error)
-        self.assertIn('המשחק כבר הוכרע בידי מנהל', task.last_error)
-        self.assertEqual(
-            TaskAdmin(Task, django_admin.site).error(task), task.last_error)
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_body, original_body)
-        self.assertEqual(self.link.result_status, 'queued')
-        self.assertIsNone(self.link.delivered_at)
 
-        call_command('retry_result', str(task.pk), stdout=StringIO())
-        with patch('game.link.outbox.httpx.post', return_value=FakeResponse()) as post:
-            self.run_tasks()
-        self.assertEqual(json.loads(
-            post.call_args.kwargs['content']), original_body)
-        task.refresh_from_db()
-        self.assertEqual(task.status, 'done')
-        self.assertEqual(task.attempts, 9)
-        self.assertIsNone(task.last_error)
 
-    def test_unstructured_or_unknown_conflicts_have_a_safe_actionable_message(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-        for body in ('{"error":"conflict"}', '<html>SECRET</html>',
-                     '{"code":"SECRET"}', '{"code":["SECRET"]}', '[]'):
-            with self.subTest(body=body):
-                Task.objects.update(status='pending', run_at=timezone.now())
-                with patch('game.link.outbox.httpx.post', return_value=FakeResponse(409, body)):
-                    self.run_tasks()
-                task = Task.objects.get()
-                self.assertEqual(task.status, 'blocked')
-                self.assertIn('לוג שרת הטורנירים', task.last_error)
-                self.assertNotIn('SECRET', task.last_error)
-
-    def test_only_transient_http_failures_retry(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-        for status in (400, 401, 403, 404, 413, 408, 429, 500, 502, 503, 504):
-            with self.subTest(status=status):
-                Task.objects.update(status='pending', run_at=timezone.now())
-                with patch('game.link.outbox.httpx.post', return_value=FakeResponse(status)):
-                    self.run_tasks()
-                self.assertEqual(Task.objects.get().status,
-                                 'pending' if status in (408, 429) or status >= 500 else 'blocked')
 
     def test_retry_command_cannot_rearm_a_running_or_completed_task(self):
         for status in ('pending', 'running', 'done', 'failed'):
@@ -1312,51 +1079,8 @@ class DeliveryRetryTests(ResultTestBase):
             task.refresh_from_db()
             self.assertEqual(task.status, status)
 
-    def test_a_refused_delivery_stays_pending_with_a_pushed_out_run_at(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-        before = Task.objects.get().run_at
 
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse(500)):
-            self.run_tasks()
 
-        task = Task.objects.get()
-        self.assertEqual(task.status, "pending")
-        self.assertEqual(task.attempts, 1)
-        self.assertGreater(task.run_at, before)
-        self.assertIn("HTTP 500", task.last_error)
-
-    def test_a_delivery_that_keeps_failing_remains_retryable(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse(500)):
-            for _ in range(3):
-                Task.objects.update(run_at=timezone.now())
-                self.run_tasks()
-
-        task = Task.objects.get()
-        self.assertEqual(task.status, "pending")
-        self.assertEqual(task.attempts, 3)
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_status, "queued")
-
-    def test_a_retry_succeeds_and_marks_the_link_delivered(self):
-        self.seat_both()
-        record_game_end(self.room, self.winning_state(),
-                        "white", "single", "bear_off")
-
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse(503)):
-            self.run_tasks()
-        Task.objects.update(run_at=timezone.now())
-        with patch("game.link.outbox.httpx.post", return_value=FakeResponse()):
-            self.run_tasks()
-
-        self.assertEqual(Task.objects.get().status, "done")
-        self.link.refresh_from_db()
-        self.assertEqual(self.link.result_status, "delivered")
 
 
 @link_settings

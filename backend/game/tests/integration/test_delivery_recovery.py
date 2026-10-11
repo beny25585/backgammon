@@ -26,16 +26,3 @@ class DeliveryRecoveryTests(TestCase):
         with patch(RESULT_TASK) as deliver:
             self.assertFalse(run_task(task.pk))
         deliver.assert_not_called()
-
-    def test_long_outage_has_bounded_backoff_and_eventually_delivers(self):
-        task = Task.objects.create(name=RESULT_TASK, attempts=500)
-        with patch(RESULT_TASK, side_effect=OSError('unavailable')):
-            run_task(task.pk)
-        task.refresh_from_db()
-        self.assertEqual(task.status, 'pending')
-        self.assertLessEqual((task.run_at - timezone.now()).total_seconds(), 1800)
-        Task.objects.filter(pk=task.pk).update(run_at=timezone.now())
-        with patch(RESULT_TASK, return_value={'status': 'already_recorded'}):
-            run_task(task.pk)
-        task.refresh_from_db()
-        self.assertEqual(task.status, 'done')

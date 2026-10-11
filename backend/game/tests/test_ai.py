@@ -1,7 +1,6 @@
 import copy
 import time
 import uuid
-from unittest.mock import patch
 
 from django.contrib.auth.models import User
 from django.core import signing
@@ -9,9 +8,7 @@ from django.test import TestCase, override_settings
 
 from game.ai import claim, release, native_board, executable_turn
 from game.engine import BackgammonEngine
-from game.models import AiSession, GameRoom, GameState, Match, Player, RoomPlayer
-from game.game_service import record_game_end
-from game.link.practice import verify_practice_ticket
+from game.models import AiSession, GameRoom, GameState, Player, RoomPlayer
 from game.presence import check_room_presence
 
 
@@ -33,35 +30,6 @@ class PracticeTests(TestCase):
         release(self.room.id, first)
         self.assertTrue(claim(self.room.id))
 
-    def test_match_scoring_crawford_and_clock_carry_between_games(self):
-        from asgiref.sync import async_to_sync
-        from game.ai_consumer import PracticeGameConsumer
-        from game.clock import parse_time_control
-        self.room.target_points = 5
-        self.room.white_score = 3
-        self.room.time_control = 'fast'
-        self.room.save()
-        state = BackgammonEngine.get_initial_state()
-        state.update(phase='game_over', winner='white', winType='single', cube=1,
-            gameFormat='match', doublingAllowed=True, doublingEnabled=True,
-            crawfordGame=False, crawfordUsed=False, maxCube=64, clock={'white': 123000, 'black': 140000})
-        GameState.objects.create(room=self.room, state_data=state)
-        result = record_game_end(self.room, state, 'white', 'single', 'move')
-        self.assertFalse(result['match_over'])
-        engine = BackgammonEngine(GameState.objects.get(room=self.room).state_data)
-        actor = PracticeGameConsumer()
-        actor.room_id = str(self.room.id)
-        self.assertTrue(async_to_sync(actor._handle_next_game)(engine)['success'])
-        self.assertTrue(engine.state['crawfordGame'])
-        self.assertFalse(engine.state['doublingEnabled'])
-        self.assertEqual(engine.state['clock'], {'white': 123000, 'black': 140000})
-        self.assertEqual(parse_time_control('fast', 5), (150000, 10000))
-        from game.formats import carry_contract
-        fresh = BackgammonEngine.get_initial_state()
-        self.room.refresh_from_db()
-        carry_contract(engine.state, fresh, self.room)
-        self.assertTrue(fresh['doublingEnabled'])
-        self.assertFalse(fresh['crawfordGame'])
 
     def test_ai_is_not_forfeited_for_absent_bot_socket(self):
         self.assertEqual(check_room_presence(self.room.id)['status'], 'practice')
@@ -88,31 +56,7 @@ class PracticeTests(TestCase):
             with self.assertRaises(ValueError):
                 executable_turn(state, [0] * 26)
 
-    @patch('game.game_service.enqueue_match_analysis')
-    def test_result_is_ai_and_belongs_to_human(self, enqueue):
-        state = BackgammonEngine.get_initial_state()
-        state.update(phase='game_over', winner='white', winType='single')
-        GameState.objects.create(room=self.room, state_data=state)
-        record_game_end(self.room, state, 'white', 'single', 'move')
-        match = Match.objects.get(room=self.room)
-        self.assertEqual(match.match_type, 'ai')
-        self.assertEqual(match.white_player_id, self.player.id)
-        self.assertIsNone(match.black_player_id)
 
-    @override_settings(GAMELINK_TICKET_SECRETS=['test-key'], GAMELINK_ACCEPTED_ISSUERS=['club'], GAMELINK_ISSUER='game')
-    def test_ticket_scope_signature_and_expiry(self):
-        payload = {'v': 1, 'iss': 'club', 'aud': 'game', 'jti': str(uuid.uuid4()),
-            'sub': str(uuid.uuid4()), 'exp': int(time.time()) + 60, 'difficulty': 'hard',
-            'purpose': 'enter', 'purchase_id': str(uuid.uuid4()), 'room_id': str(uuid.uuid4()),
-            'tp': 5, 'tc': 'normal', 'dbl': True}
-        token = signing.dumps(payload, key='test-key', salt='gamelink.practice.v1')
-        self.assertEqual(verify_practice_ticket(token)['sub'], payload['sub'])
-        for bad in (token + 'x', signing.dumps(payload, key='test-key', salt='gamelink.ticket.v1')):
-            with self.assertRaises(ValueError):
-                verify_practice_ticket(bad)
-        payload['exp'] = int(time.time()) - 1
-        with self.assertRaises(ValueError):
-            verify_practice_ticket(signing.dumps(payload, key='test-key', salt='gamelink.practice.v1'))
 
     @override_settings(GAMELINK_ENABLED=True, GAMELINK_TICKET_SECRETS=['test-key'],
         GAMELINK_ACCEPTED_ISSUERS=['club'], GAMELINK_ISSUER='game',

@@ -307,6 +307,21 @@ def resume_checks(root, release_id, sources):
                     'tool_changes': changes, 'completed_log_sha256': log_hashes}
 
 
+def start_test_dice(images, runner, docker, network, labels, created):
+    """Start the built dice service only inside this attempt's disposable network."""
+    container = network + '-dice'
+    created.append(container)
+    runner.run('test-dice', [*docker, 'run', '-d', '--name', container, *labels,
+        '--network', network, '--network-alias', 'release-dice', '--memory', '256m', '--cpus', '1',
+        '-e', 'PORT=4000', '-e', 'DICE_BIND_HOST=0.0.0.0', images['dice']])
+    # Each attempt lasts at most two seconds plus one second between attempts.
+    # The readiness command streams its output to a dedicated stage log.
+    health = ('attempt=0; until curl --fail --silent --max-time 2 http://127.0.0.1:4000/health; '
+              'do attempt=$((attempt + 1)); if [ "$attempt" -ge 30 ]; '
+              'then echo "Dice service did not become ready" >&2; exit 1; fi; sleep 1; done')
+    runner.run('test-dice-ready', [*docker, 'exec', container, 'sh', '-c', health])
+
+
 def backend_checks(workspace, images, runner, sudo=False):
     docker = ['sudo', '-n', 'docker'] if sudo else ['docker']
     token = uuid.uuid4().hex
@@ -347,6 +362,7 @@ def backend_checks(workspace, images, runner, sudo=False):
             'DB_PASSWORD': 'disposable-release-tests', 'DATABASE_URL': 'postgresql://postgres:disposable-release-tests@release-postgres/postgres',
             'SECRET_KEY': 'release-test-only-key-not-a-production-credential-0123456789',
             'REDIS_URL': 'redis://release-redis:6379/0', 'CHANNEL_LAYER_BACKEND': 'redis', 'DEBUG': '1',
+            'DICE_SERVICE_URL': 'http://release-dice:4000',
             'ALLOWED_HOSTS': 'testserver,localhost', 'GAMELINK_ENABLED': '0',
             'GAMELINK_BACKGAMMON_URL': 'https://game.example.test', 'GAMELINK_TOURNAMENTS_URL': 'https://club.example.test',
             'WEB_PUSH_PUBLIC_KEY': '', 'WEB_PUSH_PRIVATE_KEY': '', 'WEB_PUSH_SUBJECT': '',
@@ -358,6 +374,8 @@ def backend_checks(workspace, images, runner, sudo=False):
                 ('migrations', ['makemigrations', '--check', '--dry-run']),
                 ('tests', ['test', '--noinput', '--verbosity', '2']),
             ):
+                if kind == 'game' and action == 'tests':
+                    start_test_dice(images, runner, docker, network, labels, created)
                 container = network + '-' + kind + '-' + action
                 created.append(container)
                 args = [*docker, 'run', '--name', container, *labels, '--network', network,

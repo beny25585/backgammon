@@ -229,6 +229,74 @@ class ResumeTests(unittest.TestCase):
             self.assertEqual(status['published'], {})
 
 
+class TestDiceServiceTests(unittest.TestCase):
+    def test_built_image_runs_in_isolated_network_before_readiness(self):
+        runner = Mock()
+        created = []
+        image = 'sha256:' + 'a' * 64
+        labels = ['--label', 'io.backgammon.release-test=owned']
+        release.start_test_dice({'dice': image}, runner, ['docker'], 'isolated', labels, created)
+        self.assertEqual(created, ['isolated-dice'])
+        start, ready = runner.run.call_args_list
+        self.assertEqual(start.args[0], 'test-dice')
+        command = start.args[1]
+        self.assertEqual(command[-1], image)
+        self.assertEqual(command[command.index('--network') + 1], 'isolated')
+        self.assertEqual(command[command.index('--network-alias') + 1], 'release-dice')
+        self.assertIn('io.backgammon.release-test=owned', command)
+        self.assertIn('DICE_BIND_HOST=0.0.0.0', command)
+        self.assertNotIn('-p', command)
+        self.assertNotIn('--publish', command)
+        self.assertNotIn('--mount', command)
+        self.assertEqual(ready.args[0], 'test-dice-ready')
+        self.assertEqual(ready.args[1][:4], ['docker', 'exec', 'isolated-dice', 'sh'])
+        self.assertIn('http://127.0.0.1:4000/health', ready.args[1][-1])
+        self.assertIn('--max-time 2', ready.args[1][-1])
+
+    def test_failed_start_is_registered_for_cleanup(self):
+        runner = Mock()
+        runner.run.side_effect = RuntimeError('startup failed')
+        created = []
+        with self.assertRaisesRegex(RuntimeError, 'startup failed'):
+            release.start_test_dice({'dice': 'pinned-image'}, runner, ['docker'], 'isolated', [], created)
+        self.assertEqual(created, ['isolated-dice'])
+        self.assertEqual(runner.run.call_count, 1)
+
+    def check_backend_failure(self, failed_stage):
+        with tempfile.TemporaryDirectory() as folder:
+            runner = Mock(directory=Path(folder))
+            images = {kind: 'sha256:' + 'a' * 64 for kind in release.IMAGES}
+            stages = []
+            def run(stage, command):
+                stages.append(stage)
+                if stage == 'game-tests':
+                    self.assertLess(stages.index('test-dice-ready'), stages.index('game-tests'))
+                    self.assertIn('DICE_SERVICE_URL=http://release-dice:4000', command)
+                if stage == failed_stage:
+                    raise RuntimeError('injected failure')
+            runner.run.side_effect = run
+            owned = {'Config': {'Labels': {'io.backgammon.release-test': 'owned'}}}
+            result = Mock(returncode=0, stdout=json.dumps([owned]).encode())
+            network = json.dumps([{'Labels': {'io.backgammon.release-test': 'owned'}}]).encode()
+            with patch.object(release.uuid, 'uuid4', return_value=Mock(hex='owned')), \
+                 patch.object(release.subprocess, 'run', return_value=result) as process, \
+                 patch.object(release, 'capture', return_value=network):
+                with self.assertRaisesRegex(RuntimeError, 'injected failure'):
+                    release.backend_checks(Path(folder), images, runner)
+                commands = [call.args[0] for call in process.call_args_list]
+                self.assertIn(['docker', 'rm', '-f', 'bg-release-tests-owned-dice'], commands)
+                self.assertIn(['docker', 'network', 'rm', 'bg-release-tests-owned'], commands)
+            return stages
+
+    def test_unready_dice_blocks_game_tests_and_cleans_up(self):
+        stages = self.check_backend_failure('test-dice-ready')
+        self.assertNotIn('game-tests', stages)
+
+    def test_backend_tests_use_dice_and_cleanup_after_failure(self):
+        stages = self.check_backend_failure('game-tests')
+        self.assertIn('game-tests', stages)
+
+
 class PublicationTests(unittest.TestCase):
     def test_any_remote_preflight_failure_prevents_all_pushes(self):
         runner = Mock()
