@@ -229,6 +229,109 @@ class ResumeTests(unittest.TestCase):
             self.assertEqual(status['published'], {})
 
 
+class FrontendResumeTests(unittest.TestCase):
+    def fixture(self, root):
+        previous = manifest()
+        directory = root / 'artifacts/auto-releases' / previous['release_id']
+        directory.mkdir(parents=True)
+        status = dict(previous, stage='failed', failed_stage='admin-frontend-build', published={},
+                      error='backgammon-tournaments: commit your changes before running this tool (including new files)')
+        release.save(directory / 'status.json', status)
+        for index, stage in enumerate(release.RESUME_COMPLETED_STAGES[:10], 1):
+            (directory / f'{index:03d}-{stage}.log').write_text('completed\n')
+        (directory / '010-admin-frontend-build.log').write_text('\x1b[32m✓ built in 1.23s\x1b[39m\n', encoding='utf-8')
+        return directory, status
+
+    def test_changed_tournaments_rechecked_with_unchanged_game_and_admin(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            directory, previous = self.fixture(root)
+            current = copy.deepcopy(previous['sources'])
+            current['backgammon-tournaments']['revision'] = 'b' * 40
+            current['Backgammon Game']['revision'] = 'c' * 40
+            def changes(repository, *args):
+                if repository.name == 'backgammon-tournaments':
+                    return 'src/stores/auth.ts\0'
+                return 'deploy/workspace/operations/release_pipeline.py\0' if repository.name == 'Backgammon Game' else ''
+            before = (directory / 'status.json').read_bytes()
+            with patch.object(release, 'git', side_effect=changes), patch.object(release, 'capture') as capture:
+                images, evidence = release.resume_checks(root, previous['release_id'], current)
+            self.assertIsNone(images)
+            capture.assert_not_called()
+            self.assertEqual(evidence['skipped_frontends'], ['game', 'admin'])
+            self.assertEqual(evidence['rerun_frontends'], ['tournaments'])
+            self.assertEqual(len(evidence['completed_log_sha256']), 10)
+            self.assertEqual((directory / 'status.json').read_bytes(), before)
+
+    def test_changed_game_or_admin_inputs_are_rejected(self):
+        for name, path in (('Backgammon Game', 'frontend/src/App.tsx'),
+                           ('backgammon-tournaments-backend', 'admin-frontend/src/App.vue')):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                _, previous = self.fixture(root)
+                with patch.object(release, 'git', side_effect=lambda repo, *args: path if repo.name == name else ''):
+                    with self.assertRaisesRegex(RuntimeError, 'inputs changed'):
+                        release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_incomplete_or_published_attempt_is_rejected(self):
+        for failure in ('missing-log', 'incomplete-build', 'published', 'command-error'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                directory, previous = self.fixture(root)
+                if failure == 'missing-log':
+                    (directory / '003-game-frontend-tests.log').unlink()
+                elif failure == 'incomplete-build':
+                    (directory / '010-admin-frontend-build.log').write_text('build failed')
+                else:
+                    if failure == 'published':
+                        previous['published'] = {'Backgammon Game': 'commit-url'}
+                    else:
+                        previous['error'] = 'admin-frontend-build failed (exit 1)'
+                    release.save(directory / 'status.json', previous)
+                with patch.object(release, 'git', return_value=''):
+                    with self.assertRaises(RuntimeError):
+                        release.resume_checks(root, previous['release_id'], previous['sources'])
+
+    def test_dirty_guard_always_rechecks_tournaments_even_with_same_commit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            _, previous = self.fixture(root)
+            with patch.object(release, 'git', return_value=''):
+                _, evidence = release.resume_checks(root, previous['release_id'], previous['sources'])
+            self.assertEqual(evidence['rerun_frontends'], ['tournaments'])
+
+    def test_selected_frontend_runs_only_its_install_tests_and_build(self):
+        runner = Mock()
+        with patch.object(release.shutil, 'which', return_value='pnpm'):
+            release.frontend_checks(Path('workspace'), runner, only=['tournaments'])
+        self.assertEqual([call.args[0] for call in runner.run.call_args_list],
+                         ['tournaments-dependencies', 'tournaments-frontend-tests', 'tournaments-frontend-build'])
+
+    def test_frontend_resume_builds_images_and_stops_before_publication_on_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            args = Mock(root=root, preflight_only=False, checks_only=False, resume_from=manifest()['release_id'])
+            evidence = {'release_id': args.resume_from, 'rerun_frontends': ['tournaments']}
+            with patch.object(release, 'source_inventory', return_value=manifest()['sources']), \
+                 patch.object(release.shutil, 'which', return_value='tool'), \
+                 patch.object(release, 'capture', return_value=b'linux'), \
+                 patch.object(release, 'resume_checks', return_value=(None, evidence)), \
+                 patch.object(release, 'frontend_checks') as frontend, \
+                 patch.object(release, 'exported_workspace', return_value=root), \
+                 patch.object(release, 'image_builds', side_effect=RuntimeError('image build failed')) as builds, \
+                 patch.object(release, 'backend_checks') as backend, \
+                 patch.object(release, 'publish') as publish, \
+                 patch.object(release, 'upload_and_deploy') as deploy:
+                with self.assertRaisesRegex(RuntimeError, 'image build failed'):
+                    release.local_main(args)
+                frontend.assert_called_once()
+                self.assertEqual(frontend.call_args.kwargs['only'], ['tournaments'])
+                builds.assert_called_once()
+                backend.assert_not_called()
+                publish.assert_not_called()
+                deploy.assert_not_called()
+
+
 class TestDiceServiceTests(unittest.TestCase):
     def test_built_image_runs_in_isolated_network_before_readiness(self):
         runner = Mock()
