@@ -25,4 +25,4 @@ Reuse the actual shared components found under src/components; do not assume Pag
 
 Clock display uses the shared clock logic, including per-turn delay rather than increment. Game-format labels and financial terms must reflect the server contract. Local TypeScript AI and server Open Sage are separate modes and must be described accordingly.
 
-[PWA deployment](PWA_DEPLOYMENT.he.md), [frontend architecture](README.md), [historical performance review](../PERFORMANCE_AUDIT.md).
+[PWA deployment](../../PWA_DEPLOYMENT.he.md), [frontend architecture](README.md), [historical performance review](../PERFORMANCE_AUDIT.md).

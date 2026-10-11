@@ -37,4 +37,4 @@ src/styles/global.css מגדיר טוקנים, Assistant גם לגוף וגם ל
 
 ## שירותים נלווים
 
-משחק מקומי אינו מסלול Open Sage. [תרגול שרת](../../docs/open-sage-practice.he.md). ל־PWA זהות /backgammon/, scope=/ ופתיחה ב־/tournaments/. [התקנה](PWA_DEPLOYMENT.he.md). את סודות השירותים שומרים בשרת; משתני VITE נחשפים בדפדפן.
+משחק מקומי אינו מסלול Open Sage. [תרגול שרת](../../docs/open-sage-practice.he.md). ל־PWA זהות /backgammon/, scope=/ ופתיחה ב־/tournaments/. [התקנה](../../PWA_DEPLOYMENT.he.md). את סודות השירותים שומרים בשרת; משתני VITE נחשפים בדפדפן.

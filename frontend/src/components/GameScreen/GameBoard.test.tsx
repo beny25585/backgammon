@@ -6,6 +6,7 @@ import { allLegalMoves, applyMove, BAR, newGame, OFF } from "@/lib/backgammon/en
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage, MakeMoveOptions } from "../../types/context";
 import { Board } from "../Board/Board";
+import styles from "./GameScreen.module.css";
 
 function simpleWhiteState(): GameState {
   const points = new Array(24).fill(0);
@@ -27,6 +28,18 @@ function simpleWhiteState(): GameState {
 
 function movingState(overrides: Partial<GameState> = {}): GameState {
   return { ...simpleWhiteState(), ...overrides };
+}
+
+function SizedBoardFixture(props: ComponentProps<typeof Board>) {
+  return (
+    <div className={styles.container}>
+      <div className={styles.gameFrame}>
+        <div className={styles.boardArea}>
+          <Board {...props} />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 interface MountProps {
@@ -104,7 +117,7 @@ for (const color of ["white", "black"] as const) {
     const state = movingState({ points, turn: color, dice: [1, 2], remaining: [1, 2] });
     const calls: Array<{ from: Source | undefined; to: Target; die?: number }> = [];
     const component = await mount(
-      <Board state={state} myColor={color} selected={null} legalTargets={[]}
+      <SizedBoardFixture state={state} myColor={color} selected={null} legalTargets={[]}
         legalFromPoints={[source]} onSelect={() => {}}
         onMove={(to, from, options?: MakeMoveOptions) => calls.push({ from, to, die: options?.die })} />,
     );
@@ -123,7 +136,7 @@ test("direct bear-off click uses the lower die when the higher die cannot bear o
   const state = movingState({ points, dice: [4, 3], remaining: [4, 3] });
   const calls: Array<{ from: Source | undefined; to: Target; die?: number }> = [];
   const component = await mount(
-    <Board state={state} myColor="white" selected={null} legalTargets={[]}
+    <SizedBoardFixture state={state} myColor="white" selected={null} legalTargets={[]}
       legalFromPoints={[2, 5]} onSelect={() => {}}
       onMove={(to, from, options) => calls.push({ from, to, die: options?.die })} />,
   );
@@ -175,7 +188,7 @@ for (const color of ["white", "black"] as const) {
       const moves = allLegalMoves(state, color);
       const calls: Array<{ from: Source | undefined; to: Target }> = [];
       const component = await mount(
-        <Board state={state} myColor={color} selected={BAR}
+        <SizedBoardFixture state={state} myColor={color} selected={BAR}
           legalTargets={moves.map((move) => move.to)} legalFromPoints={[BAR]}
           onSelect={() => {}} onMove={(to, from) => calls.push({ from, to })} />,
       );
@@ -201,7 +214,7 @@ for (const color of ["white", "black"] as const) {
       const moves = allLegalMoves(state, color);
       const calls: Array<{ from: Source | undefined; to: Target }> = [];
       const component = await mount(
-        <Board state={state} myColor={color} selected={BAR}
+        <SizedBoardFixture state={state} myColor={color} selected={BAR}
           legalTargets={moves.map((move) => move.to)} legalFromPoints={moves.length ? [BAR] : []}
           onSelect={() => {}} onMove={(to, from) => calls.push({ from, to })} />,
       );

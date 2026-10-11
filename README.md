@@ -49,7 +49,7 @@ pnpm dev
 
 ## תחזוקה
 
-[Frontend ונתיבים](frontend/README.md), [Backend וחוזים](backend/README.md), [עיצוב המשחק](frontend/UI_GUIDELINES.md), [קוביות](dice_service/README.md), [PWA](frontend/PWA_DEPLOYMENT.he.md), [משימות רקע](backend/DJANGO_Q.md).
+[Frontend ונתיבים](frontend/README.md), [Backend וחוזים](backend/README.md), [עיצוב המשחק](frontend/UI_GUIDELINES.md), [קוביות](dice_service/README.md), [PWA](../PWA_DEPLOYMENT.he.md), [משימות רקע](backend/DJANGO_Q.md).
 
 בדיקות מתבצעות בכל רכיב בנפרד: pnpm build / pnpm lint / pnpm test בממשק, python manage.py test בשרת ו־mix test בקוביות. בדיקות מנוע המקבלות קוביות HTTP דורשות שירות או fixture מתאים. הפקודות לא הורצו במסגרת עדכון התיעוד.
 
