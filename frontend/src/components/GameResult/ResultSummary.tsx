@@ -59,9 +59,15 @@ function rating(
 
 export default function ResultSummary(props: Props) {
   const { t, direction } = useI18n();
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
-  const [unavailable, setUnavailable] = useState(false);
   const { roomId } = props;
+  const [summary, setSummary] = useState<{
+    roomId?: string;
+    analysis: Analysis | null;
+    unavailable: boolean;
+  }>({ roomId, analysis: null, unavailable: false });
+  const analysis = summary.roomId === roomId ? summary.analysis : null;
+  const unavailable = summary.roomId === roomId && summary.unavailable;
+  const loading = Boolean(roomId) && !unavailable && analysis?.status !== "completed";
   const base = new URL(
     import.meta.env.VITE_TOURNAMENTS_URL || "/tournaments/",
     window.location.origin,
@@ -75,8 +81,13 @@ export default function ResultSummary(props: Props) {
     let timer: ReturnType<typeof setTimeout>;
     let attempts = 0;
     let failures = 0;
-    setAnalysis(null);
-    setUnavailable(false);
+    const markUnavailable = () => {
+      setSummary((current) => ({
+        roomId,
+        analysis: current.roomId === roomId ? current.analysis : null,
+        unavailable: true,
+      }));
+    };
     async function load() {
       attempts += 1;
       try {
@@ -85,13 +96,13 @@ export default function ResultSummary(props: Props) {
           controller.signal,
         );
         if ([401, 403, 404].includes(response.status)) {
-          if (!controller.signal.aborted) setUnavailable(true);
+          if (!controller.signal.aborted) markUnavailable();
           return;
         }
         if (response.status === 503) {
           const error = await response.clone().json().catch(() => null);
           if (error?.retryable === false) {
-            if (!controller.signal.aborted) setUnavailable(true);
+            if (!controller.signal.aborted) markUnavailable();
             return;
           }
         }
@@ -104,8 +115,7 @@ export default function ResultSummary(props: Props) {
             .filter((item) => item.room_id === roomId)
             .sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ??
           null;
-        setAnalysis(match);
-        setUnavailable(match?.status === "failed");
+        setSummary({ roomId, analysis: match, unavailable: match?.status === "failed" });
         if (match?.status === "completed" || match?.status === "failed") return;
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -114,13 +124,15 @@ export default function ResultSummary(props: Props) {
           timer = setTimeout(load, error.delayMs);
           return;
         }
-        setUnavailable(true);
         failures += 1;
-        if (failures >= 3) return;
+        if (failures >= 3) {
+          markUnavailable();
+          return;
+        }
       }
       if (attempts < 60) timer = setTimeout(load,
         failures ? 30_000 * 2 ** (failures - 1) + Math.random() * 5000 : 5000);
-      else setUnavailable(true);
+      else markUnavailable();
     }
     void load();
     return () => {
@@ -150,11 +162,13 @@ export default function ResultSummary(props: Props) {
     <>
       <ResultMetricRow
         label={t("game.gameRating")}
+        loading={loading}
         left={metric(self?.game_rating, 0)}
         right={metric(opponent?.game_rating, 0)}
       />
       <ResultMetricRow
         label={t("game.pr")}
+        loading={loading}
         left={metric(self?.pr, 2)}
         right={metric(opponent?.pr, 2)}
       />
@@ -182,6 +196,7 @@ export default function ResultSummary(props: Props) {
       />
       <ResultMetricRow
         label={t("game.luck")}
+        loading={loading}
         left={<bdi>{metric(self?.luck, 3)}</bdi>}
         right={<bdi>{metric(opponent?.luck, 3)}</bdi>}
       />

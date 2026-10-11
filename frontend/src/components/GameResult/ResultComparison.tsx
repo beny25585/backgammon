@@ -14,14 +14,22 @@ interface MetricRowProps {
   right: React.ReactNode;
   leftClassName?: string;
   rightClassName?: string;
+  loading?: boolean;
 }
 
-export function ResultMetricRow({ left, label, right, leftClassName, rightClassName }: MetricRowProps) {
+export function ResultMetricRow({ left, label, right, leftClassName, rightClassName, loading = false }: MetricRowProps) {
+  const placeholder = (
+    <span
+      aria-hidden="true"
+      data-testid="result-metric-loading"
+      className="inline-block h-[0.85em] w-[clamp(42px,8cqw,72px)] rounded-full bg-gradient-to-r from-white/5 via-amber-300/20 to-white/5 motion-safe:animate-pulse"
+    />
+  );
   return (
-    <div className={styles.resultRow}>
-      <span className={`${styles.playerValue} ${leftClassName ?? ""}`}>{left}</span>
+    <div className={styles.resultRow} aria-busy={loading}>
+      <span className={`${styles.playerValue} ${leftClassName ?? ""}`}>{loading ? placeholder : left}</span>
       <span className={styles.metricLabel}>{label}</span>
-      <span className={`${styles.opponentValue} ${rightClassName ?? ""}`}>{right}</span>
+      <span className={`${styles.opponentValue} ${rightClassName ?? ""}`}>{loading ? placeholder : right}</span>
     </div>
   );
 }

@@ -15,6 +15,8 @@ test("unconfigured analysis stops polling while the result remains visible", asy
   await page.clock.runFor(300_000);
   expect(calls).toBe(1);
   await expect(component.getByTestId("score-left")).toBeVisible();
+  await expect(component.getByTestId("result-metric-loading")).toHaveCount(0);
+  await expect(component.getByRole("status").filter({ hasText: "Analysis is currently unavailable." })).toBeVisible();
 });
 
 test("temporary analysis failures back off instead of polling every five seconds", async ({ mount, page }) => {
@@ -24,18 +26,21 @@ test("temporary analysis failures back off instead of polling every five seconds
     calls++;
     return route.fulfill({ status: 503, json: { retryable: true } });
   });
-  await mount(<QuickGameResult roomId="offline" winner="white"
+  const component = await mount(<QuickGameResult roomId="offline" winner="white"
     whiteScore={1} blackScore={0} onClose={() => {}} onRematch={() => {}} />,
     { hooksConfig: { locale: "en" } });
   await expect.poll(() => calls).toBe(1);
   await page.clock.runFor(15_000);
   expect(calls).toBe(1);
+  await expect(component.getByTestId("result-metric-loading")).toHaveCount(6);
   await page.clock.runFor(25_000);
   await expect.poll(() => calls).toBe(2);
   await page.clock.runFor(70_000);
   await expect.poll(() => calls).toBe(3);
   await page.clock.runFor(300_000);
   expect(calls).toBe(3);
+  await expect(component.getByTestId("result-metric-loading")).toHaveCount(0);
+  await expect(component.getByRole("status").filter({ hasText: "Analysis is currently unavailable." })).toBeVisible();
 });
 
 test("result maps analysis to black self, preserves zero coins, and links to this analysis", async ({
@@ -106,7 +111,11 @@ test("pending analysis hides partial metrics until completed", async ({
   await page.clock.pauseAt(new Date());
   let completed = false;
   let calls = 0;
-  await page.route("**/tournaments-api/analyses?room=pending", (route) => {
+  let releaseResponse!: () => void;
+  const responseReady = new Promise<void>((resolve) => { releaseResponse = resolve; });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/tournaments-api/analyses?room=pending", async (route) => {
+    await responseReady;
     calls++;
     return route.fulfill({
       json: {
@@ -128,11 +137,21 @@ test("pending analysis hides partial metrics until completed", async ({
       winner="white"
       whiteScore={1}
       blackScore={0}
+      ratingAfter={1500}
+      coinsDelta={0}
+      durationSeconds={125}
       onClose={() => {}}
       onRematch={() => {}}
     />,
     { hooksConfig: { locale: "en" } },
   );
+  await expect(component.getByTestId("score-left")).toBeVisible();
+  await expect(component.getByTestId("result-metric-loading")).toHaveCount(6);
+  await expect(component.getByTestId("result-metric-loading").first()).toBeVisible();
+  expect(await component.getByTestId("result-metric-loading").first().evaluate(
+    (element) => getComputedStyle(element).animationName,
+  )).toBe("none");
+  releaseResponse();
   await expect.poll(() => calls).toBe(1);
   await expect(
     component.getByRole("status").filter({ hasText: "Analysis in progress —" }),
@@ -143,10 +162,13 @@ test("pending analysis hides partial metrics until completed", async ({
     "href",
     /\/analysis\/pending-id\?room=pending$/,
   );
-  await expect(prRow.locator("span").first()).toHaveText("—");
-  await expect(prRow.locator("span").last()).toHaveText("—");
-  await expect(ratingRow.locator("span").first()).toHaveText("—");
-  await expect(ratingRow.locator("span").last()).toHaveText("—");
+  await expect(component.getByTestId("result-metric-loading")).toHaveCount(6);
+  await expect(prRow).toHaveAttribute("aria-busy", "true");
+  await expect(ratingRow).toHaveAttribute("aria-busy", "true");
+  await expect(component.getByTestId("score-left")).toBeVisible();
+  await expect(component.getByText("1500", { exact: true })).toBeVisible();
+  await expect(component.getByText("Coins").locator("..").locator("span").first()).toHaveText("0");
+  await expect(component.getByText("02:05", { exact: true })).toBeVisible();
   await expect(component.getByText("9.75", { exact: true })).toHaveCount(0);
   await expect(component.getByText("0.125", { exact: true })).toHaveCount(0);
 
@@ -156,6 +178,9 @@ test("pending analysis hides partial metrics until completed", async ({
   await expect(ratingRow.locator("span").first()).toHaveText("1400");
   await expect(component.getByText("0.125", { exact: true })).toBeVisible();
   await expect(component.getByText("Analysis in progress —")).toHaveCount(0);
+  await expect(component.getByTestId("result-metric-loading")).toHaveCount(0);
+  await expect(prRow).toHaveAttribute("aria-busy", "false");
+  await expect(ratingRow.locator("span").last()).toHaveText("—");
 });
 
 test("result card fits a narrow phone viewport", async ({ mount, page }) => {
