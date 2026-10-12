@@ -128,12 +128,14 @@ class Runner:
         directory.chmod(0o700)
         self.stage = 'preflight'
         self.counter = 0
+        self.timings = []
 
     def run(self, stage, args, cwd=None, env=None):
         self.stage = stage
         self.counter += 1
         log = self.directory / f'{self.counter:03d}-{stage}.log'
         print(f'\n[{stage}] Log: {log}', flush=True)
+        started = time.monotonic()
         with log.open('wb') as output:
             log.chmod(0o600)
             process = subprocess.Popen(list(map(str, args)), cwd=cwd, env=env,
@@ -154,6 +156,10 @@ class Runner:
                 raise
             finally:
                 process.stdout.close()
+        elapsed = round(time.monotonic() - started, 3)
+        self.timings.append({'stage': stage, 'seconds': elapsed, 'exit_code': result})
+        save(self.directory / 'timings.json', self.timings)
+        print(f'[{stage}] Finished in {elapsed:.3f}s (exit {result})', flush=True)
         require(result == 0, f'{stage} failed (exit {result}). Log: {log}')
 
 
@@ -232,15 +238,11 @@ def image_builds(workspace, manifest, runner, sudo=False, kinds=None):
     tag = manifest['release_id']
     builder = 'backgammon-release-builder'
     if sudo:
-        probe = subprocess.run([*docker, 'buildx', 'inspect', builder], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        if probe.returncode:
-            runner.run('create-build-worker', [*docker, 'buildx', 'create', '--name', builder, '--driver', 'docker-container',
-                '--driver-opt', 'memory=3g,memory-swap=3g,cpu-period=100000,cpu-quota=100000,default-load=true,restart-policy=no',
-                '--buildkitd-config', workspace / 'docker/buildkit.production.toml'])
-        runner.run('start-build-worker', [*docker, 'buildx', 'inspect', '--bootstrap', builder])
+        runner.run('configure-build-worker', [sys.executable, workspace / 'docker/configure_builder.py',
+                                            '--builder', builder, '--sudo-docker'])
         limits = capture([*docker, 'inspect', 'buildx_buildkit_' + builder + '0', '--format',
             '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}}']).decode().strip()
-        require(limits == '3221225472 3221225472 100000 100000', 'Server builder resource limits differ')
+        require(limits == '3221225472 3221225472 100000 200000', 'Server builder resource limits differ')
     images = {}
     try:
         for kind in (kinds or IMAGES):
@@ -536,7 +538,7 @@ def frontend_checks(root, runner, only=None):
     require(pnpm, 'pnpm is required')
     environment = dict(os.environ, CI='true')
     sites = (
-        ('game', root / 'Backgammon Game/frontend', ['test', '--workers=1']),
+        ('game', root / 'Backgammon Game/frontend', ['test', '--workers=2']),
         ('tournaments', root / 'backgammon-tournaments', ['test:unit', '--run']),
         ('admin', root / 'backgammon-tournaments-backend/admin-frontend', ['test:unit', '--run']),
     )

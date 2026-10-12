@@ -9,15 +9,10 @@ builder="backgammon-build"
 compose=(sudo docker compose --env-file docker/production.env -f docker/compose.production.yaml --profile live)
 
 "${compose[@]}" config --quiet
-if ! sudo docker buildx inspect "$builder" >/dev/null 2>&1; then
-  sudo docker buildx create --name "$builder" --driver docker-container \
-    --driver-opt memory=3g,memory-swap=3g,cpu-period=100000,cpu-quota=100000,default-load=true,restart-policy=no \
-    --buildkitd-config docker/buildkit.production.toml
-fi
+python3 docker/configure_builder.py --builder "$builder" --sudo-docker
 trap 'sudo docker buildx stop "$builder" || true' EXIT
-sudo docker buildx inspect "$builder" --bootstrap
 limits="$(sudo docker inspect "buildx_buildkit_${builder}0" --format '{{.HostConfig.Memory}} {{.HostConfig.MemorySwap}} {{.HostConfig.CpuPeriod}} {{.HostConfig.CpuQuota}}')"
-if [ "$limits" != '3221225472 3221225472 100000 100000' ]; then
+if [ "$limits" != '3221225472 3221225472 100000 200000' ]; then
   printf '%s\n' 'Builder limits differ from the reviewed configuration; build stopped.' >&2
   exit 1
 fi

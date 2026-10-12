@@ -690,6 +690,10 @@ class OutputTests(unittest.TestCase):
                         "import sys; print('TEST_ERROR_DETAIL', file=sys.stderr); sys.exit(7)"])
             self.assertIn('TEST_ERROR_DETAIL', output.getvalue())
             self.assertIn('TEST_ERROR_DETAIL', next(Path(directory).glob('*.log')).read_text())
+            timing = json.loads((Path(directory) / 'timings.json').read_text())
+            self.assertEqual(timing[0]['stage'], 'synthetic-failure')
+            self.assertEqual(timing[0]['exit_code'], 7)
+            self.assertGreaterEqual(timing[0]['seconds'], 0)
 
     def test_test_settings_refuse_runtime_use(self):
         code = Path(release.__file__).with_name('release_test_settings.py').read_text()

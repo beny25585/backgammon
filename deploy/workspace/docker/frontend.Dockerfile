@@ -21,12 +21,14 @@ ENV VITE_SERVER_URL=$VITE_SERVER_URL VITE_TOURNAMENTS_URL=$VITE_TOURNAMENTS_URL 
 RUN pnpm run build
 
 FROM nginx:1.28-alpine AS production
-ARG SOURCE_REVISION=unversioned
-ARG RELEASE_TAG=unversioned
-LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG
 COPY --from=build /app/dist/ /usr/share/nginx/html/
 # Public assets copied from a private checkout can retain mode 0600.
 # Nginx workers must be able to traverse directories and read every asset.
 RUN find /usr/share/nginx/html -type d -exec chmod 0755 {} + \
     && find /usr/share/nginx/html -type f -exec chmod 0644 {} +
 COPY docker/nginx.frontend.conf /etc/nginx/conf.d/default.conf
+
+# Release metadata must not invalidate copied assets or permission fixes.
+ARG SOURCE_REVISION=unversioned
+ARG RELEASE_TAG=unversioned
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION io.backgammon.release=$RELEASE_TAG
