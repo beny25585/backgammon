@@ -769,7 +769,9 @@ class Production:
             "assert state['status'] == 'ok' and state['queued_results'] == 0, "
             "'Result deliveries have not drained; keep the current workers running and retry later'"
         )
+        # docker exec bypasses the image entrypoint that loads runtime secrets.
         self.runner.run('active-games', [*self.compose(self.old_file), 'exec', '-T', 'game-api',
+                                        'python', '/opt/docker/runtime_env.py',
                                         'python', 'manage.py', 'shell', '-c', command])
 
     def backup(self):
