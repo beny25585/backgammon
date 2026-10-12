@@ -265,7 +265,8 @@ class EnterLinkTests(LinkTestBase):
 
         # Scoped to the match, not the 24-hour default an ordinary login gets.
         token = AccessToken(fragment["access"])
-        self.assertLessEqual(token["exp"] - token["iat"], 2 * 60 * 60)
+        # Allow a one-second boundary between refresh and access token creation.
+        self.assertLessEqual(token["exp"] - token["iat"], 2 * 60 * 60 + 1)
 
     def test_the_zero_tournament_link_also_returns_to_the_tournament_lobby(self):
         response = self.enter(make_ticket(trn=0))
