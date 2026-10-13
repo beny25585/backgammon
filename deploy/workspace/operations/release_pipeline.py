@@ -913,7 +913,7 @@ def read_server_state(config):
 
 
 def server_readiness(sources, runner):
-    config = {'root': str(SERVER_ROOT), 'project': PROJECT, 'sources': sources,
+    config = {'root': SERVER_ROOT.as_posix(), 'project': PROJECT, 'sources': sources,
               'services': list(APPS + WORKERS + ('postgres', 'redis')),
               'apps': list(APPS), 'service_image': SERVICE_IMAGE}
     code = inspect.getsource(read_server_state) + '\nimport json\nprint("BG_RELEASE_SERVER_STATE " + json.dumps(read_server_state('
