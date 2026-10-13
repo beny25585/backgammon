@@ -79,7 +79,7 @@ def tournaments_frontend_url():
             'Do not include /tournaments; the backend appends the canonical app path.'
         )
 
-    return f"{parsed.scheme}://{parsed.netloc}/tournaments/"
+    return f"{parsed.scheme}://{parsed.netloc}/6b/tournaments/"
 
 
 @api_view(['GET'])

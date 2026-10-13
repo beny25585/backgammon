@@ -8,7 +8,7 @@ import styles from "./LinkEntry.module.css";
 
 // Where the address bar is left pointing once the fragment has been taken out of it. Written out
 // rather than derived from the router, to match `handleSessionExpired` in services/auth.
-const LANDING_PATH = "/backgammon/link";
+const LANDING_PATH = `${import.meta.env.BASE_URL}link`;
 
 /**
  * The landing route a player arrives on from the tournaments server.
@@ -76,7 +76,7 @@ export default function LinkEntry() {
     setError('');
     try {
       await cancelRoom(conflict.room);
-      window.location.assign('/tournaments/my-games');
+      window.location.assign('/6b/tournaments/my-games');
     } catch (caught) { setError(caught instanceof Error ? caught.message : 'לא ניתן לסגור כרגע. נסה שוב.'); }
     finally { setBusy(false); }
   }
@@ -92,7 +92,7 @@ export default function LinkEntry() {
           <button disabled={busy} onClick={() => navigate(conflict.path, { replace: true })}>חזרה למשחק הקיים</button>
           <button disabled={busy} onClick={() => void closeExisting()}>{busy ? 'סוגר…' : conflict.waiting ? 'סגירת המשחק הממתין' : 'סיום המשחק הקיים'}</button>
           {error && <p role="alert">{error}</p>}
-          <a href="/tournaments/my-games">חזרה למשחקים שלי</a>
+          <a href="/6b/tournaments/my-games">חזרה למשחקים שלי</a>
         </div> : <p className={styles.message}>{t("game.takingToGame")}</p>}
       </div>
     </div>

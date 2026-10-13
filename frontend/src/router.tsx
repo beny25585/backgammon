@@ -24,7 +24,7 @@ import { resolveGameType, isValidTournamentId } from "./routerGameType";
 const configuredTournamentsUrl = (
   import.meta as ImportMeta & { env?: Record<string, string | undefined> }
 ).env?.VITE_TOURNAMENTS_URL?.trim();
-const TOURNAMENTS_URL = configuredTournamentsUrl || "/tournaments/";
+const TOURNAMENTS_URL = configuredTournamentsUrl || "/6b/tournaments/";
 
 function safeTournamentReturnUrl(value: string | null): URL | null {
   if (!value) return null;
@@ -45,14 +45,16 @@ function safeTournamentReturnUrl(value: string | null): URL | null {
 }
 
 function tournamentLobbyUrl(): URL {
-  const fallback = "/tournaments/";
+  const fallback = "/6b/tournaments/";
   const target = TOURNAMENTS_URL || fallback;
   const origin =
     window.location.origin && window.location.origin !== "null"
       ? window.location.origin
       : "http://localhost:5173";
   try {
-    return new URL(target, origin);
+    const url = new URL(target, origin);
+    url.pathname = `${url.pathname.replace(/\/+$/, "")}/`;
+    return url;
   } catch {
     return new URL(fallback, origin);
   }
@@ -162,7 +164,7 @@ function GameRoute() {
             ? () => {
                 clearRoom();
                 window.location.assign(
-                  new URL("/tournaments/practice", returnUrl).toString(),
+                  new URL("practice", tournamentLobbyUrl()).toString(),
                 );
               }
             : undefined

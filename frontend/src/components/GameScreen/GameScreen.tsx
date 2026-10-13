@@ -259,7 +259,7 @@ export default function GameScreen({
       if (rematchNavigationRef.current === key) return;
       rematchNavigationRef.current = key;
       window.location.assign(
-        `/backgammon/game/${encodeURIComponent(rematchReady.roomId)}?color=${rematchReady.color}`,
+        `${import.meta.env.BASE_URL}game/${encodeURIComponent(rematchReady.roomId)}?color=${rematchReady.color}`,
       );
     }
   }, [rematchReady]);

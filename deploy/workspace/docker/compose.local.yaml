@@ -32,7 +32,7 @@ x-game: &game
     GAMELINK_ENABLED: "True"
     GAMELINK_TOURNAMENTS_URL: http://backgammon.localhost:8180
     GAMELINK_TOURNAMENTS_FRONTEND_URL: http://backgammon.localhost:8180
-    GAMELINK_FRONTEND_URL: http://backgammon.localhost:8180/backgammon
+    GAMELINK_FRONTEND_URL: http://backgammon.localhost:8180/6b/backgammon
     DICE_SERVICE_URL: http://dice:4000
     AI_SERVICE_URL: http://analysis-api:8000
     ANALYSIS_SERVICE_URL: http://analysis-api:8000
@@ -62,7 +62,7 @@ x-tournaments: &tournaments
     REDIS_URL: redis://redis:6379/1
     GAMELINK_ENABLED: "1"
     GAMELINK_BACKGAMMON_URL: http://backgammon.localhost:8180
-    ACCOUNT_FRONTEND_URL: http://backgammon.localhost:8180/tournaments
+    ACCOUNT_FRONTEND_URL: http://backgammon.localhost:8180/6b/tournaments
     ANALYSIS_SERVICE_URL: http://analysis-api:8000
     GOOGLE_CLIENT_ID: ""
     EMAIL_BACKEND: django.core.mail.backends.console.EmailBackend
@@ -261,7 +261,7 @@ services:
       args: {APP_DIR: Backgammon Game/frontend}
     environment:
       VITE_SERVER_URL: /backgammon
-      VITE_TOURNAMENTS_URL: http://backgammon.localhost:8180/tournaments/
+      VITE_TOURNAMENTS_URL: http://backgammon.localhost:8180/6b/tournaments/
 
   tournaments-frontend:
     <<: *frontend
@@ -273,7 +273,7 @@ services:
       args: {APP_DIR: backgammon-tournaments}
     environment:
       VITE_API_URL: http://tournaments-api:8000
-      VITE_GAME_URL: /backgammon/
+      VITE_GAME_URL: /6b/backgammon/
 
   admin-frontend:
     <<: *frontend

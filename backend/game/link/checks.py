@@ -98,7 +98,7 @@ def check_gamelink_configuration(app_configs, **kwargs):
             errors.append(Error(
                 'GAMELINK_TOURNAMENTS_FRONTEND_URL includes an app path.',
                 hint='Set it to the frontend origin only, for example http://127.0.0.1:5174. '
-                     'The backend appends /tournaments/ automatically.',
+                     'The backend appends /6b/tournaments/ automatically.',
                 id='gamelink.E009',
             ))
 

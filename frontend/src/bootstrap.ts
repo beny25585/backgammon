@@ -2,9 +2,10 @@
 // A real entry file also avoids Vite's inline HTML-proxy module URLs on deep links.
 async function bootstrap() {
   let reloadRequired = false;
+  const workerPath = `${import.meta.env.BASE_URL}sw.js`;
   if (import.meta.env.DEV && "serviceWorker" in navigator) {
     const isGameWorker = (url?: string) =>
-      Boolean(url && new URL(url).pathname === "/backgammon/sw.js");
+      Boolean(url && [workerPath, "/backgammon/sw.js"].includes(new URL(url).pathname));
     reloadRequired = isGameWorker(navigator.serviceWorker.controller?.scriptURL);
     const registrations = await navigator.serviceWorker.getRegistrations();
     await Promise.all(registrations.filter(registration =>
@@ -22,7 +23,12 @@ async function bootstrap() {
   }
   await import("./main");
   if (import.meta.env.PROD && "serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/backgammon/sw.js", { scope: "/backgammon/" });
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.filter((registration) => {
+      const worker = registration.active || registration.waiting || registration.installing;
+      return worker && new URL(worker.scriptURL).pathname === "/backgammon/sw.js";
+    }).map((registration) => registration.unregister()));
+    navigator.serviceWorker.register(workerPath, { scope: import.meta.env.BASE_URL });
   }
 }
 

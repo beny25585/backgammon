@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../services/authContext";
 import { joinRoom, createRoom } from "@/services/api";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -12,6 +13,7 @@ interface RoomResponse {
 }
 
 export default function LobbyPage() {
+  const navigate = useNavigate();
   const { t } = useI18n();
   const { user, logout } = useAuth();
   const [tab, setTab] = useState<"create" | "join">("create");
@@ -38,7 +40,7 @@ export default function LobbyPage() {
     setLoading(true);
     try {
       const room = await joinRoom(code);
-      window.location.href = `/game/${room.code}`;
+      navigate(`/game/${room.code}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("home.failedJoinRoom"));
     } finally {
@@ -48,7 +50,7 @@ export default function LobbyPage() {
 
   function handlePlay() {
     if (createdRoom) {
-      window.location.href = `/game/${createdRoom.code}`;
+      navigate(`/game/${createdRoom.code}`);
     }
   }
 

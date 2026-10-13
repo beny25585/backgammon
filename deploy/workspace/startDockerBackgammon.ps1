@@ -34,7 +34,7 @@ try {
             Invoke-ProjectCompose -Arguments @('up', '-d', '--wait', '--wait-timeout', '180')
             Invoke-ProjectCompose -Arguments @('exec', '-T', 'gateway', 'nginx', '-t')
             Invoke-ProjectCompose -Arguments @('exec', '-T', 'gateway', 'nginx', '-s', 'reload')
-            Write-Host 'Docker environment: http://backgammon.localhost:8180/tournaments/' -ForegroundColor Green
+            Write-Host 'Docker environment: http://backgammon.localhost:8180/6b/tournaments/' -ForegroundColor Green
             Write-Host 'Admin frontend: http://backgammon.localhost:8180/tournaments-admin/'
             Write-Host 'Create your user: docker compose -f docker/compose.local.yaml run --rm --no-deps tournaments-api python manage.py createsuperuser'
             Write-Host 'Stop containers without deleting data: .\startDockerBackgammon.ps1 -Action stop'

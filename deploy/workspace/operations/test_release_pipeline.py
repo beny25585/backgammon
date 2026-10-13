@@ -663,12 +663,16 @@ class OutputTests(unittest.TestCase):
     def test_application_test_failure_blocks_push_and_deployment(self):
         with tempfile.TemporaryDirectory() as directory:
             arguments = Mock(root=Path(directory), preflight_only=False, checks_only=False, resume_from=None)
-            def failed_tests(root, runner):
+            def failed_tests(root, runner, only=None):
                 runner.stage = 'tournaments-frontend-tests'
                 raise RuntimeError('application test failed')
             with patch.object(release, 'source_inventory', return_value=manifest()['sources']), \
                  patch.object(release.shutil, 'which', return_value='tool'), \
                  patch.object(release, 'capture', return_value=b'linux'), \
+                 patch.object(release, 'server_readiness', return_value={
+                     'active_count': 0, 'delivery': {'status': 'ok', 'queued_results': 0}}), \
+                 patch.object(release.ReleaseProgress, 'run', side_effect=lambda name, stages, action, **kwargs:
+                              None if name == 'release-tool-tests' else action()), \
                  patch.object(release, 'frontend_checks', side_effect=failed_tests), \
                  patch.object(release, 'publish') as publish, \
                  patch.object(release, 'upload_and_deploy') as deploy:

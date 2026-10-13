@@ -17,5 +17,5 @@ class EntryHTMLRenderer(BaseRenderer):
         try:
             home = tournaments_frontend_url()
         except ImproperlyConfigured:
-            home = '/tournaments/'
+            home = '/6b/tournaments/'
         return render_to_string('game/link_error.html', {'home': home})

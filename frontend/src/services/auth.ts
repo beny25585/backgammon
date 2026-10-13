@@ -79,5 +79,5 @@ export function isTokenExpired(token: string): boolean {
 
 export function handleSessionExpired(): void {
   clearTokens();
-  window.location.assign("/backgammon/?expired=1");
+  window.location.assign(`${import.meta.env.BASE_URL}?expired=1`);
 }

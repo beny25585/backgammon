@@ -528,7 +528,7 @@ Start-DevProcess `
     Write-Host " Redis:               redis://${redisHost}:${redisPort}"
     Write-Host ""
     Write-Host " Game Frontend:       http://${gameFrontendHost}:${gameFrontendPort}"
-    Write-Host " Tournaments:         http://${tournamentsFrontendHost}:${tournamentsFrontendPort}/tournaments/"
+    Write-Host " Tournaments:         http://${tournamentsFrontendHost}:${tournamentsFrontendPort}/6b/tournaments/"
     Write-Host " Admin Frontend:      http://${adminFrontendHost}:${adminFrontendPort}/tournaments-admin/"
     Write-Host ""
     Write-Host " Game Backend:        http://${gameBackendHost}:${gameBackendPort}"

@@ -69,7 +69,7 @@ export default function ResultSummary(props: Props) {
   const unavailable = summary.roomId === roomId && summary.unavailable;
   const loading = Boolean(roomId) && !unavailable && analysis?.status !== "completed";
   const base = new URL(
-    import.meta.env.VITE_TOURNAMENTS_URL || "/tournaments/",
+    import.meta.env.VITE_TOURNAMENTS_URL || "/6b/tournaments/",
     window.location.origin,
   );
   const api = new URL("/tournaments-api/analyses", base);

@@ -4,12 +4,15 @@ No commit, reset, force push, database import, or production volume removal.
 The initial Docker cutover must have completed successfully before deployment.
 """
 import argparse
+import base64
+import contextlib
 import copy
 from datetime import datetime, timezone
 import hashlib
 import io
 import json
 import os
+import inspect
 from pathlib import Path
 import re
 import shlex
@@ -27,6 +30,7 @@ SSH_TARGET = 'administrator@38.247.146.17'
 PROJECT = 'backgammon-candidate-da383537b98a4b08b3fe814cd44c880a'
 ORIGIN = 'https://38.247.146.17.nip.io'
 CUTOVER = SERVER_ROOT / 'reports/production-cutover/r8-20261008T081712Z-7a2cfbd7edd9'
+WORKFLOW_VERSION = 2
 SOURCES = {
     'Backgammon Game': ('master', 'beny25585/backgammon', 'backgammon'),
     'backgammon-tournaments': ('master', 'beny25585/backgammon-tournament-ui', 'backgammon-tournament-ui'),
@@ -162,6 +166,229 @@ class Runner:
         print(f'[{stage}] Finished in {elapsed:.3f}s (exit {result})', flush=True)
         require(result == 0, f'{stage} failed (exit {result}). Log: {log}')
 
+    def retain(self, stage, source):
+        self.stage = stage
+        self.counter += 1
+        target = self.directory / f'{self.counter:03d}-{stage}.log'
+        shutil.copyfile(source, target)
+        target.chmod(0o600)
+        self.timings.append({'stage': stage, 'seconds': 0, 'exit_code': 0, 'reused_from': str(source)})
+        save(self.directory / 'timings.json', self.timings)
+        print(f'[{stage}] ALREADY VERIFIED. Evidence: {target}', flush=True)
+
+
+def tool_hashes():
+    tool = Path(__file__).resolve()
+    return {name: sha(tool.with_name(name)) for name in ('release_pipeline.py', 'release_test_settings.py')}
+
+
+@contextlib.contextmanager
+def workspace_lock(root):
+    folder = root / 'artifacts/auto-releases'
+    require(folder.resolve().is_relative_to(root.resolve()), 'Release receipts escape the workspace')
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / '.local-release.lock').open('a+b') as lock:
+        lock.seek(0, os.SEEK_END)
+        if lock.tell() == 0:
+            lock.write(b'0')
+            lock.flush()
+        lock.seek(0)
+        try:
+            if os.name == 'nt':
+                import msvcrt
+                msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as error:
+            raise RuntimeError('Another local release is running. Wait for it to finish.') from error
+        try:
+            yield
+        finally:
+            if os.name == 'nt':
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def latest_progress(base, sources, scope):
+    if not base.is_dir():
+        return None
+    tools = tool_hashes()
+    for folder in sorted(base.iterdir(), key=lambda item: item.stat().st_mtime_ns, reverse=True):
+        if not folder.is_dir() or folder.is_symlink() or not re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', folder.name):
+            continue
+        path = folder / 'progress.json'
+        if not path.is_file():
+            continue
+        require(not path.is_symlink(), 'Redirected release progress: ' + str(path))
+        progress = json.loads(path.read_text(encoding='utf-8'))
+        if (progress.get('workflow_version') != WORKFLOW_VERSION or progress.get('sources') != sources
+                or progress.get('tools') != tools or progress.get('scope') != scope):
+            continue
+        require(progress.get('release_id') == folder.name, 'Progress belongs to another release')
+        status_path = folder / 'status.json'
+        require(status_path.is_file() and not status_path.is_symlink(), 'Missing or redirected release status')
+        status = json.loads(status_path.read_text(encoding='utf-8'))
+        require(status.get('sources') == sources, 'Progress and release sources differ')
+        if scope == 'server':
+            if status.get('stage') == 'production_open':
+                continue
+            require(all(status.get(key) is False for key in
+                        ('production_changed', 'migrations_started', 'public_writes_opened')),
+                    'Previous deployment needs manual recovery; automatic continuation refused: ' + str(folder))
+        return folder, progress
+    return None
+
+
+class ReleaseProgress:
+    """Retain complete phases only, with unchanged sources, inputs and verified logs."""
+
+    def __init__(self, runner, manifest, scope, previous=None):
+        self.runner = runner
+        self.previous = previous
+        self.value = {'workflow_version': WORKFLOW_VERSION, 'release_id': manifest['release_id'],
+                      'sources': manifest['sources'], 'tools': tool_hashes(), 'scope': scope, 'phases': {}}
+        if previous:
+            require(previous[1].get('release_id') == previous[0].name
+                    and all(previous[1].get(key) == self.value[key]
+                            for key in ('workflow_version', 'sources', 'tools', 'scope')),
+                    'Retained progress inputs differ')
+            self.value['previous_release'] = previous[0].name
+        save(runner.directory / 'progress.json', self.value)
+
+    def candidates(self, name, fingerprint):
+        previous = self.previous
+        visited = set()
+        while previous:
+            folder, progress = previous
+            require(folder.name not in visited, 'Release continuation contains a cycle')
+            visited.add(folder.name)
+            phase = progress.get('phases', {}).get(name)
+            if phase and phase.get('inputs') == fingerprint:
+                yield folder, phase
+            parent = progress.get('previous_release')
+            if not parent:
+                return
+            require(re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', parent), 'Unsafe continuation parent')
+            path = folder.parent / parent
+            require(path.is_dir() and not path.is_symlink(), 'Missing or redirected continuation parent')
+            journal = path / 'progress.json'
+            require(journal.is_file() and not journal.is_symlink(), 'Missing continuation journal')
+            progress = json.loads(journal.read_text(encoding='utf-8'))
+            require(progress.get('release_id') == parent
+                    and all(progress.get(key) == self.value[key] for key in ('workflow_version', 'tools', 'sources', 'scope')),
+                    'Continuation parent inputs differ')
+            if self.value['scope'] == 'server':
+                status = json.loads((path / 'status.json').read_text(encoding='utf-8'))
+                require(all(status.get(key) is False for key in
+                            ('production_changed', 'migrations_started', 'public_writes_opened')),
+                        'Continuation parent requires production recovery')
+            previous = path, progress
+
+    def run(self, name, stages, action, inputs=None, verify=None):
+        require(bool(stages), 'A resumable phase must contain completed commands')
+        fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
+        for folder, phase in self.candidates(name, fingerprint):
+            require(phase.get('result_sha256') == hashlib.sha256(json.dumps(phase['result'], sort_keys=True).encode()).hexdigest(),
+                    'Retained phase result changed: ' + name)
+            logs = phase.get('logs', [])
+            require([item['stage'] for item in logs] == list(stages), 'Incomplete retained phase: ' + name)
+            paths = []
+            for item in logs:
+                filename = item['file']
+                require(re.fullmatch(r'\d{3}-[\w-]+\.log', filename), 'Unsafe retained log name')
+                path = folder / filename
+                require(path.is_file() and not path.is_symlink() and sha(path) == item['sha256'],
+                        'Completed evidence changed: ' + str(path))
+                paths.append(path)
+            if name == 'images':
+                verify_image_logs(phase['result'], dict(zip((item['stage'] for item in logs), paths)))
+            if verify is None or verify(phase['result'], phase['origin_release']):
+                start = len(self.runner.timings)
+                for item, path in zip(logs, paths):
+                    self.runner.retain(item['stage'], path)
+                self.record(name, start, phase['result'], fingerprint, phase['origin_release'], stages)
+                return phase['result']
+            print('Retained resources are unavailable; rechecking phase: ' + name, flush=True)
+        start = len(self.runner.timings)
+        result = action()
+        self.record(name, start, result, fingerprint, self.value['release_id'], stages)
+        return result
+
+    def record(self, name, start, result, fingerprint, origin, stages):
+        rows = self.runner.timings[start:]
+        require([row['stage'] for row in rows] == list(stages) and all(row['exit_code'] == 0 for row in rows),
+                'Phase did not complete successfully: ' + name)
+        logs = []
+        for index, row in enumerate(rows, start + 1):
+            path = self.runner.directory / f"{index:03d}-{row['stage']}.log"
+            logs.append({'stage': row['stage'], 'file': path.name, 'sha256': sha(path)})
+        if name == 'images':
+            verify_image_logs(result, {item['stage']: self.runner.directory / item['file'] for item in logs})
+        self.value['phases'][name] = {'inputs': fingerprint, 'origin_release': origin, 'logs': logs, 'result': result,
+                                    'result_sha256': hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()}
+        save(self.runner.directory / 'progress.json', self.value)
+
+
+def verify_image_logs(images, logs):
+    require(isinstance(images, dict) and set(images) == set(IMAGES), 'Built image set differs')
+    for kind, image in images.items():
+        text = logs['build-' + kind].read_text(encoding='utf-8')
+        digests = re.findall(r'exporting (?:config|manifest(?: list)?) (sha256:[a-f0-9]{64})', text)
+        require(image in digests, 'Image ID does not belong to its completed build: ' + kind)
+
+
+def verify_images(images, sources, origin, sudo=False):
+    require(isinstance(images, dict) and set(images) == set(IMAGES), 'Retained image set differs')
+    docker = ['sudo', '-n', 'docker'] if sudo else ['docker']
+    for kind, image in images.items():
+        require(re.fullmatch(r'sha256:[a-f0-9]{64}', image), 'Image is not an immutable Docker ID: ' + kind)
+        try:
+            items = json.loads(capture([*docker, 'image', 'inspect', image]))
+        except RuntimeError as error:
+            if 'No such image' in str(error):
+                return False
+            raise
+        require(len(items) == 1, 'Ambiguous retained image: ' + kind)
+        item = items[0]
+        labels = item['Config'].get('Labels') or {}
+        require(item['Id'] == image and item['Os'] == 'linux' and item['Architecture'] == 'amd64'
+                and labels.get('org.opencontainers.image.revision') == sources[IMAGES[kind][0]]['revision']
+                and labels.get('io.backgammon.release') == origin, 'Retained image identity differs: ' + kind)
+    return True
+
+
+def checked_images(workspace, manifest, runner, progress, sudo=False):
+    stages = (['configure-build-worker'] if sudo else []) + ['build-' + kind for kind in IMAGES]
+    return progress.run('images', stages, lambda: image_builds(workspace, manifest, runner, sudo=sudo),
+                        verify=lambda images, origin: verify_images(images, manifest['sources'], origin, sudo=sudo))
+
+
+def checked_backends(workspace, images, runner, progress, sudo=False):
+    docker = ['sudo', '-n', 'docker'] if sudo else ['docker']
+    engine = capture([*docker, 'version', '--format', '{{.Server.Version}} {{.Server.Arch}}']).decode().strip()
+    test_images = {}
+    for service, tag in (('postgres', 'postgres:16'), ('redis', 'redis:7-alpine')):
+        try:
+            items = json.loads(capture([*docker, 'image', 'inspect', tag]))
+        except RuntimeError as error:
+            if 'No such image' not in str(error):
+                raise
+            runner.run('prepare-test-image-' + service, [*docker, 'pull', tag])
+            items = json.loads(capture([*docker, 'image', 'inspect', tag]))
+        require(len(items) == 1 and re.fullmatch(r'sha256:[a-f0-9]{64}', items[0]['Id']),
+                'Disposable test image identity differs: ' + service)
+        test_images[service] = items[0]['Id']
+    for kind in BACKENDS:
+        stages = ['test-network', 'test-postgres', 'test-redis', kind + '-migrations']
+        if kind == 'game':
+            stages += ['test-dice', 'test-dice-ready']
+        stages += [kind + '-tests']
+        progress.run('backend-' + kind, stages,
+                     lambda kind=kind: backend_checks(workspace, images, runner, sudo=sudo, only=(kind,),
+                                                      test_images=test_images),
+                     inputs={'images': images, 'docker_engine': engine, 'test_images': test_images})
+
 
 def git(repository, *args):
     return capture(['git', '-c', 'safe.directory=' + repository.as_posix(), '-C', repository, *args]).decode().strip()
@@ -194,6 +421,15 @@ def source_inventory(root, server=False):
 
 def assert_sources(root, expected):
     require(source_inventory(root) == expected, 'Source changed during checks. No further publication/deployment is allowed.')
+
+
+def local_environment(root):
+    sources = source_inventory(root)
+    for executable in ('git', 'docker', 'node', 'scp', 'ssh'):
+        require(shutil.which(executable), 'Required executable missing: ' + executable)
+    require(shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm'), 'pnpm is required')
+    require(capture(['docker', 'info', '--format', '{{.OSType}}']).strip() == b'linux', 'Docker must use Linux containers')
+    return sources
 
 
 def validate_manifest(manifest):
@@ -257,7 +493,7 @@ def image_builds(workspace, manifest, runner, sudo=False, kinds=None):
                 command += ['--build-arg', 'APP_DIR=' + app]
             if 'frontend' in kind:
                 command += ['--target', 'production', '--build-arg', 'VITE_SERVER_URL=/backgammon',
-                    '--build-arg', 'VITE_TOURNAMENTS_URL=' + ORIGIN + '/tournaments/', '--build-arg', 'VITE_GAME_URL=/backgammon/']
+                    '--build-arg', 'VITE_TOURNAMENTS_URL=' + ORIGIN + '/6b/tournaments/', '--build-arg', 'VITE_GAME_URL=/6b/backgammon/']
             runner.run('build-' + kind, [*command, workspace])
             item = json.loads(capture([*docker, 'image', 'inspect', image]))[0]
             labels = item['Config'].get('Labels') or {}
@@ -440,7 +676,7 @@ def start_test_dice(images, runner, docker, network, labels, created):
     runner.run('test-dice-ready', [*docker, 'exec', container, 'sh', '-c', health])
 
 
-def backend_checks(workspace, images, runner, sudo=False, only=None):
+def backend_checks(workspace, images, runner, sudo=False, only=None, test_images=None):
     docker = ['sudo', '-n', 'docker'] if sudo else ['docker']
     token = uuid.uuid4().hex
     network = 'bg-release-tests-' + token
@@ -462,10 +698,11 @@ def backend_checks(workspace, images, runner, sudo=False, only=None):
         runner.run('test-postgres', [*docker, 'run', '-d', '--name', postgres, *labels,
             '--network', network, '--network-alias', 'release-postgres', '--memory', '768m', '--cpus', '1',
             '--tmpfs', '/var/lib/postgresql/data:rw,size=512m', '-e', 'POSTGRES_PASSWORD=disposable-release-tests',
-            'postgres:16'])
+            (test_images or {}).get('postgres', 'postgres:16')])
         created.append(redis)
         runner.run('test-redis', [*docker, 'run', '-d', '--name', redis, *labels,
-            '--network', network, '--network-alias', 'release-redis', '--memory', '128m', 'redis:7-alpine'])
+            '--network', network, '--network-alias', 'release-redis', '--memory', '128m',
+            (test_images or {}).get('redis', 'redis:7-alpine')])
         deadline = time.monotonic() + 90
         while True:
             probe = subprocess.run([*docker, 'exec', postgres, 'pg_isready', '-U', 'postgres'],
@@ -573,6 +810,23 @@ def publish(root, sources, runner, receipt):
     assert_sources(root, sources)
 
 
+def publish_exact(root, sources, runner, receipt):
+    publish(root, sources, runner, receipt)
+    for name, source in sources.items():
+        remote = git(root / name, 'ls-remote', '--exit-code', 'origin', 'refs/heads/' + source['branch']).split()[0]
+        require(remote == source['revision'], 'Published branch changed: ' + name)
+
+
+def dice_checks(workspace, release_id, runner):
+    recipe = workspace / 'docker/dice.Dockerfile'
+    test_recipe = runner.directory / 'dice-tests.Dockerfile'
+    test_recipe.write_text(recipe.read_text().split('FROM debian:')[0]
+                          + '\nCOPY ["Backgammon Game/dice_service/test/", "/app/test/"]\nRUN MIX_ENV=test mix test\n',
+                          encoding='utf-8')
+    runner.run('dice-tests', ['docker', 'build', '--file', test_recipe,
+               '--tag', 'backgammon-dice-tests:' + release_id, workspace])
+
+
 def upload_and_deploy(manifest, runner):
     token = 'bg-release-upload-' + uuid.uuid4().hex
     archive = runner.directory / (token + '.zip')
@@ -592,6 +846,112 @@ def upload_and_deploy(manifest, runner):
         'os.execv(sys.executable,[sys.executable,str(d/"release_pipeline.py"),"--server","--manifest",str(d/"manifest.json")])'
     )
     runner.run('server-pull-build-deploy', ['ssh', '-tt', SSH_TARGET, 'python3 -c ' + shlex.quote(bootstrap)])
+
+
+def read_server_state(config):
+    """Standalone read-only probe sent over SSH before expensive local checks."""
+    import fcntl
+    import json
+    from pathlib import Path
+    import subprocess
+
+    def output(args):
+        result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode:
+            raise RuntimeError(result.stderr.decode('utf-8', errors='replace')[-2000:])
+        return result.stdout.decode('utf-8')
+
+    subprocess.run(['sudo', '-v'], check=True)
+    folder = Path(config['root']) / 'reports/auto-releases'
+    current = folder / 'current.json'
+    if not current.is_file() or current.is_symlink():
+        raise RuntimeError('A registered current production receipt is required before automatic releases')
+    with (folder / '.deployment.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('Another server deployment is running; wait for it to finish')
+        state = json.loads(current.read_text())
+        if state.get('stage') != 'production_open':
+            raise RuntimeError('Production requires recovery: ' + str(state.get('stage')))
+        nginx = output(['sudo', '-n', 'cat', state['nginx_file']])
+        if 'if ($remote_addr != 127.0.0.1) { return 503; }' in nginx:
+            raise RuntimeError('Production is already in maintenance; inspect its receipt before retrying')
+        ids = output(['sudo', '-n', 'docker', 'ps', '-q', '--filter',
+                      'label=com.docker.compose.project=' + config['project']]).split()
+        if not ids:
+            raise RuntimeError('Production containers are missing')
+        containers = {}
+        for item in json.loads(output(['sudo', '-n', 'docker', 'inspect', *ids])):
+            labels = item['Config'].get('Labels') or {}
+            if labels.get('com.docker.compose.oneoff', '').lower() != 'true':
+                service = labels.get('com.docker.compose.service')
+                if service in containers:
+                    raise RuntimeError('Ambiguous production service: ' + service)
+                containers[service] = item
+        if not all(service in containers for service in config['services']):
+            raise RuntimeError('A production service is not running; inspect the current stack')
+        command = (
+            'import json; from game.models import GameRoom; from game.operations import delivery_health; '
+            'rooms=GameRoom.objects.exclude(status__in=["completed","cancelled"]); '
+            'print("BG_RELEASE_RUNTIME "+json.dumps({"active_count":rooms.count(), '
+            '"rooms":list(rooms.order_by("created_at").values("code","status","updated_at")[:20]), '
+            '"delivery":delivery_health()},default=str))'
+        )
+        text = output(['sudo', '-n', 'docker', 'exec', containers['game-api']['Id'],
+                       'python', '/opt/docker/runtime_env.py', 'python', 'manage.py', 'shell', '-c', command])
+        lines = [line.split('BG_RELEASE_RUNTIME ', 1)[1] for line in text.splitlines() if 'BG_RELEASE_RUNTIME ' in line]
+        if len(lines) != 1:
+            raise RuntimeError('Production readiness returned no unambiguous result')
+        runtime = json.loads(lines[0])
+        already_current = state.get('sources') == config['sources'] and all(
+            containers[service]['Image'] == state.get('images', {}).get(config['service_image'][service])
+            for service in config['service_image'] if service in config['services']
+        ) and all(containers[service]['State'].get('Health', {}).get('Status') == 'healthy'
+                  for service in config['apps'])
+        return dict(runtime, already_current=already_current, current_release=state.get('release_id'))
+
+
+def server_readiness(sources, runner):
+    config = {'root': str(SERVER_ROOT), 'project': PROJECT, 'sources': sources,
+              'services': list(APPS + WORKERS + ('postgres', 'redis')),
+              'apps': list(APPS), 'service_image': SERVICE_IMAGE}
+    code = inspect.getsource(read_server_state) + '\nimport json\nprint("BG_RELEASE_SERVER_STATE " + json.dumps(read_server_state('
+    code += repr(config) + '), ensure_ascii=True))\n'
+    encoded = base64.b64encode(code.encode()).decode('ascii')
+    bootstrap = 'import base64;exec(compile(base64.b64decode(' + repr(encoded) + '),"release-readiness","exec"))'
+    runner.run('server-readiness', ['ssh', '-tt', SSH_TARGET, 'python3 -c ' + shlex.quote(bootstrap)])
+    path = runner.directory / f'{runner.counter:03d}-server-readiness.log'
+    marker = 'BG_RELEASE_SERVER_STATE '
+    lines = [line.split(marker, 1)[1] for line in path.read_text(encoding='utf-8').splitlines() if marker in line]
+    require(len(lines) == 1, 'Server readiness returned no unambiguous result; inspect ' + str(path))
+    return json.loads(lines[0])
+
+
+def require_ready(state):
+    require(state.get('active_count') == 0, 'Production has active/waiting games: ' + json.dumps(state.get('rooms', []))
+            + '. Finish or resolve them, then run the same command again.')
+    delivery = state.get('delivery', {})
+    require(delivery.get('status') == 'ok' and delivery.get('queued_results') == 0,
+            'Production result deliveries are not drained: ' + json.dumps(delivery)
+            + '. Resolve the reported deliveries, then run the same command again.')
+
+
+def release_tool_checks(runner):
+    # These tests deliberately simulate publication/deployment failures. Keep
+    # their fake workflow output separate from the live release's stage output.
+    code = (
+        'import contextlib,io,sys,unittest\n'
+        f'workflow=unittest.TestLoader().discover({str(Path(__file__).resolve().parent)!r},pattern="test_release*.py")\n'
+        f'builder=unittest.TestLoader().discover({str(Path(__file__).resolve().parents[1] / "docker")!r},pattern="test_configure_builder.py")\n'
+        'suite=unittest.TestSuite([workflow,builder])\n'
+        'captured=io.StringIO()\n'
+        'with contextlib.redirect_stdout(captured):\n'
+        '    result=unittest.TextTestRunner(stream=sys.stderr,verbosity=2).run(suite)\n'
+        'if not result.wasSuccessful(): sys.stdout.write(captured.getvalue())\n'
+        'raise SystemExit(0 if result.wasSuccessful() else 1)\n'
+    )
+    runner.run('release-tool-tests', [sys.executable, '-c', code])
 
 
 def updated_config(before, images):
@@ -637,11 +997,21 @@ def own_locations(text):
         require(depth == 0, 'Unbalanced Nginx location')
         blocks.append((match.start(), index, ' '.join(match[1].split())))
     return [(start, end) for start, end, selector in blocks
-            if selector.split()[-1].startswith(('/backgammon', '/tournaments'))
+            if selector.split()[-1].startswith(('/6b', '/backgammon', '/tournaments'))
             or selector.split()[-1] in ('/api/link/', '/api/gamelink/', '/api/admin/')]
 
 
-def maintenance_config(text):
+MANAGED_NGINX_INCLUDE = '/etc/backgammon-docker/nginx.production.locations.conf'
+
+
+def maintenance_config(text, managed_include=None):
+    directive = re.compile(r'(?m)^[ \t]*include[ \t]+'
+                           + re.escape(MANAGED_NGINX_INCLUDE) + r'[ \t]*;[ \t]*$')
+    if directive.search(text):
+        require(managed_include is not None, 'The managed /6b/ Nginx include must be inspected before maintenance')
+        # Inline the inspected include in the temporary maintenance file so
+        # every /6b/ route receives the same write guard as the existing APIs.
+        text = directive.sub(lambda _: managed_include, text)
     blocks = own_locations(text)
     require(len(blocks) >= 10, 'Backgammon Nginx routing inventory is incomplete')
     for start, end in reversed(blocks):
@@ -816,7 +1186,7 @@ class Production:
     def healthy(self, file):
         self.runner.run('start-production-apps', [*self.compose(file), 'up', '-d', '--wait', '--wait-timeout', '180',
                         '--no-build', '--no-deps', '--pull', 'never', *APPS])
-        for path in ('/backgammon/api/health/', '/tournaments-api/health/', '/backgammon/', '/tournaments/', '/tournaments-admin/'):
+        for path in ('/backgammon/api/health/', '/tournaments-api/health/', '/6b/backgammon/', '/6b/tournaments/', '/tournaments-admin/'):
             self.runner.run('https-' + path.strip('/').replace('/', '-'), ['curl', '--fail', '--silent', '--show-error',
                 '--max-time', '20', '--noproxy', '*', '--resolve', '38.247.146.17.nip.io:443:127.0.0.1', ORIGIN + path])
 
@@ -829,7 +1199,11 @@ class Production:
                 'Production containers changed during release checks; deployment refused')
         self.maintenance = True
         self.checkpoint('entering_maintenance')
-        self.nginx_apply(maintenance_config(self.original_nginx), 'maintenance')
+        include = None
+        if re.search(r'(?m)^[ \t]*include[ \t]+' + re.escape(MANAGED_NGINX_INCLUDE)
+                     + r'[ \t]*;[ \t]*$', self.original_nginx):
+            include = capture(['sudo', '-n', 'cat', MANAGED_NGINX_INCLUDE]).decode()
+        self.nginx_apply(maintenance_config(self.original_nginx, include), 'maintenance')
         self.runner.run('stop-production-workers', [*self.compose(self.old_file), 'stop', *WORKERS])
         # Nginx denies new sessions; check again to catch games started before maintenance.
         self.assert_no_active_games()
@@ -887,58 +1261,10 @@ class Production:
                         'logs', '--no-color', '--tail', '80', *APPS, *WORKERS])
 
 
-def server_main(manifest):
-    import fcntl
-    validate_manifest(manifest)
-    require(SERVER_ROOT.is_dir(), 'Expected Bot1 project root is missing')
-    root = SERVER_ROOT / 'reports/auto-releases'
-    root.mkdir(parents=True, exist_ok=True)
-    root.chmod(0o700)
-    with (root / '.deployment.lock').open('a') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        subprocess.run(['sudo', '-v'], check=True)
-        directory = root / manifest['release_id']
-        require(not directory.exists(), 'Release attempt already exists. Read its receipt before retrying.')
-        runner = Runner(directory)
-        production = None
-        try:
-            production = Production(runner)
-            production.status.update(release_id=manifest['release_id'], sources=manifest['sources'])
-            save(directory / 'manifest.json', manifest)
-            source_root = SERVER_ROOT / 'sources'
-            source_inventory(source_root, server=True)
-            for name, expected in manifest['sources'].items():
-                checkout = source_root / SOURCES[name][2]
-                published = git(checkout, 'ls-remote', '--exit-code', 'origin', 'refs/heads/' + expected['branch']).split()[0]
-                require(published == expected['revision'], 'Remote branch moved after local checks: ' + name)
-                runner.run('pull-' + name.replace(' ', '-'), ['git', '-c', 'safe.directory=' + checkout.as_posix(), '-C', checkout,
-                    'pull', '--ff-only', 'origin', expected['branch']])
-                require(git(checkout, 'rev-parse', 'HEAD') == expected['revision'], 'Pulled revision differs: ' + name)
-            require(source_inventory(source_root, server=True) == manifest['sources'], 'Server checkouts differ from release')
-            workspace = exported_workspace(source_root, manifest, directory / 'source', server=True)
-            images = image_builds(workspace, manifest, runner, sudo=True)
-            backend_checks(workspace, images, runner, sudo=True)
-            production.prepare(images)
-            production.deploy()
-        except BaseException as error:
-            print('\nSERVER FAILED STAGE: ' + runner.stage + '\nERROR: ' + str(error)
-                  + '\nSERVER RECEIPTS: ' + str(directory), flush=True)
-            if production is not None:
-                try:
-                    production.failed()
-                except BaseException as recovery_error:
-                    production.checkpoint('recovery_requires_attention')
-                    print('Recovery failed: ' + str(recovery_error), flush=True)
-            raise
 
-
-def local_main(args):
+def legacy_local_main(args):
     root = args.root.resolve()
-    sources = source_inventory(root)
-    for executable in ('git', 'docker', 'node', 'scp', 'ssh'):
-        require(shutil.which(executable), 'Required executable missing: ' + executable)
-    require(shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm'), 'pnpm is required')
-    require(capture(['docker', 'info', '--format', '{{.OSType}}']).strip() == b'linux', 'Docker must use Linux containers')
+    sources = local_environment(root)
     reused = resume_checks(root, args.resume_from, sources) if args.resume_from else None
     if args.preflight_only:
         print('PREFLIGHT PASSED. No tests, builds, push, SSH or production changes were performed.')
@@ -978,24 +1304,14 @@ def local_main(args):
             backend_checks(workspace, images, runner, only=('tournaments', 'analysis'))
         else:
             backend_checks(workspace, images, runner)
-        # Elixir's tests run in a dedicated build stage with the committed test directory.
-        recipe = workspace / 'docker/dice.Dockerfile'
-        test_recipe = runner.directory / 'dice-tests.Dockerfile'
-        original = recipe.read_text()
-        test_recipe.write_text(original.split('FROM debian:')[0] +
-            '\nCOPY ["Backgammon Game/dice_service/test/", "/app/test/"]\nRUN MIX_ENV=test mix test\n', encoding='utf-8')
-        runner.run('dice-tests', ['docker', 'build', '--file', test_recipe, '--tag', 'backgammon-dice-tests:' + release, workspace])
+        dice_checks(workspace, release, runner)
         assert_sources(root, sources)
         receipt['stage'] = 'checks_passed'
         save(runner.directory / 'status.json', receipt)
         if args.checks_only:
             print('CHECKS PASSED. No push, SSH or production changes were performed. Receipts: ' + str(runner.directory))
             return
-        publish(root, sources, runner, receipt)
-        # A multi-repository push is not atomic. Only start deployment when ALL refs match.
-        for name, source in sources.items():
-            remote = git(root / name, 'ls-remote', '--exit-code', 'origin', 'refs/heads/' + source['branch']).split()[0]
-            require(remote == source['revision'], 'Published branch changed: ' + name)
+        publish_exact(root, sources, runner, receipt)
         receipt['stage'] = 'published'
         save(runner.directory / 'status.json', receipt)
         upload_and_deploy(manifest, runner)
@@ -1011,6 +1327,155 @@ def local_main(args):
         raise
 
 
+def server_main(manifest):
+    automatic = manifest.get('workflow_version') == WORKFLOW_VERSION
+    import fcntl
+    validate_manifest(manifest)
+    if automatic:
+        require(manifest.get('tools') == tool_hashes(), 'Uploaded release tools differ from checked inputs')
+    root = SERVER_ROOT / 'reports/auto-releases'
+    require(SERVER_ROOT.is_dir(), 'Expected Bot1 project root is missing')
+    root.mkdir(parents=True, exist_ok=True)
+    root.chmod(0o700)
+    with (root / '.deployment.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        subprocess.run(['sudo', '-v'], check=True)
+        directory = root / manifest['release_id']
+        require(not directory.exists(), 'Release attempt already exists; inspect its receipt')
+        runner = Runner(directory)
+        production = None
+        try:
+            production = Production(runner)
+            production.status.update(release_id=manifest['release_id'], sources=manifest['sources'])
+            if automatic:
+                production.status.update(workflow_version=WORKFLOW_VERSION, tools=manifest['tools'])
+            production.checkpoint('production_verified')
+            save(directory / 'manifest.json', manifest)
+            previous = latest_progress(root, manifest['sources'], 'server') if automatic and not manifest.get('fresh') else None
+            progress = ReleaseProgress(runner, manifest, 'server', previous) if automatic else None
+            if previous:
+                production.status['resumed_from'] = previous[0].name
+                print('CONTINUING SERVER WORK from ' + previous[0].name, flush=True)
+            source_root = SERVER_ROOT / 'sources'
+            source_inventory(source_root, server=True)
+            for name, expected in manifest['sources'].items():
+                checkout = source_root / SOURCES[name][2]
+                remote = git(checkout, 'ls-remote', '--exit-code', 'origin', 'refs/heads/' + expected['branch']).split()[0]
+                require(remote == expected['revision'], 'Remote branch moved after local checks: ' + name)
+                runner.run('pull-' + name.replace(' ', '-'), ['git', '-c', 'safe.directory=' + checkout.as_posix(),
+                           '-C', checkout, 'pull', '--ff-only', 'origin', expected['branch']])
+                require(git(checkout, 'rev-parse', 'HEAD') == expected['revision'], 'Pulled revision differs: ' + name)
+            require(source_inventory(source_root, server=True) == manifest['sources'], 'Server sources differ')
+            workspace = exported_workspace(source_root, manifest, directory / 'source', server=True)
+            images = (checked_images(workspace, manifest, runner, progress, sudo=True) if automatic
+                      else image_builds(workspace, manifest, runner, sudo=True))
+            production.checkpoint('images_verified')
+            if automatic:
+                checked_backends(workspace, images, runner, progress, sudo=True)
+            else:
+                backend_checks(workspace, images, runner, sudo=True)
+            production.checkpoint('server_checks_passed')
+            production.prepare(images)
+            production.deploy()
+        except BaseException as error:
+            print('\nSERVER FAILED STAGE: ' + runner.stage + '\nERROR: ' + str(error)
+                  + '\nSERVER RECEIPTS: ' + str(directory), flush=True)
+            if production is not None:
+                try:
+                    production.failed()
+                except BaseException as recovery_error:
+                    production.checkpoint('recovery_requires_attention')
+                    print('Recovery failed: ' + str(recovery_error), flush=True)
+            raise
+
+
+def automatic_local_main(args):
+    root = args.root.resolve()
+    sources = local_environment(root)
+    fresh = getattr(args, 'fresh', False) is True
+    previous = None if fresh else latest_progress(root / 'artifacts/auto-releases', sources, 'local')
+    if args.preflight_only:
+        print('PREFLIGHT PASSED. No tests, builds, push, SSH or production changes were performed.')
+        if previous:
+            print('Automatic continuation candidate: ' + previous[0].name
+                  + '. Its completed phases/resources will be verified before reuse.')
+        return
+    release_id = 'bg-release-' + datetime.now(timezone.utc).strftime('%Y%m%dt%H%M%Sz') + '-' + uuid.uuid4().hex[:8]
+    manifest = {'schema_version': 1, 'workflow_version': WORKFLOW_VERSION, 'release_id': release_id,
+                'sources': sources, 'tools': tool_hashes(), 'fresh': fresh}
+    directory = root / 'artifacts/auto-releases' / release_id
+    require(not directory.exists(), 'Release attempt already exists; inspect its receipt')
+    runner = Runner(directory)
+    receipt = dict(manifest, stage='checking', published={})
+    if previous:
+        receipt['resumed_from'] = previous[0].name
+    save(runner.directory / 'status.json', receipt)
+    progress = ReleaseProgress(runner, manifest, 'local', previous)
+    try:
+        if not args.checks_only:
+            state = server_readiness(sources, runner)
+            assert_sources(root, sources)
+            if state.get('already_current') and not fresh:
+                receipt.update(stage='production_open', already_current=True, current_release=state['current_release'])
+                save(runner.directory / 'status.json', receipt)
+                print('THESE COMMITS ARE ALREADY IN HEALTHY PRODUCTION. Current release: ' + str(state['current_release']))
+                return
+            require_ready(state)
+        if previous:
+            print('CONTINUING LOCAL WORK from ' + previous[0].name, flush=True)
+        tool_inputs = {'python': sys.version, 'platform': sys.platform,
+                       'compose': capture(['docker', 'compose', 'version', '--short']).decode().strip()}
+        progress.run('release-tool-tests', ['release-tool-tests'], lambda: release_tool_checks(runner), inputs=tool_inputs)
+        frontend_inputs = {'node': capture(['node', '--version']).decode().strip(),
+                           'pnpm': capture([shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm'), '--version']).decode().strip(),
+                           'platform': sys.platform}
+        for site in ('game', 'tournaments', 'admin'):
+            stages = [site + '-dependencies'] + (['playwright-browser'] if site == 'game' else [])
+            stages += [site + '-frontend-tests', site + '-frontend-build']
+            def check_frontend(site=site):
+                frontend_checks(root, runner, only=(site,))
+                assert_sources(root, sources)
+            progress.run('frontend-' + site, stages, check_frontend,
+                         inputs=frontend_inputs)
+            assert_sources(root, sources)
+        workspace = exported_workspace(root, manifest, runner.directory / 'source')
+        images = checked_images(workspace, manifest, runner, progress)
+        checked_backends(workspace, images, runner, progress)
+
+        progress.run('dice-tests', ['dice-tests'], lambda: dice_checks(workspace, release_id, runner), inputs=images)
+        assert_sources(root, sources)
+        receipt['stage'] = 'checks_passed'
+        save(runner.directory / 'status.json', receipt)
+        if args.checks_only:
+            print('CHECKS PASSED. No push, SSH or production changes. Receipts: ' + str(runner.directory))
+            return
+        # Check again after lengthy tests, before publishing anything.
+        require_ready(server_readiness(sources, runner))
+        assert_sources(root, sources)
+        publish_exact(root, sources, runner, receipt)
+        receipt['stage'] = 'published'
+        save(runner.directory / 'status.json', receipt)
+        upload_and_deploy(manifest, runner)
+        receipt['stage'] = 'production_open'
+        save(runner.directory / 'status.json', receipt)
+        print('CHECKS, PUBLICATION AND PRODUCTION UPDATE COMPLETE. Receipts: ' + str(runner.directory))
+    except BaseException as error:
+        receipt.update(stage='failed', failed_stage=runner.stage, error=str(error))
+        save(runner.directory / 'status.json', receipt)
+        print('\nFAILED STAGE: ' + runner.stage + '\nERROR: ' + str(error) + '\nRECEIPTS: ' + str(runner.directory)
+              + '\nAfter resolving the error, run PUBLISH_AND_DEPLOY.ps1 again.', flush=True)
+        if receipt['published']:
+            print('Published commits retained: ' + json.dumps(receipt['published']), flush=True)
+        raise
+
+
+def local_main(args):
+    with workspace_lock(args.root.resolve()):
+        if args.resume_from:
+            return legacy_local_main(args)
+        return automatic_local_main(args)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     # The SSH upload lives in a shallower directory than the versioned local tool.
@@ -1019,10 +1484,12 @@ def main():
     parser.add_argument('--checks-only', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
     parser.add_argument('--resume-from', help='Reuse verified stages from a supported unpublished local failure')
+    parser.add_argument('--fresh', action='store_true', help='Start full checks without reusing completed phases')
     parser.add_argument('--server', action='store_true')
     parser.add_argument('--manifest', type=Path)
     args = parser.parse_args()
     try:
+        require(not (args.fresh and args.resume_from), 'Fresh and ResumeFrom cannot be combined')
         if args.server:
             require(not args.resume_from, 'ResumeFrom is available only for local checks, never server deployment recovery')
             os.umask(0o077)

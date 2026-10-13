@@ -258,7 +258,7 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(fragment["room"], str(room.id))
         self.assertEqual(fragment["color"], "white")
         self.assertEqual(parse_qs(fragment_text)["return"], [
-                         f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"])
+                         f"{TOURNAMENTS_FRONTEND_URL}/6b/tournaments/"])
         self.assertEqual(fragment["tournament"], "17")
         self.assertEqual(AccessToken(fragment["access"])["user_id"], user.id)
         self.assertIn("refresh", fragment)
@@ -275,7 +275,7 @@ class EnterLinkTests(LinkTestBase):
 
         self.assertEqual(
             parse_qs(fragment_text)["return"],
-            [f"{TOURNAMENTS_FRONTEND_URL}/tournaments/"],
+            [f"{TOURNAMENTS_FRONTEND_URL}/6b/tournaments/"],
         )
 
     def test_tournaments_frontend_url_helper_rejects_path_qualified_frontend_config(self):
