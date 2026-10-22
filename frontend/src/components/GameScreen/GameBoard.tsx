@@ -19,7 +19,7 @@ import {
   DEFAULT_BOARD_THEME,
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
-import { boardThemeClasses } from "../BoardThemeSelector/boardThemeClasses";
+import GameFrame from "./GameFrame";
 
 interface GameBoardProps {
   state: GameState;
@@ -42,6 +42,7 @@ interface GameBoardProps {
   autoConfirmPending?: boolean;
   soundEnabled?: boolean;
   onSoundEnabledChange?: (enabled: boolean) => void;
+  bracketUrl?: string;
 }
 
 function getGameplayKey(s: GameState): string {
@@ -73,7 +74,9 @@ export default function GameBoard({
   autoConfirmPending = false,
   soundEnabled,
   onSoundEnabledChange,
+  bracketUrl,
 }: GameBoardProps) {
+  const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
   const [selection, setSelection] = useState<{
     from: Source | null;
     version: number;
@@ -343,10 +346,7 @@ export default function GameBoard({
   }
 
   return (
-    <div
-      className={`${styles.gameFrame} ${boardThemeClasses[selectedBoardTheme]}`}
-      data-testid="board-frame"
-    >
+    <GameFrame theme={selectedBoardTheme}>
       <div className={styles.boardArea}>
         <Board
           state={state}
@@ -396,7 +396,10 @@ export default function GameBoard({
         onBoardThemeChange={onBoardThemeChange}
         soundEnabled={soundEnabled}
         onSoundEnabledChange={onSoundEnabledChange}
+        controlsTarget={controlsTarget}
+        bracketUrl={bracketUrl}
       />
-    </div>
+      <div ref={setControlsTarget} className="relative col-start-3 row-start-1 flex min-h-0 flex-col items-center justify-center gap-2 overflow-y-auto py-2 [scrollbar-width:thin]" data-testid="game-controls" />
+    </GameFrame>
   );
 }

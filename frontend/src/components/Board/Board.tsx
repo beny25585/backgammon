@@ -20,18 +20,15 @@ import {
   type Move,
 } from "@/lib/backgammon/engine";
 import type { MakeMoveOptions } from "../../types/context";
-import UndoButton from "./buttons/undobutton/UndoButton";
-import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
+import BoardActions from "./BoardActions";
 import PointCell from "./pieces/pointcell/PointCell";
 import Bar from "./pieces/bar/Bar";
 import BearOff from "./pieces/bearoff/BearOff";
 import FlyingChecker from "../animations/FlyingChecker/FlyingChecker";
 import DoublingCube from "../DoublingCube";
-import GuidanceBanner from "../GuidanceBanner";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
 import styles from "../GameScreen/GameScreen.module.css";
 import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
-import { useI18n } from "../../i18n/I18nProvider";
 import Checker from "./pieces/checker/Checker";
 import { useCheckerDrag } from "./useCheckerDrag";
 import dragStyles from "./CheckerDrag.module.css";
@@ -145,7 +142,6 @@ export function Board({
   turnNotice,
   onAutoPointSequenceChange,
 }: BoardProps) {
-  const { t } = useI18n();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const onAutoPointSequenceChangeRef = useRef(onAutoPointSequenceChange);
@@ -155,13 +151,13 @@ export function Board({
   useLayoutEffect(() => {
     const board = boardRef.current;
     const point = board?.querySelector<HTMLElement>("[data-point-idx]");
-    if (!board || !point) return;
+    const stack = point?.lastElementChild;
+    if (!board || !point || !(stack instanceof HTMLElement)) return;
 
     const fitCheckers = () => {
-      const stack = point.lastElementChild;
-      if (!(stack instanceof HTMLElement)) return;
+      if (point.clientHeight <= 0) return;
       const style = getComputedStyle(stack);
-      const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+      const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
       const gaps = 4 * (parseFloat(style.rowGap) || 0);
       // All points have the same height. Reserve space for five full circles,
       // stack padding, four gaps and a deliberate safety clearance, even on a
@@ -169,11 +165,16 @@ export function Board({
       // so physical devices never rely on subpixel rounding for the fit.
       const availableHeight = point.clientHeight - padding - gaps - CHECKER_STACK_CLEARANCE_PX;
       const size = Math.max(0, Math.floor(availableHeight / 5));
-      board.style.setProperty("--checker-height-limit", `${size}px`);
+      const limit = `${size}px`;
+      if (board.style.getPropertyValue("--checker-height-limit") !== limit) {
+        board.style.setProperty("--checker-height-limit", limit);
+      }
     };
     fitCheckers();
     const observer = new ResizeObserver(fitCheckers);
     observer.observe(point);
+    // CSS can arrive after mount without changing the point's outer size.
+    observer.observe(stack);
     return () => observer.disconnect();
   }, []);
   const flightIdRef = useRef(0);
@@ -705,7 +706,7 @@ export function Board({
       if (myColor === null || !legalFromPoints.includes(BAR)) return;
       const move = preferredDirectMove(
         legalMovesFrom(state, BAR, myColor),
-        [...state.remaining].sort((a, b) => b - a),
+        state.remaining,
       );
       if (move) triggerFly(BAR, move.to);
       return;
@@ -830,13 +831,13 @@ export function Board({
   return (
     <div
       ref={wrapperRef}
-      className={styles.wrapper}
+      className={`${styles.wrapper} [--checker:6.7cqw] [--bar-w:7cqw] [--bearoff-w:clamp(24px,4cqw,44px)] [background:var(--lux-rail-bg)]`}
       dir="ltr"
       data-testid="board-wrapper"
     >
       <div
         ref={boardRef}
-        className={`${styles.frame} ${drag ? dragStyles.dragging : ""}`}
+        className={`${styles.frame} [background:var(--lux-rail-bg)] ${drag ? dragStyles.dragging : ""}`}
         data-testid="board-inner-frame"
         {...dragHandlers}
         dir="ltr"
@@ -947,50 +948,17 @@ export function Board({
           />
         </div>
 
-        {(turnNotice || canUndo || canRoll) && (
-          <div
-            className={turnNotice ? styles.boardTurnNotice : styles.boardUndoAction}
-            data-testid={
-              !turnNotice ? undefined : turnNotice.variant === "no-moves"
-                ? "no-moves-overlay"
-                : "forced-move-notice"
-            }
-          >
-            {turnNotice && <GuidanceBanner message={turnNotice} inline />}
-            <div className={turnNotice ? styles.boardNoticeActions : undefined}>
-              {canUndo && <UndoButton onClick={handleUndo} />}
-              {canRoll && (
-                <button
-                  type="button"
-                  className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
-                  onClick={onOfferDouble}
-                  disabled={!canDouble}
-                  title={t("common.offerDouble")}
-                  aria-label={t("common.offerDouble")}
-                >
-                  {t("common.offerDoubleShort")}
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-        {canConfirm && (
-          <div className={styles.boardConfirmAction}>
-            <ConfirmButton onClick={onConfirm} />
-          </div>
-        )}
-        {canRoll && (
-          <div className={styles.boardRollAction}>
-            <button
-              type="button"
-              className={`${styles.boardTurnButton} ${styles.boardTurnButtonPrimary}`}
-              onClick={onRoll}
-              title={t("common.tapToRoll")}
-            >
-              {t("game.rollNow")}
-            </button>
-          </div>
-        )}
+        <BoardActions
+          canUndo={canUndo}
+          canConfirm={canConfirm}
+          canRoll={canRoll}
+          canDouble={canDouble}
+          onUndo={handleUndo}
+          onConfirm={onConfirm}
+          onRoll={onRoll}
+          onDouble={onOfferDouble}
+          turnNotice={turnNotice}
+        />
       </div>
 
       {drag && (

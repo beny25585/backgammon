@@ -122,6 +122,9 @@ function GameRoute() {
   const gameType = resolveGameType(params, backendFormat);
   const tournamentReturnUrl = safeTournamentReturnUrl(params.get("return"));
   const returnUrl = tournamentReturnUrl ?? tournamentLobbyUrl();
+  const bracketUrl = isValidTournamentId(tournamentId)
+    ? new URL(`tournaments/${encodeURIComponent(tournamentId!)}/bracket`, tournamentLobbyUrl()).toString()
+    : undefined;
 
   function handleLeave(outcome?: "won" | "lost") {
     clearRoom();
@@ -138,6 +141,14 @@ function GameRoute() {
     }
     if (isValidTournamentId(tournamentId))
       next.searchParams.set("tournament", tournamentId!);
+    window.location.assign(next.toString());
+  }
+
+  function viewTournament(destination: "detail" | "bracket") {
+    if (!isValidTournamentId(tournamentId)) return;
+    const next = tournamentLobbyUrl();
+    next.pathname += `tournaments/${encodeURIComponent(tournamentId!)}${destination === "bracket" ? "/bracket" : ""}`;
+    clearRoom();
     window.location.assign(next.toString());
   }
 
@@ -170,6 +181,9 @@ function GameRoute() {
             : undefined
         }
         onLeave={handleLeave}
+        onViewTournament={isValidTournamentId(tournamentId) ? () => viewTournament("detail") : undefined}
+        onViewBracket={isValidTournamentId(tournamentId) ? () => viewTournament("bracket") : undefined}
+        bracketUrl={bracketUrl}
         homeLabel={
           gameType === "tournament"
             ? "Back to Tournament"

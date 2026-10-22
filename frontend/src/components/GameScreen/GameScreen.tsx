@@ -34,6 +34,9 @@ interface GameScreenProps {
   gameType?: GameType;
   showRematch?: boolean;
   onPracticeAgain?: () => void;
+  onViewTournament?: () => void;
+  onViewBracket?: () => void;
+  bracketUrl?: string;
 }
 
 function hasInterruptedOpeningMove(
@@ -62,6 +65,9 @@ export default function GameScreen({
   gameType: propGameType,
   showRematch = true,
   onPracticeAgain,
+  onViewTournament,
+  onViewBracket,
+  bracketUrl,
 }: GameScreenProps) {
   const [showCloseExisting, setShowCloseExisting] = useState(closeExisting);
   const { t, direction } = useI18n();
@@ -326,7 +332,7 @@ export default function GameScreen({
   }
 
   return (
-    <div className={`${styles.container} ${boardThemeClasses[boardTheme]}`}>
+    <div className={`${styles.container} ${boardThemeClasses[boardTheme]} bg-[#050c0e]`}>
       <SamsungDarkModeHelp />
       {error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
@@ -414,8 +420,8 @@ export default function GameScreen({
                 winnerIsWhite={gameResult.winner === "white"}
                 tournamentRound={gameResult.tournament?.roundLabel}
                 nextOpponent={gameResult.tournament?.nextOpponent ?? null}
-                onViewTournament={requestLeave}
-                onViewBracket={requestLeave}
+                onViewTournament={onViewTournament ?? requestLeave}
+                onViewBracket={onViewBracket ?? requestLeave}
               />
             );
           }
@@ -501,6 +507,7 @@ export default function GameScreen({
             turnStartedAt={turnStartedAt}
             timeControl={timeControl}
             noMovesMessage={noMovesMessage}
+            bracketUrl={bracketUrl}
           />
         </>
       )}

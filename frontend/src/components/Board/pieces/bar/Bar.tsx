@@ -18,10 +18,10 @@ interface BarProps {
 
 const stackSlots = ["top-0", "top-1/2 -translate-y-1/2", "bottom-0"];
 
-function BarStack({ count, color }: { count: number; color: Color }) {
+function BarStack({ count, color, top }: { count: number; color: Color; top: boolean }) {
   return (
     <div
-      className={`pointer-events-none absolute inset-x-0 z-2 h-[18%] ${color === "black" ? "top-[29%]" : "bottom-[29%]"}`}
+      className={`absolute inset-x-0 z-2 h-[18%] ${top ? "top-[29%]" : "bottom-[29%]"}`}
       data-testid={`bar-checkers-${color}`}
     >
       {Array.from({ length: Math.min(count, 3) }).map((_, index, slots) => {
@@ -38,6 +38,7 @@ function BarStack({ count, color }: { count: number; color: Color }) {
 
 export default function Bar({
   state,
+  myColor,
   selected,
   isLegalFrom,
   hideChecker,
@@ -46,17 +47,19 @@ export default function Bar({
   onClick,
 }: BarProps) {
   const { t } = useI18n();
-  const blackCount = Math.max(state.bar.black - (hideChecker === "black" ? 1 : 0), 0);
-  const whiteCount = Math.max(state.bar.white - (hideChecker === "white" ? 1 : 0), 0);
+  const bottomColor = myColor ?? "white";
+  const topColor = bottomColor === "white" ? "black" : "white";
+  const visibleCount = (color: Color) => Math.max(state.bar[color] - (hideChecker === color ? 1 : 0), 0);
   return (
     <button type="button" onClick={onClick} className="relative h-full [--bar-display-width:max(26px,var(--bar-w))] w-[var(--bar-display-width)] cursor-pointer border-0 [background:var(--lux-bar-bg,#071034)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300" data-point-idx="bar" aria-label={t("game.barSummary", { black: state.bar.black, white: state.bar.white })}>
       {(selected || isLegalFrom) && <div className={styles.highlight} />}
 
       <span
         className="pointer-events-none absolute inset-x-0.5 top-[18%] z-10 -translate-y-1/2 rounded-sm bg-black/85 py-1 text-center font-mono text-[clamp(9px,calc((var(--bar-display-width)-4px)*0.54),16px)] leading-none font-bold tabular-nums text-white"
-        data-testid="bar-pip-black"
+        data-testid={`bar-pip-${topColor}`}
+        data-player-side="opponent"
       >
-        {pipCount(state, "black")}
+        {pipCount(state, topColor)}
       </span>
 
       {doublingCube && (
@@ -69,14 +72,15 @@ export default function Bar({
         </div>
       )}
 
-      <BarStack count={blackCount} color="black" />
-      <BarStack count={whiteCount} color="white" />
+      <BarStack count={visibleCount(topColor)} color={topColor} top />
+      <BarStack count={visibleCount(bottomColor)} color={bottomColor} top={false} />
 
       <span
         className="pointer-events-none absolute inset-x-0.5 top-[82%] z-10 -translate-y-1/2 rounded-sm bg-black/85 py-1 text-center font-mono text-[clamp(9px,calc((var(--bar-display-width)-4px)*0.54),16px)] leading-none font-bold tabular-nums text-white"
-        data-testid="bar-pip-white"
+        data-testid={`bar-pip-${bottomColor}`}
+        data-player-side="self"
       >
-        {pipCount(state, "white")}
+        {pipCount(state, bottomColor)}
       </span>
     </button>
   );

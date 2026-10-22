@@ -1,4 +1,5 @@
 import { getAccessToken, handleSessionExpired } from "./auth";
+import type { RoomPlayerDetails } from "../types/playerDetails";
 
 const API_URL =
   import.meta.env.VITE_SERVER_URL?.replace("ws", "http") ?? '';
@@ -66,6 +67,10 @@ export async function getMatchDetail(id: string) {
 
 export async function getStats() {
   return apiFetch("/api/stats/");
+}
+
+export async function getRoomPlayerDetails(roomId: string, signal: AbortSignal): Promise<RoomPlayerDetails> {
+  return apiFetch(`/api/rooms/${encodeURIComponent(roomId)}/player-details/`, { signal });
 }
 
 export async function fetchDice(type: "opening" | "normal"): Promise<[number, number]> {

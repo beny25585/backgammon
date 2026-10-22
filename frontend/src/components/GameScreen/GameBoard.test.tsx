@@ -113,6 +113,23 @@ test("auto-moves on first tap when a checker has a single legal target", async (
   expect(moveCalls[0]).toEqual([23, 19]);
 });
 
+for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
+  test(`game frame keeps its proportions at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
+    await page.setViewportSize(viewport);
+    const component = await mountBoard(mount, { state: movingState(), playerColor: "white" });
+    const frame = await component.getByTestId("board-frame").boundingBox();
+    expect(frame).not.toBeNull();
+    expect(frame!.width / frame!.height).toBeCloseTo(1.65, 2);
+    expect(frame!.height).toBeLessThanOrEqual(viewport.height);
+    const checker = await component.locator('[data-point-idx="23"] [data-checker]').first().boundingBox();
+    expect(checker!.width).toBeGreaterThan(16);
+    expect(checker!.width).toBeCloseTo(checker!.height, 0);
+    const controls = await component.getByTestId("game-controls").boundingBox();
+    const board = await component.getByTestId("board-wrapper").boundingBox();
+    expect(controls!.x).toBeGreaterThanOrEqual(board!.x + board!.width);
+  });
+}
+
 test("auto-moves with the larger die when a checker has multiple legal targets", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
   const state = movingState({ dice: [4, 3], remaining: [4, 3] });
@@ -128,8 +145,28 @@ test("auto-moves with the larger die when a checker has multiple legal targets",
 });
 
 for (const color of ["white", "black"] as const) {
-  for (const dice of [[1, 3], [4, 5]]) {
-    test(`bar click uses the higher legal die for ${color} with ${dice.join("/")}`, async ({ mount }) => {
+  test(`pip counters and bar checkers follow the ${color} player's perspective`, async ({ mount }) => {
+    const points = new Array(24).fill(0);
+    points[5] = 3;
+    points[20] = -2;
+    const state = movingState({ points, bar: { white: 1, black: 2 }, home: { white: 11, black: 11 } });
+    const component = await mountBoard(mount, { state, playerColor: color });
+    const self = component.getByTestId(`bar-pip-${color}`);
+    const opponent = component.getByTestId(`bar-pip-${color === "white" ? "black" : "white"}`);
+    await expect(self).toHaveAttribute("data-player-side", "self");
+    await expect(opponent).toHaveAttribute("data-player-side", "opponent");
+    await expect(component.getByTestId("bar-pip-white")).toHaveText("43");
+    await expect(component.getByTestId("bar-pip-black")).toHaveText("58");
+    const selfBox = await self.boundingBox();
+    const opponentBox = await opponent.boundingBox();
+    expect(selfBox!.y).toBeGreaterThan(opponentBox!.y);
+    const selfStack = await component.getByTestId(`bar-checkers-${color}`).boundingBox();
+    const opponentStack = await component.getByTestId(`bar-checkers-${color === "white" ? "black" : "white"}`).boundingBox();
+    expect(selfStack!.y).toBeGreaterThan(opponentStack!.y);
+  });
+
+  for (const dice of [[1, 3], [3, 1], [4, 5], [5, 4]]) {
+    test(`bar click follows dice order for ${color} with ${dice.join("/")}`, async ({ mount }) => {
       const state = movingState({
         points: new Array(24).fill(0),
         bar: { white: color === "white" ? 2 : 0, black: color === "black" ? 2 : 0 },
@@ -146,10 +183,37 @@ for (const color of ["white", "black"] as const) {
       );
       await component.locator('[data-point-idx="bar"]').click();
       await expect.poll(() => calls.length).toBe(1);
-      const higherDie = Math.max(...dice);
-      expect(calls[0]).toEqual({ from: BAR, to: color === "white" ? 24 - higherDie : higherDie - 1 });
+      const firstDie = dice[0];
+      expect(calls[0]).toEqual({ from: BAR, to: color === "white" ? 24 - firstDie : firstDie - 1 });
     });
   }
+
+  test(`bar checker can be dragged to the lower-die entry for ${color}`, async ({ mount, page }) => {
+    const state = movingState({
+      points: new Array(24).fill(0),
+      bar: { white: color === "white" ? 2 : 0, black: color === "black" ? 2 : 0 },
+      turn: color,
+      dice: [5, 1],
+      remaining: [5, 1],
+    });
+    const moves = allLegalMoves(state, color);
+    const calls: Array<{ from: Source | undefined; to: Target }> = [];
+    const component = await mount(
+      <SizedBoardFixture state={state} myColor={color} selected={BAR}
+        legalTargets={moves.map((move) => move.to)} legalFromPoints={[BAR]}
+        onSelect={() => {}} onMove={(to, from) => calls.push({ from, to })} />,
+    );
+    const target = color === "white" ? 23 : 0;
+    const checker = await component.locator(`[data-point-idx="bar"] [data-checker-color="${color}"]`).last().boundingBox();
+    const entry = await component.locator(`[data-point-idx="${target}"]`).boundingBox();
+    if (!checker || !entry) throw new Error("Missing bar checker or entry point");
+    await page.mouse.move(checker.x + checker.width / 2, checker.y + checker.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(entry.x + entry.width / 2, entry.y + entry.height / 2, { steps: 10 });
+    await page.mouse.up();
+    await expect.poll(() => calls.length).toBe(1);
+    expect(calls[0]).toEqual({ from: BAR, to: target });
+  });
 
   for (const bothBlocked of [false, true]) {
     test(`bar click ${bothBlocked ? "does not move when both entries are blocked" : "uses the lower die when the higher entry is blocked"} for ${color}`, async ({ mount }) => {
@@ -227,7 +291,7 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
 });
 
 for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }, { width: 1280, height: 800 }]) {
-  test(`notice keeps its anchor and undo stays usable (${viewport.width}px)`, async ({ mount, page }) => {
+  test(`notice keeps its anchor and undo stays usable below it (${viewport.width}px)`, async ({ mount, page }) => {
     await page.setViewportSize(viewport);
     await page.clock.install();
     await page.clock.pauseAt(new Date());
@@ -250,6 +314,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }
     await expect(notice.locator("span").first()).toHaveCSS("pointer-events", "none");
     expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(12);
     const undo = component.getByTitle("Undo last move");
+    await expect(undo).toBeVisible();
     const noticeBox = await notice.boundingBox();
     const undoBox = await undo.boundingBox();
     expect(undoBox!.y).toBeGreaterThanOrEqual(noticeBox!.y + noticeBox!.height);

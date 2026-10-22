@@ -8,8 +8,10 @@ from django.urls import path
 
 from . import views
 from .practice import enter_practice, practice_status, prepare_practice
+from game.performance import linked_performance
 
 urlpatterns = [
+    path('performance/', linked_performance, name='link-performance'),
     path('practice/prepare/', prepare_practice, name='link_practice_prepare'),
     path('practice/status/', practice_status, name='link_practice_status'),
     path('practice/', enter_practice, name='link_practice'),

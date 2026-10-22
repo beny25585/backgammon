@@ -66,7 +66,7 @@ export default function ResultSummary(props: Props) {
     unavailable: boolean;
   }>({ roomId, analysis: null, unavailable: false });
   const analysis = summary.roomId === roomId ? summary.analysis : null;
-  const unavailable = summary.roomId === roomId && summary.unavailable;
+  const unavailable = !roomId || (summary.roomId === roomId && summary.unavailable);
   const loading = Boolean(roomId) && !unavailable && analysis?.status !== "completed";
   const base = new URL(
     import.meta.env.VITE_TOURNAMENTS_URL || "/6b/tournaments/",
@@ -167,10 +167,10 @@ export default function ResultSummary(props: Props) {
         right={metric(opponent?.game_rating, 0)}
       />
       <ResultMetricRow
-        label={t("game.pr")}
+        label={t("game.matchPr")}
         loading={loading}
-        left={metric(self?.pr, 2)}
-        right={metric(opponent?.pr, 2)}
+        left={self?.pr == null ? t(unavailable ? "game.analysisUnavailable" : "game.noScoredDecisions") : metric(self.pr, 2)}
+        right={opponent?.pr == null ? t(unavailable ? "game.analysisUnavailable" : "game.noScoredDecisions") : metric(opponent.pr, 2)}
       />
       <ResultMetricRow
         label={t("game.rating")}

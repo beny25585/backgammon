@@ -1,4 +1,6 @@
 import { memo, useState } from "react";
+import { createPortal } from "react-dom";
+import FullscreenButton from "./FullscreenButton";
 import styles from "./SidePanel.module.css";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
@@ -10,6 +12,8 @@ import BoardThemeSelector from "../BoardThemeSelector/BoardThemeSelector";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
 import { LanguageSwitcher } from "../LanguageSwitcher/LanguageSwitcher";
 import InstallAppButton from "../InstallAppButton/InstallAppButton";
+import { useRoomPlayerDetails } from "../../hooks/useRoomPlayerDetails";
+import GameInfoCard from "./GameInfoCard";
 
 interface SidePanelProps {
   state: GameState;
@@ -22,6 +26,8 @@ interface SidePanelProps {
   onBoardThemeChange?: (theme: BoardTheme) => void;
   soundEnabled?: boolean;
   onSoundEnabledChange?: (enabled: boolean) => void;
+  controlsTarget?: HTMLElement | null;
+  bracketUrl?: string;
 }
 
 function SidePanel({
@@ -35,9 +41,12 @@ function SidePanel({
   onBoardThemeChange,
   soundEnabled,
   onSoundEnabledChange,
+  controlsTarget,
+  bracketUrl,
 }: SidePanelProps) {
   const { t } = useI18n();
-  const { giveUp, whiteName, blackName, matchScore, targetPoints } = useGame();
+  const { giveUp, whiteName, blackName, matchScore, targetPoints, roomId } = useGame();
+  const details = useRoomPlayerDetails(roomId);
   const [showGiveUp, setShowGiveUp] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -58,10 +67,15 @@ function SidePanel({
   const stripOppLabel = opponentName || t("common.opponent");
   const activeColor = activePlayerOf(state);
   const delayMs = timeControl?.delay ?? 0;
+  const controls = <>
+    <FullscreenButton />
+    {bracketUrl && <a href={bracketUrl} target="_blank" rel="noopener noreferrer" className="grid size-11 shrink-0 place-items-center rounded-lg border border-amber-200/25 bg-[#211e17] text-amber-200 hover:bg-[#393022] focus-visible:outline-2 focus-visible:outline-amber-300" title={t("game.viewBracket")} aria-label={t("game.viewBracket")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 3v18M4 4h15l-4 5 4 5H4" /></svg></a>}
+    <button type="button" className="grid size-11 shrink-0 place-items-center rounded-lg border border-amber-200/25 bg-[#211e17] text-amber-200 hover:bg-[#393022] focus-visible:outline-2 focus-visible:outline-amber-300" aria-label={t("game.matchControl")} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6" /></svg></button>
+  </>;
 
   return (
-    <div className={styles.panel} data-testid="side-panel">
-      <div className={styles.playerSlot}>
+    <div className="col-start-1 row-start-1 grid min-h-0 min-w-0 grid-rows-[auto_auto_auto] content-between items-center gap-1 overflow-y-auto bg-[#090d0e] px-2 py-2 [container-type:inline-size] [scrollbar-width:thin]" data-testid="side-panel">
+      <div className="w-full min-w-0 self-start">
         <PlayerRow
           color={opponentColor}
           state={state}
@@ -69,43 +83,34 @@ function SidePanel({
           active={activeColor === opponentColor}
           self={false}
           score={matchScore?.[opponentColor] ?? 0}
+          details={details.players?.[opponentColor]}
         />
       </div>
 
-      <div className={styles.clockSlot}>
-        <Clock
-          clock={clock}
-          activeColor={activeColor}
-          myColor={playerColor}
-          myLabel={stripMyLabel}
-          oppLabel={stripOppLabel}
-          delayMs={delayMs}
-          turnStartedAt={turnStartedAt}
-        />
-        {targetPoints !== null && (
-          <div className={styles.matchRules}>
-            {t("game.matchTarget", { points: targetPoints })}
-            {" · "}
-            {state.doublingEnabled !== false
-              ? t("game.doublingOn")
-              : t("game.doublingOff")}
-          </div>
+      <div className="w-full min-w-0">
+        <GameInfoCard state={state} targetPoints={targetPoints} />
+        {details.loading && <span role="status" className="sr-only">{t("game.loadingPlayerDetails")}</span>}
+        {details.unavailable && (
+          <button type="button" onClick={details.retry} className="mb-1 min-h-11 w-full rounded px-1 text-[clamp(10px,5cqw,13px)] text-amber-200 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-amber-300">
+            {t("game.retryPlayerDetails")}
+          </button>
         )}
+        <div className="[&>div:first-child]:flex-col">
+          <Clock
+            clock={clock}
+            activeColor={activeColor}
+            myColor={playerColor}
+            myLabel={stripMyLabel}
+            oppLabel={stripOppLabel}
+            delayMs={delayMs}
+            turnStartedAt={turnStartedAt}
+          />
+        </div>
       </div>
 
-      <button
-        type="button"
-        className={`${styles.menuButton} ${menuOpen ? styles.menuButtonOpen : ""}`}
-        aria-label={t("game.matchControl")}
-        aria-expanded={menuOpen}
-        onClick={() => setMenuOpen((open) => !open)}
-      >
-        <span />
-        <span />
-        <span />
-      </button>
+      {controlsTarget ? createPortal(controls, controlsTarget) : <div className="absolute right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2">{controls}</div>}
 
-      <div className={styles.playerSlot}>
+      <div className="w-full min-w-0 self-end">
         <PlayerRow
           color={playerColor}
           state={state}
@@ -113,11 +118,12 @@ function SidePanel({
           active={activeColor === playerColor}
           self={true}
           score={matchScore?.[playerColor] ?? 0}
+          details={details.players?.[playerColor]}
         />
       </div>
 
       {menuOpen && (
-        <div className="fixed right-[clamp(44px,7dvh,68px)] top-1/2 z-30 flex max-h-[calc(var(--app-height,100dvh)-16px)] w-[min(280px,calc(var(--app-width,100dvw)-64px))] -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-white/15 bg-[#111617] p-4 text-sm text-white shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
+        <div className="absolute right-12 top-1/2 z-60 flex max-h-[calc(100%-16px)] w-[min(280px,calc(100%-64px))] -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-white/15 bg-[#111617] p-4 text-sm text-white shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
             <span className="text-sm font-bold text-white">{t("game.matchControl")}</span>
             <span
@@ -205,7 +211,7 @@ function SidePanel({
       {menuOpen && (
         <button
           type="button"
-          className={styles.backdrop}
+          className="absolute inset-0 z-50 border-0 bg-black/30"
           aria-label={t("game.dismissError")}
           onClick={() => {
             setMenuOpen(false);

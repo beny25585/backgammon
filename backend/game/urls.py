@@ -1,8 +1,12 @@
 from django.urls import path
 from rest_framework_simplejwt.views import TokenObtainPairView
 from . import views
+from .performance import room_performance
+from .player_details import room_player_details
 
 urlpatterns = [
+    path('rooms/<uuid:room_id>/player-details/', room_player_details, name='room-player-details'),
+    path('performance/', room_performance, name='room-performance'),
     path('health/', views.health, name='health'),
     path('client-log/', views.client_log, name='client_log'),
     path('register/', views.register, name='register'),

@@ -84,7 +84,7 @@ test("result maps analysis to black self, preserves zero coins, and links to thi
   );
   await expect(component.getByTestId("score-left")).toHaveText("1");
   await expect(component.getByText("2.10", { exact: true })).toBeVisible();
-  const row = component.getByText("PR", { exact: true }).locator("..");
+  const row = component.getByText("Match PR", { exact: true }).locator("..");
   await expect(row.locator("span").first()).toHaveText("2.10");
   await expect(row.locator("span").last()).toHaveText("8.50");
   const ratingRow = component.getByText("Game Rating", { exact: true }).locator("..");
@@ -156,7 +156,7 @@ test("pending analysis hides partial metrics until completed", async ({
   await expect(
     component.getByRole("status").filter({ hasText: "Analysis in progress —" }),
   ).toBeVisible();
-  const prRow = component.getByText("PR", { exact: true }).locator("..");
+  const prRow = component.getByText("Match PR", { exact: true }).locator("..");
   const ratingRow = component.getByText("Game Rating", { exact: true }).locator("..");
   await expect(component.getByRole("link", { name: "Full analysis" })).toHaveAttribute(
     "href",
@@ -217,7 +217,7 @@ test("result card fits a narrow phone viewport", async ({ mount, page }) => {
     { hooksConfig: { locale: "en" } },
   );
   const card = component.getByTestId("game-result-card");
-  await expect(component.getByText("PR", { exact: true })).toBeVisible();
+  await expect(component.getByText("Match PR", { exact: true })).toBeVisible();
   await expect(component.getByText("1.20", { exact: true })).toBeVisible();
   expect(
     await card.evaluate(
