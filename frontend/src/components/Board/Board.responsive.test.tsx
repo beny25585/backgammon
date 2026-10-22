@@ -1,8 +1,9 @@
 import { test, expect, type ComponentFixtures } from "@playwright/experimental-ct-react";
-import { Board } from "../Board";
+import type { Locator } from "@playwright/test";
 import { MockGameWrapper } from "../../test-utils/wrappers";
+import { SizedBoardFixture } from "../../test-utils/Board.story";
 import { newGame } from "@/lib/backgammon/engine";
-import styles from "../GameScreen/GameScreen.module.css";
+import appStyles from "../../App.module.css";
 import { assertNoHorizontalOverflow } from "../../test-utils/viewportChecks";
 import type { GameState } from "@/lib/backgammon/engine";
 
@@ -43,9 +44,10 @@ function busyState(): GameState {
 
 async function mountBoard(mount: ComponentFixtures["mount"], state: GameState) {
   return mount(
-    <div className={styles.container}>
+    <div className={appStyles.gameContent}>
       <MockGameWrapper playerColor="white" state={state}>
-        <Board
+        <SizedBoardFixture
+          theme="classicLight"
           state={state}
           myColor="white"
           selected={null}
@@ -57,6 +59,16 @@ async function mountBoard(mount: ComponentFixtures["mount"], state: GameState) {
       </MockGameWrapper>
     </div>,
   );
+}
+
+async function boardVerticalBounds(locator: Locator) {
+  return locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const rotated = getComputedStyle(element).getPropertyValue("--game-rotated").trim() === "1";
+    return rotated
+      ? { top: -rect.right, bottom: -rect.left }
+      : { top: rect.top, bottom: rect.bottom };
+  });
 }
 
 for (const vp of VIEWPORTS) {
@@ -175,16 +187,13 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }
     state.bar = { white: 15, black: 15 };
     const component = await mountBoard(mount, state);
     for (const color of ["white", "black"] as const) {
-      const pipBox = await component.getByTestId(`bar-pip-${color}`).boundingBox();
-      expect(pipBox).not.toBeNull();
+      const pipBox = await boardVerticalBounds(component.getByTestId(`bar-pip-${color}`));
       const stack = component.getByTestId(`bar-checkers-${color}`);
       await expect(stack).toContainText("15");
       const checkers = stack.locator("[data-checker]");
       for (const checker of await checkers.all()) {
-        const checkerBox = await checker.boundingBox();
-        expect(checkerBox).not.toBeNull();
-        const hasVerticalGap = checkerBox!.y + checkerBox!.height < pipBox!.y ||
-          pipBox!.y + pipBox!.height < checkerBox!.y;
+        const checkerBox = await boardVerticalBounds(checker);
+        const hasVerticalGap = checkerBox.bottom < pipBox.top || pipBox.bottom < checkerBox.top;
         expect(hasVerticalGap).toBe(true);
       }
     }
@@ -198,7 +207,7 @@ const SHORT_LANDSCAPE_VIEWPORTS = [
 
 // Strict head-to-head regression coverage for short landscape phones:
 // opposing five-checker stacks must never visually crowd at the board center,
-// and the point-number gutters must stay solid black.
+// and the point-number gutters must preserve the selected frame material.
 const HEAD_TO_HEAD_VIEWPORTS = [
   { width: 667, height: 375 },
   { width: 740, height: 360 },
@@ -360,7 +369,7 @@ async function assertHeadToHeadGeometry(
   }
 }
 
-for (const vp of HEAD_TO_HEAD_VIEWPORTS.filter(({ width, height }) => width !== 915 || height !== 350)) {
+for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
   test(
     `head-to-head five-stacks keep clearance at ${vp.width}x${vp.height}`,
     async ({ mount, page }) => {
@@ -376,7 +385,7 @@ for (const vp of HEAD_TO_HEAD_VIEWPORTS.filter(({ width, height }) => width !== 
 
 for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
   test(
-    `point-number gutters stay black at ${vp.width}x${vp.height}`,
+    `point-number gutters preserve the classic light frame at ${vp.width}x${vp.height}`,
     async ({ mount, page }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       const component = await mountBoard(mount, headToHeadFiveStackState());
@@ -393,8 +402,8 @@ for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
       });
       expect(
         frameBg.color,
-        `frame gutter must be black (${vp.width}x${vp.height}, got ${frameBg.color})`,
-      ).toBe("rgb(0, 0, 0)");
+        `frame gutter must match classic light (${vp.width}x${vp.height}, got ${frameBg.color})`,
+      ).toBe("rgb(216, 201, 169)");
       expect(
         frameBg.image,
         `frame must not paint a theme gradient over the gutter (${vp.width}x${vp.height})`,
@@ -410,11 +419,11 @@ for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
       });
       expect(
         framePseudo.beforeDisplay,
-        `frame::before must not paint over the black gutter (${vp.width}x${vp.height})`,
+        `frame::before must not paint over the gutter (${vp.width}x${vp.height})`,
       ).toBe("none");
       expect(
         framePseudo.afterDisplay,
-        `frame::after must not paint over the black gutter (${vp.width}x${vp.height})`,
+        `frame::after must not paint over the gutter (${vp.width}x${vp.height})`,
       ).toBe("none");
 
       const pointNumbers = component.getByTestId("point-number");

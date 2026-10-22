@@ -113,7 +113,8 @@ test("double offer accepts once and disables both actions", async ({ mount }) =>
       respondToDouble={(a) => (accepted = a)}
     />,
   );
-  await expect(c.getByTestId("guidance-banner")).toContainText("Your opponent offered a double.");
+  await expect(c).toHaveAttribute("role", "dialog");
+  await expect(c).toContainText("Your opponent offered a double.");
   await c.getByTestId("double-accept").click();
   await expect.poll(() => accepted).toBe(true);
   await expect(c.getByTestId("double-accept")).toBeDisabled();

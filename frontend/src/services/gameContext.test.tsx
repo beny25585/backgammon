@@ -194,6 +194,10 @@ test("initial snapshot scales the online preset and keeps the authoritative bank
       <OnlineClockProbe />
     </GameProvider>,
   );
+  await page.waitForFunction(() => {
+    const w = window as unknown as Record<string, unknown>;
+    return Boolean(w.__fakeWs);
+  });
   await page.evaluate(() => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({

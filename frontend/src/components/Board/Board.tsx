@@ -1,4 +1,5 @@
 import { boardRect, boardPoint } from "./boardCoordinates";
+import { bearOffSlot } from "./bearOffSlot";
 import {
   useMemo,
   useRef,
@@ -173,7 +174,8 @@ export function Board({
       // stack padding, four gaps and a deliberate safety clearance, even on a
       // short landscape viewport. The result is floored to a whole CSS pixel
       // so physical devices never rely on subpixel rounding for the fit.
-      const availableHeight = point.clientHeight - padding - gaps - CHECKER_STACK_CLEARANCE_PX;
+      const rowHeight = point.parentElement?.clientHeight ?? point.clientHeight;
+      const availableHeight = Math.min(point.clientHeight, rowHeight) - padding - gaps - CHECKER_STACK_CLEARANCE_PX;
       const size = Math.max(0, Math.floor(availableHeight / 5));
       const limit = `${size}px`;
       if (board.style.getPropertyValue("--checker-height-limit") !== limit) {
@@ -190,6 +192,7 @@ export function Board({
       });
     });
     observer.observe(point);
+    if (point.parentElement) observer.observe(point.parentElement);
     // CSS can arrive after mount without changing the point's outer size.
     observer.observe(stack);
     return () => {
@@ -296,7 +299,11 @@ export function Board({
       isTop: boolean,
       boardTop: number,
       checkerPx: number,
+      trayCount?: number,
     ) => {
+      if (el.dataset.pointIdx === OFF) {
+        return bearOffSlot(el, trayCount ?? 1, stackIndex, checkerPx).y - boardTop;
+      }
       const rect = boardRect(el);
       const gap = 2;
       const pad = 8; // 0.5rem top/bottom padding on the checker stack
@@ -365,7 +372,7 @@ export function Board({
         (myColor === "black" ? targetValue < 0 : targetValue > 0)
           ? Math.abs(targetValue)
           : 0;
-      const toStackIndex = Math.min(toCount, 4);
+      const toStackIndex = to === OFF ? Math.min(state.home[moverColor], 14) : Math.min(toCount, 4);
       const isToTop = typeof to === "number" && displayTopPoints.includes(to);
 
       const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
@@ -375,6 +382,7 @@ export function Board({
         isToTop,
         bRect.top,
         checkerPx,
+        to === OFF ? state.home[moverColor] + 1 : undefined,
       );
       const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
       const fromY = computeSlotY(
@@ -408,6 +416,7 @@ export function Board({
       onMove,
       state.points,
       state.bar,
+      state.home,
       displayTopPoints,
       computeSlotY,
     ],
@@ -445,19 +454,15 @@ export function Board({
       // The move is already applied to the state, so the checker flew from the
       // OLD top of the source stack (one slot above the current top) and landed
       // as the current top of the destination stack.
-      const fromCount =
-        typeof from === "number"
-          ? Math.abs(state.points[from] ?? 0)
-          : Math.abs(state.bar[mover] ?? 0);
+      const fromCount = checkerCountAt(state, from, mover);
       const isFromTop =
         typeof from === "number" && displayTopPoints.includes(from);
 
-      const toCount =
-        typeof to === "number" ? Math.abs(state.points[to] ?? 0) : 0;
+      const toCount = checkerCountAt(state, to, mover);
       const isToTop = typeof to === "number" && displayTopPoints.includes(to);
 
-      const fromStackIndex = Math.min(fromCount, 4);
-      const toStackIndex = Math.min(Math.max(toCount - 1, 0), 4);
+      const fromStackIndex = Math.min(fromCount, from === OFF ? 14 : 4);
+      const toStackIndex = Math.min(Math.max(toCount - 1, 0), to === OFF ? 14 : 4);
 
       const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
       const toY = computeSlotY(
@@ -466,6 +471,7 @@ export function Board({
         isToTop,
         bRect.top,
         checkerPx,
+        to === OFF ? toCount : undefined,
       );
       const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
       const fromY = computeSlotY(
@@ -474,6 +480,7 @@ export function Board({
         isFromTop,
         bRect.top,
         checkerPx,
+        from === OFF ? fromCount + 1 : undefined,
       );
 
       setFlyChecker({
@@ -491,7 +498,7 @@ export function Board({
         committed: false,
       });
     },
-    [state.points, state.bar, displayTopPoints, computeSlotY, bottomBearOffColor],
+    [state, displayTopPoints, computeSlotY, bottomBearOffColor],
   );
 
   useEffect(() => {
@@ -591,7 +598,7 @@ export function Board({
 
     // Start from the TOP of the destination stack (the checker just moved there).
     const toCount = checkerCountAt(state, last.to, myColor ?? "white");
-    const fromStackIndex = Math.min(Math.max(toCount - 1, 0), 4);
+    const fromStackIndex = Math.min(Math.max(toCount - 1, 0), last.to === OFF ? 14 : 4);
     const isFromTop =
       typeof last.to === "number" && displayTopPoints.includes(last.to);
 
@@ -619,6 +626,7 @@ export function Board({
       isFromTop,
       bRect.top,
       checkerPx,
+      last.to === OFF ? toCount : undefined,
     );
 
     setFlyChecker({
@@ -864,8 +872,8 @@ export function Board({
         style={{ touchAction: "none" }}
       >
         <div className={styles.inner} data-testid="board-inner">
-          <div className={`${styles.column12} col-start-1 row-start-1`} data-testid="board-half-left">
-            <div className={styles.row6}>
+          <div className={`${styles.column12} col-start-1 row-start-1 min-h-0`} data-testid="board-half-left">
+            <div className={`${styles.row6} grid-rows-[minmax(0,1fr)]`}>
               {displayTopPoints.slice(0, 6).map((idx) => (
                 <PointCell
                   key={idx}
@@ -881,7 +889,7 @@ export function Board({
                 />
               ))}
             </div>
-            <div className={styles.row6}>
+            <div className={`${styles.row6} grid-rows-[minmax(0,1fr)]`}>
               {/* Bottom point numbers are owned by PointCell and rendered at outer bottom edge */}
               {displayBottomPoints.slice(0, 6).map((idx) => (
                 <PointCell
@@ -923,8 +931,8 @@ export function Board({
             cubePosition={cubePosition}
           />
 
-          <div className={`${styles.column12} col-start-3 row-start-1`} data-testid="board-half-right">
-            <div className={styles.row6}>
+          <div className={`${styles.column12} col-start-3 row-start-1 min-h-0`} data-testid="board-half-right">
+            <div className={`${styles.row6} grid-rows-[minmax(0,1fr)]`}>
               {displayTopPoints.slice(6).map((idx) => (
                 <PointCell
                   key={idx}
@@ -940,7 +948,7 @@ export function Board({
                 />
               ))}
             </div>
-            <div className={styles.row6}>
+            <div className={`${styles.row6} grid-rows-[minmax(0,1fr)]`}>
               {displayBottomPoints.slice(6).map((idx) => (
                 <PointCell
                   key={idx}

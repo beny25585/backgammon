@@ -43,7 +43,7 @@ function PointCell({
   return (
     <button
       onClick={() => onClick(index)}
-      className={styles.point}
+      className={`${styles.point} min-h-0 min-w-0`}
       style={{
         direction: "ltr",
       }}

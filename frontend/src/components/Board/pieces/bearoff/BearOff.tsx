@@ -48,13 +48,14 @@ function BearOffTray({
       </span>
       <span
         aria-hidden="true"
-        className={`flex min-h-0 w-full flex-1 gap-[clamp(0px,calc((100cqh-300px)*0.01),1px)] ${bottom ? "flex-col-reverse" : "flex-col"}`}
+        data-borne-off-stack
+        className={`flex min-h-0 w-full flex-1 gap-[clamp(0px,calc((100cqh-300px)*0.01),1px)] [--bearoff-piece-max:12px] ${bottom ? "flex-col-reverse" : "flex-col"}`}
       >
         {Array.from({ length: Math.min(count, 15) }, (_, index) => (
           <span
             key={index}
             data-borne-off-checker={color}
-            className={`min-h-0 max-h-3 w-full flex-1 rounded-[3px] shadow-[inset_0_1px_1px_#ffffff45,inset_0_-1px_1px_#00000040] ${color === "white" ? "bg-linear-to-b from-[var(--lux-checker-light-mid,#fff4d4)] to-[var(--lux-checker-light-low,#c7a874)]" : "bg-linear-to-b from-[var(--lux-checker-dark-mid,#a5383f)] to-[var(--lux-checker-dark-deep,#4a0c13)]"}`}
+            className={`min-h-0 max-h-[var(--bearoff-piece-max)] w-full flex-1 rounded-[3px] shadow-[inset_0_1px_1px_#ffffff45,inset_0_-1px_1px_#00000040] ${color === "white" ? "bg-linear-to-b from-[var(--lux-checker-light-mid,#fff4d4)] to-[var(--lux-checker-light-low,#c7a874)]" : "bg-linear-to-b from-[var(--lux-checker-dark-mid,#a5383f)] to-[var(--lux-checker-dark-deep,#4a0c13)]"}`}
           />
         ))}
       </span>

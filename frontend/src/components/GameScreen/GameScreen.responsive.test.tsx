@@ -6,6 +6,7 @@ import styles from "./GameScreen.module.css";
 import { assertNoHorizontalOverflow } from "../../test-utils/viewportChecks";
 import type { GameState } from "@/lib/backgammon/engine";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
+import appStyles from "../../App.module.css";
 
 const VIEWPORTS = [
   { name: "mobile-portrait", width: 375, height: 812 },
@@ -25,8 +26,7 @@ const PANEL_IN_VIEW = [
 ];
 
 const MIN_CHECKER_PX = 16;
-const MIN_FILL_WIDTH = 0.85;
-const MIN_FILL_HEIGHT = 0.8;
+const MIN_LIMITING_AXIS_FILL = 0.85;
 
 function movingState(overrides: Partial<GameState> = {}): GameState {
   const points = new Array(24).fill(0);
@@ -50,15 +50,17 @@ function movingState(overrides: Partial<GameState> = {}): GameState {
 
 async function mountBoard(mount: ComponentFixtures["mount"], state: GameState, playerColor: "white" | "black" = "white") {
   return mount(
-    <div className={styles.container}>
-      <MockGameWrapper playerColor={playerColor} state={state}>
-        <GameBoard
-          state={state}
-          playerColor={playerColor}
-          makeMove={() => {}}
-          onLeave={() => {}}
-        />
-      </MockGameWrapper>
+    <div className={appStyles.gameContent}>
+      <div className={styles.container}>
+        <MockGameWrapper playerColor={playerColor} state={state}>
+          <GameBoard
+            state={state}
+            playerColor={playerColor}
+            makeMove={() => {}}
+            onLeave={() => {}}
+          />
+        </MockGameWrapper>
+      </div>
     </div>,
   );
 }
@@ -85,14 +87,19 @@ for (const vp of VIEWPORTS) {
     const vw = await page.evaluate(() => window.innerWidth);
     const vh = await page.evaluate(() => window.innerHeight);
 
+    const portrait = vh > vw;
+    const width = portrait ? box.height : box.width;
+    const height = portrait ? box.width : box.height;
+    expect(width / height).toBeCloseTo(33 / 20, 2);
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.top).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(vw + 1);
+    expect(box.bottom).toBeLessThanOrEqual(vh + 1);
+    // A fixed-aspect board fills its limiting axis and leaves room on the other.
     expect(
-      box.width / vw,
-      `board width should fill >= ${MIN_FILL_WIDTH * 100}% of viewport (${vp.name})`,
-    ).toBeGreaterThanOrEqual(MIN_FILL_WIDTH);
-    expect(
-      box.height / vh,
-      `board height should fill >= ${MIN_FILL_HEIGHT * 100}% of viewport (${vp.name})`,
-    ).toBeGreaterThanOrEqual(MIN_FILL_HEIGHT);
+      Math.max(box.width / vw, box.height / vh),
+      `board should fill its limiting viewport axis (${vp.name})`,
+    ).toBeGreaterThanOrEqual(MIN_LIMITING_AXIS_FILL);
   });
 
 }
@@ -166,7 +173,7 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
 
   const component = await mountBoard(mount, movingState());
   const frame = await component.getByTestId("board-frame").boundingBox();
-  const clock = await component.locator('[class*="clockSlot"]').boundingBox();
+  const clock = await component.getByTestId("clock-my").locator("..").boundingBox();
 
   expect(frame).not.toBeNull();
   expect(clock).not.toBeNull();
@@ -241,10 +248,19 @@ for (const [theme, expectedAccent] of [
     const menuColor = await component
       .getByRole("button", { name: "Match control" })
       .evaluate((element) => getComputedStyle(element).color);
+    const goldColor = await component.evaluate((element) => {
+      const probe = document.createElement("span");
+      probe.className = "text-amber-200";
+      element.appendChild(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    });
     const rollColor = await component
       .getByTitle("Tap to roll")
+      .locator("[data-button-surface]")
       .evaluate((element) => getComputedStyle(element).backgroundColor);
-    expect(menuColor).toBe(expectedAccent);
+    expect(menuColor).toBe(goldColor);
     expect(rollColor).toBe(expectedAccent);
   });
 }

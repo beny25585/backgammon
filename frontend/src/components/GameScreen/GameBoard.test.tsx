@@ -211,7 +211,14 @@ test("auto-moves on first tap when a checker has a single legal target", async (
 for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
   test(`game frame keeps its proportions at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
     await page.setViewportSize(viewport);
-    const component = await mountBoard(mount, { state: movingState(), playerColor: "white" });
+    const state = movingState();
+    const component = await mount(
+      <div className={screenStyles.container}>
+        <MockGameWrapper state={state} playerColor="white">
+          <GameBoard state={state} playerColor="white" makeMove={() => {}} onLeave={() => {}} />
+        </MockGameWrapper>
+      </div>,
+    );
     const frame = await component.getByTestId("board-frame").boundingBox();
     expect(frame).not.toBeNull();
     expect(frame!.width / frame!.height).toBeCloseTo(1.65, 2);
@@ -220,8 +227,11 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
     expect(checker!.width).toBeGreaterThan(16);
     expect(checker!.width).toBeCloseTo(checker!.height, 0);
     const controls = await component.getByTestId("game-controls").boundingBox();
-    const board = await component.getByTestId("board-wrapper").boundingBox();
-    expect(controls!.x).toBeGreaterThanOrEqual(board!.x + board!.width);
+    const topTray = await component.getByTestId("bear-off-top").boundingBox();
+    const bottomTray = await component.getByTestId("bear-off-bottom").boundingBox();
+    expect(controls!.y).toBeGreaterThanOrEqual(topTray!.y + topTray!.height);
+    expect(controls!.y + controls!.height).toBeLessThanOrEqual(bottomTray!.y);
+    expect(controls!.x + controls!.width / 2).toBeCloseTo(topTray!.x + topTray!.width / 2, 0);
   });
 }
 
@@ -400,9 +410,10 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }
     await expect(notice).toBeVisible();
     const geometry = await notice.evaluate((element) => {
       const box = element.getBoundingClientRect();
-      const parent = (element as HTMLElement).offsetParent!.getBoundingClientRect();
-      return { x: box.x + box.width / 2 - parent.x, y: box.y + box.height / 2 - parent.y,
-        targetX: parent.width / 4, targetY: parent.height / 2 };
+      const half = element.closest('[data-testid="board-inner"]')!
+        .querySelector('[data-testid="board-half-left"]')!.getBoundingClientRect();
+      return { x: box.x + box.width / 2, y: box.y + box.height / 2,
+        targetX: half.x + half.width / 2, targetY: half.y + half.height / 2 };
     });
     expect(geometry.x).toBeCloseTo(geometry.targetX, 0);
     expect(geometry.y).toBeCloseTo(geometry.targetY, 0);
@@ -984,8 +995,8 @@ test("board point order is mirrored for the black player", async ({ mount }) => 
     </div>,
   );
 
-  await expect(component.getByTestId("white-board").locator("[data-point-idx]")).toHaveCount(26);
-  await expect(component.getByTestId("black-board").locator("[data-point-idx]")).toHaveCount(26);
+  await expect(component.getByTestId("white-board").locator("[data-point-idx]")).toHaveCount(27);
+  await expect(component.getByTestId("black-board").locator("[data-point-idx]")).toHaveCount(27);
   const whiteOrder = await component
     .getByTestId("white-board")
     .locator("[data-point-idx]")
@@ -1337,11 +1348,17 @@ test("bear-off rerender updates bottom black count from 3 to 4 for black viewer"
 type SlotRect = { left: number; top: number; right: number; bottom: number; width: number; height: number };
 type FlyerCapture = { rect: SlotRect; cx: number; cy: number; width: number; height: number; color: string | null };
 
-function expectedBottomSlotCenter(rect: SlotRect, stackIndex: number, checkerSize: number): { cx: number; cy: number } {
+function expectedBottomPointSlotCenter(rect: SlotRect, stackIndex: number, checkerSize: number): { cx: number; cy: number } {
   return {
     cx: rect.left + rect.width / 2,
     cy: rect.bottom - 8 - stackIndex * (checkerSize + 2) - checkerSize / 2,
   };
+}
+
+async function trayPieceCenter(component: Awaited<ReturnType<ComponentFixtures["mount"]>>, tray: "bear-off-top" | "bear-off-bottom") {
+  const box = await component.getByTestId(tray).locator("[data-borne-off-checker]").last().boundingBox();
+  if (!box) throw new Error(`missing checker in ${tray}`);
+  return { cx: box.x + box.width / 2, cy: box.y + box.height / 2 };
 }
 
 async function installFlyerRemovalRecorder(
@@ -1417,7 +1434,7 @@ test("local white checker bears off to bottom tray (triggerFly)", async ({ mount
     playerColor: "white",
     makeMove: (from, to) => moveCalls.push([from, to]),
   });
-  const { top, bottom, off } = await getTrayGeometry(component);
+  const { bottom } = await getTrayGeometry(component);
   const recorder = await installFlyerRemovalRecorder(component);
   try {
     await component.locator('[data-point-idx="0"]').click();
@@ -1427,15 +1444,17 @@ test("local white checker bears off to bottom tray (triggerFly)", async ({ mount
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for local white bear-off");
     expect(cap.color).toBe("white");
-    const expected = expectedBottomSlotCenter(bottom, 0, cap.width);
+    const after = applyMove(before, { from: 0, to: OFF, die: 1 }, "white");
+    await component.update(
+      <MockGameWrapper playerColor="white" state={after}>
+        <GameBoard state={after} playerColor="white" makeMove={() => {}} onLeave={() => {}} />
+      </MockGameWrapper>,
+    );
+    const expected = await trayPieceCenter(component, "bear-off-bottom");
     expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
-    const altTop = expectedBottomSlotCenter(top, 0, cap.width);
-    expect(Math.abs(cap.cx - altTop.cx) > 2 || Math.abs(cap.cy - altTop.cy) > 2).toBeTruthy();
-    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
-    if (Math.abs(altOff.cx - expected.cx) > 2 || Math.abs(altOff.cy - expected.cy) > 2) {
-      expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
-    }
+    expect(cap.cy).toBeGreaterThanOrEqual(bottom.top);
+    expect(cap.cy).toBeLessThanOrEqual(bottom.bottom);
     expect(moveCalls.length).toBe(1);
   } finally {
     await recorder.restore();
@@ -1451,7 +1470,7 @@ test("local black checker bears off to bottom tray (triggerFly)", async ({ mount
     playerColor: "black",
     makeMove: (from, to) => moveCalls.push([from, to]),
   });
-  const { top, bottom, off } = await getTrayGeometry(component);
+  const { bottom } = await getTrayGeometry(component);
   const recorder = await installFlyerRemovalRecorder(component);
   try {
     await component.locator('[data-point-idx="23"]').click();
@@ -1461,15 +1480,17 @@ test("local black checker bears off to bottom tray (triggerFly)", async ({ mount
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for local black bear-off");
     expect(cap.color).toBe("black");
-    const expected = expectedBottomSlotCenter(bottom, 0, cap.width);
+    const after = applyMove(before, { from: 23, to: OFF, die: 1 }, "black");
+    await component.update(
+      <MockGameWrapper playerColor="black" state={after}>
+        <GameBoard state={after} playerColor="black" makeMove={() => {}} onLeave={() => {}} />
+      </MockGameWrapper>,
+    );
+    const expected = await trayPieceCenter(component, "bear-off-bottom");
     expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
-    const altTop = expectedBottomSlotCenter(top, 0, cap.width);
-    expect(Math.abs(cap.cx - altTop.cx) > 2 || Math.abs(cap.cy - altTop.cy) > 2).toBeTruthy();
-    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
-    if (Math.abs(altOff.cx - expected.cx) > 2 || Math.abs(altOff.cy - expected.cy) > 2) {
-      expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
-    }
+    expect(cap.cy).toBeGreaterThanOrEqual(bottom.top);
+    expect(cap.cy).toBeLessThanOrEqual(bottom.bottom);
     expect(moveCalls.length).toBe(1);
   } finally {
     await recorder.restore();
@@ -1480,7 +1501,7 @@ test("opponent white bears off observed by black viewer lands in top tray (anima
   const before = validBearOffWhiteState(1);
   assertTotal15(before);
   const component = await mountBoard(mount, { state: { ...before, turn: "white", phase: "moving", lastMove: [] }, playerColor: "black" });
-  const { bottom, off } = await getTrayGeometry(component);
+  const { top, bottom } = await getTrayGeometry(component);
   const after = applyMove(before, { from: 0, to: OFF, die: 1 }, "white");
   assertTotal15(after);
   const recorder = await installFlyerRemovalRecorder(component);
@@ -1494,18 +1515,12 @@ test("opponent white bears off observed by black viewer lands in top tray (anima
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for opponent white bear-off");
     expect(cap.color).toBe("white");
-    const topPip = component.getByTestId("bear-off-top").locator('[data-borne-off-checker]').last();
-    const topPipBox = await topPip.boundingBox();
-    if (!topPipBox) throw new Error("missing top tray pip");
-    const expected = { cx: topPipBox.x + topPipBox.width / 2, cy: topPipBox.y + topPipBox.height / 2 };
+    const expected = await trayPieceCenter(component, "bear-off-top");
     expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
-    const altBottom = expectedBottomSlotCenter(bottom, 0, cap.width);
-    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
-    expect(Math.abs(expected.cx - altBottom.cx) > 2 || Math.abs(expected.cy - altBottom.cy) > 2).toBeTruthy();
-    expect(Math.abs(expected.cx - altOff.cx) > 2 || Math.abs(expected.cy - altOff.cy) > 2).toBeTruthy();
-    expect(Math.abs(cap.cx - altBottom.cx) > 2 || Math.abs(cap.cy - altBottom.cy) > 2).toBeTruthy();
-    expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
+    expect(cap.cy).toBeGreaterThanOrEqual(top.top);
+    expect(cap.cy).toBeLessThanOrEqual(top.bottom);
+    expect(cap.cy).toBeLessThan(bottom.top);
   } finally {
     await recorder.restore();
   }
@@ -1515,7 +1530,7 @@ test("opponent black bears off observed by white viewer lands in top tray (anima
   const before = validBearOffBlackState(1);
   assertTotal15(before);
   const component = await mountBoard(mount, { state: { ...before, turn: "black", phase: "moving", lastMove: [] }, playerColor: "white" });
-  const { bottom, off } = await getTrayGeometry(component);
+  const { top, bottom } = await getTrayGeometry(component);
   const after = applyMove(before, { from: 23, to: OFF, die: 1 }, "black");
   assertTotal15(after);
   const recorder = await installFlyerRemovalRecorder(component);
@@ -1529,18 +1544,12 @@ test("opponent black bears off observed by white viewer lands in top tray (anima
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for opponent black bear-off");
     expect(cap.color).toBe("black");
-    const topPip = component.getByTestId("bear-off-top").locator('[data-borne-off-checker]').last();
-    const topPipBox = await topPip.boundingBox();
-    if (!topPipBox) throw new Error("missing top tray pip");
-    const expected = { cx: topPipBox.x + topPipBox.width / 2, cy: topPipBox.y + topPipBox.height / 2 };
+    const expected = await trayPieceCenter(component, "bear-off-top");
     expect(Math.abs(cap.cx - expected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(cap.cy - expected.cy)).toBeLessThanOrEqual(2);
-    const altBottom = expectedBottomSlotCenter(bottom, 0, cap.width);
-    const altOff = expectedBottomSlotCenter(off, 0, cap.width);
-    expect(Math.abs(expected.cx - altBottom.cx) > 2 || Math.abs(expected.cy - altBottom.cy) > 2).toBeTruthy();
-    expect(Math.abs(expected.cx - altOff.cx) > 2 || Math.abs(expected.cy - altOff.cy) > 2).toBeTruthy();
-    expect(Math.abs(cap.cx - altBottom.cx) > 2 || Math.abs(cap.cy - altBottom.cy) > 2).toBeTruthy();
-    expect(Math.abs(cap.cx - altOff.cx) > 2 || Math.abs(cap.cy - altOff.cy) > 2).toBeTruthy();
+    expect(cap.cy).toBeGreaterThanOrEqual(top.top);
+    expect(cap.cy).toBeLessThanOrEqual(top.bottom);
+    expect(cap.cy).toBeLessThan(bottom.top);
   } finally {
     await recorder.restore();
   }
@@ -1562,6 +1571,7 @@ test("undo of local white bear-off starts from bottom tray (handleUndo)", async 
   const recorder = await installFlyerRemovalRecorder(component);
   try {
     const { bottom } = await getTrayGeometry(component);
+    const startExpected = await trayPieceCenter(component, "bear-off-bottom");
     const pointRectBefore = await getPointRect(component, 0);
     const undoBtn = component.getByTitle("Undo last move");
     await expect(undoBtn).toBeVisible();
@@ -1572,7 +1582,6 @@ test("undo of local white bear-off starts from bottom tray (handleUndo)", async 
     const startBox = await flyer.boundingBox();
     if (!startBox) throw new Error("missing flyer boundingBox for undo white start");
     const startCenter = { cx: startBox.x + startBox.width / 2, cy: startBox.y + startBox.height / 2 };
-    const startExpected = expectedBottomSlotCenter(bottom, 4, startBox.width);
     expect(Math.abs(startCenter.cx - startExpected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(startCenter.cy - startExpected.cy)).toBeLessThanOrEqual(2);
     expect(startCenter.cy).toBeGreaterThan(bottom.top - 2);
@@ -1584,7 +1593,7 @@ test("undo of local white bear-off starts from bottom tray (handleUndo)", async 
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for undo white end");
     expect(cap.color).toBe("white");
-    const endExpected = expectedBottomSlotCenter(pointRectBefore, 0, cap.width);
+    const endExpected = expectedBottomPointSlotCenter(pointRectBefore, 0, cap.width);
     expect(Math.abs(cap.cx - endExpected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(cap.cy - endExpected.cy)).toBeLessThanOrEqual(2);
     expect(undoCalled).toBe(1);
@@ -1609,6 +1618,7 @@ test("undo of local black bear-off starts from bottom tray (handleUndo)", async 
   const recorder = await installFlyerRemovalRecorder(component);
   try {
     const { bottom } = await getTrayGeometry(component);
+    const startExpected = await trayPieceCenter(component, "bear-off-bottom");
     const pointRectBefore = await getPointRect(component, 23);
     const undoBtn = component.getByTitle("Undo last move");
     await expect(undoBtn).toBeVisible();
@@ -1619,7 +1629,6 @@ test("undo of local black bear-off starts from bottom tray (handleUndo)", async 
     const startBox = await flyer.boundingBox();
     if (!startBox) throw new Error("missing flyer boundingBox for undo black start");
     const startCenter = { cx: startBox.x + startBox.width / 2, cy: startBox.y + startBox.height / 2 };
-    const startExpected = expectedBottomSlotCenter(bottom, 4, startBox.width);
     expect(Math.abs(startCenter.cx - startExpected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(startCenter.cy - startExpected.cy)).toBeLessThanOrEqual(2);
     expect(startCenter.cy).toBeGreaterThan(bottom.top - 2);
@@ -1631,7 +1640,7 @@ test("undo of local black bear-off starts from bottom tray (handleUndo)", async 
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for undo black end");
     expect(cap.color).toBe("black");
-    const endExpected = expectedBottomSlotCenter(pointRectBefore, 0, cap.width);
+    const endExpected = expectedBottomPointSlotCenter(pointRectBefore, 0, cap.width);
     expect(Math.abs(cap.cx - endExpected.cx)).toBeLessThanOrEqual(2);
     expect(Math.abs(cap.cy - endExpected.cy)).toBeLessThanOrEqual(2);
     expect(undoCalled2).toBe(1);
