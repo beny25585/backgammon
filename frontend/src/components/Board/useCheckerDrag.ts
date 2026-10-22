@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent, RefObject } from "react";
 import { BAR, OFF, legalMovesFrom } from "@/lib/backgammon/engine";
 import type { Color, GameState, Source, Target } from "@/lib/backgammon/engine";
@@ -32,11 +32,14 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
   const pending = useRef<Drag | null>(null);
   const suppressClick = useRef(false);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const [pointerDown, setPointerDown] = useState(false);
+  const hasPointerInteraction = useCallback(() => pending.current !== null, []);
 
   function clear() {
     const pointerId = pending.current?.pointerId;
     pending.current = null;
     setDrag(null);
+    setPointerDown(false);
     if (pointerId !== undefined && boardRef.current?.hasPointerCapture(pointerId)) {
       boardRef.current.releasePointerCapture(pointerId);
     }
@@ -51,15 +54,22 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
 
   useEffect(() => {
     const cancel = () => clear();
+    const pointerEnd = (event: globalThis.PointerEvent) => {
+      if (pending.current?.pointerId === event.pointerId) clear();
+    };
     const keyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") clear();
     };
     window.addEventListener("blur", cancel);
     window.addEventListener("resize", cancel);
+    window.addEventListener("pointerup", pointerEnd);
+    window.addEventListener("pointercancel", pointerEnd);
     window.addEventListener("keydown", keyDown);
     return () => {
       window.removeEventListener("blur", cancel);
       window.removeEventListener("resize", cancel);
+      window.removeEventListener("pointerup", pointerEnd);
+      window.removeEventListener("pointercancel", pointerEnd);
       window.removeEventListener("keydown", keyDown);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -68,6 +78,8 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
 
   return {
     drag,
+    pointerDown,
+    hasPointerInteraction,
     targets,
     handlers: {
       onPointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -90,6 +102,9 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
           size: checker.getBoundingClientRect().width, active: false, state,
           boardLeft: bounds.left, boardTop: bounds.top,
         };
+        // Reserve the gesture before it crosses the drag threshold, so a
+        // forced move cannot steal a checker while the player is holding it.
+        setPointerDown(true);
       },
       onPointerMove(event: PointerEvent<HTMLDivElement>) {
         const current = pending.current;
@@ -116,6 +131,7 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
         if (!cell || !boardRef.current?.contains(cell)) return;
         const location = cell.dataset.pointIdx;
         if (location === BAR || location === undefined) return;
+        if (location === OFF && cell.dataset.color !== current.color) return;
         const to: Target = location === OFF ? OFF : Number(location);
         if (legalMovesFrom(state, current.from, current.color).some(move => move.to === to)) {
           onDrop(current.from, to, { x: event.clientX, y: event.clientY });

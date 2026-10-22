@@ -14,6 +14,7 @@ import { LanguageSwitcher } from "../LanguageSwitcher/LanguageSwitcher";
 import InstallAppButton from "../InstallAppButton/InstallAppButton";
 import { useRoomPlayerDetails } from "../../hooks/useRoomPlayerDetails";
 import GameInfoCard from "./GameInfoCard";
+import { AutoRoll } from "../autoRoll/AutoRoll";
 
 interface SidePanelProps {
   state: GameState;
@@ -28,6 +29,8 @@ interface SidePanelProps {
   onSoundEnabledChange?: (enabled: boolean) => void;
   controlsTarget?: HTMLElement | null;
   bracketUrl?: string;
+  autoRoll?: boolean;
+  onAutoRollChange?: (enabled: boolean) => void;
 }
 
 function SidePanel({
@@ -43,6 +46,8 @@ function SidePanel({
   onSoundEnabledChange,
   controlsTarget,
   bracketUrl,
+  autoRoll,
+  onAutoRollChange,
 }: SidePanelProps) {
   const { t } = useI18n();
   const { giveUp, whiteName, blackName, matchScore, targetPoints, roomId } = useGame();
@@ -58,16 +63,15 @@ function SidePanel({
     (playerColor === "white"
       ? t("common.blackPlayer")
       : t("common.whitePlayer"));
-  const selfLabel = selfName
-    ? `${selfName} (${t("common.youLower")})`
-    : playerColor === "white"
+  const selfLabel = selfName || (playerColor === "white"
       ? `${t("common.you")} (${t("common.white")})`
-      : `${t("common.you")} (${t("common.black")})`;
+      : `${t("common.you")} (${t("common.black")})`);
   const stripMyLabel = selfName || t("common.you");
   const stripOppLabel = opponentName || t("common.opponent");
   const activeColor = activePlayerOf(state);
   const delayMs = timeControl?.delay ?? 0;
   const controls = <>
+    {onAutoRollChange && <AutoRoll autoRoll={autoRoll ?? false} onChange={onAutoRollChange} />}
     <FullscreenButton />
     {bracketUrl && <a href={bracketUrl} target="_blank" rel="noopener noreferrer" className="grid size-11 shrink-0 place-items-center rounded-lg border border-amber-200/25 bg-[#211e17] text-amber-200 hover:bg-[#393022] focus-visible:outline-2 focus-visible:outline-amber-300" title={t("game.viewBracket")} aria-label={t("game.viewBracket")}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 3v18M4 4h15l-4 5 4 5H4" /></svg></a>}
     <button type="button" className="grid size-11 shrink-0 place-items-center rounded-lg border border-amber-200/25 bg-[#211e17] text-amber-200 hover:bg-[#393022] focus-visible:outline-2 focus-visible:outline-amber-300" aria-label={t("game.matchControl")} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6" /></svg></button>
@@ -108,7 +112,7 @@ function SidePanel({
         </div>
       </div>
 
-      {controlsTarget ? createPortal(controls, controlsTarget) : <div className="absolute right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2">{controls}</div>}
+      {controlsTarget ? createPortal(controls, controlsTarget) : controlsTarget === undefined ? <div className="absolute right-0 top-1/2 z-40 flex -translate-y-1/2 flex-col gap-2">{controls}</div> : null}
 
       <div className="w-full min-w-0 self-end">
         <PlayerRow
@@ -123,7 +127,7 @@ function SidePanel({
       </div>
 
       {menuOpen && (
-        <div className="absolute right-12 top-1/2 z-60 flex max-h-[calc(100%-16px)] w-[min(280px,calc(100%-64px))] -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-white/15 bg-[#111617] p-4 text-sm text-white shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
+        <div className="absolute right-20 top-1/2 z-60 flex max-h-[calc(100%-16px)] w-[min(280px,calc(100%-104px))] -translate-y-1/2 flex-col gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-white/15 bg-[#111617] p-4 text-sm text-white shadow-2xl [&>div]:shrink-0 [&>label]:shrink-0" data-testid="match-control-drawer">
           <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-3">
             <span className="text-sm font-bold text-white">{t("game.matchControl")}</span>
             <span

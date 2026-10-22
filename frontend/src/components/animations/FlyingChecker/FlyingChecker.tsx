@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import Checker from "../../Board/pieces/checker/Checker";
 import styles from "./FlyingChecker.module.css";
 
@@ -25,6 +25,7 @@ export default function FlyingChecker({
   committed,
   onComplete,
 }: FlyingCheckerProps) {
+  const reduceMotion = useReducedMotion();
   const sizeStyle = {
     width: size,
     height: size,
@@ -47,7 +48,7 @@ export default function FlyingChecker({
     <motion.div
       initial={{ x: from.x, y: from.y, scale: 1, opacity: 1 }}
       animate={{ x: to.x, y: to.y, scale: 1, opacity: 1 }}
-      transition={{ duration: 0.22, ease: [0.25, 0.1, 0.25, 1] }}
+      transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.25, 0.1, 0.25, 1] }}
       onAnimationComplete={onComplete}
       className={styles.flyer}
       style={{ ...sizeStyle, top: 0, left: 0 }}

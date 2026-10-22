@@ -7,6 +7,7 @@ import {
   useEffect,
   useLayoutEffect,
 } from "react";
+import type { ReactNode } from "react";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import {
   BAR,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/backgammon/engine";
 import type { MakeMoveOptions } from "../../types/context";
 import BoardActions from "./BoardActions";
+import type { BoardSide } from "./BoardHalfOverlay";
 import PointCell from "./pieces/pointcell/PointCell";
 import Bar from "./pieces/bar/Bar";
 import BearOff from "./pieces/bearoff/BearOff";
@@ -48,7 +50,11 @@ interface BoardProps {
   autoMove?: { id: number; fromPositionKey: string; move: Move } | null;
   inputDisabled?: boolean;
   turnNotice?: GuidanceMessage | null;
+  noticeSide?: BoardSide;
+  noticeDetails?: ReactNode;
+  overlay?: ReactNode;
   onAutoPointSequenceChange?: (active: boolean) => void;
+  onControlsTargetChange?: (target: HTMLDivElement | null) => void;
 }
 
 function getCheckerSize(board: HTMLElement): number {
@@ -140,7 +146,11 @@ export function Board({
   autoMove,
   inputDisabled = false,
   turnNotice,
+  noticeSide,
+  noticeDetails,
+  overlay,
   onAutoPointSequenceChange,
+  onControlsTargetChange,
 }: BoardProps) {
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -171,11 +181,21 @@ export function Board({
       }
     };
     fitCheckers();
-    const observer = new ResizeObserver(fitCheckers);
+    let fitFrame: number | null = null;
+    const observer = new ResizeObserver(() => {
+      if (fitFrame !== null) return;
+      fitFrame = window.requestAnimationFrame(() => {
+        fitFrame = null;
+        fitCheckers();
+      });
+    });
     observer.observe(point);
     // CSS can arrive after mount without changing the point's outer size.
     observer.observe(stack);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (fitFrame !== null) window.cancelAnimationFrame(fitFrame);
+    };
   }, []);
   const flightIdRef = useRef(0);
   const [flyChecker, setFlyChecker] = useState<{
@@ -393,7 +413,7 @@ export function Board({
     ],
   );
 
-  const { drag, targets: dragTargets, handlers: dragHandlers } = useCheckerDrag({
+  const { drag, pointerDown, hasPointerInteraction, targets: dragTargets, handlers: dragHandlers } = useCheckerDrag({
     state, myColor, blocked: interactionBlocked, legalFromPoints, boardRef, wrapperRef,
     onDrop: triggerFly,
   });
@@ -509,7 +529,7 @@ export function Board({
     if (inputDisabled) return;
     if (myColor === null) return;
     if (state.phase !== "moving" || state.turn !== myColor || state.winner) return;
-    if (drag) return;
+    if (pointerDown || hasPointerInteraction()) return;
     const currentKey = getGameplayKey(state);
     if (currentKey !== autoMove.fromPositionKey) {
       forcedExecRef.current = null;
@@ -533,7 +553,7 @@ export function Board({
     if (flyChecker) return;
     forcedExecRef.current = { id: autoMove.id, posKey: currentKey, from: autoMove.move.from, to: autoMove.move.to };
     triggerFly(autoMove.move.from, autoMove.move.to, undefined, { origin: "forced" });
-  }, [autoMove, autoPointSequenceActive, flyChecker, state, myColor, inputDisabled, triggerFly, drag]);
+  }, [autoMove, autoPointSequenceActive, flyChecker, state, myColor, inputDisabled, triggerFly, pointerDown, hasPointerInteraction]);
 
   const handleUndo = useCallback(() => {
     if (autoPointRunRef.current) {
@@ -831,7 +851,7 @@ export function Board({
   return (
     <div
       ref={wrapperRef}
-      className={`${styles.wrapper} [--checker:6.7cqw] [--bar-w:7cqw] [--bearoff-w:clamp(24px,4cqw,44px)] [background:var(--lux-rail-bg)]`}
+      className={`${styles.wrapper} [--checker:6.7cqw] [--bar-w:7cqw] [--bearoff-w:clamp(48px,6cqw,56px)] [background:var(--lux-rail-bg)]`}
       dir="ltr"
       data-testid="board-wrapper"
     >
@@ -844,7 +864,7 @@ export function Board({
         style={{ touchAction: "none" }}
       >
         <div className={styles.inner} data-testid="board-inner">
-          <div className={styles.column12}>
+          <div className={`${styles.column12} col-start-1 row-start-1`} data-testid="board-half-left">
             <div className={styles.row6}>
               {displayTopPoints.slice(0, 6).map((idx) => (
                 <PointCell
@@ -903,7 +923,7 @@ export function Board({
             cubePosition={cubePosition}
           />
 
-          <div className={styles.column12}>
+          <div className={`${styles.column12} col-start-3 row-start-1`} data-testid="board-half-right">
             <div className={styles.row6}>
               {displayTopPoints.slice(6).map((idx) => (
                 <PointCell
@@ -938,6 +958,7 @@ export function Board({
           </div>
 
           <BearOff
+            onControlsTargetChange={onControlsTargetChange}
             state={state}
             myColor={myColor}
             isLegalTarget={!interactionBlocked && bearOffMove !== null}
@@ -946,19 +967,26 @@ export function Board({
               triggerFly(bearOffMove.from, OFF, undefined, { die: bearOffMove.die });
             }}
           />
+          <div
+            className="pointer-events-none relative z-40 col-span-full row-start-1 grid min-h-0 grid-cols-subgrid [--board-action-width:clamp(60px,14.5cqw,104px)] [--board-action-face-height:clamp(27px,5.5cqw,40px)] [--board-action-font:clamp(11px,1.8cqw,12px)]"
+            data-testid="board-overlays"
+          >
+            <BoardActions
+              canUndo={canUndo}
+              canConfirm={canConfirm}
+              canRoll={canRoll}
+              canDouble={canDouble}
+              onUndo={handleUndo}
+              onConfirm={onConfirm}
+              onRoll={onRoll}
+              onDouble={onOfferDouble}
+              turnNotice={turnNotice}
+              noticeSide={noticeSide}
+              noticeDetails={noticeDetails}
+            />
+            {overlay}
+          </div>
         </div>
-
-        <BoardActions
-          canUndo={canUndo}
-          canConfirm={canConfirm}
-          canRoll={canRoll}
-          canDouble={canDouble}
-          onUndo={handleUndo}
-          onConfirm={onConfirm}
-          onRoll={onRoll}
-          onDouble={onOfferDouble}
-          turnNotice={turnNotice}
-        />
       </div>
 
       {drag && (

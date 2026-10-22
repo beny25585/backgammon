@@ -1455,6 +1455,72 @@ class GameEndConsumerTests(TransactionTestCase):
         self.assertIsNone(snapshot["payload"]["turnStartedAt"])
         await reconnect.disconnect()
 
+    async def test_declined_double_auto_advances_both_seats_once(self):
+        await self._set_target(7)
+        game_state = await get_game_state(self.room)
+        seeded = dict(game_state.state_data)
+        seeded.update(
+            phase='doubling_offered', turn='white',
+            doubleOfferedBy='white', cube=2, dice=[], remaining=[],
+            clock={'white': 275_000, 'black': 250_000}, turnStartedAt=None,
+        )
+        previous_game_id = seeded['gameId']
+        game_state.state_data = seeded
+        await save_game_state(game_state)
+        comm_white, comm_black = await self._connect_both()
+        events = []
+        try:
+            with patch.object(GameConsumer, 'NEXT_GAME_DELAY', 0.2):
+                await comm_black.send_json_to({
+                    'type': 'state_update',
+                    'payload': {'action': 'double_response', 'accept': False},
+                })
+                for communicator in (comm_white, comm_black):
+                    ended = await self._receive_until(
+                        communicator, lambda event: event.get('type') == 'game_ended',
+                    )
+                    self.assertFalse(ended['payload']['matchOver'])
+                    self.assertEqual(ended['payload']['whiteScore'], 2)
+                for communicator in (comm_white, comm_black):
+                    while True:
+                        event = await communicator.receive_json_from()
+                        self.assertNotEqual(event.get('type'), 'error', event)
+                        if event.get('type') == 'state_update' and event.get('payload', {}).get('phase') == 'opening_roll':
+                            events.append(event['payload'])
+                            break
+            self.assertEqual(events[0]['gameId'], events[1]['gameId'])
+            self.assertNotEqual(events[0]['gameId'], previous_game_id)
+            self.assertEqual(events[0]['clock'], seeded['clock'])
+            await database_sync_to_async(self.room.refresh_from_db)()
+            self.assertEqual(self.room.white_score, 2)
+            self.assertEqual(self.room.status, 'playing')
+            transitions = await database_sync_to_async(
+                lambda: GameEvent.objects.filter(room=self.room, event_type='next_game').count()
+            )()
+            self.assertEqual(transitions, 1)
+        finally:
+            await comm_white.disconnect()
+            await comm_black.disconnect()
+
+    async def test_replacing_next_game_watch_keeps_the_new_deadline(self):
+        from game.consumers import _auto_next_tasks, _auto_next_deadlines
+
+        consumer = GameConsumer()
+        consumer.room_group_name = f'test_watch_{uuid.uuid4()}'
+        with patch.object(GameConsumer, 'NEXT_GAME_DELAY', 0.05), patch.object(
+            consumer, '_start_next_game', new_callable=AsyncMock,
+        ) as start:
+            await consumer._arm_auto_next_game()
+            await asyncio.sleep(0)
+            await consumer._arm_auto_next_game()
+            replacement = _auto_next_tasks[consumer.room_group_name]
+            await asyncio.sleep(0)
+            self.assertIs(_auto_next_tasks.get(consumer.room_group_name), replacement)
+            self.assertIn(consumer.room_group_name, _auto_next_deadlines)
+            await replacement
+            start.assert_awaited_once()
+            self.assertNotIn(consumer.room_group_name, _auto_next_tasks)
+
     async def test_reconnect_mid_match_replays_result_with_remaining_countdown(self):
         await self._set_target(5)
         comm_white, comm_black = await self._connect_both()

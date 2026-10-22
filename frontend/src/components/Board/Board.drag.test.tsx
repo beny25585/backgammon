@@ -20,13 +20,13 @@ async function center(locator: Locator) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-for (const scenario of ["legal", "blocked", "outside", "source", "escape", "off", "black", "opponent", "wrong-turn"] as const) {
+for (const scenario of ["legal", "blocked", "outside", "source", "escape", "off", "off-controls", "off-opponent", "black", "opponent", "wrong-turn"] as const) {
   test(`checker drag: ${scenario}`, async ({ mount, page }) => {
     const state = position();
     const color = scenario === "black" ? "black" : "white";
     let from: Source = 23;
     let to: Target = scenario === "blocked" ? 18 : scenario === "source" ? 23 : 20;
-    if (scenario === "off") {
+    if (scenario.startsWith("off")) {
       state.points.fill(0); state.points[3] = 2; state.points[5] = 2;
       state.home.white = 11;
       from = 3; to = "off";
@@ -49,7 +49,9 @@ for (const scenario of ["legal", "blocked", "outside", "source", "escape", "off"
     const source = component.locator(`[data-point-idx="${from}"] [data-checker]`).last();
     const start = await center(source);
     const end = scenario === "outside" ? { x: 1, y: 1 } : await center(
-      to === "off" ? component.getByTestId("bear-off-bottom") : component.locator(`[data-point-idx="${to}"]`),
+      scenario === "off-controls" ? component.getByTestId("game-controls")
+        : scenario === "off-opponent" ? component.getByTestId("bear-off-top")
+          : to === "off" ? component.getByTestId("bear-off-bottom") : component.locator(`[data-point-idx="${to}"]`),
     );
     await page.mouse.move(start.x, start.y);
     await page.mouse.down();
@@ -138,7 +140,7 @@ test("active black drag wins over the delayed forced autoMove", async ({ mount, 
   await page.mouse.down();
   await page.mouse.move(start.x + 10, start.y + 10);
   await expect(component.getByTestId("dragging-checker")).toHaveCount(1);
-  // Forced command reaches its 350ms delay while the manual drag is active.
+  // Forced command reaches its 200ms delay while the manual drag is active.
   await page.clock.runFor(400);
   expect(moves).toHaveLength(0);
   await expect(component.getByTestId("dragging-checker")).toHaveCount(1);
@@ -147,6 +149,53 @@ test("active black drag wins over the delayed forced autoMove", async ({ mount, 
   await expect(component.getByTestId("dragging-checker")).toHaveCount(0);
   await expect.poll(() => moves).toEqual([[18, 21]]);
 });
+
+for (const color of ["white", "black"] as const) {
+  for (const input of ["mouse", "touch"] as const) {
+    for (const portrait of [false, true]) {
+      test(`bar drag reserves a held ${color} checker before auto-move (${input}, ${portrait ? "portrait" : "landscape"})`, async ({ mount, page }) => {
+        await page.setViewportSize(portrait ? { width: 390, height: 844 } : { width: 844, height: 390 });
+        await page.clock.install();
+        await page.clock.pauseAt(new Date());
+        const state: GameState = {
+          ...newGame(), points: new Array(24).fill(0),
+          bar: { white: color === "white" ? 1 : 0, black: color === "black" ? 1 : 0 },
+          home: { white: color === "white" ? 14 : 0, black: color === "black" ? 14 : 0 },
+          turn: color, phase: "moving", dice: [1], remaining: [1],
+        };
+        const moves: [Source, Target][] = [];
+        const component = await mount(
+          <div className={appStyles.gameContent}>
+            <div className={styles.container}><MockGameWrapper state={state} playerColor={color}>
+              <GameBoard state={state} playerColor={color} makeMove={(from, to) => moves.push([from, to])} />
+            </MockGameWrapper></div>
+          </div>,
+        );
+        const start = await center(component.locator(`[data-point-idx="bar"] [data-checker-color="${color}"]`).last());
+        const to = color === "white" ? 23 : 0;
+        const end = await center(component.locator(`[data-point-idx="${to}"]`));
+        const session = input === "touch" ? await page.context().newCDPSession(page) : null;
+        if (session) {
+          await session.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+          await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...start, id: 1 }] });
+        } else {
+          await page.mouse.move(start.x, start.y);
+          await page.mouse.down();
+        }
+        // The pointer has not moved yet. The forced command must still wait.
+        await page.clock.runFor(300);
+        expect(moves).toHaveLength(0);
+        if (session) await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ ...end, id: 1 }] });
+        else await page.mouse.move(end.x, end.y, { steps: 8 });
+        await expect(component.getByTestId("dragging-checker")).toBeVisible();
+        if (session) await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        else await page.mouse.up();
+        await expect.poll(() => moves).toEqual([["bar", to]]);
+        await session?.detach();
+      });
+    }
+  }
+}
 
 test("a new game position cancels an in-progress drag", async ({ mount, page }) => {
   const state = position();

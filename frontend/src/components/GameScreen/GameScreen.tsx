@@ -17,6 +17,7 @@ import {
 } from "../BoardThemeSelector/boardThemes";
 import { boardThemeClasses } from "../BoardThemeSelector/boardThemeClasses";
 import { useGameSounds } from "../../hooks/useGameSounds";
+import { useAutoRoll } from "../../hooks/useAutoRoll";
 
 const BOARD_THEME_STORAGE_KEY = "6b-board-theme";
 
@@ -110,6 +111,8 @@ export default function GameScreen({
     gameType: contextGameType,
   } = useGame();
   const { soundEnabled, setSoundEnabled, playActionSound } = useGameSounds(state, roomId);
+  const [autoRoll, setAutoRoll] = useAutoRoll();
+  const requestedRollRef = useRef<string | null>(null);
   const handleUndo = useCallback(() => {
     playActionSound("undo");
     undoMove();
@@ -170,10 +173,6 @@ export default function GameScreen({
     state?.phase === "rolling" ||
     state?.phase === "moving" ||
     state?.phase === "doubling_offered";
-
-  const handleRoll = useCallback(() => {
-    rollDice();
-  }, [rollDice]);
 
   useEffect(() => {
     window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
@@ -277,6 +276,29 @@ export default function GameScreen({
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
     state.turn === playerColor;
+  const regularRollKey = needsToRoll
+    ? `${roomId ?? "local"}:${playerColor}:${state?.version ?? 0}:${turnStartedAt ?? 0}`
+    : null;
+  const rollPaused = isLoading || showCloseExisting ||
+    !opponentConnected || Boolean(gameResult);
+
+  useEffect(() => {
+    requestedRollRef.current = null;
+  }, [regularRollKey, error]);
+
+  const handleRoll = useCallback(() => {
+    if (!regularRollKey || rollPaused || requestedRollRef.current === regularRollKey) return;
+    requestedRollRef.current = regularRollKey;
+    rollDice();
+  }, [regularRollKey, rollPaused, rollDice]);
+
+  useEffect(() => {
+    if (!autoRoll || !regularRollKey || rollPaused || error) return;
+    // Leave a short window to offer a double or switch automatic rolling off.
+    const timer = window.setTimeout(handleRoll, 450);
+    return () => window.clearTimeout(timer);
+  }, [autoRoll, regularRollKey, rollPaused, error, handleRoll]);
+
   if (showCloseExisting && !gameResult?.matchOver) {
     return (
       <div className={styles.loading} dir={direction}>
@@ -499,6 +521,8 @@ export default function GameScreen({
             onBoardThemeChange={setBoardTheme}
             soundEnabled={soundEnabled}
             onSoundEnabledChange={setSoundEnabled}
+            autoRoll={autoRoll}
+            onAutoRollChange={setAutoRoll}
             needsToRoll={needsToRoll}
             onRoll={handleRoll}
             respondToDouble={respondToDouble}

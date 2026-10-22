@@ -214,6 +214,44 @@ test("bot roll also fetches dice from the Django server", async ({ mount, page }
   await expect(component.getByTestId("dice")).toHaveText("[3,1]");
 });
 
+for (const blockedColor of ["white", "black"] as const) {
+  test(`local ${blockedColor} blocked-bar roll stays visible for three seconds`, async ({ mount, page }) => {
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    let requests = 0;
+    await page.route("**/api/dice/roll/**", async route => {
+      requests += 1;
+      await route.fulfill({ json: { dice: [2, 4] } });
+    });
+    const points = new Array(24).fill(0);
+    for (let index = 0; index < 6; index++) {
+      points[blockedColor === "white" ? 23 - index : index] = blockedColor === "white" ? -2 : 2;
+    }
+    const state: GameState = {
+      ...newGame(), points, phase: "rolling", turn: blockedColor,
+      bar: { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 },
+    };
+    const component = await mount(
+      <LocalGameProvider botColor="black">
+        <StateSeedProbe state={state} />
+        <GameProbe from={0} to={0} />
+      </LocalGameProvider>,
+    );
+    if (blockedColor === "white") await component.getByTestId("roll").click();
+    else await page.clock.runFor(1000);
+    await expect(component.getByTestId("no-moves")).toHaveText("true");
+    if (blockedColor === "white") {
+      await page.clock.runFor(1000);
+      await expect.poll(() => requests).toBe(2);
+    }
+    await page.clock.runFor(blockedColor === "white" ? 1999 : 2999);
+    await expect(component.getByTestId("no-moves")).toHaveText("true");
+    expect(requests).toBe(blockedColor === "white" ? 2 : 1);
+    await page.clock.runFor(1);
+    await expect(component.getByTestId("no-moves")).toHaveText("false");
+  });
+}
+
 test("dice service failure shows an error and does not roll", async ({ mount, page }) => {
   await page.route("**/api/dice/roll/**", async (route) => {
     await route.fulfill({ status: 503, json: { error: "Dice service unreachable" } });

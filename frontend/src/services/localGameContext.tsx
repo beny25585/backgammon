@@ -9,7 +9,6 @@ import {
 import type {
   GameResult,
   GameType,
-  NoMovesMessage,
   OpeningRollResult,
   MakeMoveOptions,
 } from "../types/context";
@@ -35,6 +34,7 @@ import { GameContext } from "./gameContext";
 import { useLocalClock } from "../hooks/useLocalClock";
 import type { TimeControl } from "../lib/clock";
 import { clientLogger } from "./logger";
+import { useNoMovesNotice } from "../hooks/useNoMovesNotice";
 
 function extractTranscript(state: GameState) {
   const history = state.moveHistory;
@@ -92,10 +92,7 @@ export function LocalGameProvider({
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] = useState<NoMovesMessage | null>(
-    null,
-  );
-  const noMovesNoticeIdRef = useRef(0);
+  const { noMovesMessage, revealNoMoves } = useNoMovesNotice("local");
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
@@ -111,22 +108,6 @@ export function LocalGameProvider({
 
   const openingDiceRef = useRef<[number, number] | null>(null);
   const rollingRef = useRef(false);
-
-  const revealNoMoves = useCallback(
-    (message: Omit<NoMovesMessage, "noticeVisible">) => {
-      const noticeId = ++noMovesNoticeIdRef.current;
-      setNoMovesMessage({ ...message, noticeVisible: false });
-      setTimeout(() => {
-        if (noMovesNoticeIdRef.current !== noticeId) return;
-        setNoMovesMessage({ ...message, noticeVisible: true });
-      }, 350);
-      setTimeout(() => {
-        if (noMovesNoticeIdRef.current !== noticeId) return;
-        setNoMovesMessage(null);
-      }, 700);
-    },
-    [],
-  );
 
   const getOpeningDie = useCallback(
     async (color: Color): Promise<number | null> => {
@@ -351,6 +332,15 @@ export function LocalGameProvider({
               phase: next.phase,
             });
             setTurnColor(next.turn);
+            if (allLegalMoves(next, next.turn).length === 0) {
+              revealNoMoves({ dice: next.dice, remaining: next.remaining, color: next.turn });
+              const passed: GameState = {
+                ...next, remaining: [], dice: [], lastMove: null, moveHistory: null,
+                turn: next.turn === "white" ? "black" : "white", phase: "rolling",
+              };
+              setTurnColor(passed.turn);
+              return passed;
+            }
             return next;
           });
           return;
@@ -361,6 +351,9 @@ export function LocalGameProvider({
             if (prev.turn !== botColor) return prev;
             const move = chooseMove(prev, botColor);
             if (!move) {
+              if (prev.remaining.length > 0 && prev.dice.length > 0) {
+                revealNoMoves({ dice: prev.dice, remaining: prev.remaining, color: prev.turn });
+              }
               const next = { ...prev, remaining: [] as number[] };
               next.turn = botColor === "white" ? "black" : "white";
               next.phase = "rolling" as const;
@@ -385,6 +378,7 @@ export function LocalGameProvider({
     getTurnDice,
     setTurnColor,
     advanceToOpeningMove,
+    revealNoMoves,
   ]);
 
   // ── Human actions ──────────────────────────────────────────────

@@ -51,7 +51,7 @@ export default function Bar({
   const topColor = bottomColor === "white" ? "black" : "white";
   const visibleCount = (color: Color) => Math.max(state.bar[color] - (hideChecker === color ? 1 : 0), 0);
   return (
-    <button type="button" onClick={onClick} className="relative h-full [--bar-display-width:max(26px,var(--bar-w))] w-[var(--bar-display-width)] cursor-pointer border-0 [background:var(--lux-bar-bg,#071034)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300" data-point-idx="bar" aria-label={t("game.barSummary", { black: state.bar.black, white: state.bar.white })}>
+    <button type="button" onClick={onClick} className="relative col-start-2 row-start-1 h-full [--bar-display-width:max(26px,var(--bar-w))] w-[var(--bar-display-width)] cursor-pointer border-0 [background:var(--lux-bar-bg,#071034)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300" data-point-idx="bar" aria-label={t("game.barSummary", { black: state.bar.black, white: state.bar.white })}>
       {(selected || isLegalFrom) && <div className={styles.highlight} />}
 
       <span

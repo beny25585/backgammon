@@ -161,6 +161,77 @@ test("roll action remains available after a server auto-pass with stale dice", a
   await expect(component.getByTitle("Tap to roll")).toBeVisible();
 });
 
+test("auto roll can be switched off before its timer and preserves its preference", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.removeItem("bg_auto_roll"));
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let rolls = 0;
+  const screen = (
+    <MockGameWrapper state={makeGameState({ phase: "rolling", turn: "white" })}
+      context={{ rollDice: () => rolls++ }}>
+      <GameScreen />
+    </MockGameWrapper>
+  );
+  const component = await mount(screen);
+  const toggle = component.getByTestId("auto-roll-toggle");
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  await page.clock.runFor(1500);
+  expect(rolls).toBe(0);
+  await toggle.click();
+  await page.clock.runFor(300);
+  await toggle.click();
+  await page.clock.runFor(1000);
+  expect(rolls).toBe(0);
+  await toggle.click();
+  await page.clock.runFor(449);
+  expect(rolls).toBe(0);
+  await page.clock.runFor(1);
+  await expect.poll(() => rolls).toBe(1);
+  await page.clock.runFor(3000);
+  expect(rolls).toBe(1);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("bg_auto_roll"))).toBe("true");
+  await component.unmount();
+  const reopened = await mount(screen);
+  await expect(reopened.getByTestId("auto-roll-toggle")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("a manual roll cancels the automatic request for that turn", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.setItem("bg_auto_roll", "true"));
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let rolls = 0;
+  const component = await mount(
+    <MockGameWrapper state={makeGameState({ phase: "rolling", turn: "white" })}
+      context={{ rollDice: () => rolls++ }}>
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  await component.getByTitle("Tap to roll").click();
+  await page.clock.runFor(2000);
+  await expect.poll(() => rolls).toBe(1);
+});
+
+test("auto roll proceeds while the opponent's blocked notice is visible", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.setItem("bg_auto_roll", "true"));
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let rolls = 0;
+  const state = makeGameState({ phase: "rolling", turn: "white", dice: [2, 4], remaining: [] });
+  const component = await mount(
+    <MockGameWrapper state={state} context={{
+      rollDice: () => rolls++,
+      noMovesMessage: { color: "black", dice: [2, 4], remaining: [2, 4] },
+    }}><GameScreen /></MockGameWrapper>,
+  );
+  await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
+  await expect(component.getByTitle("Tap to roll")).toBeVisible();
+  await page.clock.runFor(449);
+  expect(rolls).toBe(0);
+  await page.clock.runFor(1);
+  await expect.poll(() => rolls).toBe(1);
+  await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
+});
+
 test("in-game errors show as a floating card and keep the board visible", async ({
   mount,
 }) => {

@@ -14,7 +14,6 @@ import type {
   GameResult,
   GameType,
   MakeMoveOptions,
-  NoMovesMessage,
   OpeningRollResult,
 } from "../types/context";
 import type { GameState, Color, Move } from "../types/game";
@@ -31,6 +30,7 @@ import { getSocketService } from "./socket";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
+import { useNoMovesNotice } from "../hooks/useNoMovesNotice";
 import { parseTimeControl, type TimeControl } from "../lib/clock";
 
 export const GameContext = createContext<GameContextType | undefined>(
@@ -123,10 +123,7 @@ export function GameProvider({
   const [aiRetrying, setAiRetrying] = useState(false);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const [noMovesMessage, setNoMovesMessage] = useState<NoMovesMessage | null>(
-    null,
-  );
-  const noMovesNoticeIdRef = useRef(0);
+  const { noMovesMessage, revealNoMoves, clearNoMoves } = useNoMovesNotice(roomId);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
@@ -150,15 +147,9 @@ export function GameProvider({
     color?: Color;
   } | null>(null);
   const gameTypeRef = useRef(gameType);
-  const autoNextGameRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     gameTypeRef.current = gameType;
   }, [gameType]);
-  useEffect(() => {
-    return () => {
-      if (autoNextGameRef.current) clearTimeout(autoNextGameRef.current);
-    };
-  }, [roomId]);
 
   // Backend is source of truth for quick vs 1v1 via state.gameFormat.
   // Tournament stays tournament only when URL had a real id; otherwise correct
@@ -308,23 +299,6 @@ export function GameProvider({
         // the initial snapshot and may immediately replay `game_ended` for a
         // completed room, so subscribing after `connect()` can lose the final
         // score and leave this client on the previous board.
-        const revealNoMoves = (
-          message: Omit<NoMovesMessage, "noticeVisible">,
-          revealAfterMs = 350,
-        ) => {
-          if (message.color !== playerColorRef.current) return;
-          const noticeId = ++noMovesNoticeIdRef.current;
-          setNoMovesMessage({ ...message, noticeVisible: false });
-          setTimeout(() => {
-            if (noMovesNoticeIdRef.current !== noticeId) return;
-            setNoMovesMessage({ ...message, noticeVisible: true });
-          }, revealAfterMs);
-          setTimeout(() => {
-            if (noMovesNoticeIdRef.current !== noticeId) return;
-            setNoMovesMessage(null);
-          }, revealAfterMs + 350);
-        };
-
         socket.on("state_update", (message) => {
           const msg = message as Record<string, unknown>;
           const raw = msg.payload as Record<string, unknown>;
@@ -493,8 +467,8 @@ export function GameProvider({
             setAutoConfirmPending(sendIntent({ action: "end_turn" }));
           }
 
-          // Server auto-pass: we rolled, but no legal moves existed. Show the
-          // "No moves available" overlay briefly with the rolled dice.
+          // Preserve an auto-passed roll for both players, including older
+          // servers that only send state_update instead of turn_notice.
           if (
             prev &&
             prev.phase === "rolling" &&
@@ -513,7 +487,7 @@ export function GameProvider({
               dice: next.dice,
               remaining: rolledRemaining,
               color: rolledBy,
-            });
+            }, undefined, next.version);
           }
 
           stateRef.current = displayedState;
@@ -714,19 +688,15 @@ export function GameProvider({
                   ? "tournament"
                   : "1v1"
                 : gameTypeRef.current;
-          // Continuous match: keep board live when match not over
+          // The server starts the next game. Neither seat sends an automatic
+          // next_game intent: the second request would reject after the first
+          // seat has already advanced the room.
           if (!matchOver) {
             pendingActionsRef.current = [];
             setNextGameCountdown(null);
             setState((prev) =>
               prev ? { ...prev, phase: "game_over", winner } : prev,
             );
-            if (!autoNextGameRef.current) {
-              autoNextGameRef.current = setTimeout(() => {
-                autoNextGameRef.current = null;
-                sendIntent({ action: "next_game" });
-              }, 900);
-            }
             setTimeout(() => void fetchFinalizedResult(0), 400);
             return;
           }
@@ -793,7 +763,7 @@ export function GameProvider({
             typeof payload.revealAfterMs === "number"
               ? Math.max(0, payload.revealAfterMs)
               : 350;
-          revealNoMoves({ dice, remaining, color }, revealAfterMs);
+          revealNoMoves({ dice, remaining, color }, revealAfterMs, stateRef.current?.version);
         });
 
         socket.on("room_cancelled", (message) => {
@@ -808,21 +778,14 @@ export function GameProvider({
           if (result.status !== "cancelled" || result.roomId !== roomId) {
             return;
           }
-
-          if (autoNextGameRef.current !== null) {
-            clearTimeout(autoNextGameRef.current);
-            autoNextGameRef.current = null;
-          }
-
           autoConfirmArmedRef.current = false;
           pendingActionsRef.current = [];
           authoritativeStateRef.current = null;
           stateRef.current = null;
-          noMovesNoticeIdRef.current += 1;
 
           setAutoConfirmPending(false);
           setOpeningRollResult(null);
-          setNoMovesMessage(null);
+          clearNoMoves();
           setNextGameCountdown(null);
           setGameResult(null);
           setState(null);
@@ -912,7 +875,7 @@ export function GameProvider({
     return () => {
       socket.removeAllListeners();
     };
-  }, [roomId, socket, sendIntent, fetchFinalizedResult]);
+  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves]);
 
   // Tick down the server-authoritative next-game countdown shown in the result
   // overlay. The server owns the actual timer; this is display-only.

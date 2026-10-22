@@ -57,6 +57,7 @@ export interface GameResult {
 }
 
 export interface NoMovesMessage {
+  id?: string;
   dice: number[];
   remaining: number[];
   color: Color;

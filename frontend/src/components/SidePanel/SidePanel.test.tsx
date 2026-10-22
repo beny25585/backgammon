@@ -112,7 +112,7 @@ test("shows usernames for both players when provided", async ({ mount }) => {
     </MockGameWrapper>,
   );
 
-  await expect(component.getByTestId("player-name-white")).toHaveText("alice (you)");
+  await expect(component.getByTestId("player-name-white")).toHaveText("alice");
   await expect(component.getByTestId("player-name-black")).toHaveText("bob");
 });
 

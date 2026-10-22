@@ -214,7 +214,9 @@ class GameConsumer(AsyncWebsocketConsumer):
     OPENING_RESULT_DELAY = 3.0
     # How long a finished (but not match-ending) game waits before the server
     # auto-starts the next game of the match.
-    NEXT_GAME_DELAY = 30.0
+    # The server owns continuous-match transitions; clients do not race to
+    # request the same next game from both seats.
+    NEXT_GAME_DELAY = 1.0
 
     async def __call__(self, scope, receive, send):
         try:
@@ -1599,8 +1601,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             logger.exception("WS auto next game failed",
                              extra={"room_id": self.room_id})
         finally:
-            _auto_next_tasks.pop(self.room_group_name, None)
-            _auto_next_deadlines.pop(self.room_group_name, None)
+            # A replaced watch must not remove the replacement's deadline.
+            if _auto_next_tasks.get(self.room_group_name) is asyncio.current_task():
+                _auto_next_tasks.pop(self.room_group_name, None)
+                _auto_next_deadlines.pop(self.room_group_name, None)
 
     @serialized_room_operation
     async def _start_next_game(self):

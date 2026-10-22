@@ -5,6 +5,8 @@ import {
 } from "@playwright/experimental-ct-react";
 import type { Page } from "@playwright/test";
 import { GameProvider } from "./gameContext";
+import { MemoryRouter } from "react-router-dom";
+import GameScreen from "../components/GameScreen/GameScreen";
 import { buildRematchEntryUrl } from "./rematchUrl";
 import {
   GameProbe,
@@ -601,18 +603,65 @@ test("server no-moves notice after a partial turn reaches the UI", async ({
   await expect(component.getByTestId("no-moves")).toHaveText("true");
 });
 
-test("opponent no-moves notices stay hidden for both server event formats", async ({ mount, page }) => {
+test("opponent no-moves dice remain visible for three seconds for both event formats", async ({ mount, page }) => {
   const component = await mountProbe(mount, page);
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
   await emitInitialState(page, { ...rollingState(), turn: "black", version: 1 });
   await emitBroadcast(page, {
     ...rollingState(), turn: "white", version: 2, dice: [2, 4], remaining: [], message: "No legal moves",
   });
+  await expect(component.getByTestId("no-moves")).toHaveText("true");
+  // The explicit notice repeats the same roll; it must not restart the timer.
+  await page.clock.runFor(200);
   await page.evaluate(() => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({ type: "turn_notice", payload: { kind: "no_moves", dice: [2, 4], remaining: [2, 4], color: "black" } });
   });
+  await page.clock.runFor(2799);
+  await expect(component.getByTestId("no-moves")).toHaveText("true");
+  await expect(component.getByTestId("no-moves-visible")).toHaveText("true");
+  await page.clock.runFor(1);
   await expect(component.getByTestId("no-moves")).toHaveText("false");
 });
+
+for (const blockedColor of ["white", "black"] as const) {
+  for (const role of ["blocked", "next-player"] as const) {
+    test(`online roll events retain the next player's dice below the bar notice (${blockedColor}, ${role})`, async ({ mount, page }) => {
+      await seedFakeSocket(page);
+      await page.route("**/api/**", route => route.fulfill({ json: {} }));
+      const nextColor = blockedColor === "white" ? "black" : "white";
+      const viewer = role === "blocked" ? blockedColor : nextColor;
+      const component = await mount(
+        <MemoryRouter><GameProvider roomId="test-room" playerColor={viewer}>
+          <GameScreen />
+        </GameProvider></MemoryRouter>,
+      );
+      const bar = { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 };
+      await emitInitialState(page, { ...rollingState(), bar, turn: blockedColor, version: 1 }, viewer);
+      await page.clock.install();
+      await page.clock.pauseAt(new Date());
+      await emitBroadcast(page, { ...rollingState(), bar, turn: nextColor, version: 2,
+        dice: [2, 4], remaining: [], message: "No legal moves" }, viewer, "roll");
+      if (role === "next-player") {
+        await component.getByTitle("Tap to roll").click();
+        await expect.poll(async () => (await sentMessages(page)).filter(m => m.payload?.action === "roll").length).toBe(1);
+      }
+      await emitBroadcast(page, { ...newGame(), bar, turn: nextColor, phase: "moving", version: 3,
+        dice: [6, 3], remaining: [6, 3] }, viewer, "roll");
+      await expect(component.getByTestId("dice-overlay")).toHaveAttribute("data-roll-owner", role === "blocked" ? "opponent" : "self");
+      // The server finishes the moves before the 350ms notice reveal.
+      await emitBroadcast(page, { ...rollingState(), bar, turn: blockedColor, version: 4, dice: [], remaining: [] }, viewer, "end_turn");
+      await page.clock.runFor(350);
+      const dice = component.getByTestId("turn-notice-details").getByTestId("die");
+      await expect(dice).toHaveCount(2);
+      await expect(dice.nth(0).locator("span")).toHaveCount(6);
+      await expect(dice.nth(1).locator("span")).toHaveCount(3);
+      await page.clock.runFor(2650);
+      await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
+    });
+  }
+}
 
 test("opening result broadcast populates the opening result", async ({
   mount,
@@ -726,6 +775,29 @@ test("handleNextGame sends next_game only for an unfinished match", async ({ mou
     )
     .toBe(true);
 });
+
+for (const color of ["white", "black"] as const) {
+  test(`a declined double waits for the server's next game without a competing intent (${color})`, async ({ mount, page }) => {
+    await seedFakeSocket(page);
+    const component = await mount(
+      <GameProvider roomId="test-room" playerColor={color}>
+        <GameProbe from={23} to={19} />
+      </GameProvider>,
+    );
+    await emitInitialState(page, { ...midGameState(), phase: "doubling_offered", doubleOfferedBy: "white" }, color);
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    const result = { winner: "white", reason: "double_response", whiteScore: 1, blackScore: 0, targetPoints: 7, matchOver: false };
+    await emitGameEnded(page, result);
+    await emitGameEnded(page, result);
+    await page.clock.runFor(950);
+    expect((await sentMessages(page)).filter(message => message.payload?.action === "next_game")).toHaveLength(0);
+    await emitBroadcast(page, { ...newGame(), version: 3 }, color);
+    await page.clock.runFor(1000);
+    expect((await sentMessages(page)).filter(message => message.payload?.action === "next_game")).toHaveLength(0);
+    await expect(component.getByTestId("error")).toHaveText("");
+  });
+}
 
 // --- Forced auto-confirm regression (online) ---
 function forcedTerminalWhite(): GameState {

@@ -3,8 +3,9 @@ import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
 import GuidanceBanner from "../GuidanceBanner";
+import BoardHalfOverlay from "../Board/BoardHalfOverlay";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
-import { DiceRow } from "../Dice";
+import DiceOverlay from "./DiceOverlay";
 import {
   allLegalMoves,
   BAR,
@@ -20,6 +21,7 @@ import {
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
 import GameFrame from "./GameFrame";
+import { useFollowingRoll } from "../../hooks/useFollowingRoll";
 
 interface GameBoardProps {
   state: GameState;
@@ -43,13 +45,15 @@ interface GameBoardProps {
   soundEnabled?: boolean;
   onSoundEnabledChange?: (enabled: boolean) => void;
   bracketUrl?: string;
+  autoRoll?: boolean;
+  onAutoRollChange?: (enabled: boolean) => void;
 }
 
 function getGameplayKey(s: GameState): string {
   return `${s.points.join(",")}|${s.bar.white},${s.bar.black}|${s.home.white},${s.home.black}|${s.remaining.join(",")}|${s.turn}|${s.phase}|${JSON.stringify(s.lastMove)}`;
 }
 
-const FORCED_MOVE_DELAY_MS = 350;
+const FORCED_MOVE_DELAY_MS = 200;
 // Visual lifetime only; automatic moves and turn transitions keep their own timers.
 const TURN_NOTICE_DURATION_MS = 3000;
 
@@ -75,6 +79,8 @@ export default function GameBoard({
   soundEnabled,
   onSoundEnabledChange,
   bracketUrl,
+  autoRoll,
+  onAutoRollChange,
 }: GameBoardProps) {
   const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
   const [selection, setSelection] = useState<{
@@ -203,12 +209,16 @@ export default function GameBoard({
 
   const turnNotice = useMemo<GuidanceMessage | null>(() => {
     if (
-      noMovesMessage?.color === playerColor &&
+      noMovesMessage &&
       noMovesMessage.noticeVisible !== false
     ) {
+      const ownRoll = noMovesMessage.color === playerColor;
+      const blockedOnBar = state.bar[noMovesMessage.color] > 0;
       return {
         variant: "no-moves",
-        textKey: "guidance.noMoves",
+        textKey: blockedOnBar
+          ? ownRoll ? "guidance.barBlocked" : "guidance.barBlockedOpponent"
+          : ownRoll ? "guidance.noMoves" : "guidance.noMovesOpponent",
       };
     }
 
@@ -228,6 +238,7 @@ export default function GameBoard({
     return null;
   }, [
     noMovesMessage,
+    state.bar,
     playerColor,
     autoPointSequenceActive,
     forcedSequenceAllowed,
@@ -298,14 +309,28 @@ export default function GameBoard({
     };
   }, [turnNotice]);
 
-  const displayedDice = noMovesMessage?.dice ?? state.dice;
-  const displayedRemaining = noMovesMessage?.remaining ?? state.remaining;
-  const displayedDiceColor = noMovesMessage?.color ?? state.turn;
+  const followingRoll = useFollowingRoll(state, noMovesMessage);
+  const liveRoll = state.phase === "moving" && state.remaining.length > 0 &&
+    (!followingRoll || state.turn !== followingRoll.color);
+  const displayedDice = liveRoll ? state.dice : followingRoll?.dice ?? noMovesMessage?.dice ?? state.dice;
+  const displayedDiceColor = liveRoll ? state.turn : followingRoll?.color ?? noMovesMessage?.color ?? state.turn;
+  const displayedRemaining = liveRoll ? state.remaining : noMovesMessage?.remaining ?? state.remaining;
+  const diceBelowNotice = Boolean(followingRoll && visibleTurnNotice?.variant === "no-moves");
+  // The next player can roll immediately; stale blocked dice must not cover their controls.
+  const awaitingOwnRoll = noMovesMessage && noMovesMessage.color !== playerColor &&
+    state.turn === playerColor && state.phase === "rolling" && needsToRoll && Boolean(onRoll);
   const showDice =
-    Boolean(noMovesMessage) ||
+    (Boolean(noMovesMessage) && !awaitingOwnRoll) ||
     (state.phase !== "opening_roll" &&
       state.phase === "moving" &&
       state.remaining.length > 0);
+  const onReorder = isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined;
+  const followingDice = followingRoll ? (
+    <DiceOverlay dice={followingRoll.dice} color={followingRoll.color} playerColor={playerColor}
+      remaining={followingRoll.color === playerColor && isMyTurn ? state.remaining : followingRoll.dice}
+      forceActive={followingRoll.color !== playerColor || !isMyTurn}
+      onReorder={followingRoll.color === playerColor ? onReorder : undefined} />
+  ) : null;
 
   function handleSelect(from: Source | null) {
     setSelection({
@@ -362,27 +387,26 @@ export default function GameBoard({
           onOfferDouble={offerDouble}
           autoMove={activeAutoMove}
           turnNotice={visibleTurnNotice}
+          noticeSide={noMovesMessage && noMovesMessage.color !== playerColor ? "right" : "left"}
+          noticeDetails={diceBelowNotice ? followingDice : undefined}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
+          onControlsTargetChange={setControlsTarget}
           inputDisabled={autoConfirmPending}
-        />
-        {showDice && (
-          <div className={styles.boardOverlay} data-testid="dice-overlay">
-            <DiceRow
-              dice={displayedDice}
-              remaining={displayedRemaining}
-              color={displayedDiceColor}
-              onReorder={
-                isMyTurn && !autoPointSequenceActive && !autoConfirmPending
-                  ? reorderDice
-                  : undefined
-              }
-            />
-          </div>
-        )}
-        <GuidanceBanner
-          state={state}
-          playerColor={playerColor}
-          respondToDouble={respondToDouble ?? (() => {})}
+          overlay={
+            <>
+              {showDice && (!diceBelowNotice || liveRoll) && (
+                <BoardHalfOverlay side={displayedDiceColor === playerColor ? "right" : "left"}>
+                  {!liveRoll && followingDice ? followingDice : (
+                    <DiceOverlay dice={displayedDice} remaining={displayedRemaining}
+                      color={displayedDiceColor} playerColor={playerColor}
+                      onReorder={displayedDiceColor === playerColor ? onReorder : undefined} />
+                  )}
+                </BoardHalfOverlay>
+              )}
+              <GuidanceBanner state={state} playerColor={playerColor}
+                respondToDouble={respondToDouble ?? (() => {})} boardAligned />
+            </>
+          }
         />
       </div>
       <SidePanel
@@ -398,8 +422,9 @@ export default function GameBoard({
         onSoundEnabledChange={onSoundEnabledChange}
         controlsTarget={controlsTarget}
         bracketUrl={bracketUrl}
+        autoRoll={autoRoll}
+        onAutoRollChange={onAutoRollChange}
       />
-      <div ref={setControlsTarget} className="relative col-start-3 row-start-1 flex min-h-0 flex-col items-center justify-center gap-2 overflow-y-auto py-2 [scrollbar-width:thin]" data-testid="game-controls" />
     </GameFrame>
   );
 }

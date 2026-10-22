@@ -1,9 +1,11 @@
 import { useI18n } from "../../i18n/I18nProvider";
+import type { ReactNode } from "react";
 import UndoButton from "./buttons/undobutton/UndoButton";
 import ConfirmButton from "./buttons/confirmbutton/ConfirmButton";
+import BoardActionButton from "./buttons/BoardActionButton";
+import BoardHalfOverlay, { type BoardSide } from "./BoardHalfOverlay";
 import GuidanceBanner from "../GuidanceBanner";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
-import styles from "../GameScreen/GameScreen.module.css";
 
 interface Props {
   canUndo: boolean;
@@ -15,60 +17,64 @@ interface Props {
   onRoll?: () => void;
   onDouble?: () => void;
   turnNotice?: GuidanceMessage | null;
+  noticeSide?: BoardSide;
+  noticeDetails?: ReactNode;
 }
 
-export default function BoardActions(props: Props) {
+export default function BoardActions({ noticeSide = "left", ...props }: Props) {
   const { t } = useI18n();
+  const leftAction = props.canUndo ? {
+    id: "board-undo-action",
+    content: <UndoButton onClick={props.onUndo} />,
+  } : props.canRoll ? {
+    id: "board-double-action",
+    content: <BoardActionButton onClick={props.onDouble} disabled={!props.canDouble}
+      title={t("common.offerDouble")} aria-label={t("common.offerDouble")}>
+      {t("common.offerDoubleShort")}
+    </BoardActionButton>,
+  } : null;
+  const rightAction = props.canConfirm ? {
+    id: "board-confirm-action",
+    content: <ConfirmButton onClick={props.onConfirm} />,
+  } : props.canRoll ? {
+    id: "board-roll-action",
+    content: <BoardActionButton variant="primary" onClick={props.onRoll}
+      title={t("common.tapToRoll")} aria-label={t("common.tapToRoll")}>
+      {t("game.rollNow")}
+    </BoardActionButton>,
+  } : null;
+  const noticeAction = noticeSide === "left" ? leftAction : rightAction;
   return (
     <>
-      {(props.turnNotice || props.canUndo || props.canRoll) && (
-        <div
-          className={
-            props.turnNotice ? styles.boardTurnNotice : styles.boardUndoAction
-          }
-          data-testid={
-            !props.turnNotice
-              ? undefined
-              : props.turnNotice.variant === "no-moves"
-                ? "no-moves-overlay"
-                : "forced-move-notice"
-          }
-        >
-          {props.turnNotice && <GuidanceBanner message={props.turnNotice} inline />}
-          <div className={props.turnNotice ? styles.boardNoticeActions : undefined}>
-            {props.canUndo && <UndoButton onClick={props.onUndo} />}
-            {props.canRoll && (
-              <button
-                type="button"
-                className={`${styles.boardTurnButton} ${styles.boardTurnButtonSecondary}`}
-                onClick={props.onDouble}
-                disabled={!props.canDouble}
-                title={t("common.offerDouble")}
-                aria-label={t("common.offerDouble")}
-              >
-                {t("common.offerDoubleShort")}
-              </button>
+      {props.turnNotice && (
+        <BoardHalfOverlay side={noticeSide}>
+          <div
+            className="pointer-events-none relative w-[calc(100%_-_16px)] max-w-56"
+            data-testid={props.turnNotice.variant === "no-moves" ? "no-moves-overlay" : "forced-move-notice"}
+          >
+            <GuidanceBanner message={props.turnNotice} inline />
+            {(props.noticeDetails || noticeAction) && (
+              <div className="absolute top-[calc(100%_+_8px)] left-1/2 flex w-full -translate-x-1/2 flex-col items-center gap-2" data-testid="turn-notice-details">
+                {props.noticeDetails}
+                {noticeAction && (
+                  <div className="flex w-full justify-center" data-testid={noticeAction.id}>
+                    {noticeAction.content}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        </div>
+        </BoardHalfOverlay>
       )}
-      {props.canConfirm && (
-        <div className={styles.boardConfirmAction}>
-          <ConfirmButton onClick={props.onConfirm} />
-        </div>
+      {leftAction && (!props.turnNotice || noticeSide !== "left") && (
+        <BoardHalfOverlay side="left" data-testid={leftAction.id}>
+          {leftAction.content}
+        </BoardHalfOverlay>
       )}
-      {props.canRoll && (
-        <div className={styles.boardRollAction}>
-          <button
-            type="button"
-            className={`${styles.boardTurnButton} ${styles.boardTurnButtonPrimary}`}
-            onClick={props.onRoll}
-            title={t("common.tapToRoll")}
-            aria-label={t("common.tapToRoll")}
-          >
-            {t("game.rollNow")}
-          </button>
-        </div>
+      {rightAction && (!props.turnNotice || noticeSide !== "right") && (
+        <BoardHalfOverlay side="right" data-testid={rightAction.id}>
+          {rightAction.content}
+        </BoardHalfOverlay>
       )}
     </>
   );

@@ -7,6 +7,8 @@ import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage } from "../../types/context";
 import { Board } from "../Board/Board";
 import { SizedBoardFixture } from "../../test-utils/Board.story";
+import appStyles from "../../App.module.css";
+import screenStyles from "./GameScreen.module.css";
 
 function simpleWhiteState(): GameState {
   const points = new Array(24).fill(0);
@@ -41,6 +43,99 @@ interface MountProps {
   onRoll?: () => void;
   respondToDouble?: (accept: boolean) => void;
   noMovesMessage?: NoMovesMessage | null;
+}
+
+for (const viewport of [{ width: 1280, height: 800 }, { width: 844, height: 390 }, { width: 390, height: 844 }]) {
+  for (const viewer of ["white", "black"] as const) {
+    for (const blocked of [false, true]) {
+      test(`dice follow the roller from ${viewer}'s view (${viewport.width}px, blocked=${blocked})`, async ({ mount, page }) => {
+        await page.setViewportSize(viewport);
+        const render = (roller: Color) => {
+          const state = movingState({ phase: blocked ? "rolling" : "moving", turn: blocked ? (roller === "white" ? "black" : "white") : roller, dice: [2, 4], remaining: blocked ? [] : [2, 4] });
+          return (
+            <MockGameWrapper playerColor={viewer} state={state}>
+              <GameBoard state={state} playerColor={viewer} makeMove={() => {}}
+                noMovesMessage={blocked ? { color: roller, dice: [2, 4], remaining: [2, 4] } : null} />
+            </MockGameWrapper>
+          );
+        };
+        const component = await mount(render(viewer));
+        const dice = component.getByTestId("dice-overlay");
+        await expect(dice).toHaveAttribute("data-roll-owner", "self");
+        const right = await dice.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          return getComputedStyle(element).getPropertyValue("--game-rotated").trim() === "1"
+            ? box.y + box.height / 2 : box.x + box.width / 2;
+        });
+        await component.update(render(viewer === "white" ? "black" : "white"));
+        await expect(dice).toHaveAttribute("data-roll-owner", "opponent");
+        const left = await dice.evaluate(element => {
+          const box = element.getBoundingClientRect();
+          return getComputedStyle(element).getPropertyValue("--game-rotated").trim() === "1"
+            ? box.y + box.height / 2 : box.x + box.width / 2;
+        });
+        expect(left).toBeLessThan(right);
+      });
+    }
+  }
+}
+
+for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }, { width: 474, height: 330 }]) {
+  test(`phone overlays use actual half centers and retain their vertical center (${viewport.width}px)`, async ({ mount, page }) => {
+    await page.setViewportSize(viewport);
+    const render = (mode: "undo-dice" | "confirm" | "double" | "blocked") => {
+      const state = movingState({
+        dice: [2, 4], remaining: mode === "confirm" ? [] : [4],
+        lastMove: [{ from: 23, to: 21 }], moveHistory: [simpleWhiteState()],
+        ...(mode === "double" ? { phase: "doubling_offered" as const, doubleOfferedBy: "black" as const } : {}),
+        ...(mode === "blocked" ? { phase: "rolling" as const, remaining: [], lastMove: null, moveHistory: null } : {}),
+      });
+      return (
+        <div className={appStyles.gameContent}>
+          <div className={screenStyles.container}>
+            <MockGameWrapper state={state} playerColor="white">
+              <GameBoard state={state} playerColor="white" makeMove={() => {}}
+                undoMove={() => {}} endTurn={() => {}} respondToDouble={() => {}}
+                noMovesMessage={mode === "blocked" ? { color: "black", dice: [2, 4], remaining: [2, 4], noticeVisible: true } : null} />
+            </MockGameWrapper>
+          </div>
+        </div>
+      );
+    };
+    const component = await mount(render("undo-dice"));
+    for (const mode of ["undo-dice", "confirm", "double", "blocked"] as const) {
+      if (mode !== "undo-dice") await component.update(render(mode));
+      const errors = await component.getByTestId("board-overlays").evaluate(layer => {
+        const board = layer.closest('[data-testid="board-inner"]')!;
+        const rotated = getComputedStyle(layer).getPropertyValue("--game-rotated").trim() === "1";
+        function box(element: Element) {
+          const b = element.getBoundingClientRect();
+          return rotated ? { x: b.y, y: -b.right, w: b.height, h: b.width } : { x: b.x, y: b.y, w: b.width, h: b.height };
+        }
+        const halves = { left: box(board.querySelector('[data-testid="board-half-left"]')!), right: box(board.querySelector('[data-testid="board-half-right"]')!) };
+        return [...layer.querySelectorAll('button,[data-testid="dice-overlay"],[data-testid="no-moves-overlay"]')].map(element => {
+          const side = element.closest('[data-overlay-side]')?.getAttribute("data-overlay-side") as "left" | "right";
+          const a = box(element), b = halves[side];
+          return { dx: Math.abs(a.x + a.w / 2 - b.x - b.w / 2), dy: Math.abs(a.y + a.h / 2 - b.y - b.h / 2), within: a.x >= b.x && a.x + a.w <= b.x + b.w + 0.5, height: a.h, button: element.tagName === "BUTTON" };
+        });
+      });
+      expect(errors.length).toBeGreaterThan(0);
+      for (const item of errors) {
+        expect(item.dx).toBeLessThan(1);
+        expect(item.dy).toBeLessThan(1);
+        expect(item.within).toBe(true);
+        if (item.button) expect(item.height).toBeGreaterThanOrEqual(44);
+      }
+      if (mode === "blocked") {
+        const notice = await component.getByTestId("no-moves-overlay").boundingBox();
+        const dice = await component.getByTestId("dice-overlay").boundingBox();
+        expect(
+          notice!.x >= dice!.x + dice!.width || dice!.x >= notice!.x + notice!.width ||
+          notice!.y >= dice!.y + dice!.height || dice!.y >= notice!.y + notice!.height,
+        ).toBe(true);
+      }
+    }
+  });
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
@@ -278,13 +373,13 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   expect(diceBox.x + diceBox.width / 2).toBeGreaterThan(boardMiddle);
   expect(moveCalls).toHaveLength(0);
 
-  await page.clock.runFor(349);
+  await page.clock.runFor(199);
   expect(moveCalls).toHaveLength(0);
   await page.clock.runFor(1);
   await expect.poll(() => moveCalls.length).toBe(1);
   expect(moveCalls[0]).toEqual([23, 19]);
 
-  await page.clock.runFor(2649);
+  await page.clock.runFor(2799);
   await expect(component.getByTestId("forced-move-notice")).toBeVisible();
   await page.clock.runFor(1);
   await expect(component.getByTestId("forced-move-notice")).toHaveCount(0);
@@ -312,7 +407,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }
     expect(geometry.x).toBeCloseTo(geometry.targetX, 0);
     expect(geometry.y).toBeCloseTo(geometry.targetY, 0);
     await expect(notice.locator("span").first()).toHaveCSS("pointer-events", "none");
-    expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(12);
+    expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(11);
     const undo = component.getByTitle("Undo last move");
     await expect(undo).toBeVisible();
     const noticeBox = await notice.boundingBox();
@@ -637,6 +732,81 @@ test("dice overlay is visible to the opponent when it's their turn", async ({ mo
   await expect(component.getByTestId("dice-overlay")).toBeVisible();
   await expect(component.getByTestId("die")).toHaveCount(2);
 });
+
+for (const playerColor of ["white", "black"] as const) {
+  test(`blocked bar dice and notice are visible to ${playerColor}`, async ({ mount }) => {
+    const state = movingState({
+      phase: "rolling", turn: "black", bar: { white: 1, black: 0 },
+      dice: [2, 4], remaining: [],
+    });
+    const component = await mountBoard(mount, {
+      state, playerColor,
+      noMovesMessage: { color: "white", dice: [2, 4], remaining: [2, 4] },
+      needsToRoll: playerColor === "black",
+      onRoll: () => {},
+    });
+    const dice = component.getByTestId("dice-overlay").getByTestId("die");
+    await expect(dice).toHaveCount(playerColor === "white" ? 2 : 0);
+    if (playerColor === "white") {
+      await expect(dice.nth(0).locator("span")).toHaveCount(2);
+      await expect(dice.nth(1).locator("span")).toHaveCount(4);
+    }
+    await expect(component.getByTestId("no-moves-overlay")).toContainText(
+      playerColor === "white"
+        ? "No legal entry from the bar"
+        : "Your opponent cannot enter from the bar",
+    );
+    await expect(component.getByTitle("Tap to roll")).toHaveCount(playerColor === "black" ? 1 : 0);
+  });
+}
+
+for (const blockedColor of ["white", "black"] as const) {
+  for (const viewerRole of ["blocked", "next-player"] as const) {
+    for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
+      test(`next roll survives completed moves below the bar notice (${blockedColor}, ${viewerRole}, ${viewport.width}px)`, async ({ mount, page }) => {
+        await page.setViewportSize(viewport);
+        const nextColor = blockedColor === "white" ? "black" : "white";
+        const viewer = viewerRole === "blocked" ? blockedColor : nextColor;
+        const notice: NoMovesMessage = { id: "room:1", color: blockedColor, dice: [2, 4], remaining: [2, 4] };
+        const bar = { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 };
+        const rolled = movingState({ ...newGame(), phase: "moving", turn: nextColor, dice: [6, 3], remaining: [6, 3], bar });
+        const finished: GameState = { ...rolled, version: 2, phase: "rolling", turn: blockedColor, dice: [], remaining: [] };
+        const render = (state: GameState, message: NoMovesMessage | null) => (
+          <MockGameWrapper state={state} playerColor={viewer}>
+            <GameBoard state={state} playerColor={viewer} makeMove={() => {}} noMovesMessage={message} />
+          </MockGameWrapper>
+        );
+        const component = await mount(render(rolled, { ...notice, noticeVisible: false }));
+        await expect(component.getByTestId("dice-overlay")).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "opponent" : "self");
+        await component.update(render(finished, { ...notice, noticeVisible: true }));
+        const details = component.getByTestId("turn-notice-details");
+        const dice = details.getByTestId("die");
+        await expect(dice).toHaveCount(2);
+        await expect(dice.nth(0).locator("span")).toHaveCount(6);
+        await expect(dice.nth(1).locator("span")).toHaveCount(3);
+        const positions = await details.evaluate(element => {
+          const parent = element.parentElement!;
+          const rotated = getComputedStyle(element).getPropertyValue("--game-rotated").trim() === "1";
+          const notice = parent.querySelector('[data-testid="guidance-text"]')!.getBoundingClientRect();
+          const dice = element.querySelector('[data-testid="dice-overlay"]')!.getBoundingClientRect();
+          return rotated ? { noticeBottom: -notice.left, diceTop: -dice.right }
+            : { noticeBottom: notice.bottom, diceTop: dice.top };
+        });
+        expect(positions.diceTop).toBeGreaterThanOrEqual(positions.noticeBottom);
+        if (viewerRole === "blocked") {
+          await component.update(render({ ...finished, phase: "moving", dice: [5, 1], remaining: [5, 1] }, notice));
+          await expect(component.locator('[data-testid="dice-overlay"][data-roll-owner="self"]')).toBeVisible();
+          await expect(details.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
+        }
+        await component.update(render(finished, null));
+        await expect(component.getByTestId("turn-notice-details")).toHaveCount(0);
+        await expect(component.getByTestId("dice-overlay")).toHaveCount(0);
+        await component.update(render(finished, { ...notice, id: "room:2" }));
+        await expect(component.getByTestId("turn-notice-details")).toHaveCount(0);
+      });
+    }
+  }
+}
 
 test("no dice overlay when phase is not moving", async ({ mount }) => {
   const state = movingState({ phase: "rolling", dice: [], remaining: [] });
@@ -987,11 +1157,11 @@ async function assertBearOffTray(
 ) {
   const tray = component.getByTestId(testId);
   await expect(tray).toBeAttached();
-  const countEl = tray.locator('[class*="count"]');
+  const countEl = tray.locator('[data-borne-off-count]');
   await expect(countEl).toHaveText(String(expected.count));
-  const whitePips = tray.locator('[class*="pipWhite"]');
-  const blackPips = tray.locator('[class*="pipBlack"]');
-  const allPips = tray.locator('[class*="checkerPip"]');
+  const whitePips = tray.locator('[data-borne-off-checker="white"]');
+  const blackPips = tray.locator('[data-borne-off-checker="black"]');
+  const allPips = tray.locator('[data-borne-off-checker]');
   await expect(allPips).toHaveCount(expected.count);
   if (expected.color === "white") {
     await expect(whitePips).toHaveCount(expected.count);
@@ -1015,7 +1185,7 @@ async function getTrayGeometry(component: Awaited<ReturnType<ComponentFixtures["
     };
     const top = getRect('[data-testid="bear-off-top"]');
     const bottom = getRect('[data-testid="bear-off-bottom"]');
-    const off = getRect('[data-point-idx="off"]');
+    const off = getRect('[data-testid="bear-off-column"]');
     if (top.cx === bottom.cx && top.cy === bottom.cy) throw new Error("trays share rect");
     return { top, bottom, off };
   });
@@ -1075,6 +1245,42 @@ test("bear-off rendering: black viewer sees white on top (2) and black on bottom
   await assertBearOffTray(component, "bear-off-bottom", { count: 3, color: "black" });
   const { top, bottom } = await getTrayGeometry(component);
   expect(top.cy, "top tray should be physically above bottom").toBeLessThan(bottom.cy - 20);
+});
+
+test("action controls sit between separate bear-off targets without submitting a move", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const state = validBearOffWhiteState(1);
+  let moves = 0;
+  let toggles = 0;
+  const component = await mount(
+    <MockGameWrapper state={state}>
+      <GameBoard state={state} playerColor="white" makeMove={() => moves++}
+        autoRoll={false} onAutoRollChange={() => toggles++}
+        bracketUrl="https://example.invalid/bracket" />
+    </MockGameWrapper>,
+  );
+  const column = component.getByTestId("bear-off-column");
+  const controls = column.getByTestId("game-controls");
+  await expect(controls.getByTestId("auto-roll-toggle")).toBeVisible();
+  await expect(column.locator('button button')).toHaveCount(0);
+  await expect(controls.locator('[data-point-idx]')).toHaveCount(0);
+  await expect(column.getByTestId("bear-off-top")).toBeDisabled();
+  await expect(column.getByTestId("bear-off-bottom")).toBeEnabled();
+  const layout = await column.evaluate(element => {
+    const top = element.querySelector<HTMLElement>('[data-testid="bear-off-top"]')!;
+    const middle = element.querySelector<HTMLElement>('[data-testid="game-controls"]')!;
+    const bottom = element.querySelector<HTMLElement>('[data-testid="bear-off-bottom"]')!;
+    return {topEnd: top.offsetTop + top.offsetHeight, middleStart: middle.offsetTop,
+      middleEnd: middle.offsetTop + middle.offsetHeight, bottomStart: bottom.offsetTop};
+  });
+  expect(layout.topEnd).toBeLessThanOrEqual(layout.middleStart);
+  expect(layout.middleEnd).toBeLessThanOrEqual(layout.bottomStart);
+  await controls.getByTestId("auto-roll-toggle").click();
+  await expect.poll(() => toggles).toBe(1);
+  await controls.getByRole("button", {name: "Match control"}).click();
+  await expect(component.getByTestId("match-control-drawer")).toBeVisible();
+  expect(moves).toBe(0);
 });
 
 test("bear-off rendering: white viewer sees black on top (3) and white on bottom (2)", async ({ mount }) => {
@@ -1288,7 +1494,7 @@ test("opponent white bears off observed by black viewer lands in top tray (anima
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for opponent white bear-off");
     expect(cap.color).toBe("white");
-    const topPip = component.getByTestId("bear-off-top").locator('[class*="checkerPip"]').last();
+    const topPip = component.getByTestId("bear-off-top").locator('[data-borne-off-checker]').last();
     const topPipBox = await topPip.boundingBox();
     if (!topPipBox) throw new Error("missing top tray pip");
     const expected = { cx: topPipBox.x + topPipBox.width / 2, cy: topPipBox.y + topPipBox.height / 2 };
@@ -1323,7 +1529,7 @@ test("opponent black bears off observed by white viewer lands in top tray (anima
     const cap = (await recorder.getCapture())!;
     if (!cap) throw new Error("missing flyer capture for opponent black bear-off");
     expect(cap.color).toBe("black");
-    const topPip = component.getByTestId("bear-off-top").locator('[class*="checkerPip"]').last();
+    const topPip = component.getByTestId("bear-off-top").locator('[data-borne-off-checker]').last();
     const topPipBox = await topPip.boundingBox();
     if (!topPipBox) throw new Error("missing top tray pip");
     const expected = { cx: topPipBox.x + topPipBox.width / 2, cy: topPipBox.y + topPipBox.height / 2 };
@@ -1595,7 +1801,7 @@ test("deterministic bar entries auto-play one checker at a time", async ({ mount
     </MockGameWrapper>,
   );
   expect(calls).toHaveLength(0);
-  await page.clock.runFor(349);
+  await page.clock.runFor(199);
   expect(calls).toHaveLength(0);
   await page.clock.runFor(1);
   await expect.poll(() => calls.length).toBe(1);

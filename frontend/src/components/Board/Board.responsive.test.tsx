@@ -65,7 +65,7 @@ for (const vp of VIEWPORTS) {
     const component = await mountBoard(mount, busyState());
 
     const points = component.locator("[data-point-idx]");
-    await expect(points).toHaveCount(26); // 24 points + bar + off
+    await expect(points).toHaveCount(27); // 24 points + bar + two separate off trays
 
     const pointCells = component.locator('[data-point-idx]:not([data-point-idx="bar"]):not([data-point-idx="off"])');
     await expect(pointCells).toHaveCount(24);
@@ -86,7 +86,7 @@ for (const vp of VIEWPORTS) {
     const component = await mountBoard(mount, busyState());
 
     const bar = component.locator('[data-point-idx="bar"]');
-    const off = component.locator('[data-point-idx="off"]');
+    const off = component.getByTestId("bear-off-column");
     await expect(bar).toBeVisible();
     await expect(off).toBeVisible();
 
