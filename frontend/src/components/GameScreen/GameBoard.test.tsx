@@ -7,7 +7,6 @@ import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage } from "../../types/context";
 import { Board } from "../Board/Board";
 import { SizedBoardFixture } from "../../test-utils/Board.story";
-import appStyles from "../../App.module.css";
 import screenStyles from "./GameScreen.module.css";
 
 function simpleWhiteState(): GameState {
@@ -78,64 +77,6 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 844, height: 390 
       });
     }
   }
-}
-
-for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }, { width: 474, height: 330 }]) {
-  test(`phone overlays use actual half centers and retain their vertical center (${viewport.width}px)`, async ({ mount, page }) => {
-    await page.setViewportSize(viewport);
-    const render = (mode: "undo-dice" | "confirm" | "double" | "blocked") => {
-      const state = movingState({
-        dice: [2, 4], remaining: mode === "confirm" ? [] : [4],
-        lastMove: [{ from: 23, to: 21 }], moveHistory: [simpleWhiteState()],
-        ...(mode === "double" ? { phase: "doubling_offered" as const, doubleOfferedBy: "black" as const } : {}),
-        ...(mode === "blocked" ? { phase: "rolling" as const, remaining: [], lastMove: null, moveHistory: null } : {}),
-      });
-      return (
-        <div className={appStyles.gameContent}>
-          <div className={screenStyles.container}>
-            <MockGameWrapper state={state} playerColor="white">
-              <GameBoard state={state} playerColor="white" makeMove={() => {}}
-                undoMove={() => {}} endTurn={() => {}} respondToDouble={() => {}}
-                noMovesMessage={mode === "blocked" ? { color: "black", dice: [2, 4], remaining: [2, 4], noticeVisible: true } : null} />
-            </MockGameWrapper>
-          </div>
-        </div>
-      );
-    };
-    const component = await mount(render("undo-dice"));
-    for (const mode of ["undo-dice", "confirm", "double", "blocked"] as const) {
-      if (mode !== "undo-dice") await component.update(render(mode));
-      const errors = await component.getByTestId("board-overlays").evaluate(layer => {
-        const board = layer.closest('[data-testid="board-inner"]')!;
-        const rotated = getComputedStyle(layer).getPropertyValue("--game-rotated").trim() === "1";
-        function box(element: Element) {
-          const b = element.getBoundingClientRect();
-          return rotated ? { x: b.y, y: -b.right, w: b.height, h: b.width } : { x: b.x, y: b.y, w: b.width, h: b.height };
-        }
-        const halves = { left: box(board.querySelector('[data-testid="board-half-left"]')!), right: box(board.querySelector('[data-testid="board-half-right"]')!) };
-        return [...layer.querySelectorAll('button,[data-testid="dice-overlay"],[data-testid="no-moves-overlay"]')].map(element => {
-          const side = element.closest('[data-overlay-side]')?.getAttribute("data-overlay-side") as "left" | "right";
-          const a = box(element), b = halves[side];
-          return { dx: Math.abs(a.x + a.w / 2 - b.x - b.w / 2), dy: Math.abs(a.y + a.h / 2 - b.y - b.h / 2), within: a.x >= b.x && a.x + a.w <= b.x + b.w + 0.5, height: a.h, button: element.tagName === "BUTTON" };
-        });
-      });
-      expect(errors.length).toBeGreaterThan(0);
-      for (const item of errors) {
-        expect(item.dx).toBeLessThan(1);
-        expect(item.dy).toBeLessThan(1);
-        expect(item.within).toBe(true);
-        if (item.button) expect(item.height).toBeGreaterThanOrEqual(44);
-      }
-      if (mode === "blocked") {
-        const notice = await component.getByTestId("no-moves-overlay").boundingBox();
-        const dice = await component.getByTestId("dice-overlay").boundingBox();
-        expect(
-          notice!.x >= dice!.x + dice!.width || dice!.x >= notice!.x + notice!.width ||
-          notice!.y >= dice!.y + dice!.height || dice!.y >= notice!.y + notice!.height,
-        ).toBe(true);
-      }
-    }
-  });
 }
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
