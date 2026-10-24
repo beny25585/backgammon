@@ -178,7 +178,7 @@ test("auto roll can be switched off before its timer and preserves its preferenc
   await page.clock.runFor(1000);
   expect(rolls).toBe(0);
   await toggle.click();
-  await page.clock.runFor(449);
+  await page.clock.runFor(349);
   expect(rolls).toBe(0);
   await page.clock.runFor(1);
   await expect.poll(() => rolls).toBe(1);
@@ -220,7 +220,7 @@ test("auto roll proceeds while the opponent's blocked notice is visible", async 
   );
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
   await expect(component.getByTitle("Tap to roll")).toBeVisible();
-  await page.clock.runFor(449);
+  await page.clock.runFor(349);
   expect(rolls).toBe(0);
   await page.clock.runFor(1);
   await expect.poll(() => rolls).toBe(1);

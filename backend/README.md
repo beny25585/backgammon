@@ -6,6 +6,18 @@ Reviewed against local code: 2026-09-19. Dependencies declare Django 4.2.7, Chan
 
 Use a separate Python environment in this directory, install requirements.txt and apply migrations. Start ASGI with:
 
+Before migration or startup, configure a PostgreSQL `DATABASE_URL` in the private
+`backend/.env` or process environment; `.env.example` shows its format. The URL
+is required both locally and on the server. Missing configuration, SQLite URLs
+and other database backends fail during settings loading. There is no database
+file fallback. Use a distinct PostgreSQL database/login for the game service;
+the web process and `run_tasks` must receive the same URL. The Docker profile
+continues to use its explicitly supplied PostgreSQL URL.
+
+Changing configuration does not import, convert or delete an existing SQLite
+file. Any legacy-data transfer is a separate operation. Tests must use a
+disposable PostgreSQL test database and a login allowed to create it.
+
 ~~~sh
 pip install -r requirements.txt
 python manage.py migrate

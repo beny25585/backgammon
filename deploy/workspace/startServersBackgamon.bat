@@ -1,13 +1,13 @@
 @echo off
 setlocal
-title Backgammon Development Environment
+title Backgammon Docker Environment
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0startServersBackgamon.ps1" %*
 set "LauncherExitCode=%ERRORLEVEL%"
 
 if not "%LauncherExitCode%"=="0" (
     echo.
-    echo Development environment stopped with an error.
+    echo Docker environment stopped with an error.
     pause
 )
 

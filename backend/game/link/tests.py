@@ -897,7 +897,7 @@ class ResultBodyTests(ResultTestBase):
         self.assertEqual(set(body), {
             "v", "tournament_id", "fixture_id", "room_id", "match_id", "status",
             "target_points", "seats", "score", "winner_seat", "end_reason", "finished_at",
-            "match_details"})
+            "match_details", "replay"})
         self.assertEqual(body["v"], 1)
         self.assertEqual(body["tournament_id"], 17)
         self.assertEqual(body["fixture_id"], 482)
@@ -907,9 +907,11 @@ class ResultBodyTests(ResultTestBase):
         self.assertEqual(body["end_reason"], "bear_off")
         self.assertEqual(body["match_details"]["winner"], "white")
         self.assertEqual(body["match_details"]["final_cube"], 1)
-        self.assertEqual(body["match_details"]["games"][0]["winner"], "white")
-        self.assertEqual(body["match_details"]["games"]
-                         [0]["points_awarded"], 1)
+        self.assertNotIn("games", body["match_details"])
+        match = Match.objects.get(pk=body['match_id'])
+        self.assertEqual(match.games[0]["winner"], "white")
+        self.assertEqual(match.games[0]["points_awarded"], 1)
+        self.assertEqual(body['replay']['game_count'], 1)
         self.assertRegex(body["finished_at"],
                          r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\Z")
 
@@ -1009,8 +1011,8 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
         self.assertEqual(sent["seats"], {"p1": "white", "p2": "black"})
         self.assertEqual(sent["score"], {"p1": 1, "p2": 0})
         self.assertEqual(sent["winner_seat"], "p1")
-        self.assertEqual(sent["match_details"]["games"]
-                         [0]["points_awarded"], 1)
+        self.assertNotIn("games", sent["match_details"])
+        self.assertEqual(Match.objects.get(pk=sent['match_id']).games[0]["points_awarded"], 1)
 
 
 @link_settings

@@ -186,16 +186,22 @@ def build_result_body(link, room, match=None, *, status=STATUS_COMPLETED,
         'winner_seat': winner_seat,
         'end_reason': end_reason,
         'finished_at': _iso_utc(finished_at),
-        'match_details': _match_details(match) if match is not None else None,
+        'match_details': _match_details(match, include_games=False) if match is not None else None,
+        **({'replay': _replay_reference(match)} if match is not None else {}),
     }
 
 
-def _match_details(match):
+def _replay_reference(match):
+    from .replay import replay_reference
+    return replay_reference(match)
+
+
+def _match_details(match, *, include_games=True):
     """
     Return the detailed, read-only audit data the tournament UI can show later.
 
-    The tournament receiver treats unknown fields as audit metadata and stores the whole result
-    body in GameLink.raw_result, so adding this block is backward-compatible.
+    New callbacks carry the fixed-size summary only. Full history remains in Match.games and is
+    read separately through the signed replay channel; the default also supports old-body recovery.
     """
     return {
         'duration_seconds': match.duration_seconds,
@@ -204,7 +210,7 @@ def _match_details(match):
         'black_score': match.black_score,
         'winner': match.winner,
         'target_points': match.target_points,
-        'games': match.games,
+        **({'games': match.games} if include_games else {}),
         'end_reason': match.end_reason,
         'first_player': match.first_player,
         'opening_roll': match.opening_roll,

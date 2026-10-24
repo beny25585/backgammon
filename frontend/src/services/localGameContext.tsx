@@ -71,7 +71,7 @@ interface LocalGameProviderProps {
   onQuitMatch?: () => void;
 }
 
-const BOT_DELAY = 1000;
+const BOT_DELAY = 1500;
 
 export function LocalGameProvider({
   children,
@@ -261,7 +261,8 @@ export function LocalGameProvider({
     saveMatch({
       white_player_id: null,
       black_player_id: null,
-      match_type: "ai",
+      match_type: botColor ? "ai" : "local",
+      owner_color: humanColor,
       target_points: MATCH_TARGET,
       white_score: matchScore.white,
       black_score: matchScore.black,
@@ -282,7 +283,7 @@ export function LocalGameProvider({
         },
       ],
     }).catch(() => {});
-  }, [matchWinner, matchScore, state, MATCH_TARGET]);
+  }, [matchWinner, matchScore, state, MATCH_TARGET, botColor, humanColor]);
 
   // ── Bot turn automation ──────────────────────────────────────────
 

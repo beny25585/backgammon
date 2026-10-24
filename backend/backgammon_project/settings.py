@@ -3,7 +3,7 @@ import os
 import sys
 from pathlib import Path
 from decouple import config
-import dj_database_url
+from backgammon_project.database import postgresql_database
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -59,12 +59,7 @@ WSGI_APPLICATION = 'backgammon_project.wsgi.application'
 ASGI_APPLICATION = 'backgammon_project.asgi.application'
 GAME_WS_DB_WORKERS = config('GAME_WS_DB_WORKERS', default=4, cast=int)
 
-DATABASES = {
-    'default': dj_database_url.parse(config('DATABASE_URL', default='sqlite:///db.sqlite3'))
-
-}
-if DATABASES['default']['ENGINE'] == 'django.db.backends.sqlite3':
-    DATABASES['default']['ENGINE'] = 'game.db.backends.sqlite3'
+DATABASES = {'default': postgresql_database(config('DATABASE_URL', default=''))}
 
 AUTH_PASSWORD_VALIDATORS = []
 

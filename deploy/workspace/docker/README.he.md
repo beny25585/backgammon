@@ -12,11 +12,15 @@
 .\startDockerBackgammon.bat
 ```
 
-אפשר גם להפעיל דרך הקובץ הקיים:
+הקובץ הקיים מפעיל כעת Docker כברירת מחדל, ללא תהליכי יישום ב־Windows:
 
 ```powershell
-.\startServersBackgamon.bat -Docker
+.\startServersBackgamon.bat
 ```
+
+גם הקובץ ב־`Backgammon Game/deploy/workspace` מאתר את תיקיית הפרויקט הנכונה.
+הדגל הישן `-Docker` נשאר נתמך בקיצורי דרך קיימים. אפשר להעביר `-Action status`,
+`-Action stop`, `-Action logs` ו־`-SkipBuild` דרך אותו קובץ BAT.
 
 ההפעלה הראשונה בונה תמונות Docker, כולל Open Sage בגרסת המקור המקובעת
 ובבנייה שתואמת גם מעבדים ללא AVX2. היא יכולה לקחת כמה דקות.

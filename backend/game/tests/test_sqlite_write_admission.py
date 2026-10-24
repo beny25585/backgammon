@@ -5,10 +5,15 @@ from threading import Event, Thread
 import unittest
 
 from django.db import OperationalError
+from django.conf import settings
 
 from game.db.backends.sqlite3.base import DatabaseWrapper
 
 
+@unittest.skipUnless(
+    settings.DATABASES['default']['ENGINE'].endswith('.sqlite3'),
+    'Legacy SQLite backend is inactive; the supported runtime is PostgreSQL.',
+)
 class SQLiteWriteAdmissionTests(unittest.TestCase):
     def connection(self, path, timeout=2):
         return DatabaseWrapper({

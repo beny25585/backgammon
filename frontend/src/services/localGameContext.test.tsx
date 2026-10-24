@@ -120,6 +120,8 @@ test("one-point local result caps the displayed score while saving all awarded p
   await expect(component.getByTestId("local-score")).toHaveText('{"white":0,"black":4}');
   await expect(component.getByTestId("local-result")).toContainText('"points":4');
   expect((await savedMatch).postDataJSON()).toMatchObject({
+    match_type: "local",
+    owner_color: "white",
     target_points: 1,
     white_score: 0,
     black_score: 4,
@@ -238,13 +240,13 @@ for (const blockedColor of ["white", "black"] as const) {
       </LocalGameProvider>,
     );
     if (blockedColor === "white") await component.getByTestId("roll").click();
-    else await page.clock.runFor(1000);
+    else await page.clock.runFor(1500);
     await expect(component.getByTestId("no-moves")).toHaveText("true");
     if (blockedColor === "white") {
-      await page.clock.runFor(1000);
+      await page.clock.runFor(1500);
       await expect.poll(() => requests).toBe(2);
     }
-    await page.clock.runFor(blockedColor === "white" ? 1999 : 2999);
+    await page.clock.runFor(blockedColor === "white" ? 1499 : 2999);
     await expect(component.getByTestId("no-moves")).toHaveText("true");
     expect(requests).toBe(blockedColor === "white" ? 2 : 1);
     await page.clock.runFor(1);
@@ -284,9 +286,9 @@ for (const blockedColor of ["white", "black"] as const) {
     );
     const component = await mount(render(initial));
     if (blockedColor === "white") await component.getByTestId("roll").click();
-    else await page.clock.runFor(1000);
+    else await page.clock.runFor(1500);
     await expect(component.locator('[data-roll-kind="blocked"]')).toHaveAttribute("data-roll-color", blockedColor);
-    if (blockedColor === "white") await page.clock.runFor(1000);
+    if (blockedColor === "white") await page.clock.runFor(1500);
     else await component.getByTestId("roll").click();
     await expect.poll(() => requests).toBe(2);
     await expect(component.locator('[data-roll-kind="following"]')).toBeVisible();
@@ -302,7 +304,7 @@ for (const blockedColor of ["white", "black"] as const) {
     await expect(blocked.getByTestId("die").nth(1).locator("span")).toHaveCount(2);
     await expect(following.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
     await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
-    await page.clock.runFor(blockedColor === "white" ? 1999 : 2999);
+    await page.clock.runFor(blockedColor === "white" ? 1499 : 2999);
     await expect(blocked).toBeVisible();
     await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toBeVisible();
     await page.clock.runFor(1);

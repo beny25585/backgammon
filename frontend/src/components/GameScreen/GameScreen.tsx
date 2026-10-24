@@ -295,7 +295,7 @@ export default function GameScreen({
   useEffect(() => {
     if (!autoRoll || !regularRollKey || rollPaused || error) return;
     // Leave a short window to offer a double or switch automatic rolling off.
-    const timer = window.setTimeout(handleRoll, 450);
+    const timer = window.setTimeout(handleRoll, 350);
     return () => window.clearTimeout(timer);
   }, [autoRoll, regularRollKey, rollPaused, error, handleRoll]);
 

@@ -52,3 +52,22 @@ class MatchSerializer(serializers.ModelSerializer):
                   'match_type', 'target_points', 'white_score', 'black_score', 'winner', 'games',
                   'end_reason', 'first_player', 'opening_roll', 'final_cube', 'hits',
                   'doubles_offered', 'doubles_accepted', 'clock_remaining')
+
+
+class LocalMatchSerializer(serializers.Serializer):
+    """Browser-authored history; online records are written by finalization only."""
+
+    match_type = serializers.ChoiceField(choices=('local', 'ai'))
+    owner_color = serializers.ChoiceField(choices=('white', 'black'), default='white')
+    target_points = serializers.IntegerField(min_value=1, default=7)
+    white_score = serializers.IntegerField(min_value=0, default=0)
+    black_score = serializers.IntegerField(min_value=0, default=0)
+    winner = serializers.ChoiceField(choices=('white', 'black'), allow_null=True, default=None)
+    games = serializers.ListField(child=serializers.DictField(), default=list)
+    duration_seconds = serializers.IntegerField(min_value=0, allow_null=True, default=None)
+
+    def validate_games(self, games):
+        for game in games:
+            if 'transcript' in game and not isinstance(game['transcript'], list):
+                raise serializers.ValidationError('Game transcripts must be lists.')
+        return games

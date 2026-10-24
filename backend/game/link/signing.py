@@ -137,7 +137,12 @@ def _validate_claims(payload):
         from decimal import Decimal, InvalidOperation
         if payload['format'] not in ('match', 'money'):
             raise TicketError('unknown game format')
-        if type(payload.get('cube_max')) is not int or payload['cube_max'] not in (1, 2, 4, 8, 16, 32, 64):
+        cube_max = payload.get('cube_max')
+        # Money contracts already derive their funded cap dynamically, up to 2^20.
+        # Match contracts retain their configured, fixed cube choices.
+        valid_cube = (type(cube_max) is int and 1 <= cube_max <= (1 << 20)
+                      and cube_max & (cube_max - 1) == 0)
+        if not valid_cube or (payload['format'] == 'match' and cube_max > 64):
             raise TicketError('invalid cube limit')
         if type(payload.get('jacoby')) is not bool or type(payload.get('dbl')) is not bool:
             raise TicketError('invalid format rules')

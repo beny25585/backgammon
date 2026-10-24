@@ -2,8 +2,8 @@ from django.db import transaction
 
 from .link.models import TournamentLink as LinkModel
 from .dice import fetch_dice, fetch_opening_dice,  DiceServiceError
-from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer
-from .models import GameRoom, GameState, Match, Player, RoomPlayer
+from .serializers import RegisterSerializer, UserSerializer, MatchSerializer, PlayerSerializer, LocalMatchSerializer
+from .models import AiSession, GameRoom, GameState, Match, Player, RoomPlayer
 
 from .game_service import finalize_room, RoomCancellationError, cancel_waiting_room
 from .engine import BackgammonEngine
@@ -164,6 +164,10 @@ def join_room(request):
         return Response({'error': 'Already in a room'}, status=409)
     try:
         room = GameRoom.objects.select_for_update().get(code=code, status='waiting')
+        # The room lock also guards provisioning; a code never grants a linked
+        # seat or admission to server-owned practice.
+        if LinkModel.objects.filter(room_id=room.pk).exists() or AiSession.objects.filter(room_id=room.pk).exists():
+            return Response({'error': 'This room requires signed admission'}, status=403)
         if expire_unstarted_room(room.pk) == 'cancelled':
             return Response({'error': 'Room expired'}, status=410)
     except GameRoom.DoesNotExist:
@@ -307,28 +311,35 @@ def cancel_room(request):
 
 @api_view(['POST'])
 def save_match(request):
-    user = request.user
     data = request.data
-
-    def resolve_player_id(raw_id):
-        if raw_id is None:
-            return None
-        # Frontend sends a User id (from JWT). Resolve to the Player.
-        try:
-            return Player.objects.get(user_id=int(raw_id)).id
-        except (Player.DoesNotExist, ValueError, TypeError):
-            return None
-
+    if not isinstance(data, dict):
+        return Response({'error': 'Expected an object'}, status=400)
+    if data.get('match_type') not in ('local', 'ai'):
+        return Response({'error': 'Online match records are server-owned'}, status=403)
+    # Older local clients send null IDs. Accept those, but never resolve an
+    # arbitrary supplied user into another account's history.
+    supplied_colors = []
+    for color in ('white', 'black'):
+        raw_id = data.get(f'{color}_player_id')
+        if raw_id is not None:
+            if isinstance(raw_id, bool) or str(raw_id) != str(request.user.pk):
+                return Response({'error': 'A local match may only name its owner'}, status=403)
+            supplied_colors.append(color)
+    if len(supplied_colors) > 1:
+        return Response({'error': 'Choose one owner color'}, status=400)
+    payload = dict(data)
+    if supplied_colors:
+        if 'owner_color' in payload and payload['owner_color'] != supplied_colors[0]:
+            return Response({'error': 'Owner color does not match the supplied player'}, status=400)
+        payload['owner_color'] = supplied_colors[0]
+    serializer = LocalMatchSerializer(data=payload)
+    serializer.is_valid(raise_exception=True)
+    values = dict(serializer.validated_data)
+    owner_color = values.pop('owner_color')
+    player = get_or_create_player(request.user)
     match = Match.objects.create(
-        white_player_id=resolve_player_id(data.get('white_player_id')),
-        black_player_id=resolve_player_id(data.get('black_player_id')),
-        match_type=data.get('match_type', 'online'),
-        target_points=data.get('target_points', 7),
-        white_score=data.get('white_score', 0),
-        black_score=data.get('black_score', 0),
-        winner=data.get('winner'),
-        games=data.get('games', []),
-        duration_seconds=data.get('duration_seconds'),
+        **values,
+        **{f'{owner_color}_player': player},
     )
     return Response(MatchSerializer(match).data, status=201)
 
