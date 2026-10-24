@@ -247,7 +247,8 @@ for (const [theme, expectedAccent] of [
     );
 
     const menuColor = await component
-      .getByRole("button", { name: "Leave", exact: true })
+      .getByTestId("game-settings-panel")
+      .getByRole("button", { name: "Leave and forfeit match", exact: true })
       .evaluate((element) => getComputedStyle(element).color);
     const goldColor = await component.evaluate((element) => {
       const probe = document.createElement("span");

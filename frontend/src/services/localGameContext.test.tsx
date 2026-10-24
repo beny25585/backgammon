@@ -258,6 +258,12 @@ for (const blockedColor of ["white", "black"] as const) {
     await page.clock.pauseAt(new Date());
     let requests = 0;
     await page.route("**/api/dice/roll/**", async route => {
+      // GameScreen can request the opening roll before StateSeedProbe installs
+      // the mid-game position. Count only the two normal rolls under inspection.
+      if (new URL(route.request().url()).searchParams.get("type") === "opening") {
+        await route.fulfill({ json: { dice: [2, 4] } });
+        return;
+      }
       requests += 1;
       await route.fulfill({ json: { dice: requests === 1 ? [2, 4] : [6, 3] } });
     });
@@ -291,8 +297,9 @@ for (const blockedColor of ["white", "black"] as const) {
     const following = component.locator('[data-roll-kind="following"]');
     await expect(blocked).toHaveAttribute("data-roll-owner", blockedColor === "white" ? "self" : "opponent");
     await expect(following).toHaveAttribute("data-roll-owner", blockedColor === "white" ? "opponent" : "self");
-    await expect(blocked.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
-    await expect(blocked.getByTestId("die").nth(1).locator("span")).toHaveCount(4);
+    // applyRoll orders a normal roll from the higher die to the lower die.
+    await expect(blocked.getByTestId("die").nth(0).locator("span")).toHaveCount(4);
+    await expect(blocked.getByTestId("die").nth(1).locator("span")).toHaveCount(2);
     await expect(following.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
     await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
     await page.clock.runFor(blockedColor === "white" ? 1999 : 2999);

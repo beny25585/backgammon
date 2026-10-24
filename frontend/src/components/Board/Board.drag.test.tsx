@@ -49,7 +49,7 @@ for (const scenario of ["legal", "blocked", "outside", "source", "escape", "off"
     const source = component.locator(`[data-point-idx="${from}"] [data-checker]`).last();
     const start = await center(source);
     const end = scenario === "outside" ? { x: 1, y: 1 } : await center(
-      scenario === "off-controls" ? component.getByTestId("game-controls")
+      scenario === "off-controls" ? component.getByTestId("game-settings-panel")
         : scenario === "off-opponent" ? component.getByTestId("bear-off-top")
           : to === "off" ? component.getByTestId("bear-off-bottom") : component.locator(`[data-point-idx="${to}"]`),
     );

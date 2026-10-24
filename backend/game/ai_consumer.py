@@ -158,7 +158,7 @@ class PracticeGameConsumer(GameConsumer):
                     if not owned:
                         raise RuntimeError('AI command lease expired')
                     await GameConsumer._handle_intent(actor, intent)
-                    await asyncio.sleep(0.25)
+                    await asyncio.sleep(0.6)
             raise RuntimeError('AI turn did not complete')
         except Exception:
             logger.exception('Practice bot failed for room %s', self.room_id)
