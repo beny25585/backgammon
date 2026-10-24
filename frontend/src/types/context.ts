@@ -56,12 +56,18 @@ export interface GameResult {
   luckLabel?: string | null;
 }
 
+export interface RollSnapshot {
+  color: Color;
+  dice: number[];
+}
+
 export interface NoMovesMessage {
   id?: string;
   dice: number[];
   remaining: number[];
   color: Color;
   noticeVisible?: boolean;
+  followingRoll?: RollSnapshot;
 }
 
 export interface GameContextType {

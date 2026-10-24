@@ -9,7 +9,7 @@ export function SizedBoardFixture({ theme = DEFAULT_BOARD_THEME, ...props }: Com
   return (
     <div className={`${styles.container} ${boardThemeClasses[theme]} bg-[#050c0e]`}>
       <GameFrame theme={theme}>
-        <div className={styles.boardArea}>
+        <div className={`${styles.boardArea} col-start-3 row-start-1`}>
           <Board {...props} />
         </div>
       </GameFrame>

@@ -93,7 +93,6 @@ function Test() {
             <SidePanel
               state={yourTurn}
               playerColor="white"
-              onLeave={() => {}}
             />
           </div>
           <div style={{ width: 300 }}>
@@ -111,7 +110,6 @@ function Test() {
             <SidePanel
               state={opponentTurn}
               playerColor="white"
-              onLeave={() => {}}
             />
           </div>
         </div>

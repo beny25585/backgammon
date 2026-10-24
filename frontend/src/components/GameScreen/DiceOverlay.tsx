@@ -9,12 +9,14 @@ interface Props {
   playerColor: Color;
   onReorder?: () => void;
   forceActive?: boolean;
+  kind?: "live" | "blocked" | "following";
 }
 
-export default function DiceOverlay({ playerColor, ...props }: Props) {
+export default function DiceOverlay({ playerColor, kind = "live", ...props }: Props) {
   return (
     <div className={`${styles.boardOverlay} pointer-events-auto`}
-      data-testid="dice-overlay" data-roll-owner={props.color === playerColor ? "self" : "opponent"}>
+      data-testid="dice-overlay" data-roll-kind={kind}
+      data-roll-color={props.color} data-roll-owner={props.color === playerColor ? "self" : "opponent"}>
       <DiceRow {...props} />
     </div>
   );

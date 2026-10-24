@@ -17,9 +17,7 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 800 },
 ];
 
-// Landscape viewports that are less than 800px wide trigger the
-// mobile stacking layout, which can push the side panel below the
-// visible area if the board consumes the full viewport height.
+// Intermediate landscape widths must keep player details and clocks in view.
 const PANEL_IN_VIEW = [
   { name: "small-landscape-768x600", width: 768, height: 600 },
   { name: "small-landscape-640x480", width: 640, height: 480 },
@@ -90,12 +88,15 @@ for (const vp of VIEWPORTS) {
     const portrait = vh > vw;
     const width = portrait ? box.height : box.width;
     const height = portrait ? box.width : box.height;
-    expect(width / height).toBeCloseTo(33 / 20, 2);
+    const slot = await page.getByTestId("board-frame").locator("..").boundingBox();
+    const availableWidth = portrait ? slot!.height : slot!.width;
+    expect(Math.abs(width - availableWidth)).toBeLessThanOrEqual(1);
+    expect(height).toBeGreaterThan(0);
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.top).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(vw + 1);
     expect(box.bottom).toBeLessThanOrEqual(vh + 1);
-    // A fixed-aspect board fills its limiting axis and leaves room on the other.
+    // The game fills the available width, including a persistent settings region.
     expect(
       Math.max(box.width / vw, box.height / vh),
       `board should fill its limiting viewport axis (${vp.name})`,
@@ -246,7 +247,7 @@ for (const [theme, expectedAccent] of [
     );
 
     const menuColor = await component
-      .getByRole("button", { name: "Match control" })
+      .getByRole("button", { name: "Leave", exact: true })
       .evaluate((element) => getComputedStyle(element).color);
     const goldColor = await component.evaluate((element) => {
       const probe = document.createElement("span");
@@ -265,39 +266,19 @@ for (const [theme, expectedAccent] of [
   });
 }
 
-test("hamburger is centered with both bear-off trays", async ({ mount, page }) => {
-  await page.setViewportSize({ width: 474, height: 330 });
-  const state = movingState({ phase: "rolling", dice: [], remaining: [] });
-  const component = await mount(
-    <div className={styles.container}>
-      <MockGameWrapper playerColor="white" state={state}>
-        <GameBoard
-          state={state}
-          playerColor="white"
-          makeMove={() => {}}
-          needsToRoll
-          onRoll={() => {}}
-          offerDouble={() => {}}
-          onLeave={() => {}}
-        />
-      </MockGameWrapper>
-    </div>,
-  );
-
-  const menu = await component.getByRole("button", { name: "Match control" }).boundingBox();
-  const top = await component.getByTestId("bear-off-top").boundingBox();
-  const bottom = await component.getByTestId("bear-off-bottom").boundingBox();
-  expect(menu).not.toBeNull();
-  expect(top).not.toBeNull();
-  expect(bottom).not.toBeNull();
-  const centerX = (box: NonNullable<typeof menu>) => box.x + box.width / 2;
-  expect(Math.abs(centerX(menu!) - centerX(top!))).toBeLessThanOrEqual(1);
-  expect(Math.abs(centerX(menu!) - centerX(bottom!))).toBeLessThanOrEqual(1);
-  expect(Math.abs(menu!.width - top!.width)).toBeLessThanOrEqual(1);
-  expect(Math.abs(menu!.width - bottom!.width)).toBeLessThanOrEqual(1);
-  expect(menu!.width).toBeGreaterThanOrEqual(32);
+test("players, scores and clock, board, and settings follow the requested order", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  const component = await mountBoard(mount, movingState());
+  const names = await component.getByTestId("player-details-column").boundingBox();
+  const scores = await component.getByTestId("score-clock-column").boundingBox();
+  const board = await component.getByTestId("board-wrapper").boundingBox();
+  const settings = await component.getByTestId("game-settings-panel").boundingBox();
+  expect(names!.x + names!.width).toBeLessThanOrEqual(scores!.x);
+  expect(scores!.x + scores!.width).toBeLessThanOrEqual(board!.x);
+  expect(board!.x + board!.width).toBeLessThanOrEqual(settings!.x);
+  await expect(component.getByTestId("player-details-column").getByTestId("player-score-white")).toHaveCount(0);
+  await expect(component.getByTestId("score-clock-column").getByTestId("player-score-white")).toHaveCount(1);
 });
-
 for (const viewport of [
   { name: "short-phone", width: 474, height: 330 },
   { name: "short-tablet", width: 844, height: 390 },
@@ -320,13 +301,12 @@ for (const viewport of [
       </div>,
     );
 
-    await component.getByRole("button", { name: "Match control" }).click();
-    const drawer = component.getByTestId("match-control-drawer");
+    const drawer = component.getByTestId("game-settings-panel");
     await expect(drawer).toBeVisible();
     const leaveButton = component.getByRole("button", { name: "Leave" });
     await leaveButton.scrollIntoViewIfNeeded();
     await expect(leaveButton).toBeVisible();
-    const classicButton = component.getByRole("button", { name: "Classic light", exact: false });
+    const classicButton = component.getByRole("combobox", { name: "Board style" });
     await classicButton.scrollIntoViewIfNeeded();
     await expect(classicButton).toBeVisible();
 

@@ -53,6 +53,7 @@ interface BoardProps {
   turnNotice?: GuidanceMessage | null;
   noticeSide?: BoardSide;
   noticeDetails?: ReactNode;
+  rollDetails?: Partial<Record<BoardSide, ReactNode>>;
   overlay?: ReactNode;
   onAutoPointSequenceChange?: (active: boolean) => void;
   onControlsTargetChange?: (target: HTMLDivElement | null) => void;
@@ -149,6 +150,7 @@ export function Board({
   turnNotice,
   noticeSide,
   noticeDetails,
+  rollDetails,
   overlay,
   onAutoPointSequenceChange,
   onControlsTargetChange,
@@ -991,6 +993,7 @@ export function Board({
               turnNotice={turnNotice}
               noticeSide={noticeSide}
               noticeDetails={noticeDetails}
+              rollDetails={rollDetails}
             />
             {overlay}
           </div>

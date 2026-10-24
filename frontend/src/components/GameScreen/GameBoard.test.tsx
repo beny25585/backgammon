@@ -209,7 +209,7 @@ test("auto-moves on first tap when a checker has a single legal target", async (
 });
 
 for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
-  test(`game frame keeps its proportions at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
+  test(`game frame uses the width and keeps circular checkers at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
     await page.setViewportSize(viewport);
     const state = movingState();
     const component = await mount(
@@ -221,17 +221,14 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
     );
     const frame = await component.getByTestId("board-frame").boundingBox();
     expect(frame).not.toBeNull();
-    expect(frame!.width / frame!.height).toBeCloseTo(1.65, 2);
+    expect(frame!.width).toBeGreaterThanOrEqual(viewport.width * 0.95);
     expect(frame!.height).toBeLessThanOrEqual(viewport.height);
     const checker = await component.locator('[data-point-idx="23"] [data-checker]').first().boundingBox();
     expect(checker!.width).toBeGreaterThan(16);
     expect(checker!.width).toBeCloseTo(checker!.height, 0);
-    const controls = await component.getByTestId("game-controls").boundingBox();
-    const topTray = await component.getByTestId("bear-off-top").boundingBox();
-    const bottomTray = await component.getByTestId("bear-off-bottom").boundingBox();
-    expect(controls!.y).toBeGreaterThanOrEqual(topTray!.y + topTray!.height);
-    expect(controls!.y + controls!.height).toBeLessThanOrEqual(bottomTray!.y);
-    expect(controls!.x + controls!.width / 2).toBeCloseTo(topTray!.x + topTray!.width / 2, 0);
+    const settings = await component.getByTestId("game-settings-panel").boundingBox();
+    const trays = await component.getByTestId("bear-off-column").boundingBox();
+    expect(settings!.x).toBeGreaterThanOrEqual(trays!.x + trays!.width);
   });
 }
 
@@ -757,11 +754,10 @@ for (const playerColor of ["white", "black"] as const) {
       onRoll: () => {},
     });
     const dice = component.getByTestId("dice-overlay").getByTestId("die");
-    await expect(dice).toHaveCount(playerColor === "white" ? 2 : 0);
-    if (playerColor === "white") {
-      await expect(dice.nth(0).locator("span")).toHaveCount(2);
-      await expect(dice.nth(1).locator("span")).toHaveCount(4);
-    }
+    await expect(dice).toHaveCount(2);
+    await expect(dice.nth(0).locator("span")).toHaveCount(2);
+    await expect(dice.nth(1).locator("span")).toHaveCount(4);
+    await expect(component.locator('[data-roll-kind="blocked"]')).toHaveAttribute("data-roll-owner", playerColor === "white" ? "self" : "opponent");
     await expect(component.getByTestId("no-moves-overlay")).toContainText(
       playerColor === "white"
         ? "No legal entry from the bar"
@@ -788,13 +784,18 @@ for (const blockedColor of ["white", "black"] as const) {
           </MockGameWrapper>
         );
         const component = await mount(render(rolled, { ...notice, noticeVisible: false }));
-        await expect(component.getByTestId("dice-overlay")).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "opponent" : "self");
+        const blockedDice = component.locator('[data-roll-kind="blocked"]');
+        await expect(blockedDice).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "self" : "opponent");
+        await expect(blockedDice.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", viewerRole === "blocked" ? "right" : "left");
+        await expect(component.locator('[data-roll-kind="following"]')).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "opponent" : "self");
         await component.update(render(finished, { ...notice, noticeVisible: true }));
         const details = component.getByTestId("turn-notice-details");
         const dice = details.getByTestId("die");
         await expect(dice).toHaveCount(2);
         await expect(dice.nth(0).locator("span")).toHaveCount(6);
         await expect(dice.nth(1).locator("span")).toHaveCount(3);
+        await expect(blockedDice.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
+        await expect(blockedDice.getByTestId("die").nth(1).locator("span")).toHaveCount(4);
         const positions = await details.evaluate(element => {
           const parent = element.parentElement!;
           const rotated = getComputedStyle(element).getPropertyValue("--game-rotated").trim() === "1";
@@ -806,7 +807,10 @@ for (const blockedColor of ["white", "black"] as const) {
         expect(positions.diceTop).toBeGreaterThanOrEqual(positions.noticeBottom);
         if (viewerRole === "blocked") {
           await component.update(render({ ...finished, phase: "moving", dice: [5, 1], remaining: [5, 1] }, notice));
-          await expect(component.locator('[data-testid="dice-overlay"][data-roll-owner="self"]')).toBeVisible();
+          const liveDice = component.locator('[data-roll-kind="live"]');
+          await expect(liveDice).toHaveAttribute("data-roll-owner", "self");
+          await expect(liveDice.getByTestId("die").nth(0).locator("span")).toHaveCount(5);
+          await expect(blockedDice.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
           await expect(details.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
         }
         await component.update(render(finished, null));
@@ -1053,47 +1057,19 @@ test("banner shows Accept/Decline when opponent offers a double", async ({ mount
   await expect.poll(() => accepted).toBe(true);
 });
 
-test("match control drawer stays above dice and board actions", async ({ mount, page }) => {
+test("visible settings do not cover dice or board actions", async ({ mount, page }) => {
   await page.setViewportSize({ width: 474, height: 330 });
-  const state = movingState({
-    phase: "moving",
-    turn: "white",
-    dice: [5, 3],
-    remaining: [5, 3],
-  });
-  const component = await mountBoard(mount, {
-    state,
-    playerColor: "white",
-  });
-
-  await component.getByRole("button", { name: "Match control" }).click();
-  const drawer = component.getByTestId("match-control-drawer");
+  const state = movingState({ phase: "moving", turn: "white", dice: [5, 3], remaining: [5, 3] });
+  const component = await mountBoard(mount, { state, playerColor: "white" });
+  const settings = component.getByTestId("game-settings-panel");
   const dice = component.getByTestId("dice-overlay");
-  await expect(drawer).toBeVisible();
+  await expect(settings).toBeVisible();
   await expect(dice).toBeVisible();
-
-  const drawerBox = await drawer.boundingBox();
-  const diceBox = await dice.boundingBox();
-  expect(drawerBox).not.toBeNull();
-  expect(diceBox).not.toBeNull();
-  const left = Math.max(drawerBox!.x, diceBox!.x);
-  const right = Math.min(drawerBox!.x + drawerBox!.width, diceBox!.x + diceBox!.width);
-  const top = Math.max(drawerBox!.y, diceBox!.y);
-  const bottom = Math.min(drawerBox!.y + drawerBox!.height, diceBox!.y + diceBox!.height);
-  expect(right).toBeGreaterThan(left);
-  expect(bottom).toBeGreaterThan(top);
-
-  const topLayer = await page.evaluate(
-    ({ x, y }) =>
-      document
-        .elementFromPoint(x, y)
-        ?.closest("[data-testid]")
-        ?.getAttribute("data-testid"),
-    { x: (left + right) / 2, y: (top + bottom) / 2 },
-  );
-  expect(topLayer).toBe("match-control-drawer");
+  await expect(component.getByRole("button", { name: "Match control" })).toHaveCount(0);
+  const settingsBox = await settings.boundingBox();
+  const boardBox = await component.getByTestId("board-wrapper").boundingBox();
+  expect(settingsBox!.y).toBeGreaterThanOrEqual(boardBox!.y + boardBox!.height);
 });
-
 // ---------------------------------------------------------------------------
 // Bear-off orientation regression (viewer-relative trays) - corrected fixtures & real geometry
 // ---------------------------------------------------------------------------
@@ -1258,7 +1234,7 @@ test("bear-off rendering: black viewer sees white on top (2) and black on bottom
   expect(top.cy, "top tray should be physically above bottom").toBeLessThan(bottom.cy - 20);
 });
 
-test("action controls sit between separate bear-off targets without submitting a move", async ({ mount, page }) => {
+test("settings controls remain separate from bear-off move targets", async ({ mount, page }) => {
   await page.clock.install();
   await page.clock.pauseAt(new Date());
   const state = validBearOffWhiteState(1);
@@ -1272,25 +1248,16 @@ test("action controls sit between separate bear-off targets without submitting a
     </MockGameWrapper>,
   );
   const column = component.getByTestId("bear-off-column");
-  const controls = column.getByTestId("game-controls");
+  const controls = component.getByTestId("game-settings-panel");
   await expect(controls.getByTestId("auto-roll-toggle")).toBeVisible();
   await expect(column.locator('button button')).toHaveCount(0);
   await expect(controls.locator('[data-point-idx]')).toHaveCount(0);
   await expect(column.getByTestId("bear-off-top")).toBeDisabled();
   await expect(column.getByTestId("bear-off-bottom")).toBeEnabled();
-  const layout = await column.evaluate(element => {
-    const top = element.querySelector<HTMLElement>('[data-testid="bear-off-top"]')!;
-    const middle = element.querySelector<HTMLElement>('[data-testid="game-controls"]')!;
-    const bottom = element.querySelector<HTMLElement>('[data-testid="bear-off-bottom"]')!;
-    return {topEnd: top.offsetTop + top.offsetHeight, middleStart: middle.offsetTop,
-      middleEnd: middle.offsetTop + middle.offsetHeight, bottomStart: bottom.offsetTop};
-  });
-  expect(layout.topEnd).toBeLessThanOrEqual(layout.middleStart);
-  expect(layout.middleEnd).toBeLessThanOrEqual(layout.bottomStart);
   await controls.getByTestId("auto-roll-toggle").click();
   await expect.poll(() => toggles).toBe(1);
-  await controls.getByRole("button", {name: "Match control"}).click();
-  await expect(component.getByTestId("match-control-drawer")).toBeVisible();
+  await expect(component.getByRole("button", { name: "Match control" })).toHaveCount(0);
+  await expect(component.getByTestId("game-settings-panel")).toBeVisible();
   expect(moves).toBe(0);
 });
 

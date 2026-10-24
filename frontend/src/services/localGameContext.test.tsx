@@ -252,6 +252,58 @@ for (const blockedColor of ["white", "black"] as const) {
   });
 }
 
+for (const blockedColor of ["white", "black"] as const) {
+  test(`local snapshots keep blocked and following dice separate after moves (${blockedColor})`, async ({ mount, page }) => {
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    let requests = 0;
+    await page.route("**/api/dice/roll/**", async route => {
+      requests += 1;
+      await route.fulfill({ json: { dice: requests === 1 ? [2, 4] : [6, 3] } });
+    });
+    const points = new Array(24).fill(0);
+    for (let index = 0; index < 6; index++) {
+      points[blockedColor === "white" ? 23 - index : index] = blockedColor === "white" ? -2 : 2;
+    }
+    const initial: GameState = {
+      ...newGame(), points, phase: "rolling", turn: blockedColor,
+      bar: { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 },
+    };
+    const render = (state: GameState) => (
+      <MemoryRouter><LocalGameProvider botColor="black">
+        <StateSeedProbe state={state} />
+        <GameProbe from={0} to={0} />
+        <GameScreen />
+      </LocalGameProvider></MemoryRouter>
+    );
+    const component = await mount(render(initial));
+    if (blockedColor === "white") await component.getByTestId("roll").click();
+    else await page.clock.runFor(1000);
+    await expect(component.locator('[data-roll-kind="blocked"]')).toHaveAttribute("data-roll-color", blockedColor);
+    if (blockedColor === "white") await page.clock.runFor(1000);
+    else await component.getByTestId("roll").click();
+    await expect.poll(() => requests).toBe(2);
+    await expect(component.locator('[data-roll-kind="following"]')).toBeVisible();
+    // The presentation must keep the provider's captured roll after the live
+    // dice are cleared, without pausing the bot or the human player's turn.
+    await component.update(render({ ...initial, turn: "white", dice: [], remaining: [] }));
+    const blocked = component.locator('[data-roll-kind="blocked"]');
+    const following = component.locator('[data-roll-kind="following"]');
+    await expect(blocked).toHaveAttribute("data-roll-owner", blockedColor === "white" ? "self" : "opponent");
+    await expect(following).toHaveAttribute("data-roll-owner", blockedColor === "white" ? "opponent" : "self");
+    await expect(blocked.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
+    await expect(blocked.getByTestId("die").nth(1).locator("span")).toHaveCount(4);
+    await expect(following.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
+    await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
+    await page.clock.runFor(blockedColor === "white" ? 1999 : 2999);
+    await expect(blocked).toBeVisible();
+    await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toBeVisible();
+    await page.clock.runFor(1);
+    await expect(blocked).toHaveCount(0);
+    await expect(following).toHaveCount(0);
+  });
+}
+
 test("dice service failure shows an error and does not roll", async ({ mount, page }) => {
   await page.route("**/api/dice/roll/**", async (route) => {
     await route.fulfill({ status: 503, json: { error: "Dice service unreachable" } });

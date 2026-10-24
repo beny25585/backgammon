@@ -92,7 +92,7 @@ export function LocalGameProvider({
   const [error, setError] = useState<string | null>(null);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const { noMovesMessage, revealNoMoves } = useNoMovesNotice("local");
+  const { noMovesMessage, revealNoMoves, clearNoMoves, captureFollowingRoll } = useNoMovesNotice("local");
   const [reconnected] = useState(false);
   const [opponentConnected] = useState(true);
 
@@ -170,6 +170,7 @@ export function LocalGameProvider({
   const MATCH_TARGET = matchTarget;
 
   const handleNextGame = useCallback(() => {
+    clearNoMoves();
     if (betweenGamesTimer.current) {
       clearTimeout(betweenGamesTimer.current);
       betweenGamesTimer.current = null;
@@ -179,9 +180,10 @@ export function LocalGameProvider({
     setState(newGame());
     setTurnColor("white");
     setOpeningRollResult(null);
-  }, [setTurnColor]);
+  }, [setTurnColor, clearNoMoves]);
 
   const handleHome = useCallback(() => {
+    clearNoMoves();
     openingDiceRef.current = null;
     setGameResult(null);
     setMatchWinner(null);
@@ -189,7 +191,7 @@ export function LocalGameProvider({
     setState(newGame());
     setTurnColor("white");
     if (onQuitMatch) onQuitMatch();
-  }, [setTurnColor, onQuitMatch]);
+  }, [setTurnColor, onQuitMatch, clearNoMoves]);
 
   const prevPhaseRef = useRef(state.phase);
   useEffect(() => {
@@ -326,6 +328,7 @@ export function LocalGameProvider({
           setState((prev) => {
             if (prev.turn !== botColor || prev.phase !== "rolling") return prev;
             const next = applyRoll(prev, dice);
+            captureFollowingRoll(next);
             clientLogger.debug("[bot rolled]", {
               dice,
               turn: next.turn,
@@ -379,6 +382,7 @@ export function LocalGameProvider({
     setTurnColor,
     advanceToOpeningMove,
     revealNoMoves,
+    captureFollowingRoll,
   ]);
 
   // ── Human actions ──────────────────────────────────────────────
@@ -445,6 +449,7 @@ export function LocalGameProvider({
           setState((prev) => {
             if (prev.phase !== "rolling") return prev;
             const rolled = applyRoll(prev, dice);
+            captureFollowingRoll(rolled);
             clientLogger.debug("[turn roll applied]", {
               dice,
               fromPhase: prev.phase,
@@ -484,6 +489,7 @@ export function LocalGameProvider({
     setTurnColor,
     advanceToOpeningMove,
     revealNoMoves,
+    captureFollowingRoll,
   ]);
 
   const reorderDice = useCallback(() => {

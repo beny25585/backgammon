@@ -123,7 +123,7 @@ export function GameProvider({
   const [aiRetrying, setAiRetrying] = useState(false);
   const [openingRollResult, setOpeningRollResult] =
     useState<OpeningRollResult | null>(null);
-  const { noMovesMessage, revealNoMoves, clearNoMoves } = useNoMovesNotice(roomId);
+  const { noMovesMessage, revealNoMoves, clearNoMoves, captureFollowingRoll } = useNoMovesNotice(roomId);
   const [reconnected, setReconnected] = useState(false);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
@@ -490,6 +490,7 @@ export function GameProvider({
             }, undefined, next.version);
           }
 
+          captureFollowingRoll(next);
           stateRef.current = displayedState;
           setState(displayedState);
           // Keep the terminal guard in sync with authoritative state: a fresh
@@ -875,7 +876,7 @@ export function GameProvider({
     return () => {
       socket.removeAllListeners();
     };
-  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves]);
+  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves, captureFollowingRoll]);
 
   // Tick down the server-authoritative next-game countdown shown in the result
   // overlay. The server owns the actual timer; this is display-only.

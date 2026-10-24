@@ -21,15 +21,12 @@ for (const [theme, label, fieldColor] of [
       </MockGameWrapper>
     );
     const component = await mount(screen);
-    await component.getByRole("button", { name: "Match control" }).click();
-    const option = component.getByRole("button", { name: label });
-    await option.scrollIntoViewIfNeeded();
-    await option.click();
-    await expect(option).toHaveAttribute("aria-pressed", "true");
+    const selector = component.getByRole("combobox", { name: "Board style" });
+    await selector.selectOption({ label });
+    await expect(selector).toHaveValue(theme);
     await expect(component.getByTestId("board-inner")).toHaveCSS("background-color", fieldColor);
     await expect(component.getByTestId("doubling-cube")).toHaveCSS("color", "rgb(255, 244, 207)");
-    await expect(component.getByRole("button", { name: "Blue and ivory" })).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-    const drawerWidth = await component.getByTestId("match-control-drawer").evaluate(
+    const drawerWidth = await component.getByTestId("game-settings-panel").evaluate(
       (element) => element.getBoundingClientRect().width,
     );
     expect(drawerWidth).toBeLessThanOrEqual(280);
@@ -48,7 +45,6 @@ test("game sounds can be muted and the preference survives reopening", async ({ 
     </MockGameWrapper>
   );
   const component = await mount(screen);
-  await component.getByRole("button", { name: "Match control" }).click();
   const sounds = component.getByRole("checkbox", { name: "Game sounds" });
   await sounds.scrollIntoViewIfNeeded();
   await expect(sounds).toBeChecked();
@@ -56,7 +52,6 @@ test("game sounds can be muted and the preference survives reopening", async ({ 
   await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-game-sounds"))).toBe("false");
   await component.unmount();
   const reopened = await mount(screen);
-  await reopened.getByRole("button", { name: "Match control" }).click();
   await expect(reopened.getByRole("checkbox", { name: "Game sounds" })).not.toBeChecked();
 });
 

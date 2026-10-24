@@ -76,7 +76,7 @@ function PointCell({
       )}
 
       <span
-        className={`${styles.pointNumber} ${
+        className={`${styles.pointNumber} text-[clamp(20px,1.45vw,28px)] @max-[620px]/game-layout:text-xs ${
           top ? styles.pointNumberTop : styles.pointNumberBottom
         }`}
         data-testid="point-number"

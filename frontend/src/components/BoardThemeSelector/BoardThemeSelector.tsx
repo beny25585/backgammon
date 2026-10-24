@@ -28,13 +28,32 @@ const themeDescriptionKeys: Record<BoardTheme, string> = {
 interface BoardThemeSelectorProps {
   value: BoardTheme;
   onChange: (theme: BoardTheme) => void;
+  compact?: boolean;
 }
 
 export default function BoardThemeSelector({
   value,
   onChange,
+  compact = false,
 }: BoardThemeSelectorProps) {
   const { t } = useI18n();
+
+  if (compact) {
+    return (
+      <label className="grid min-w-0 gap-1 text-xs font-semibold text-white/70">
+        <span className="@max-[620px]/game-layout:sr-only">{t("game.boardTheme")}</span>
+        <select
+          className="min-h-11 w-full min-w-0 rounded-lg border border-amber-200/25 bg-[#211e17] px-1 text-xs text-amber-100 focus-visible:outline-2 focus-visible:outline-amber-300"
+          value={value}
+          onChange={(event) => onChange(event.target.value as BoardTheme)}
+        >
+          {BOARD_THEMES.map((theme) => (
+            <option key={theme} value={theme}>{t(themeLabelKeys[theme])}</option>
+          ))}
+        </select>
+      </label>
+    );
+  }
 
   return (
     <section className="grid gap-2" aria-label={t("game.boardTheme")}>

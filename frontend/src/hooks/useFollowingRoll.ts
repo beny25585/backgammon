@@ -1,11 +1,6 @@
 import { useState } from "react";
-import type { GameState, Color } from "../lib/backgammon/engine";
-import type { NoMovesMessage } from "../types/context";
-
-interface RollSnapshot {
-  color: Color;
-  dice: number[];
-}
+import type { GameState } from "../lib/backgammon/engine";
+import type { NoMovesMessage, RollSnapshot } from "../types/context";
 
 /** Retain the next player's roll for the current notice, even after their moves. */
 export function useFollowingRoll(state: GameState, notice?: NoMovesMessage | null) {
@@ -24,5 +19,5 @@ export function useFollowingRoll(state: GameState, notice?: NoMovesMessage | nul
     setSaved({ key, roll: current });
   }
 
-  return current ?? (saved.key === key ? saved.roll : null);
+  return notice?.followingRoll ?? current ?? (saved.key === key ? saved.roll : null);
 }

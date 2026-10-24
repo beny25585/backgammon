@@ -296,7 +296,6 @@
   z-index: 20;
   pointer-events: none;
   user-select: none;
-  font-size: clamp(20px, 1.45vw, 28px);
   font-weight: 900;
   line-height: 1;
   letter-spacing: 0.02em;

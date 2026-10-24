@@ -653,7 +653,8 @@ for (const blockedColor of ["white", "black"] as const) {
       }
       await emitBroadcast(page, { ...newGame(), bar, turn: nextColor, phase: "moving", version: 3,
         dice: [6, 3], remaining: [6, 3] }, viewer, "roll");
-      await expect(component.getByTestId("dice-overlay")).toHaveAttribute("data-roll-owner", role === "blocked" ? "opponent" : "self");
+      await expect(component.locator('[data-roll-kind="following"]')).toHaveAttribute("data-roll-owner", role === "blocked" ? "opponent" : "self");
+      await expect(component.locator('[data-roll-kind="blocked"]')).toHaveAttribute("data-roll-owner", role === "blocked" ? "self" : "opponent");
       // The server finishes the moves before the 350ms notice reveal.
       await emitBroadcast(page, { ...rollingState(), bar, turn: blockedColor, version: 4, dice: [], remaining: [] }, viewer, "end_turn");
       await page.clock.runFor(350);
@@ -664,6 +665,74 @@ for (const blockedColor of ["white", "black"] as const) {
       await page.clock.runFor(2650);
       await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
     });
+  }
+}
+
+for (const blockedColor of ["white", "black"] as const) {
+  for (const viewerRole of ["blocked", "next-player"] as const) {
+    for (const nextDice of [[6, 3], [5, 5]]) {
+      test(`batched roll and completed turn retain both owners' dice (${blockedColor}, ${viewerRole}, ${nextDice})`, async ({ mount, page }) => {
+        await seedFakeSocket(page);
+        await page.route("**/api/**", route => route.fulfill({ json: {} }));
+        const nextColor = blockedColor === "white" ? "black" : "white";
+        const viewer = viewerRole === "blocked" ? blockedColor : nextColor;
+        const component = await mount(
+          <MemoryRouter><GameProvider roomId="test-room" playerColor={viewer}>
+            <GameScreen />
+          </GameProvider></MemoryRouter>,
+        );
+        const bar = { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 };
+        const initial: GameState = { ...rollingState(), bar, turn: blockedColor, version: 1 };
+        await emitInitialState(page, initial, viewer);
+        await page.clock.install();
+        await page.clock.pauseAt(new Date());
+        const remaining = nextDice[0] === nextDice[1] ? Array(4).fill(nextDice[0]) as number[] : nextDice;
+        const updates: GameState[] = [
+          { ...initial, turn: nextColor, version: 2, dice: [2, 4], remaining: [], message: "No legal moves" },
+          { ...newGame(), bar, turn: nextColor, version: 3, phase: "moving", dice: nextDice, remaining },
+          { ...initial, version: 4, dice: [], remaining: [] },
+        ];
+        // Deliver all three messages in one task, without allowing an intermediate
+        // GameBoard render to capture the following player's moving state.
+        await page.evaluate(({ updates, viewer }) => {
+          const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+          for (const [index, state] of updates.entries()) {
+            ws.emit({ type: "state_update", payload: state, playerColor: viewer,
+              action: index === 2 ? "end_turn" : "roll" });
+          }
+        }, { updates, viewer });
+
+        const blocked = component.locator('[data-roll-kind="blocked"]');
+        const following = component.locator('[data-roll-kind="following"]');
+        await expect(blocked).toHaveAttribute("data-roll-color", blockedColor);
+        await expect(blocked).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "self" : "opponent");
+        await expect(following).toHaveAttribute("data-roll-color", nextColor);
+        await expect(following).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "opponent" : "self");
+        for (const [roll, side] of [[blocked, viewerRole === "blocked" ? "right" : "left"],
+          [following, viewerRole === "blocked" ? "left" : "right"]] as const) {
+          await expect.poll(() => roll.evaluate(element => element.closest("[data-overlay-side]")?.getAttribute("data-overlay-side"))).toBe(side);
+        }
+        await expect(blocked.getByTestId("die")).toHaveCount(2);
+        await expect(blocked.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
+        await expect(blocked.getByTestId("die").nth(1).locator("span")).toHaveCount(4);
+        await expect(blocked.getByRole("button")).toHaveCount(0);
+        await expect(following.getByTestId("die")).toHaveCount(remaining.length);
+        await expect(following.getByTestId("die").nth(0).locator("span")).toHaveCount(nextDice[0]);
+        await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(nextDice[1]);
+        await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
+
+        // Revealing the notice must preserve the snapshot saved before that timer.
+        await page.clock.runFor(350);
+        await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toBeVisible();
+        await expect(blocked).toBeVisible();
+        await page.clock.runFor(2649);
+        await expect(blocked).toBeVisible();
+        await expect(following).toBeVisible();
+        await page.clock.runFor(1);
+        await expect(blocked).toHaveCount(0);
+        await expect(following).toHaveCount(0);
+      });
+    }
   }
 }
 

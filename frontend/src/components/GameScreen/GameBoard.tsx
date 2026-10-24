@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import styles from "./GameScreen.module.css";
 import { Board } from "../Board";
 import SidePanel from "../SidePanel";
+import GameSettingsPanel from "../SidePanel/GameSettingsPanel";
 import GuidanceBanner from "../GuidanceBanner";
 import BoardHalfOverlay from "../Board/BoardHalfOverlay";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
@@ -82,7 +83,6 @@ export default function GameBoard({
   autoRoll,
   onAutoRollChange,
 }: GameBoardProps) {
-  const [controlsTarget, setControlsTarget] = useState<HTMLDivElement | null>(null);
   const [selection, setSelection] = useState<{
     from: Source | null;
     version: number;
@@ -311,26 +311,34 @@ export default function GameBoard({
 
   const followingRoll = useFollowingRoll(state, noMovesMessage);
   const liveRoll = state.phase === "moving" && state.remaining.length > 0 &&
-    (!followingRoll || state.turn !== followingRoll.color);
-  const displayedDice = liveRoll ? state.dice : followingRoll?.dice ?? noMovesMessage?.dice ?? state.dice;
-  const displayedDiceColor = liveRoll ? state.turn : followingRoll?.color ?? noMovesMessage?.color ?? state.turn;
-  const displayedRemaining = liveRoll ? state.remaining : noMovesMessage?.remaining ?? state.remaining;
+    (!noMovesMessage || state.turn === noMovesMessage.color);
   const diceBelowNotice = Boolean(followingRoll && visibleTurnNotice?.variant === "no-moves");
-  // The next player can roll immediately; stale blocked dice must not cover their controls.
-  const awaitingOwnRoll = noMovesMessage && noMovesMessage.color !== playerColor &&
-    state.turn === playerColor && state.phase === "rolling" && needsToRoll && Boolean(onRoll);
-  const showDice =
-    (Boolean(noMovesMessage) && !awaitingOwnRoll) ||
-    (state.phase !== "opening_roll" &&
-      state.phase === "moving" &&
-      state.remaining.length > 0);
   const onReorder = isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined;
-  const followingDice = followingRoll ? (
-    <DiceOverlay dice={followingRoll.dice} color={followingRoll.color} playerColor={playerColor}
-      remaining={followingRoll.color === playerColor && isMyTurn ? state.remaining : followingRoll.dice}
-      forceActive={followingRoll.color !== playerColor || !isMyTurn}
-      onReorder={followingRoll.color === playerColor ? onReorder : undefined} />
+  const liveDice = liveRoll ? (
+    <DiceOverlay dice={state.dice} remaining={state.remaining} color={state.turn}
+      playerColor={playerColor} onReorder={state.turn === playerColor ? onReorder : undefined} />
   ) : null;
+  const ownFollowingRollActive = followingRoll?.color === playerColor && isMyTurn && state.remaining.length > 0;
+  const followingDice = followingRoll ? (
+    <DiceOverlay kind="following" dice={followingRoll.dice} color={followingRoll.color} playerColor={playerColor}
+      remaining={ownFollowingRollActive ? state.remaining : followingRoll.dice}
+      forceActive={!ownFollowingRollActive}
+      onReorder={ownFollowingRollActive ? onReorder : undefined} />
+  ) : null;
+  // A blocked roll belongs to its roller for the entire notice lifetime, regardless
+  // of the authoritative turn. The following roll has its own, separate snapshot.
+  const blockedSide = noMovesMessage?.color === playerColor ? "right" : "left";
+  const followingSide = blockedSide === "right" ? "left" : "right";
+  const rollDetails = noMovesMessage ? {
+    [blockedSide]: (
+      <>
+        <DiceOverlay kind="blocked" dice={noMovesMessage.dice} remaining={noMovesMessage.remaining}
+          color={noMovesMessage.color} playerColor={playerColor} forceActive />
+        {liveDice}
+      </>
+    ),
+    [followingSide]: diceBelowNotice ? undefined : followingDice,
+  } : undefined;
 
   function handleSelect(from: Source | null) {
     setSelection({
@@ -371,8 +379,15 @@ export default function GameBoard({
   }
 
   return (
-    <GameFrame theme={selectedBoardTheme}>
-      <div className={styles.boardArea}>
+    <GameFrame theme={selectedBoardTheme} settings={
+      <GameSettingsPanel state={state} onLeave={onLeave} boardTheme={boardTheme}
+        onBoardThemeChange={onBoardThemeChange} soundEnabled={soundEnabled}
+        onSoundEnabledChange={onSoundEnabledChange} bracketUrl={bracketUrl}
+        autoRoll={autoRoll} onAutoRollChange={onAutoRollChange} />
+    }>
+      <SidePanel state={state} playerColor={playerColor} clock={clock}
+        turnStartedAt={turnStartedAt} timeControl={timeControl} />
+      <div className={`${styles.boardArea} col-start-3 row-start-1`}>
         <Board
           state={state}
           myColor={playerColor}
@@ -389,18 +404,14 @@ export default function GameBoard({
           turnNotice={visibleTurnNotice}
           noticeSide={noMovesMessage && noMovesMessage.color !== playerColor ? "right" : "left"}
           noticeDetails={diceBelowNotice ? followingDice : undefined}
+          rollDetails={rollDetails}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
-          onControlsTargetChange={setControlsTarget}
           inputDisabled={autoConfirmPending}
           overlay={
             <>
-              {showDice && (!diceBelowNotice || liveRoll) && (
-                <BoardHalfOverlay side={displayedDiceColor === playerColor ? "right" : "left"}>
-                  {!liveRoll && followingDice ? followingDice : (
-                    <DiceOverlay dice={displayedDice} remaining={displayedRemaining}
-                      color={displayedDiceColor} playerColor={playerColor}
-                      onReorder={displayedDiceColor === playerColor ? onReorder : undefined} />
-                  )}
+              {!noMovesMessage && liveDice && (
+                <BoardHalfOverlay side={state.turn === playerColor ? "right" : "left"}>
+                  {liveDice}
                 </BoardHalfOverlay>
               )}
               <GuidanceBanner state={state} playerColor={playerColor}
@@ -409,22 +420,6 @@ export default function GameBoard({
           }
         />
       </div>
-      <SidePanel
-        state={state}
-        playerColor={playerColor}
-        onLeave={onLeave}
-        clock={clock}
-        turnStartedAt={turnStartedAt}
-        timeControl={timeControl}
-        boardTheme={boardTheme}
-        onBoardThemeChange={onBoardThemeChange}
-        soundEnabled={soundEnabled}
-        onSoundEnabledChange={onSoundEnabledChange}
-        controlsTarget={controlsTarget}
-        bracketUrl={bracketUrl}
-        autoRoll={autoRoll}
-        onAutoRollChange={onAutoRollChange}
-      />
     </GameFrame>
   );
 }

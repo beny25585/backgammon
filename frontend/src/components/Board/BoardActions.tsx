@@ -19,6 +19,7 @@ interface Props {
   turnNotice?: GuidanceMessage | null;
   noticeSide?: BoardSide;
   noticeDetails?: ReactNode;
+  rollDetails?: Partial<Record<BoardSide, ReactNode>>;
 }
 
 export default function BoardActions({ noticeSide = "left", ...props }: Props) {
@@ -53,9 +54,10 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
             data-testid={props.turnNotice.variant === "no-moves" ? "no-moves-overlay" : "forced-move-notice"}
           >
             <GuidanceBanner message={props.turnNotice} inline />
-            {(props.noticeDetails || noticeAction) && (
+            {(props.noticeDetails || noticeAction || props.rollDetails?.[noticeSide]) && (
               <div className="absolute top-[calc(100%_+_8px)] left-1/2 flex w-full -translate-x-1/2 flex-col items-center gap-2" data-testid="turn-notice-details">
                 {props.noticeDetails}
+                {props.rollDetails?.[noticeSide]}
                 {noticeAction && (
                   <div className="flex w-full justify-center" data-testid={noticeAction.id}>
                     {noticeAction.content}
@@ -66,16 +68,27 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
           </div>
         </BoardHalfOverlay>
       )}
-      {leftAction && (!props.turnNotice || noticeSide !== "left") && (
-        <BoardHalfOverlay side="left" data-testid={leftAction.id}>
-          {leftAction.content}
-        </BoardHalfOverlay>
-      )}
-      {rightAction && (!props.turnNotice || noticeSide !== "right") && (
-        <BoardHalfOverlay side="right" data-testid={rightAction.id}>
-          {rightAction.content}
-        </BoardHalfOverlay>
-      )}
+      {(["left", "right"] as const).map(side => {
+        const action = side === "left" ? leftAction : rightAction;
+        const dice = props.rollDetails?.[side];
+        if ((!action && !dice) || (props.turnNotice && noticeSide === side)) return null;
+        return (
+          <BoardHalfOverlay key={side} side={side}>
+            {dice ? (
+              <div className="relative flex min-w-0 flex-col items-center gap-2">
+                {dice}
+                {action && (
+                  <div className="absolute top-[calc(100%_+_8px)] left-1/2 flex -translate-x-1/2 justify-center" data-testid={action.id}>
+                    {action.content}
+                  </div>
+                )}
+              </div>
+            ) : action && (
+              <div data-testid={action.id}>{action.content}</div>
+            )}
+          </BoardHalfOverlay>
+        );
+      })}
     </>
   );
 }
