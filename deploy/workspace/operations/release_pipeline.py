@@ -13,6 +13,7 @@ import io
 import json
 import os
 import inspect
+import itertools
 from pathlib import Path
 import re
 import shlex
@@ -50,6 +51,11 @@ BACKENDS = {
     'game': ('/app', 'backgammon_project.settings_docker'),
     'tournaments': ('/app/tournaments', 'tournaments.settings.docker'),
     'analysis': ('/app', 'config.docker'),
+}
+FRONTENDS = {
+    'game': ('Backgammon Game', 'Backgammon Game/frontend'),
+    'tournaments': ('backgammon-tournaments', 'backgammon-tournaments'),
+    'admin': ('backgammon-tournaments-backend', 'backgammon-tournaments-backend/admin-frontend'),
 }
 SERVICE_IMAGE = {
     'game-api': 'game', 'game-tasks': 'game', 'game-migrate': 'game',
@@ -182,6 +188,64 @@ def tool_hashes():
     return {name: sha(tool.with_name(name)) for name in ('release_pipeline.py', 'release_test_settings.py')}
 
 
+def print_timing_summary(rows):
+    if not rows:
+        return
+    total = sum(row['seconds'] for row in rows)
+    reused = sum('reused_from' in row for row in rows)
+    print(f'\nRecorded command time: {total / 60:.1f} min; reused stages: {reused}', flush=True)
+    for row in sorted(rows, key=lambda item: item['seconds'], reverse=True)[:5]:
+        if row['seconds'] > 0:
+            print(f"  {row['stage']}: {row['seconds']:.1f}s", flush=True)
+
+
+def show_local_status(root):
+    """Inspect the last local receipt without running prerequisites or release work."""
+    base = root.resolve() / 'artifacts/auto-releases'
+    if not base.is_dir():
+        print('No local release receipts. Run PUBLISH_AND_DEPLOY.ps1 -PreflightOnly to check setup.')
+        return
+    for folder in sorted(base.iterdir(), key=lambda item: item.stat().st_mtime_ns, reverse=True):
+        if not folder.is_dir() or folder.is_symlink() or not re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', folder.name):
+            continue
+        status_file = folder / 'status.json'
+        if not status_file.is_file():
+            continue
+        require(not status_file.is_symlink(), 'Redirected release status')
+        status = json.loads(status_file.read_text(encoding='utf-8'))
+        require(status.get('release_id') == folder.name, 'Status belongs to another release')
+        print('Last local release: ' + folder.name)
+        print('Recorded state: ' + str(status.get('stage', 'unknown')))
+        if status.get('failed_stage'):
+            print('Failed stage: ' + str(status['failed_stage']))
+        print('Receipts and logs: ' + str(folder))
+        timing_file = folder / 'timings.json'
+        if timing_file.is_file():
+            require(not timing_file.is_symlink(), 'Redirected release timings')
+            print_timing_summary(json.loads(timing_file.read_text(encoding='utf-8')))
+        return
+    print('No local release receipts. Run PUBLISH_AND_DEPLOY.ps1 -PreflightOnly to check setup.')
+
+
+def frontend_phase_inputs(root, site, sources, runtime):
+    """Hash all local frontend configuration; never retain private values in receipts."""
+    source, relative = FRONTENDS[site]
+    directory = root / relative
+    config_files = {path.name: sha(path)
+                    for pattern in ('.env*', '*.config.*', 'tsconfig*.json', 'jsconfig.json', '.pnpmfile.*')
+                    for path in directory.glob(pattern) if path.is_file()}
+    environment = dict(os.environ, CI='true')
+    browser = Path(environment['CHROMIUM_PATH']) if environment.get('CHROMIUM_PATH') else None
+    pnpm = shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm')
+    require(pnpm, 'pnpm is required')
+    # Effective pnpm config also covers user/global npmrc files and env overrides.
+    config = capture([pnpm, 'config', 'list', '--json'], cwd=directory)
+    return dict(runtime, source=sources[source], config_files=config_files,
+                environment_sha256=hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest(),
+                pnpm_config_sha256=hashlib.sha256(config).hexdigest(),
+                browser_sha256=sha(browser) if browser and browser.is_file() else None)
+
+
 @contextlib.contextmanager
 def workspace_lock(root):
     folder = root / 'artifacts/auto-releases'
@@ -285,10 +349,45 @@ class ReleaseProgress:
                         'Continuation parent requires production recovery')
             previous = path, progress
 
-    def run(self, name, stages, action, inputs=None, verify=None):
+    def frontend_candidates(self, name, fingerprint):
+        """Reuse only original, complete frontend evidence from unchanged repositories."""
+        site = name.removeprefix('frontend-')
+        require(self.value['scope'] == 'local' and name == 'frontend-' + site and site in FRONTENDS,
+                'Cross-release reuse is limited to local frontend phases')
+        source = FRONTENDS[site][0]
+        for folder in sorted(self.runner.directory.parent.iterdir(), key=lambda item: item.stat().st_mtime_ns, reverse=True):
+            if (folder == self.runner.directory or not folder.is_dir() or folder.is_symlink()
+                    or not re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', folder.name)):
+                continue
+            path = folder / 'progress.json'
+            if not path.is_file():
+                continue
+            require(not path.is_symlink(), 'Redirected frontend progress')
+            progress = json.loads(path.read_text(encoding='utf-8'))
+            if any(progress.get(key) != self.value[key] for key in ('workflow_version', 'tools', 'scope')):
+                continue
+            phase = progress.get('phases', {}).get(name)
+            if (not phase or phase.get('inputs') != fingerprint
+                    or phase.get('origin_release') != folder.name):
+                continue
+            require(progress.get('release_id') == folder.name, 'Frontend progress belongs to another release')
+            status_path = folder / 'status.json'
+            require(status_path.is_file() and not status_path.is_symlink(), 'Missing or redirected frontend status')
+            status = json.loads(status_path.read_text(encoding='utf-8'))
+            validate_manifest(status)
+            require(status['release_id'] == folder.name and status['sources'] == progress.get('sources'),
+                    'Frontend status and progress sources differ')
+            if status['sources'][source] == self.value['sources'][source]:
+                yield folder, phase
+
+    def run(self, name, stages, action, inputs=None, verify=None, reuse_frontend=False):
         require(bool(stages), 'A resumable phase must contain completed commands')
+        if reuse_frontend:
+            require(self.value['scope'] == 'local' and name in {'frontend-' + site for site in FRONTENDS},
+                    'Cross-release reuse is limited to local frontend phases')
         fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
-        for folder, phase in self.candidates(name, fingerprint):
+        extra = self.frontend_candidates(name, fingerprint) if reuse_frontend else ()
+        for folder, phase in itertools.chain(self.candidates(name, fingerprint), extra):
             require(phase.get('result_sha256') == hashlib.sha256(json.dumps(phase['result'], sort_keys=True).encode()).hexdigest(),
                     'Retained phase result changed: ' + name)
             logs = phase.get('logs', [])
@@ -423,11 +522,13 @@ def assert_sources(root, expected):
     require(source_inventory(root) == expected, 'Source changed during checks. No further publication/deployment is allowed.')
 
 
-def local_environment(root):
+def local_environment(root, require_remote=True):
+    executables = ['git', 'docker', 'node', 'pnpm.cmd' if os.name == 'nt' else 'pnpm']
+    if require_remote:
+        executables += ['scp', 'ssh']
+    missing = [name for name in executables if not shutil.which(name)]
+    require(not missing, 'Required tools missing: ' + ', '.join(missing))
     sources = source_inventory(root)
-    for executable in ('git', 'docker', 'node', 'scp', 'ssh'):
-        require(shutil.which(executable), 'Required executable missing: ' + executable)
-    require(shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm'), 'pnpm is required')
     require(capture(['docker', 'info', '--format', '{{.OSType}}']).strip() == b'linux', 'Docker must use Linux containers')
     return sources
 
@@ -1264,7 +1365,7 @@ class Production:
 
 def legacy_local_main(args):
     root = args.root.resolve()
-    sources = local_environment(root)
+    sources = local_environment(root, require_remote=not (args.checks_only or args.preflight_only))
     reused = resume_checks(root, args.resume_from, sources) if args.resume_from else None
     if args.preflight_only:
         print('PREFLIGHT PASSED. No tests, builds, push, SSH or production changes were performed.')
@@ -1391,9 +1492,11 @@ def server_main(manifest):
 
 def automatic_local_main(args):
     root = args.root.resolve()
-    sources = local_environment(root)
+    sources = local_environment(root, require_remote=not (args.checks_only or args.preflight_only))
     fresh = getattr(args, 'fresh', False) is True
     previous = None if fresh else latest_progress(root / 'artifacts/auto-releases', sources, 'local')
+    print('Sources: ' + ', '.join(name + '=' + value['revision'][:8] for name, value in sources.items()), flush=True)
+    print('Checks: ' + ('full recheck requested' if fresh else 'reuse verified unchanged work when available'), flush=True)
     if args.preflight_only:
         print('PREFLIGHT PASSED. No tests, builds, push, SSH or production changes were performed.')
         if previous:
@@ -1406,6 +1509,7 @@ def automatic_local_main(args):
     directory = root / 'artifacts/auto-releases' / release_id
     require(not directory.exists(), 'Release attempt already exists; inspect its receipt')
     runner = Runner(directory)
+    print('Receipts and logs: ' + str(directory), flush=True)
     receipt = dict(manifest, stage='checking', published={})
     if previous:
         receipt['resumed_from'] = previous[0].name
@@ -1430,13 +1534,16 @@ def automatic_local_main(args):
                            'pnpm': capture([shutil.which('pnpm.cmd' if os.name == 'nt' else 'pnpm'), '--version']).decode().strip(),
                            'platform': sys.platform}
         for site in ('game', 'tournaments', 'admin'):
+            phase_inputs = frontend_phase_inputs(root, site, sources, frontend_inputs)
             stages = [site + '-dependencies'] + (['playwright-browser'] if site == 'game' else [])
             stages += [site + '-frontend-tests', site + '-frontend-build']
             def check_frontend(site=site):
                 frontend_checks(root, runner, only=(site,))
                 assert_sources(root, sources)
+                require(frontend_phase_inputs(root, site, sources, frontend_inputs) == phase_inputs,
+                        'Frontend configuration changed during checks: ' + site)
             progress.run('frontend-' + site, stages, check_frontend,
-                         inputs=frontend_inputs)
+                         inputs=phase_inputs, reuse_frontend=not fresh)
             assert_sources(root, sources)
         workspace = exported_workspace(root, manifest, runner.directory / 'source')
         images = checked_images(workspace, manifest, runner, progress)
@@ -1462,11 +1569,14 @@ def automatic_local_main(args):
     except BaseException as error:
         receipt.update(stage='failed', failed_stage=runner.stage, error=str(error))
         save(runner.directory / 'status.json', receipt)
+        retry = '.\\PUBLISH_AND_DEPLOY.ps1' + (' -ChecksOnly' if args.checks_only else '')
         print('\nFAILED STAGE: ' + runner.stage + '\nERROR: ' + str(error) + '\nRECEIPTS: ' + str(runner.directory)
-              + '\nAfter resolving the error, run PUBLISH_AND_DEPLOY.ps1 again.', flush=True)
+              + '\nAfter resolving the error, retry: ' + retry, flush=True)
         if receipt['published']:
             print('Published commits retained: ' + json.dumps(receipt['published']), flush=True)
         raise
+    finally:
+        print_timing_summary(runner.timings)
 
 
 def local_main(args):
@@ -1485,11 +1595,19 @@ def main():
     parser.add_argument('--preflight-only', action='store_true')
     parser.add_argument('--resume-from', help='Reuse verified stages from a supported unpublished local failure')
     parser.add_argument('--fresh', action='store_true', help='Start full checks without reusing completed phases')
+    parser.add_argument('--status', action='store_true', help='Show the last local release and timings without running checks or deployment')
     parser.add_argument('--server', action='store_true')
     parser.add_argument('--manifest', type=Path)
     args = parser.parse_args()
     try:
         require(not (args.fresh and args.resume_from), 'Fresh and ResumeFrom cannot be combined')
+        require(sum((args.checks_only, args.preflight_only, args.status)) <= 1,
+                'ChecksOnly, PreflightOnly and Status cannot be combined')
+        require(not (args.status and (args.fresh or args.resume_from or args.server or args.manifest)),
+                'Status cannot be combined with release modifiers')
+        if args.status:
+            show_local_status(args.root)
+            return 0
         if args.server:
             require(not args.resume_from, 'ResumeFrom is available only for local checks, never server deployment recovery')
             os.umask(0o077)
