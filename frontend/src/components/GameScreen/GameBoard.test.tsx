@@ -704,6 +704,7 @@ for (const playerColor of ["white", "black"] as const) {
         ? "No legal entry from the bar"
         : "Your opponent cannot enter from the bar",
     );
+    await expect(component.getByTestId("no-moves-overlay").locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", playerColor === "white" ? "right" : "left");
     await expect(component.getByTitle("Tap to roll")).toHaveCount(playerColor === "black" ? 1 : 0);
   });
 }
@@ -711,7 +712,7 @@ for (const playerColor of ["white", "black"] as const) {
 for (const blockedColor of ["white", "black"] as const) {
   for (const viewerRole of ["blocked", "next-player"] as const) {
     for (const viewport of [{ width: 844, height: 390 }, { width: 390, height: 844 }]) {
-      test(`next roll survives completed moves below the bar notice (${blockedColor}, ${viewerRole}, ${viewport.width}px)`, async ({ mount, page }) => {
+      test(`bar notice follows its blocked dice while the next roll stays on its owner's side (${blockedColor}, ${viewerRole}, ${viewport.width}px)`, async ({ mount, page }) => {
         await page.setViewportSize(viewport);
         const nextColor = blockedColor === "white" ? "black" : "white";
         const viewer = viewerRole === "blocked" ? blockedColor : nextColor;
@@ -726,15 +727,25 @@ for (const blockedColor of ["white", "black"] as const) {
         );
         const component = await mount(render(rolled, { ...notice, noticeVisible: false }));
         const blockedDice = component.locator('[data-roll-kind="blocked"]');
+        const followingDice = component.locator('[data-roll-kind="following"]');
+        const blockedSide = viewerRole === "blocked" ? "right" : "left";
+        const followingSide = viewerRole === "blocked" ? "left" : "right";
         await expect(blockedDice).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "self" : "opponent");
-        await expect(blockedDice.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", viewerRole === "blocked" ? "right" : "left");
-        await expect(component.locator('[data-roll-kind="following"]')).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "opponent" : "self");
+        await expect(blockedDice.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+        await expect(followingDice).toHaveAttribute("data-roll-owner", viewerRole === "blocked" ? "opponent" : "self");
+        await expect(followingDice.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", followingSide);
         await component.update(render(finished, { ...notice, noticeVisible: true }));
+        await expect(component.getByTestId("no-moves-overlay").locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+        await expect(blockedDice.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+        await expect(followingDice.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", followingSide);
         const details = component.getByTestId("turn-notice-details");
         const dice = details.getByTestId("die");
         await expect(dice).toHaveCount(2);
-        await expect(dice.nth(0).locator("span")).toHaveCount(6);
-        await expect(dice.nth(1).locator("span")).toHaveCount(3);
+        await expect(dice.nth(0).locator("span")).toHaveCount(2);
+        await expect(dice.nth(1).locator("span")).toHaveCount(4);
+        await expect(details.locator('[data-roll-kind="following"]')).toHaveCount(0);
+        await expect(followingDice.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
+        await expect(followingDice.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
         await expect(blockedDice.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
         await expect(blockedDice.getByTestId("die").nth(1).locator("span")).toHaveCount(4);
         const positions = await details.evaluate(element => {
@@ -752,13 +763,14 @@ for (const blockedColor of ["white", "black"] as const) {
           await expect(liveDice).toHaveAttribute("data-roll-owner", "self");
           await expect(liveDice.getByTestId("die").nth(0).locator("span")).toHaveCount(5);
           await expect(blockedDice.getByTestId("die").nth(0).locator("span")).toHaveCount(2);
-          await expect(details.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
+          await expect(followingDice.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
         }
         await component.update(render(finished, null));
         await expect(component.getByTestId("turn-notice-details")).toHaveCount(0);
         await expect(component.getByTestId("dice-overlay")).toHaveCount(0);
         await component.update(render(finished, { ...notice, id: "room:2" }));
-        await expect(component.getByTestId("turn-notice-details")).toHaveCount(0);
+        await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="blocked"]')).toBeVisible();
+        await expect(followingDice).toHaveCount(0);
       });
     }
   }

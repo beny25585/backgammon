@@ -312,7 +312,6 @@ export default function GameBoard({
   const followingRoll = useFollowingRoll(state, noMovesMessage);
   const liveRoll = state.phase === "moving" && state.remaining.length > 0 &&
     (!noMovesMessage || state.turn === noMovesMessage.color);
-  const diceBelowNotice = Boolean(followingRoll && visibleTurnNotice?.variant === "no-moves");
   const onReorder = isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined;
   const liveDice = liveRoll ? (
     <DiceOverlay dice={state.dice} remaining={state.remaining} color={state.turn}
@@ -337,7 +336,7 @@ export default function GameBoard({
         {liveDice}
       </>
     ),
-    [followingSide]: diceBelowNotice ? undefined : followingDice,
+    [followingSide]: followingDice,
   } : undefined;
 
   function handleSelect(from: Source | null) {
@@ -402,8 +401,7 @@ export default function GameBoard({
           onOfferDouble={offerDouble}
           autoMove={activeAutoMove}
           turnNotice={visibleTurnNotice}
-          noticeSide={noMovesMessage && noMovesMessage.color !== playerColor ? "right" : "left"}
-          noticeDetails={diceBelowNotice ? followingDice : undefined}
+          noticeSide={noMovesMessage ? blockedSide : "left"}
           rollDetails={rollDetails}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
           inputDisabled={autoConfirmPending}

@@ -631,7 +631,7 @@ test("opponent no-moves dice remain visible for three seconds for both event for
 
 for (const blockedColor of ["white", "black"] as const) {
   for (const role of ["blocked", "next-player"] as const) {
-    test(`online roll events retain the next player's dice below the bar notice (${blockedColor}, ${role})`, async ({ mount, page }) => {
+    test(`online roll events keep the bar notice with its dice and the next roll on its owner's side (${blockedColor}, ${role})`, async ({ mount, page }) => {
       await seedFakeSocket(page);
       await page.route("**/api/**", route => route.fulfill({ json: {} }));
       const nextColor = blockedColor === "white" ? "black" : "white";
@@ -653,15 +653,26 @@ for (const blockedColor of ["white", "black"] as const) {
       }
       await emitBroadcast(page, { ...newGame(), bar, turn: nextColor, phase: "moving", version: 3,
         dice: [6, 3], remaining: [6, 3] }, viewer, "roll");
-      await expect(component.locator('[data-roll-kind="following"]')).toHaveAttribute("data-roll-owner", role === "blocked" ? "opponent" : "self");
-      await expect(component.locator('[data-roll-kind="blocked"]')).toHaveAttribute("data-roll-owner", role === "blocked" ? "self" : "opponent");
+      const blocked = component.locator('[data-roll-kind="blocked"]');
+      const following = component.locator('[data-roll-kind="following"]');
+      const blockedSide = role === "blocked" ? "right" : "left";
+      const followingSide = role === "blocked" ? "left" : "right";
+      await expect(following).toHaveAttribute("data-roll-owner", role === "blocked" ? "opponent" : "self");
+      await expect(blocked).toHaveAttribute("data-roll-owner", role === "blocked" ? "self" : "opponent");
+      await expect(blocked.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+      await expect(following.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", followingSide);
       // The server finishes the moves before the 350ms notice reveal.
       await emitBroadcast(page, { ...rollingState(), bar, turn: blockedColor, version: 4, dice: [], remaining: [] }, viewer, "end_turn");
       await page.clock.runFor(350);
+      await expect(component.getByTestId("no-moves-overlay").locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+      await expect(blocked.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+      await expect(following.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", followingSide);
       const dice = component.getByTestId("turn-notice-details").getByTestId("die");
       await expect(dice).toHaveCount(2);
-      await expect(dice.nth(0).locator("span")).toHaveCount(6);
-      await expect(dice.nth(1).locator("span")).toHaveCount(3);
+      await expect(dice.nth(0).locator("span")).toHaveCount(2);
+      await expect(dice.nth(1).locator("span")).toHaveCount(4);
+      await expect(following.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
+      await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
       await page.clock.runFor(2650);
       await expect(component.getByTestId("no-moves-overlay")).toHaveCount(0);
     });
@@ -723,7 +734,10 @@ for (const blockedColor of ["white", "black"] as const) {
 
         // Revealing the notice must preserve the snapshot saved before that timer.
         await page.clock.runFor(350);
-        await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toBeVisible();
+        await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="blocked"]')).toBeVisible();
+        await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toHaveCount(0);
+        await expect(component.getByTestId("no-moves-overlay").locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", viewerRole === "blocked" ? "right" : "left");
+        await expect(following.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", viewerRole === "blocked" ? "left" : "right");
         await expect(blocked).toBeVisible();
         await page.clock.runFor(2649);
         await expect(blocked).toBeVisible();

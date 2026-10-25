@@ -297,8 +297,12 @@ for (const blockedColor of ["white", "black"] as const) {
     await component.update(render({ ...initial, turn: "white", dice: [], remaining: [] }));
     const blocked = component.locator('[data-roll-kind="blocked"]');
     const following = component.locator('[data-roll-kind="following"]');
+    const blockedSide = blockedColor === "white" ? "right" : "left";
+    const followingSide = blockedColor === "white" ? "left" : "right";
     await expect(blocked).toHaveAttribute("data-roll-owner", blockedColor === "white" ? "self" : "opponent");
     await expect(following).toHaveAttribute("data-roll-owner", blockedColor === "white" ? "opponent" : "self");
+    await expect(blocked.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+    await expect(following.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", followingSide);
     // applyRoll orders a normal roll from the higher die to the lower die.
     await expect(blocked.getByTestId("die").nth(0).locator("span")).toHaveCount(4);
     await expect(blocked.getByTestId("die").nth(1).locator("span")).toHaveCount(2);
@@ -306,7 +310,10 @@ for (const blockedColor of ["white", "black"] as const) {
     await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
     await page.clock.runFor(blockedColor === "white" ? 1499 : 2999);
     await expect(blocked).toBeVisible();
-    await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toBeVisible();
+    await expect(component.getByTestId("no-moves-overlay").locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", blockedSide);
+    await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="blocked"]')).toBeVisible();
+    await expect(component.getByTestId("turn-notice-details").locator('[data-roll-kind="following"]')).toHaveCount(0);
+    await expect(following.locator('xpath=ancestor::*[@data-overlay-side][1]')).toHaveAttribute("data-overlay-side", followingSide);
     await page.clock.runFor(1);
     await expect(blocked).toHaveCount(0);
     await expect(following).toHaveCount(0);
