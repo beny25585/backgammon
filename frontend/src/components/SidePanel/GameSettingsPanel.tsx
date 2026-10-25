@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useRef, useState } from "react";
 import type { GameState } from "@/lib/backgammon/engine";
 import { useGame } from "../../services/gameContext";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -21,12 +21,48 @@ interface GameSettingsPanelProps {
 }
 
 const buttonClass = "flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-amber-200/25 bg-[#211e17] px-1 py-1 text-xs font-semibold text-amber-200 hover:bg-[#393022] focus-visible:outline-2 focus-visible:outline-amber-300";
+const actionButtonClass = "flex min-h-11 w-full items-center justify-center rounded-lg border px-1 py-1 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-amber-300";
+type GameAction = "giveUp" | "leave";
 
 function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, soundEnabled,
   onSoundEnabledChange, bracketUrl, autoRoll, onAutoRollChange }: GameSettingsPanelProps) {
   const { t, direction } = useI18n();
   const { giveUp } = useGame();
-  const [showGiveUp, setShowGiveUp] = useState(false);
+  const [confirmingAction, setConfirmingAction] = useState<GameAction | null>(null);
+  const confirmationRef = useRef<GameAction | null>(null);
+  const actions = [
+    {
+      id: "giveUp",
+      labelKey: "game.giveUp",
+      confirmKey: "game.giveUpCurrentConfirm",
+      toneClass: "border-orange-300/30 bg-orange-400/10 text-orange-200 hover:bg-orange-400/20",
+      visible: true,
+    },
+    {
+      id: "leave",
+      labelKey: state.gameFormat === "money" ? "game.leaveMoney" : "game.leaveSeries",
+      confirmKey: state.gameFormat === "money" ? "game.leaveMoneyConfirm" : "game.leaveSeriesConfirm",
+      toneClass: "border-red-300/30 bg-red-400/10 text-red-200 hover:bg-red-400/20",
+      visible: Boolean(onLeave),
+    },
+  ] as const;
+
+  function requestConfirmation(action: GameAction) {
+    confirmationRef.current = action;
+    setConfirmingAction(action);
+  }
+
+  function cancelConfirmation() {
+    confirmationRef.current = null;
+    setConfirmingAction(null);
+  }
+
+  function confirmAction() {
+    const action = confirmationRef.current;
+    cancelConfirmation();
+    if (action === "giveUp") giveUp();
+    if (action === "leave") onLeave?.();
+  }
 
   return (
     <aside className="col-start-4 row-start-1 flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto overscroll-contain bg-[#111617] p-2 text-white [scrollbar-color:#dfbc7c_#111617] [scrollbar-width:thin] [&>div]:shrink-0 @max-[620px]/game-layout:col-span-3 @max-[620px]/game-layout:col-start-1 @max-[620px]/game-layout:row-start-2 @max-[620px]/game-layout:flex-row @max-[620px]/game-layout:items-start @max-[620px]/game-layout:overflow-x-auto @max-[620px]/game-layout:p-0.5 @max-[620px]/game-layout:[&>div]:min-w-28"
@@ -55,18 +91,17 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, sou
         </div>
       )}
       <div className="mt-auto grid gap-1 @max-[620px]/game-layout:mt-0 @max-[620px]/game-layout:grid-cols-2" dir={direction}>
-        {!showGiveUp ? (
-          <button type="button" className="min-h-11 rounded-lg border border-red-300/30 bg-red-400/10 px-1 text-xs font-semibold text-red-200 hover:bg-red-400/20 focus-visible:outline-2 focus-visible:outline-amber-300" onClick={() => setShowGiveUp(true)}>{t("game.giveUp")}</button>
-        ) : (
-          <div className="grid gap-1 text-center text-xs text-white/80 @max-[620px]/game-layout:col-span-2" role="group" aria-label={t("game.giveUpCurrentConfirm")}>
-            <span>{t("game.giveUpCurrentConfirm")}</span>
+        {actions.filter(action => action.visible).map(action => confirmingAction === action.id ? (
+          <div key={action.id} className="grid gap-1 text-center text-xs text-white/80 @max-[620px]/game-layout:col-span-2" role="group" aria-label={t(action.confirmKey)}>
+            <span>{t(action.confirmKey)}</span>
             <div className="grid grid-cols-2 gap-1">
-              <button type="button" className={buttonClass} onClick={() => { giveUp(); setShowGiveUp(false); }}>{t("common.yes")}</button>
-              <button type="button" className={buttonClass} onClick={() => setShowGiveUp(false)}>{t("common.no")}</button>
+              <button type="button" className={`${actionButtonClass} ${action.toneClass}`} onClick={confirmAction}>{t("common.yes")}</button>
+              <button type="button" className={buttonClass} onClick={cancelConfirmation}>{t("common.no")}</button>
             </div>
           </div>
-        )}
-        {onLeave && <button type="button" className={buttonClass} onClick={() => onLeave()}>{t(state.gameFormat === "money" ? "game.leaveMoney" : "game.leaveSeries")}</button>}
+        ) : (
+          <button key={action.id} type="button" className={`${actionButtonClass} ${action.toneClass}`} onClick={() => requestConfirmation(action.id)}>{t(action.labelKey)}</button>
+        ))}
       </div>
     </aside>
   );

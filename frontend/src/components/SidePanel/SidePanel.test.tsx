@@ -174,3 +174,35 @@ test("settings are available immediately without an opening button", async ({ mo
   await expect(component.getByRole("button", { name: "Language" })).toBeVisible();
   await expect(component.getByRole("button", { name: "Install app" })).toBeVisible();
 });
+
+for (const [gameFormat, label, warning] of [
+  ["match", "Leave and forfeit match", "Leave and forfeit the entire match? This counts as a match loss."],
+  ["money", "Leave and forfeit game", "Leave and forfeit this game? This counts as a loss under the game and stake rules."],
+] as const) {
+  test(`leaving a ${gameFormat} requires confirmation and submits only once`, async ({ mount }) => {
+    let leaves = 0;
+    let giveUps = 0;
+    const component = await mount(
+      <MockGameWrapper context={{ giveUp: () => { giveUps += 1; } }}>
+        <GameSettingsPanel state={makeState({ gameFormat })} onLeave={() => { leaves += 1; }} />
+      </MockGameWrapper>,
+      { hooksConfig: { locale: "en" } },
+    );
+    const leave = component.getByRole("button", { name: label, exact: true });
+    await leave.click();
+    const confirmation = component.getByRole("group", { name: warning, exact: true });
+    await expect(confirmation).toBeVisible();
+    expect(leaves).toBe(0);
+    await confirmation.getByRole("button", { name: "No", exact: true }).click();
+    await expect(confirmation).toHaveCount(0);
+    expect(leaves).toBe(0);
+    await leave.click();
+    await confirmation.getByRole("button", { name: "Yes", exact: true }).evaluate((element) => {
+      (element as HTMLButtonElement).click();
+      (element as HTMLButtonElement).click();
+    });
+    await expect.poll(() => leaves).toBe(1);
+    await expect(confirmation).toHaveCount(0);
+    expect(giveUps).toBe(0);
+  });
+}

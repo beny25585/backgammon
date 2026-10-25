@@ -249,6 +249,10 @@ export const messages = {
         "Concede this game? In a series, play continues unless the target is reached.",
       leaveMoney: "Leave and forfeit game",
       leaveSeries: "Leave and forfeit match",
+      leaveMoneyConfirm:
+        "Leave and forfeit this game? This counts as a loss under the game and stake rules.",
+      leaveSeriesConfirm:
+        "Leave and forfeit the entire match? This counts as a match loss.",
       closeExistingTitle: "End the current match?",
       aiStoppedMessage: "The computer stopped. Retry from this position.",
       aiRetryButton: "Retry",
@@ -731,6 +735,10 @@ export const messages = {
         "לוותר על המשחק הנוכחי? בסדרה ממשיכים אלא אם הושג יעד הנקודות.",
       leaveMoney: "יציאה והפסד המשחק",
       leaveSeries: "יציאה והפסד הסדרה",
+      leaveMoneyConfirm:
+        "לצאת ולהפסיד את המשחק? היציאה תיחשב כהפסד לפי חוקי המשחק וההימור.",
+      leaveSeriesConfirm:
+        "לצאת ולהפסיד את כל הסדרה? היציאה תיחשב כהפסד הסדרה.",
       aiStoppedMessage: "המחשב נעצר. אפשר לנסות שוב מאותו מצב.",
       aiRetryButton: "ניסיון חוזר",
       aiRetryingButton: "מנסה שוב…",

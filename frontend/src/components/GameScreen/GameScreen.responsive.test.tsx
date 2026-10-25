@@ -246,13 +246,13 @@ for (const [theme, expectedAccent] of [
       </div>,
     );
 
-    const menuColor = await component
+    const leaveColor = await component
       .getByTestId("game-settings-panel")
       .getByRole("button", { name: "Leave and forfeit match", exact: true })
       .evaluate((element) => getComputedStyle(element).color);
-    const goldColor = await component.evaluate((element) => {
+    const dangerColor = await component.evaluate((element) => {
       const probe = document.createElement("span");
-      probe.className = "text-amber-200";
+      probe.className = "text-red-200";
       element.appendChild(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();
@@ -262,7 +262,7 @@ for (const [theme, expectedAccent] of [
       .getByTitle("Tap to roll")
       .locator("[data-button-surface]")
       .evaluate((element) => getComputedStyle(element).backgroundColor);
-    expect(menuColor).toBe(goldColor);
+    expect(leaveColor).toBe(dangerColor);
     expect(rollColor).toBe(expectedAccent);
   });
 }
