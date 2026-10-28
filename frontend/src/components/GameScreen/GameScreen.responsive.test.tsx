@@ -174,7 +174,7 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
 
   const component = await mountBoard(mount, movingState());
   const frame = await component.getByTestId("board-frame").boundingBox();
-  const clock = await component.getByTestId("clock-my").locator("..").boundingBox();
+  const clock = await component.getByTestId("clock-my").boundingBox();
 
   expect(frame).not.toBeNull();
   expect(clock).not.toBeNull();
@@ -252,7 +252,7 @@ for (const [theme, expectedAccent] of [
       .evaluate((element) => getComputedStyle(element).color);
     const dangerColor = await component.evaluate((element) => {
       const probe = document.createElement("span");
-      probe.className = "text-red-200";
+      probe.className = "text-red-300";
       element.appendChild(probe);
       const color = getComputedStyle(probe).color;
       probe.remove();
@@ -267,18 +267,22 @@ for (const [theme, expectedAccent] of [
   });
 }
 
-test("players, scores and clock, board, and settings follow the requested order", async ({ mount, page }) => {
+test("the shared player rail, board, and settings follow the approved order", async ({ mount, page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   const component = await mountBoard(mount, movingState());
-  const names = await component.getByTestId("player-details-column").boundingBox();
-  const scores = await component.getByTestId("score-clock-column").boundingBox();
+  const rail = component.getByTestId("side-panel");
+  const railBox = await rail.boundingBox();
   const board = await component.getByTestId("board-wrapper").boundingBox();
   const settings = await component.getByTestId("game-settings-panel").boundingBox();
-  expect(names!.x + names!.width).toBeLessThanOrEqual(scores!.x);
-  expect(scores!.x + scores!.width).toBeLessThanOrEqual(board!.x);
+  expect(railBox!.x + railBox!.width).toBeLessThanOrEqual(board!.x);
   expect(board!.x + board!.width).toBeLessThanOrEqual(settings!.x);
-  await expect(component.getByTestId("player-details-column").getByTestId("player-score-white")).toHaveCount(0);
-  await expect(component.getByTestId("score-clock-column").getByTestId("player-score-white")).toHaveCount(1);
+  await expect(rail.locator('[data-player="self"]').getByTestId("player-score-white")).toHaveCount(1);
+  await expect(rail.locator('[data-player="opponent"]').getByTestId("player-score-black")).toHaveCount(1);
+  for (const id of ["clock-my", "clock-opp"]) {
+    const clock = await rail.getByTestId(id).boundingBox();
+    expect(clock!.y).toBeGreaterThanOrEqual(railBox!.y);
+    expect(clock!.y + clock!.height).toBeLessThanOrEqual(railBox!.y + railBox!.height);
+  }
 });
 for (const viewport of [
   { name: "short-phone", width: 474, height: 330 },

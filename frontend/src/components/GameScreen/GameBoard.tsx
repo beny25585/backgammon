@@ -310,12 +310,15 @@ export default function GameBoard({
   }, [turnNotice]);
 
   const followingRoll = useFollowingRoll(state, noMovesMessage);
-  const liveRoll = state.phase === "moving" && state.remaining.length > 0 &&
+  const completedRoll = state.phase === "moving" && state.dice.length > 0 && state.remaining.length === 0 &&
+    hasPlayedMoveThisTurn && !noMovesMessage;
+  const liveRoll = state.phase === "moving" && (state.remaining.length > 0 || completedRoll) &&
     (!noMovesMessage || state.turn === noMovesMessage.color);
   const onReorder = isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined;
   const liveDice = liveRoll ? (
     <DiceOverlay dice={state.dice} remaining={state.remaining} color={state.turn}
-      playerColor={playerColor} onReorder={state.turn === playerColor ? onReorder : undefined} />
+      playerColor={playerColor} usedOpacity={completedRoll ? 0.65 : undefined}
+      onReorder={state.turn === playerColor && !completedRoll ? onReorder : undefined} />
   ) : null;
   const ownFollowingRollActive = followingRoll?.color === playerColor && isMyTurn && state.remaining.length > 0;
   const followingDice = followingRoll ? (
@@ -386,9 +389,10 @@ export default function GameBoard({
     }>
       <SidePanel state={state} playerColor={playerColor} clock={clock}
         turnStartedAt={turnStartedAt} timeControl={timeControl} />
-      <div className={`${styles.boardArea} col-start-3 row-start-1`}>
+      <div className={`${styles.boardArea} col-start-2 row-start-2`}>
         <Board
           state={state}
+          groupTurnActions
           myColor={playerColor}
           selected={selectedSource}
           legalTargets={legalTargets}

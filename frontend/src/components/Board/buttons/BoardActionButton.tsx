@@ -15,7 +15,7 @@ export default function BoardActionButton({ variant = "secondary", className = "
       <span
         aria-hidden="true"
         data-button-surface
-        className={`pointer-events-none absolute inset-x-0 top-1/2 h-[var(--board-action-face-height,36px)] -translate-y-1/2 rounded-[5px] border shadow-[0_3px_10px_#00000066] group-hover:border-[var(--ui-accent-border,#e7bd72)] ${variant === "primary" ? "border-[var(--ui-accent-border,#d9b65db3)] [background:var(--ui-accent,#d9b65d)]" : "border-[var(--ui-secondary-border,#f7f1e340)] [background:var(--ui-secondary-bg,#0f1d15eb)]"}`}
+        className={`pointer-events-none absolute inset-x-0 top-1/2 h-[var(--board-action-face-height,36px)] -translate-y-1/2 rounded-md border shadow-[0_3px_10px_#00000066,inset_0_1px_0_#ffffff26] group-enabled:group-hover:border-[var(--ui-accent-hover,#e7bd72)] ${variant === "primary" ? "border-[var(--ui-accent-border,#d9b65db3)] [background:var(--board-primary-surface,var(--ui-accent,#d9b65d))]" : "border-[var(--ui-secondary-border,#f7f1e340)] [background:var(--ui-secondary-bg,#0f1d15eb)]"}`}
       />
       <span className="pointer-events-none relative whitespace-nowrap">{children}</span>
     </button>

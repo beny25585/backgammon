@@ -1,6 +1,7 @@
 import { memo } from "react";
 import Checker from "../checker/Checker";
 import styles from "./PointCell.module.css";
+import { useBoardMaterials } from "../../materials/boardMaterialContext";
 
 interface PointCellProps {
   index: number;
@@ -25,6 +26,7 @@ function PointCell({
   hideTopChecker,
   onClick,
 }: PointCellProps) {
+  const { ready: materialReady } = useBoardMaterials();
   const isLight = index % 2 === 0;
 
   const count = Math.abs(pointValue);
@@ -43,14 +45,18 @@ function PointCell({
   return (
     <button
       onClick={() => onClick(index)}
-      className={`${styles.point} min-h-0 min-w-0`}
+      className={`${styles.point} group min-h-0 min-w-0`}
       style={{
         direction: "ltr",
       }}
       data-point-idx={index}
+      data-point-top={top ? "true" : "false"}
+      data-point-light={isLight ? "true" : "false"}
     >
       <div
-        className={`${styles.background} ${
+        aria-hidden="true"
+        data-point-material="triangle"
+        className={`${styles.background} ${materialReady ? "invisible" : ""} ${
           top
             ? isLight
               ? styles.triangleLightTop
@@ -60,6 +66,8 @@ function PointCell({
               : styles.triangleDarkBottom
         }`}
       />
+
+      <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-2 rounded-sm group-focus-visible:ring-2 group-focus-visible:ring-inset group-focus-visible:ring-amber-200" />
 
       {(selected || isLegalTarget || isLegalFrom) && (
         <div
@@ -76,15 +84,15 @@ function PointCell({
       )}
 
       <span
-        className={`${styles.pointNumber} text-[clamp(20px,1.45vw,28px)] @max-[620px]/game-layout:text-xs ${
-          top ? styles.pointNumberTop : styles.pointNumberBottom
+        className={`pointer-events-none absolute left-1/2 z-20 grid h-[var(--board-number-rim,20px)] -translate-x-1/2 place-items-center select-none text-[length:min(clamp(11px,1.65cqw,20px),calc(var(--board-number-rim,20px)_-_4px))] leading-none font-semibold tabular-nums text-[var(--board-number-color,#ead3a2)] @max-[620px]/game-layout:text-xs ${materialReady ? "[text-shadow:-0.5px_-0.5px_0_#fff5d733,0_1px_1px_#000000dd]" : "[text-shadow:0_1px_2px_#000000]"} ${
+          top ? "top-[calc(-1*var(--board-number-rim,20px))]" : "bottom-[calc(-1*var(--board-number-rim,20px))]"
         }`}
         data-testid="point-number"
       >
         {pointNumber}
       </span>
 
-      <div className={top ? styles.checkersTop : styles.checkersBottom}>
+      <div data-checker-stack className={`z-3 flex items-center gap-0.5 py-2 [@container_game-layout_(height<500px)]:py-[3px] ${top ? "relative flex-col" : "absolute bottom-0 flex-col-reverse"}`}>
         {Array.from({ length: renderCount }).map((_, i) => (
           <Checker
             key={i}

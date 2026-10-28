@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import styles from "./Clock.module.css";
 import { formatClock, delayLeft } from "../../lib/clock";
 import type { Color } from "@/lib/backgammon/engine";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -12,6 +11,7 @@ interface ClockProps {
   oppLabel: string;
   delayMs?: number;
   turnStartedAt?: number | null;
+  layout?: "strip" | "rail";
 }
 
 const DISPLAY_TICK_MS = 250;
@@ -24,6 +24,7 @@ export default function Clock({
   oppLabel,
   delayMs = 0,
   turnStartedAt,
+  layout = "strip",
 }: ClockProps) {
   const { t } = useI18n();
   const oppColor: Color = myColor === "white" ? "black" : "white";
@@ -79,24 +80,30 @@ export default function Clock({
   const myLow = myValue != null && myValue <= 10_000;
   const oppLow = oppValue != null && oppValue <= 10_000;
 
-  const myCls = `${styles.side} ${myActive ? styles.myActive : styles.idle} ${myLow ? styles.low : ""}`;
-  const oppCls = `${styles.side} ${oppActive ? styles.oppActive : styles.idle} ${oppLow ? styles.low : ""}`;
+  const rail = layout === "rail";
+  const sideClass = "flex min-h-[clamp(28px,5.1cqh,50px)] min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 tabular-nums [@container_game-layout_(height<500px)]:min-h-7 [@container_game-layout_(height<500px)]:py-1";
+  const timeClass = "text-[clamp(15px,18cqw,28px)] font-medium leading-none tracking-tight [@container_game-layout_(height<500px)]:text-base";
+  const activeClass = "border-2 border-[#e1be73] bg-black/10 text-[#f0ce85]";
+  const idleClass = "border-white/20 bg-white/3 text-[#f1ebdf]";
+  const lowClass = "low border-rose-400/70 bg-rose-400/8 text-rose-300";
+  const myCls = `${sideClass} ${rail ? "col-start-1 row-start-5" : ""} ${myActive ? "myActive" : "idle"} ${myLow ? lowClass : myActive ? activeClass : idleClass}`;
+  const oppCls = `${sideClass} ${rail ? "col-start-1 row-start-2" : ""} ${oppActive ? "oppActive" : "idle"} ${oppLow ? lowClass : oppActive ? activeClass : idleClass}`;
 
   return (
-    <div className={styles.strip}>
+    <div className={rail ? "contents" : "grid min-w-0 grid-flow-col auto-cols-fr gap-1"}>
       <div className={oppCls} data-testid="clock-opp">
-        <span className={styles.label}>{oppLabel}</span>
-        <span className={styles.time}>{formatClock(oppValue)}</span>
+        <span className={rail ? "sr-only" : "max-w-full truncate text-xs"}>{oppLabel}</span>
+        <span className={timeClass} dir="ltr">{formatClock(oppValue)}</span>
       </div>
       {showDelay && (
-        <div className={styles.delay} data-testid="clock-delay">
-          <span className={styles.delayLabel}>{t("common.delay")}</span>
-          <span className={styles.seconds}>{formatSeconds(delayMsLeft)}</span>
+        <div className={`flex min-w-0 items-center justify-center gap-2 text-[#c8bda8] ${rail ? "col-start-1 row-start-3 self-end border-t border-white/10 py-2" : "flex-col px-1"}`} data-testid="clock-delay">
+          <span className="text-[clamp(9px,5cqw,12px)]">{t("common.delay")}</span>
+          <span className="text-sm font-semibold tabular-nums text-[#f0ce85]" dir="ltr">{formatSeconds(delayMsLeft)}</span>
         </div>
       )}
       <div className={myCls} data-testid="clock-my">
-        <span className={styles.label}>{myLabel}</span>
-        <span className={styles.time}>{formatClock(myValue)}</span>
+        <span className={rail ? "sr-only" : "max-w-full truncate text-xs"}>{myLabel}</span>
+        <span className={timeClass} dir="ltr">{formatClock(myValue)}</span>
       </div>
     </div>
   );

@@ -128,7 +128,7 @@ test("falls back to generic labels when names are null", async ({ mount }) => {
   await expect(component.getByText("Black Player")).toBeVisible();
 });
 
-test("renders the clock in its own score column", async ({ mount }) => {
+test("renders both player clocks in the player rail", async ({ mount }) => {
   const component = await mount(
     <MockGameWrapper playerColor="white">
       <SidePanel
@@ -171,7 +171,7 @@ test("settings are available immediately without an opening button", async ({ mo
     </MockGameWrapper>,
   );
   await expect(component.getByRole("button", { name: "Match control" })).toHaveCount(0);
-  await expect(component.getByRole("button", { name: "Language" })).toBeVisible();
+  await expect(component.getByRole("combobox", { name: "Language" })).toBeVisible();
   await expect(component.getByRole("button", { name: "Install app" })).toBeVisible();
 });
 

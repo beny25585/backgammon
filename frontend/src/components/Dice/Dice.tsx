@@ -1,41 +1,72 @@
-import { motion } from "motion/react";
-import { useState, useRef } from "react";
+import { motion, useReducedMotion } from "motion/react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { Color } from "@/lib/backgammon/engine";
 import RollingDie from "@animations/RollingDie/RollingDie";
 import { pipPositions } from "../animations/RollingDie/pipPositions";
 import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./Dice.module.css";
+import { useBoardMaterials } from "../Board/materials/boardMaterialContext";
 
 export function Die({
   value,
   used,
   dark,
+  usedOpacity = 0.3,
 }: {
   value: number;
   used?: boolean;
   dark?: boolean;
+  usedOpacity?: number;
 }) {
+  const { t } = useI18n();
+  const reduced = useReducedMotion();
+  const { diceImages } = useBoardMaterials();
+  const source = diceImages?.[dark ? "dark" : "light"][value];
+  const [loadedSource, setLoadedSource] = useState<string | null>(null);
+  const materialReady = Boolean(source && loadedSource === source);
+  const [landingValue, setLandingValue] = useState<number | null>(() => used ? null : value);
+  const finishLanding = useCallback(() => setLandingValue(null), []);
+  // A reorder or spent die stays immediately readable and never starts a new roll.
+  const interrupted = Boolean(used || reduced || landingValue !== value);
+  if (landingValue !== null && interrupted) setLandingValue(null);
+  const showLanding = landingValue !== null && !interrupted;
   return (
     <motion.div
-      initial={{ rotate: -360, scale: 0.4, opacity: 0 }}
-      animate={{ rotate: 1, scale: 1, opacity: used ? 0.3 : 1 }}
-      whileHover={
-        !used ? { scale: 1.08, rotate: 8 } : { scale: 1.9, rotate: 1 }
-      }
-      transition={{ type: "spring", stiffness: 100, damping: 5 }}
-      className={`${styles.die} ${dark ? styles.dieDark : styles.dieLight}`}
+      initial={{ opacity: 0 }}
+      animate={{ transform: "rotate(1deg)", opacity: used ? usedOpacity : 1 }}
+      transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
+      className={materialReady
+        ? "relative size-[var(--die-size,clamp(2rem,10vw,3rem))] shrink-0 rounded-[var(--die-radius,5px)]"
+        : `${styles.die} ${dark ? styles.dieDark : styles.dieLight}`}
       data-testid="die"
+      data-die-value={value}
+      data-die-dark={String(Boolean(dark))}
+      data-die-used={String(Boolean(used))}
+      data-die-material-ready={String(materialReady)}
+      data-die-landing={String(showLanding)}
+      role="img"
+      aria-label={t(used ? "common.usedDieValue" : "common.dieValue", { value })}
     >
+      {source && <img key={source} src={source} alt="" aria-hidden="true" draggable={false}
+        data-die-material={dark ? "dark" : "light"}
+        onLoad={(event) => { if (event.currentTarget.currentSrc === source) setLoadedSource(source); }}
+        className={`pointer-events-none absolute inset-0 size-full select-none [filter:drop-shadow(1px_2px_2px_#0000008c)] ${materialReady && !showLanding ? "opacity-100" : "opacity-0"}`} />}
       {pipPositions[value]?.map(([x, y], i) => (
         <span
           key={i}
-          className={`${styles.pip} ${styles.pipCurrent}`}
+          aria-hidden="true"
+          data-die-pip={i + 1}
+          className={`${styles.pip} ${styles.pipCurrent} ${materialReady || showLanding ? "invisible" : ""}`}
           style={{
             left: `${x}%`,
             top: `${y}%`,
           }}
         />
       ))}
+      {showLanding && <div className="pointer-events-none absolute inset-0">
+        <RollingDie rolling count={1} dark={dark} landOn={[value]} spins
+          size="var(--die-size,clamp(2rem,10vw,3rem))" onRollComplete={finishLanding} />
+      </div>}
     </motion.div>
   );
 }
@@ -49,6 +80,7 @@ export function DiceRow({
   opponentRoll,
   forceActive,
   onReorder,
+  usedOpacity,
 }: {
   dice: number[];
   remaining: number[];
@@ -59,6 +91,7 @@ export function DiceRow({
   winner?: Color | null;
   forceActive?: boolean;
   onReorder?: () => void;
+  usedOpacity?: number;
 }) {
   const { t } = useI18n();
 
@@ -89,7 +122,7 @@ export function DiceRow({
   const activeCount = forceActive ? displayed.length : remaining.length;
   const content = displayed.map((d, i) => {
     const used = !forceActive && i >= activeCount;
-    return <Die key={i} value={d} used={used} dark={color === "black"} />;
+    return <Die key={i} value={d} used={used} usedOpacity={usedOpacity} dark={color === "black"} />;
   });
   if (onReorder) {
     return (
@@ -144,32 +177,32 @@ export function RollPrompt({
   const { t } = useI18n();
   const [rolling, setRolling] = useState(false);
   const fired = useRef(false);
+  const rollTimer = useRef<number>();
+  const reduced = useReducedMotion();
+  useEffect(() => () => window.clearTimeout(rollTimer.current), []);
 
   function handleClick() {
     if (fired.current) return;
     fired.current = true;
     setRolling(true);
     // Keep the dice spinning so the animation is visible, then request the roll
-    window.setTimeout(() => onRoll(), 1000);
+    rollTimer.current = window.setTimeout(() => onRoll(), 1000);
   }
 
   return (
     <motion.button
       onClick={handleClick}
-      className={styles.rollBtn}
+      type="button"
+      aria-busy={rolling}
+      aria-label={t("common.tapToRoll")}
+      className="relative flex cursor-pointer flex-col items-center gap-[clamp(10px,2vw,14px)] rounded-lg border border-[var(--ui-accent-border,#e5b44d80)] px-[clamp(28px,5vw,42px)] py-[clamp(18px,3vw,26px)] shadow-[0_16px_32px_#0205126b] [background:var(--ui-menu-bg,#08171beb)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#e5b44d] [@media(hover:hover)_and_(pointer:fine)]:hover:[background:var(--ui-secondary-bg,#0d2226f2)]"
       data-testid="roll-prompt-btn"
-      whileHover={{ scale: 1.05 }}
-      whileTap={{ scale: 0.94 }}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4 }}
+      whileTap={reduced ? undefined : { transform: "scale(0.97)" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1, transform: "scale(1)" }}
+      transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
     >
-      <span className={styles.pulseRing} aria-hidden="true" />
-      <span
-        className={`${styles.pulseRing} ${styles.pulseRingDelay}`}
-        aria-hidden="true"
-      />
-      <TapIcon className={styles.tapIcon} />
+      <TapIcon className="pointer-events-none size-[clamp(24px,4.5vw,34px)] text-[var(--ui-accent,#e5b44d)]" />
       <RollingDie
         rolling={rolling}
         count={count}
@@ -180,10 +213,8 @@ export function RollPrompt({
       />
       <motion.span
         className={styles.rollLabel}
-        animate={{ opacity: rolling ? 0 : [0.5, 0.7, 0.3] }}
-        transition={
-          rolling ? { duration: 1 } : { duration: 6, repeat: Infinity }
-        }
+        animate={{ opacity: rolling ? 0.45 : 1 }}
+        transition={{ duration: 0.16 }}
       >
         {t("common.tapToRoll")}
       </motion.span>

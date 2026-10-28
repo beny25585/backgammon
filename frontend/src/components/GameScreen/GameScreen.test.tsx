@@ -5,8 +5,8 @@ import { makeGameState } from "../../test-utils/gameState";
 import { ErrorCardHarness } from "../../test-utils/probes";
 import { DEFAULT_BOARD_THEME } from "../BoardThemeSelector/boardThemes";
 
-test("blue and ivory is the default board theme", () => {
-  expect(DEFAULT_BOARD_THEME).toBe("blueIvory");
+test("charcoal and gold is the default board theme", () => {
+  expect(DEFAULT_BOARD_THEME).toBe("charcoalGold");
 });
 
 for (const [theme, label, fieldColor] of [

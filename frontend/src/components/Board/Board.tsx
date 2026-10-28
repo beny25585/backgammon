@@ -35,6 +35,9 @@ import { TOP_POINTS, BOTTOM_POINTS } from "./layout";
 import Checker from "./pieces/checker/Checker";
 import { useCheckerDrag } from "./useCheckerDrag";
 import dragStyles from "./CheckerDrag.module.css";
+import charcoalLeather from "../../assets/6b-charcoal-leather.png";
+import PixiBoardSkin from "./materials/PixiBoardSkin";
+import { useBoardMaterials } from "./materials/boardMaterialContext";
 
 interface BoardProps {
   state: GameState;
@@ -57,6 +60,7 @@ interface BoardProps {
   overlay?: ReactNode;
   onAutoPointSequenceChange?: (active: boolean) => void;
   onControlsTargetChange?: (target: HTMLDivElement | null) => void;
+  groupTurnActions?: boolean;
 }
 
 function getCheckerSize(board: HTMLElement): number {
@@ -154,7 +158,9 @@ export function Board({
   overlay,
   onAutoPointSequenceChange,
   onControlsTargetChange,
+  groupTurnActions = false,
 }: BoardProps) {
+  const materials = useBoardMaterials();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const onAutoPointSequenceChangeRef = useRef(onAutoPointSequenceChange);
@@ -307,8 +313,12 @@ export function Board({
         return bearOffSlot(el, trayCount ?? 1, stackIndex, checkerPx).y - boardTop;
       }
       const rect = boardRect(el);
-      const gap = 2;
-      const pad = 8; // 0.5rem top/bottom padding on the checker stack
+      const stack = el.querySelector<HTMLElement>("[data-checker-stack]");
+      const stackStyle = stack ? getComputedStyle(stack) : null;
+      const gap = stackStyle ? parseFloat(stackStyle.rowGap) || 0 : 2;
+      const pad = stackStyle
+        ? parseFloat(isTop ? stackStyle.paddingTop : stackStyle.paddingBottom) || 0
+        : 8;
       // Returns the checker's TOP-LEFT corner so the flyer's translateY aligns.
       return isTop
         ? rect.top + pad + stackIndex * (checkerPx + gap) - boardTop
@@ -861,20 +871,38 @@ export function Board({
   return (
     <div
       ref={wrapperRef}
-      className={`${styles.wrapper} [--checker:6.7cqw] [--bar-w:7cqw] [--bearoff-w:clamp(48px,6cqw,56px)] [background:var(--lux-rail-bg)]`}
+      className={`${styles.wrapper} [--checker:var(--board-checker-size,6.7cqw)] [--bar-w:var(--board-bar-width,7cqw)] [--bearoff-w:clamp(48px,6cqw,56px)] [background:var(--lux-board-area-bg,var(--lux-rail-bg))]`}
       dir="ltr"
       data-testid="board-wrapper"
+      style={{ "--board-leather-image": `url("${charcoalLeather}")` } as React.CSSProperties}
     >
       <div
         ref={boardRef}
-        className={`${styles.frame} [background:var(--lux-rail-bg)] ${drag ? dragStyles.dragging : ""}`}
+        className={`absolute inset-[var(--board-frame-inset,clamp(7px,0.7vw,11px))] box-border overflow-visible rounded-[10px] py-[var(--board-number-rim)] pl-[var(--board-frame-pad-start,clamp(8px,0.9vw,13px))] pr-[var(--board-frame-pad-end,clamp(8px,0.9vw,13px))] [--board-number-rim:var(--board-frame-pad-block,20px)] [background:var(--lux-rail-bg)] @max-[620px]/game-layout:inset-0 @max-[620px]/game-layout:rounded-md @max-[620px]/game-layout:px-1 @max-[620px]/game-layout:[--board-number-rim:calc(var(--point-number-gutter)-7px)] ${drag ? dragStyles.dragging : ""}`}
         data-testid="board-inner-frame"
+        data-board-material={materials.ready ? "pixi" : "native"}
         {...dragHandlers}
         dir="ltr"
         style={{ touchAction: "none" }}
       >
-        <div className={styles.inner} data-testid="board-inner">
-          <div className={`${styles.column12} col-start-1 row-start-1 min-h-0`} data-testid="board-half-left">
+        <PixiBoardSkin rootRef={boardRef} />
+        {!materials.ready && <>
+        <span aria-hidden="true" data-board-depth="outer-wall" className="pointer-events-none absolute inset-0 translate-y-[5px] rounded-[11px] bg-[#060909] shadow-[2px_7px_7px_#000000b3,5px_13px_16px_#00000066] @max-[620px]/game-layout:translate-y-0.5 @max-[620px]/game-layout:rounded-md" />
+        <span aria-hidden="true" data-board-depth="outer-bevel" className="pointer-events-none absolute inset-0 rounded-[10px] border border-[var(--lux-case-border,#a4824680)] [background:linear-gradient(135deg,#d2c39880,#4e51483d_3px,#070b09_7px,#171d17_98%,#050806)] shadow-[inset_1px_1px_0_#ffffff2e,inset_-2px_-3px_1px_#000000cc] @max-[620px]/game-layout:rounded-md" />
+        <span aria-hidden="true" data-board-depth="rim-face" className="pointer-events-none absolute inset-[4px] rounded-[7px] [background:var(--lux-rail-bg)] shadow-[inset_1px_1px_2px_#ffffff1a,inset_-1px_-2px_2px_#00000099] @max-[620px]/game-layout:inset-0.5 @max-[620px]/game-layout:rounded" />
+        <span aria-hidden="true" className="pointer-events-none absolute inset-[5px] rounded-[inherit] opacity-[var(--lux-board-texture-opacity,0)] mix-blend-soft-light [background-image:var(--lux-board-texture,none)] bg-size-[480px_480px]" />
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-[4px] z-3 rounded-[7px] border border-t-white/12 border-l-white/10 border-r-black/60 border-b-black/80 @max-[620px]/game-layout:inset-0.5 @max-[620px]/game-layout:rounded"
+        />
+        </>}
+        <div className={`${styles.inner} ${materials.ready ? "[--lux-field-bg:transparent] [--lux-field-sheen:none] [--lux-row-bg:none]" : ""} ${materials.ready && materials.theme !== "charcoalGold" ? "[--lux-center-belt:transparent]" : ""}`} data-testid="board-inner">
+          {!materials.ready && <>
+          <span aria-hidden="true" data-board-depth="inner-wall" className="pointer-events-none absolute -inset-[4px] z-3 rounded-[5px] border-[4px] border-t-[#050807] border-l-[#070b09] border-r-[#3d4435] border-b-[#464a3c] shadow-[0_1px_0_#c6bd9b52,0_-1px_0_#000000cc] @max-[620px]/game-layout:-inset-0.5 @max-[620px]/game-layout:border-2" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] opacity-[var(--lux-board-texture-opacity,0)] mix-blend-soft-light [background-image:var(--lux-board-texture,none)] bg-size-[480px_480px]" />
+          <span aria-hidden="true" data-board-depth="recess-contact" className="pointer-events-none absolute inset-0 z-3 rounded-[inherit] shadow-[inset_3px_4px_7px_#000000a6,inset_-1px_-2px_2px_#ffffff0a]" />
+          </>}
+          <div className="relative z-1 col-start-1 row-start-1 grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-[var(--board-center-gap,clamp(6px,0.72cqw,11px))]" data-testid="board-half-left">
             <div className={`${styles.row6} grid-rows-[minmax(0,1fr)]`}>
               {displayTopPoints.slice(0, 6).map((idx) => (
                 <PointCell
@@ -933,7 +961,7 @@ export function Board({
             cubePosition={cubePosition}
           />
 
-          <div className={`${styles.column12} col-start-3 row-start-1 min-h-0`} data-testid="board-half-right">
+          <div className="relative z-1 col-start-3 row-start-1 grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-[var(--board-center-gap,clamp(6px,0.72cqw,11px))]" data-testid="board-half-right">
             <div className={`${styles.row6} grid-rows-[minmax(0,1fr)]`}>
               {displayTopPoints.slice(6).map((idx) => (
                 <PointCell
@@ -994,6 +1022,7 @@ export function Board({
               noticeSide={noticeSide}
               noticeDetails={noticeDetails}
               rollDetails={rollDetails}
+              groupTurnActions={groupTurnActions}
             />
             {overlay}
           </div>

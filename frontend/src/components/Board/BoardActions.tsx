@@ -20,11 +20,13 @@ interface Props {
   noticeSide?: BoardSide;
   noticeDetails?: ReactNode;
   rollDetails?: Partial<Record<BoardSide, ReactNode>>;
+  groupTurnActions?: boolean;
 }
 
 export default function BoardActions({ noticeSide = "left", ...props }: Props) {
   const { t } = useI18n();
-  const leftAction = props.canUndo ? {
+  const groupedTurnActions = props.groupTurnActions && props.canConfirm && props.canUndo && !props.turnNotice;
+  const leftAction = groupedTurnActions ? null : props.canUndo ? {
     id: "board-undo-action",
     content: <UndoButton onClick={props.onUndo} />,
   } : props.canRoll ? {
@@ -34,7 +36,7 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
       {t("common.offerDoubleShort")}
     </BoardActionButton>,
   } : null;
-  const rightAction = props.canConfirm ? {
+  const rightAction = groupedTurnActions ? null : props.canConfirm ? {
     id: "board-confirm-action",
     content: <ConfirmButton onClick={props.onConfirm} />,
   } : props.canRoll ? {
@@ -47,6 +49,21 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
   const noticeAction = noticeSide === "left" ? leftAction : rightAction;
   return (
     <>
+      {groupedTurnActions && (
+        <BoardHalfOverlay side="left">
+          <div
+            className="flex w-[276px] max-w-[calc(100%_-_8px)] items-center gap-4 [--group-action-height:54px] [--board-action-width:100%] [--board-action-face-height:var(--group-action-height)] [--board-action-font:20px] @max-[620px]/game-layout:w-[156px] @max-[620px]/game-layout:gap-1 @max-[620px]/game-layout:[--group-action-height:44px] @max-[620px]/game-layout:[--board-action-face-height:27px] @max-[620px]/game-layout:[--board-action-font:clamp(10px,1.8cqw,12px)] [@container_game-layout_(height<500px)]:w-[156px] [@container_game-layout_(height<500px)]:gap-1 [@container_game-layout_(height<500px)]:[--group-action-height:44px] [@container_game-layout_(height<500px)]:[--board-action-face-height:27px] [@container_game-layout_(height<500px)]:[--board-action-font:clamp(10px,1.8cqw,12px)]"
+            data-testid="board-grouped-turn-actions"
+          >
+            <div className="min-w-0 flex-1 [&>button]:max-w-full" data-testid="board-confirm-action">
+              <ConfirmButton onClick={props.onConfirm} labelKey="common.confirmMove" className="h-[var(--group-action-height)]" />
+            </div>
+            <div className="w-[60px] shrink-0 @max-[620px]/game-layout:w-11 [@container_game-layout_(height<500px)]:w-11 [&>button]:max-w-full" data-testid="board-undo-action">
+              <UndoButton onClick={props.onUndo} iconOnly className="h-[var(--group-action-height)]" />
+            </div>
+          </div>
+        </BoardHalfOverlay>
+      )}
       {props.turnNotice && (
         <BoardHalfOverlay side={noticeSide}>
           <div
