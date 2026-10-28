@@ -131,7 +131,7 @@ for (const vp of VIEWPORTS) {
     const component = await mountBoard(mount, busyState());
 
     await assertNoHorizontalOverflow(page.locator("body"));
-    await assertNoHorizontalOverflow(component.locator('[class*="wrapper"]'));
+    await assertNoHorizontalOverflow(component.getByTestId("board-wrapper"));
   });
 
   test(`five-checker stacks fit inside their points (${vp.name})`, async ({ mount, page }) => {
@@ -413,16 +413,16 @@ for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
         const before = getComputedStyle(el, "::before");
         const after = getComputedStyle(el, "::after");
         return {
-          beforeDisplay: before.display,
-          afterDisplay: after.display,
+          beforeContent: before.content,
+          afterContent: after.content,
         };
       });
       expect(
-        framePseudo.beforeDisplay,
+        framePseudo.beforeContent,
         `frame::before must not paint over the gutter (${vp.width}x${vp.height})`,
       ).toBe("none");
       expect(
-        framePseudo.afterDisplay,
+        framePseudo.afterContent,
         `frame::after must not paint over the gutter (${vp.width}x${vp.height})`,
       ).toBe("none");
 
@@ -458,7 +458,7 @@ for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
           return { top: rect.top, bottom: rect.bottom };
         });
       const topCenters = await component
-        .locator('[class*="pointNumberTop"]')
+        .locator('[data-point-top="true"] [data-testid="point-number"]')
         .evaluateAll((els: HTMLElement[]) =>
           els.map((el) => {
             const rect = el.getBoundingClientRect();
@@ -466,7 +466,7 @@ for (const vp of HEAD_TO_HEAD_VIEWPORTS) {
           }),
         );
       const bottomCenters = await component
-        .locator('[class*="pointNumberBottom"]')
+        .locator('[data-point-top="false"] [data-testid="point-number"]')
         .evaluateAll((els: HTMLElement[]) =>
           els.map((el) => {
             const rect = el.getBoundingClientRect();

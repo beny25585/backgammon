@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 import { GameProvider } from "../../services/gameContext";
 import { applyMove, newGame, type GameState } from "../../lib/backgammon/engine";
 import { GameProbe } from "../../test-utils/probes";
@@ -13,6 +13,59 @@ interface FrameAudit {
   gaps: number[];
   longTasks: number[];
   stop: () => void;
+}
+
+interface InteractionAudit {
+  responseMs: number | null;
+  stop: () => void;
+}
+
+async function measureInteractionResponse(
+  page: Page,
+  target: Locator,
+  stateProbe: Locator,
+  expectedValue: string,
+) {
+  const probeId = await stateProbe.getAttribute("data-testid");
+  await target.evaluate((element, { probeId, expectedValue }) => {
+    const probe = document.querySelector(`[data-testid="${probeId}"]`);
+    if (!probe) throw new Error(`Missing state probe: ${probeId}`);
+    let startedAt: number | null = null;
+    let frame = 0;
+    const audit: InteractionAudit = { responseMs: null, stop: () => {} };
+    const onClick = () => { startedAt = performance.now(); };
+    const observer = new MutationObserver(() => {
+      if (startedAt === null || probe.textContent !== expectedValue) return;
+      observer.disconnect();
+      const start = startedAt;
+      frame = requestAnimationFrame(() => {
+        audit.responseMs = performance.now() - start;
+      });
+    });
+    element.addEventListener("click", onClick, { capture: true, once: true });
+    observer.observe(probe, { childList: true, characterData: true, subtree: true });
+    audit.stop = () => {
+      element.removeEventListener("click", onClick, true);
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+    (window as unknown as { __lowEndInteractionAudit: InteractionAudit }).__lowEndInteractionAudit = audit;
+  }, { probeId, expectedValue });
+
+  try {
+    await target.click();
+    await expect(stateProbe).toHaveText(expectedValue);
+    await expect.poll(() => page.evaluate(() => (
+      window as unknown as { __lowEndInteractionAudit: InteractionAudit }
+    ).__lowEndInteractionAudit.responseMs)).not.toBeNull();
+    return await page.evaluate(() => (
+      window as unknown as { __lowEndInteractionAudit: InteractionAudit }
+    ).__lowEndInteractionAudit.responseMs as number);
+  } finally {
+    await page.evaluate(() => (
+      window as unknown as { __lowEndInteractionAudit: InteractionAudit }
+    ).__lowEndInteractionAudit.stop());
+  }
 }
 
 const profiles = [
@@ -118,6 +171,8 @@ for (const profile of profiles) {
     const initial = onlineMoveState();
     await emitState(page, initial);
     await expect(component.getByTestId("board-frame")).toBeVisible();
+    await expect(component.getByTestId("pixi-board-skin")).toHaveAttribute("data-ready", "true");
+    await page.evaluate(() => document.fonts.ready.then(() => undefined));
 
     const session = await page.context().newCDPSession(page);
     await session.send("Emulation.setCPUThrottlingRate", {
@@ -145,11 +200,15 @@ for (const profile of profiles) {
       (window as unknown as { __lowEndFrameAudit: FrameAudit }).__lowEndFrameAudit = audit;
     });
 
-    const interactionStarted = Date.now();
-    await component.locator('[data-point-idx="23"]').click();
-    await component.locator('[data-point-idx="19"]').click();
-    await expect(component.getByTestId("point-19")).toHaveText("1");
-    const optimisticResponseMs = Date.now() - interactionStarted;
+    // A source click now performs its preferred legal move. Measure from that
+    // browser event to the committed state, excluding Playwright actionability
+    // checks and assertion polling in the test runner.
+    const optimisticResponseMs = await measureInteractionResponse(
+      page,
+      component.locator('[data-point-idx="23"]'),
+      component.getByTestId("point-19"),
+      "1",
+    );
 
     const acknowledged = {
       ...applyMove(initial, { from: 23, to: 19, die: 4 }, "white"),
@@ -158,10 +217,12 @@ for (const profile of profiles) {
     await emitState(page, acknowledged, profile.latencyMs + profile.jitterMs);
 
     // Exercise the actual board button, including the reverse checker animation.
-    const undoStarted = Date.now();
-    await component.locator('button[title="Undo last move"]').click();
-    await expect(component.getByTestId("point-19")).toHaveText("0");
-    const undoResponseMs = Date.now() - undoStarted;
+    const undoResponseMs = await measureInteractionResponse(
+      page,
+      component.locator('button[title="Undo last move"]'),
+      component.getByTestId("point-19"),
+      "0",
+    );
     await page.evaluate(async ({ restored, delay }) => {
       await new Promise(resolve => setTimeout(resolve, delay));
       (window as unknown as Record<string, FakeSocket>).__lowEndFakeWs.emit({

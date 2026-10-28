@@ -34,7 +34,7 @@ async function getPointNumberMap(component: Locator) {
       const idxAttr = el.getAttribute("data-point-idx");
       const idx = Number(idxAttr);
       if (!Number.isInteger(idx) || idx < 0 || idx >= 24) return;
-      const span = el.querySelector('[class*="pointNumber"]') as HTMLElement | null;
+      const span = el.querySelector('[data-testid="point-number"]') as HTMLElement | null;
       const text = span?.textContent?.trim();
       if (text !== undefined) map[idx] = Number(text);
     });
@@ -198,11 +198,11 @@ test("D - PointCell explicit pointNumber and fallback", async ({ mount }) => {
   const component = await mount(
     <PointCell index={5} pointNumber={19} pointValue={0} selected={false} isLegalTarget={false} isLegalFrom={false} onClick={onClick} />,
   );
-  await expect(component.locator('[class*="pointNumber"]')).toHaveText("19");
+  await expect(component.getByTestId("point-number")).toHaveText("19");
   await component.update(
     <PointCell index={5} pointValue={0} selected={false} isLegalTarget={false} isLegalFrom={false} onClick={onClick} />,
   );
-  await expect(component.locator('[class*="pointNumber"]')).toHaveText("6");
+  await expect(component.getByTestId("point-number")).toHaveText("6");
 });
 
 test("D - PointCell empty point shows number", async ({ mount }) => {
@@ -210,8 +210,8 @@ test("D - PointCell empty point shows number", async ({ mount }) => {
   const component = await mount(
     <PointCell index={0} pointNumber={1} pointValue={0} selected={false} isLegalTarget={false} isLegalFrom={false} onClick={onClick} />,
   );
-  await expect(component.locator('[class*="pointNumber"]')).toBeVisible();
-  await expect(component.locator('[class*="pointNumber"]')).toHaveText("1");
+  await expect(component.getByTestId("point-number")).toBeVisible();
+  await expect(component.getByTestId("point-number")).toHaveText("1");
 });
 
 test("D - PointCell occupied point shows number and checkers", async ({ mount }) => {
@@ -219,7 +219,7 @@ test("D - PointCell occupied point shows number and checkers", async ({ mount })
   const component = await mount(
     <PointCell index={0} pointNumber={1} pointValue={5} selected={false} isLegalTarget={false} isLegalFrom={false} onClick={onClick} />,
   );
-  await expect(component.locator('[class*="pointNumber"]')).toHaveText("1");
+  await expect(component.getByTestId("point-number")).toHaveText("1");
   await expect(component.locator('[data-checker]')).toHaveCount(5);
 });
 
@@ -239,7 +239,7 @@ test("E - Board preserves absolute index and label for black viewer", async ({ m
   );
   const btn = component.locator('[data-point-idx="5"]');
   await expect(btn).toHaveAttribute("data-point-idx", "5");
-  await expect(btn.locator('[class*="pointNumber"]')).toHaveText("19");
+  await expect(btn.getByTestId("point-number")).toHaveText("19");
 });
 
 test("E - PointCell direct click returns absolute index", async ({ mount }) => {
@@ -291,10 +291,10 @@ test("F - checker-stack remains last element child and span is before it", async
     for (const btn of buttons) {
       const last = btn.lastElementChild as HTMLElement | null;
       if (!last) return "missing last child";
-      const isStack = last.className.includes("checkersTop") || last.className.includes("checkersBottom");
+      const isStack = last.hasAttribute("data-checker-stack");
       if (!isStack) return `last child not stack for idx ${btn.getAttribute("data-point-idx")}: ${last.className}`;
       // pointNumber must be inside button but not inside stack
-      const pointNumber = btn.querySelector('[class*="pointNumber"]') as HTMLElement | null;
+      const pointNumber = btn.querySelector('[data-testid="point-number"]') as HTMLElement | null;
       if (!pointNumber) return `missing pointNumber for ${btn.getAttribute("data-point-idx")}`;
       if (last.contains(pointNumber)) return `pointNumber inside stack for ${btn.getAttribute("data-point-idx")}`;
       // must be before stack
@@ -302,20 +302,13 @@ test("F - checker-stack remains last element child and span is before it", async
         return `pointNumber not before stack for ${btn.getAttribute("data-point-idx")}`;
       }
       // must not be inside background triangle
-      const bg = btn.querySelector('[class*="background"]');
+      const bg = btn.querySelector('[data-point-material="triangle"]');
       if (bg && bg.contains(pointNumber)) return `pointNumber inside background for ${btn.getAttribute("data-point-idx")}`;
     }
     return "ok";
   });
   expect(structureOk).toBe("ok");
 
-  // Also test top vs bottom class
-  const topHasTopClass = await component.evaluate((root: HTMLElement) => {
-    const topBtn = root.querySelector('[data-point-idx="12"]') as HTMLElement | null; // for white, 12 is top row
-    if (!topBtn) return false;
-    const isTop = topBtn.querySelector('[class*="pointNumberTop"]') !== null;
-    return isTop;
-  });
-  // For white viewer, point 12 is top, should have pointNumberTop
-  expect(topHasTopClass).toBe(true);
+  await expect(component.locator('[data-point-idx="12"]')).toHaveAttribute("data-point-top", "true");
+  await expect(component.locator('[data-point-idx="11"]')).toHaveAttribute("data-point-top", "false");
 });

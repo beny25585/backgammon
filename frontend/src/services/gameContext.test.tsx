@@ -35,6 +35,13 @@ interface WsMessage {
   payload?: Record<string, unknown>;
 }
 
+async function pauseGameClock(page: Page) {
+  // Leave a fixed forward gap so browser/runner transport time cannot make
+  // pauseAt target a time the browser's running fake clock has already passed.
+  await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-01-01T01:00:00Z"));
+}
+
 function midGameState(): GameState {
   const points = new Array(24).fill(0);
   points[23] = 1; // white checker on point 23, die 4 can move it to 19.
@@ -560,8 +567,7 @@ test("server auto-pass after a roll shows the no-moves overlay", async ({
   page,
 }) => {
   const component = await mountProbe(mount, page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await pauseGameClock(page);
   await emitInitialState(page, { ...rollingState(), version: 1 });
 
   // Server rolled (2, 4), found no legal moves, auto-passed to black.
@@ -609,8 +615,7 @@ test("server no-moves notice after a partial turn reaches the UI", async ({
 
 test("opponent no-moves dice remain visible for three seconds for both event formats", async ({ mount, page }) => {
   const component = await mountProbe(mount, page);
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
+  await pauseGameClock(page);
   await emitInitialState(page, { ...rollingState(), turn: "black", version: 1 });
   await emitBroadcast(page, {
     ...rollingState(), turn: "white", version: 2, dice: [2, 4], remaining: [], message: "No legal moves",
@@ -643,8 +648,7 @@ for (const blockedColor of ["white", "black"] as const) {
       );
       const bar = { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 };
       await emitInitialState(page, { ...rollingState(), bar, turn: blockedColor, version: 1 }, viewer);
-      await page.clock.install();
-      await page.clock.pauseAt(new Date());
+      await pauseGameClock(page);
       await emitBroadcast(page, { ...rollingState(), bar, turn: nextColor, version: 2,
         dice: [2, 4], remaining: [], message: "No legal moves" }, viewer, "roll");
       if (role === "next-player") {
@@ -695,8 +699,7 @@ for (const blockedColor of ["white", "black"] as const) {
         const bar = { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 };
         const initial: GameState = { ...rollingState(), bar, turn: blockedColor, version: 1 };
         await emitInitialState(page, initial, viewer);
-        await page.clock.install();
-        await page.clock.pauseAt(new Date());
+        await pauseGameClock(page);
         const remaining = nextDice[0] === nextDice[1] ? Array(4).fill(nextDice[0]) as number[] : nextDice;
         const updates: GameState[] = [
           { ...initial, turn: nextColor, version: 2, dice: [2, 4], remaining: [], message: "No legal moves" },
@@ -872,8 +875,7 @@ for (const color of ["white", "black"] as const) {
       </GameProvider>,
     );
     await emitInitialState(page, { ...midGameState(), phase: "doubling_offered", doubleOfferedBy: "white" }, color);
-    await page.clock.install();
-    await page.clock.pauseAt(new Date());
+    await pauseGameClock(page);
     const result = { winner: "white", reason: "double_response", whiteScore: 1, blackScore: 0, targetPoints: 7, matchOver: false };
     await emitGameEnded(page, result);
     await emitGameEnded(page, result);

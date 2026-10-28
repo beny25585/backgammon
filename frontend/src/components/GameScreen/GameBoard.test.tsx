@@ -595,8 +595,10 @@ test("highlights appear for the active player's legal source points", async ({ m
 
 test("clicking an illegal point does not call makeMove", async ({ mount }) => {
   const moveCalls: [Source, Target][] = [];
+  const state = movingState({ dice: [4, 3], remaining: [4, 3] });
+  state.points[12] = 1; // Keep the turn non-forced while testing invalid clicks.
   const component = await mountBoard(mount, {
-    state: movingState({ dice: [4, 3], remaining: [4, 3] }),
+    state,
     playerColor: "white",
     makeMove: (from, to) => moveCalls.push([from, to]),
   });

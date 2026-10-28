@@ -46,45 +46,53 @@ test("game sounds can be muted and the preference survives reopening", async ({ 
   );
   const component = await mount(screen);
   const sounds = component.getByRole("checkbox", { name: "Game sounds" });
-  await sounds.scrollIntoViewIfNeeded();
   await expect(sounds).toBeChecked();
-  await sounds.uncheck();
+  await component.getByText("Game sounds", { exact: true }).click();
+  await expect(sounds).not.toBeChecked();
   await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-game-sounds"))).toBe("false");
   await component.unmount();
   const reopened = await mount(screen);
   await expect(reopened.getByRole("checkbox", { name: "Game sounds" })).not.toBeChecked();
 });
 
-test("opening result shows both dice and uses the selected theme", async ({ mount, page }) => {
-  await page.evaluate(() => localStorage.removeItem("6b-board-theme"));
-  const component = await mount(
-    <MockGameWrapper
-      playerColor="white"
-      state={makeGameState({
-        phase: "opening_result",
-        turn: "white",
-        openingRoll: { white: 5, black: 3 },
-      })}
-      context={{
-        openingRollResult: { myDie: 5, opponentDie: 3, winner: "white" },
-      }}
-    >
-      <GameScreen />
-    </MockGameWrapper>,
-  );
-  await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
-  await expect(component.getByTestId("opening-result-overlay")).toBeVisible();
-  await expect(
-    component.getByTestId("opening-result-overlay").getByText("Opponent"),
-  ).toBeVisible();
-  await expect(
-    component.getByTestId("opening-result-overlay").locator("[data-testid='die']"),
-  ).toHaveCount(2);
-  const accent = await component
-    .getByTestId("opening-result-overlay")
-    .evaluate((element) => getComputedStyle(element).getPropertyValue("--ui-accent").trim());
-  expect(accent).toBe("#2448ff");
-});
+for (const [theme, expectedAccent] of [
+  ["charcoalGold", "#d6ae63"],
+  ["blueIvory", "#2448ff"],
+] as const) {
+  test(`opening result shows both dice and uses the ${theme} theme`, async ({ mount, page }) => {
+    await page.evaluate((selectedTheme) => {
+      if (selectedTheme === "charcoalGold") localStorage.removeItem("6b-board-theme");
+      else localStorage.setItem("6b-board-theme", selectedTheme);
+    }, theme);
+    const component = await mount(
+      <MockGameWrapper
+        playerColor="white"
+        state={makeGameState({
+          phase: "opening_result",
+          turn: "white",
+          openingRoll: { white: 5, black: 3 },
+        })}
+        context={{
+          openingRollResult: { myDie: 5, opponentDie: 3, winner: "white" },
+        }}
+      >
+        <GameScreen />
+      </MockGameWrapper>,
+    );
+    await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
+    await expect(component.getByTestId("opening-result-overlay")).toBeVisible();
+    await expect(
+      component.getByTestId("opening-result-overlay").getByText("Opponent"),
+    ).toBeVisible();
+    await expect(
+      component.getByTestId("opening-result-overlay").locator("[data-testid='die']"),
+    ).toHaveCount(2);
+    const accent = await component
+      .getByTestId("opening-result-overlay")
+      .evaluate((element) => getComputedStyle(element).getPropertyValue("--ui-accent").trim());
+    expect(accent).toBe(expectedAccent);
+  });
+}
 
 test("opening roll starts automatically without showing a roll action", async ({
   mount,

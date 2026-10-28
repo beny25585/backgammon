@@ -24,8 +24,7 @@ for (const vp of VIEWPORTS) {
     );
     const flyer = fc.getByTestId("flying-checker");
     const checker = flyer.locator("[data-checker]");
-    await expect(checker).toHaveClass(/black/);
-    await expect(checker).not.toHaveClass(/white/);
+    await expect(checker).toHaveAttribute("data-checker-color", "black");
     const size = await flyer.evaluate((el) => {
       const style = getComputedStyle(el);
       return { width: style.width, height: style.height };
