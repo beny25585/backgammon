@@ -1,5 +1,20 @@
 export const messages = {
   en: {
+    spectator: {
+      title: "Watching tournament match",
+      players: "Match players",
+      retry: "Try again",
+      backToBracket: "Back to tournament bracket",
+      doubleOffered: "{player} offered a double",
+      status: { connecting: "Connecting to the match…", live: "Live · Viewing only", reconnecting: "Reconnecting… The board may be out of date.", ended: "The match has ended", error: "Unable to watch this match" },
+      errors: {
+        full: "There are already two spectators in this match. Try again later.",
+        expired: "The viewing link has expired. Return to the tournament and open it again.",
+        unavailable: "Viewing is temporarily unavailable. Please try again.",
+        ended: "The match has ended",
+        forbidden: "You cannot watch this match with this link.",
+      },
+    },
     common: {
       language: "Language",
       english: "English",
@@ -243,6 +258,9 @@ export const messages = {
       boardThemeRedGreen: "Red and green",
       boardThemeRedGreenText: "Mahogany, green felt, and garnet pieces.",
       settingsTitle: "Game settings",
+      settingsMenu: "Menu",
+      openSettings: "Open game settings",
+      closeSettings: "Close game settings",
       boardThemeCharcoalGold: "Charcoal and gold",
       boardThemeCharcoalGoldText: "Charcoal board with ivory and brass points",
       boardThemeBlueIvory: "Blue and ivory",
@@ -492,6 +510,21 @@ export const messages = {
     },
   },
   he: {
+    spectator: {
+      title: "צפייה בדוקרב בטורניר",
+      players: "שחקני הדוקרב",
+      retry: "ניסיון חוזר",
+      backToBracket: "חזרה לעץ הטורניר",
+      doubleOffered: "{player} הציע הכפלה",
+      status: { connecting: "מתחבר לדוקרב…", live: "שידור חי · צפייה בלבד", reconnecting: "מתחבר מחדש… הלוח עלול להיות לא מעודכן.", ended: "הדוקרב הסתיים", error: "לא ניתן לצפות בדוקרב" },
+      errors: {
+        full: "יש כבר שני צופים במשחק. אפשר לנסות שוב בהמשך.",
+        expired: "קישור הצפייה פג תוקף. יש לחזור לטורניר ולפתוח אותו שוב.",
+        unavailable: "הצפייה אינה זמינה כרגע. אפשר לנסות שוב.",
+        ended: "הדוקרב הסתיים",
+        forbidden: "אין הרשאה לצפות בדוקרב באמצעות הקישור הזה.",
+      },
+    },
     common: {
       language: "שפה",
       english: "אנגלית",
@@ -738,6 +771,9 @@ export const messages = {
       boardThemeRedGreen: "אדום וירוק",
       boardThemeRedGreenText: "מהגוני עמוק עם ירוק וארגמן.",
       settingsTitle: "הגדרות משחק",
+      settingsMenu: "תפריט",
+      openSettings: "פתיחת הגדרות המשחק",
+      closeSettings: "סגירת הגדרות המשחק",
       boardThemeCharcoalGold: "פחם וזהב",
       boardThemeCharcoalGoldText: "לוח פחם, שנהב ופליז",
       boardThemeBlueIvory: "כחול ושנהב",

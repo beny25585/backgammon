@@ -46,6 +46,10 @@ for (const scenario of ["legal", "blocked", "outside", "source", "escape", "off"
         <GameBoard state={state} playerColor={color} makeMove={(a, b) => moves.push([a, b])} />
       </MockGameWrapper></div>,
     );
+    if (scenario === "off-controls") {
+      await component.getByTestId("game-settings-toggle").press("Enter");
+      await expect(component.getByTestId("game-settings-panel")).toBeVisible();
+    }
     const source = component.locator(`[data-point-idx="${from}"] [data-checker]`).last();
     const start = await center(source);
     const end = scenario === "outside" ? { x: 1, y: 1 } : await center(

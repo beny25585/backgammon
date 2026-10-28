@@ -1,4 +1,6 @@
+import asyncio
 import copy
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from channels.db import database_sync_to_async
@@ -45,6 +47,98 @@ class PracticeSocketTests(TransactionTestCase):
             move = engine.all_legal_moves('black')[0]
             engine.make_move(move['from'], move['to'], 'black')
         return native_board(engine.state, 'black')
+
+    def bot_consumer(self):
+        consumer = PracticeGameConsumer()
+        consumer.room_id = str(self.room.id)
+        consumer.room_group_name = f'game_{self.room.id}'
+        consumer.channel_layer = SimpleNamespace(group_send=AsyncMock())
+        consumer.is_ai = True
+        consumer._ai_task = asyncio.current_task()
+        consumer._ai_disconnected = False
+        consumer._ai_failed = False
+        return consumer
+
+    async def assert_bot_released_lease(self, consumer):
+        self.assertFalse(consumer._ai_failed)
+        session = await database_sync_to_async(AiSession.objects.get)(room=self.room)
+        self.assertIsNone(session.lease_until)
+        self.assertEqual(session.lease_token, '')
+
+    async def test_bot_releases_human_turn_without_final_action_delay(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(turn='black', phase='moving', dice=[3, 1], remaining=[], doublingEnabled=False)
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        consumer = self.bot_consumer()
+        sleep = AsyncMock()
+
+        with patch('game.ai_consumer.asyncio', SimpleNamespace(sleep=sleep)):
+            await consumer._play_bot()
+
+        sleep.assert_not_awaited()
+        stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
+        await self.assert_bot_released_lease(consumer)
+
+    async def test_blocked_bot_roll_releases_human_turn_without_delay(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(turn='black', phase='rolling', doublingEnabled=False,
+            points=[5, 5, 5] + [0] * 21, bar={'white': 0, 'black': 15},
+            home={'white': 0, 'black': 0})
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        consumer = self.bot_consumer()
+        sleep = AsyncMock()
+
+        with patch('game.ai_consumer.asyncio', SimpleNamespace(sleep=sleep)), patch(
+                'game.consumers.fetch_turn_dice', new=AsyncMock(return_value=(3, 1))):
+            await consumer._play_bot()
+
+        sleep.assert_not_awaited()
+        stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
+        self.assertEqual(stored.state_data['bar']['black'], 15)
+        await self.assert_bot_released_lease(consumer)
+
+    async def test_bot_keeps_action_delays_only_during_its_turn(self):
+        consumer = self.bot_consumer()
+        delayed_states = []
+
+        async def capture_action_delay(delay):
+            stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+            delayed_states.append((delay, copy.deepcopy(stored.state_data)))
+
+        sleep = AsyncMock(side_effect=capture_action_delay)
+        with patch('game.ai_consumer.asyncio', SimpleNamespace(sleep=sleep)), patch(
+                'game.ai.request_board', side_effect=self.fake_board), patch(
+                'game.consumers.fetch_turn_dice', new=AsyncMock(return_value=(3, 1))):
+            await consumer._play_bot()
+
+        self.assertGreaterEqual(len(delayed_states), 2)
+        self.assertEqual(delayed_states[0][1]['phase'], 'moving')
+        self.assertEqual(delayed_states[0][1]['remaining'], [3, 1])
+        self.assertTrue(all(delay == 1.5 and state['turn'] == 'black'
+            for delay, state in delayed_states))
+        stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
+        await self.assert_bot_released_lease(consumer)
+
+    async def test_human_opening_winner_still_advances_through_result_watch(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(turn='black', phase='opening_roll', doublingEnabled=False,
+            openingRoll={'white': 6, 'black': None}, openingDice=[6, 1])
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        consumer = self.bot_consumer()
+        sleep = AsyncMock()
+
+        with patch('game.ai_consumer.asyncio', SimpleNamespace(sleep=sleep)), patch(
+                'game.consumers.GameConsumer.OPENING_RESULT_DELAY', 0.01):
+            await consumer._play_bot()
+
+        sleep.assert_awaited_once_with(1.5)
+        stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('moving', 'white'))
+        self.assertEqual(stored.state_data['dice'], [6, 1])
+        await self.assert_bot_released_lease(consumer)
 
     async def test_bot_rolls_moves_confirms_and_reconnects(self):
         with patch('game.ai.request_board', side_effect=self.fake_board), patch(

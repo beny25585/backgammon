@@ -13,7 +13,11 @@ NAMED_PRESET_SECONDS_PER_POINT = {
     'normal': 60,
     'slow': 120,
 }
-TURN_DELAY_MS = 10_000
+NAMED_PRESET_DELAY_MS = {
+    'fast': 10_000,
+    'normal': 12_000,
+    'slow': 10_000,
+}
 
 
 def parse_time_control(preset_id, target_points=1):
@@ -31,7 +35,7 @@ def parse_time_control(preset_id, target_points=1):
             target = 1
         return (
             NAMED_PRESET_SECONDS_PER_POINT[preset_id] * target * 1_000,
-            TURN_DELAY_MS,
+            NAMED_PRESET_DELAY_MS[preset_id],
         )
     try:
         minutes, delay_sec = preset_id.split('+')

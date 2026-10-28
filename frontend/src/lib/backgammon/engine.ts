@@ -456,6 +456,47 @@ export function legalMovesFrom(state: GameState, from: Source, color: Color): Mo
   return allLegalMoves(state, color).filter(move => move.from === from);
 }
 
+/**
+ * One legal path per endpoint reachable by the same checker with remaining dice.
+ * Prefer fewer steps, then the current dice order. Every intermediate move must
+ * obey the full-turn dice obligations, including bar priority and bear-off.
+ */
+export function getCheckerMoveSequences(
+  state: GameState,
+  from: Source,
+  color: Color,
+): Move[][] {
+  if (state.phase !== "moving" || state.turn !== color || state.remaining.length === 0) {
+    return [];
+  }
+
+  const pathsByTarget = new Map<Target, Move[]>();
+  const pending: { position: GameState; source: Source; path: Move[] }[] = [
+    { position: state, source: from, path: [] },
+  ];
+
+  // Breadth-first search chooses a direct move before any combined path. Keep
+  // exploring duplicate endpoints: their dice or intermediate hits can differ.
+  for (let index = 0; index < pending.length; index += 1) {
+    const { position, source, path } = pending[index];
+    const moves = legalMovesFrom(position, source, color).sort(
+      (a, b) => position.remaining.indexOf(a.die) - position.remaining.indexOf(b.die),
+    );
+    for (const move of moves) {
+      const nextPath = [...path, move];
+      if (!pathsByTarget.has(move.to)) pathsByTarget.set(move.to, nextPath);
+      if (move.to === OFF) continue;
+
+      const nextPosition = positionAfterMove(position, move, color);
+      if (nextPosition.remaining.length > 0) {
+        pending.push({ position: nextPosition, source: move.to, path: nextPath });
+      }
+    }
+  }
+
+  return [...pathsByTarget.values()];
+}
+
 export function getMakePointSequence(
   state: GameState,
   color: Color,

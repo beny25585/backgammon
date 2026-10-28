@@ -19,7 +19,7 @@ function DieFace({ faceValue, side, dark, variant, faceColor }: {
     <div data-testid="die-face" data-face-value={faceValue}
       className={`absolute inset-0 flex items-center justify-center rounded-[12%] [backface-visibility:hidden] ${dark && variant === "pips" ? "faceDark" : "faceLight"} ${
         source ? dark ? "bg-[#171a19]" : "bg-[#d7c7a5]" : dark && variant === "pips"
-          ? "[background:linear-gradient(145deg,var(--lux-die-dark-hi,#403f3c),var(--lux-die-dark-low,#080c0d))] shadow-[inset_0_1px_1px_#ffffff52,inset_0_-2px_3px_#00000099]"
+          ? "border border-[#e6edeb7a] [background:linear-gradient(145deg,color-mix(in_srgb,var(--lux-die-dark-hi,#34393b),#ffffff_8%),color-mix(in_srgb,var(--lux-die-dark-low,#101415),#ffffff_12%))] shadow-[inset_0_1px_1px_#ffffff52,inset_0_-2px_3px_#00000099]"
           : "[background:linear-gradient(145deg,var(--lux-checker-light-hi,#fff8e7),var(--lux-checker-light-low,#ddc391))] shadow-[inset_0_1px_1px_#ffffffb3,inset_0_-2px_3px_#00000066]"
       }`}
       style={{ transform: `${side} translateZ(calc(var(--rolling-die-size) / 2 - 1px))`, color: faceColor }}>
@@ -27,7 +27,7 @@ function DieFace({ faceValue, side, dark, variant, faceColor }: {
         className="pointer-events-none absolute inset-0 size-full select-none" />
         : variant === "value" ? <span className="text-[length:calc(var(--rolling-die-size)*0.42)] leading-none font-extrabold">{faceValue}</span>
           : pipPositions[faceValue]?.map(([x, y], index) => (
-            <span key={index} className={`absolute size-[13%] -translate-x-1/2 -translate-y-1/2 rounded-full shadow-[inset_0_1px_1px_#00000080,0_1px_0_#ffffff38] ${dark ? "bg-[var(--lux-die-pip-light,#edf2ff)]" : "bg-[var(--lux-die-pip-dark,#20245a)]"}`}
+            <span key={index} className={`absolute size-[16.8%] -translate-x-1/2 -translate-y-1/2 rounded-full shadow-[inset_0_1px_1px_#00000080,0_1px_0_#ffffff38] ${dark ? "bg-[#ffffff]" : "bg-[var(--lux-die-pip-dark,#20245a)]"}`}
               style={{ left: `${x}%`, top: `${y}%` }} />
           ))}
     </div>

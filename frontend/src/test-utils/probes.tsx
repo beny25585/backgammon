@@ -113,6 +113,7 @@ export function GameProbe({
     error,
     gameResult,
     handleNextGame,
+    hasPendingMoves,
   } = useGame();
   return (
     <div>
@@ -121,6 +122,7 @@ export function GameProbe({
       <div data-testid="phase">{String(state?.phase ?? "")}</div>
       <div data-testid="dice">{JSON.stringify(state?.dice ?? [])}</div>
       <div data-testid="remaining">{JSON.stringify(state?.remaining ?? [])}</div>
+      <div data-testid="pending-moves">{String(hasPendingMoves?.() ?? false)}</div>
       <div data-testid="point-23">{String(state?.points?.[23] ?? "")}</div>
       <div data-testid="point-19">{String(state?.points?.[19] ?? "")}</div>
       <div data-testid="opening-result">{JSON.stringify(openingRollResult)}</div>

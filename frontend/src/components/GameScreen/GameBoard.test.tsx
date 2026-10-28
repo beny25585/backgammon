@@ -150,7 +150,7 @@ test("auto-moves on first tap when a checker has a single legal target", async (
 });
 
 for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 }, { width: 1920, height: 1080 }]) {
-  test(`game frame uses the width and keeps circular checkers at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
+  test(`game frame fits the viewport and keeps circular checkers at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
     await page.setViewportSize(viewport);
     const state = movingState();
     const component = await mount(
@@ -162,14 +162,19 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
     );
     const frame = await component.getByTestId("board-frame").boundingBox();
     expect(frame).not.toBeNull();
-    expect(frame!.width).toBeGreaterThanOrEqual(viewport.width * 0.95);
+    expect(frame!.width).toBeGreaterThan(0);
+    expect(frame!.x).toBeGreaterThanOrEqual(0);
+    expect(frame!.x + frame!.width).toBeLessThanOrEqual(viewport.width + 1);
     expect(frame!.height).toBeLessThanOrEqual(viewport.height);
     const checker = await component.locator('[data-point-idx="23"] [data-checker]').first().boundingBox();
     expect(checker!.width).toBeGreaterThan(16);
     expect(checker!.width).toBeCloseTo(checker!.height, 0);
+    await component.getByTestId("game-settings-toggle").press("Enter");
     const settings = await component.getByTestId("game-settings-panel").boundingBox();
-    const trays = await component.getByTestId("bear-off-column").boundingBox();
-    expect(settings!.x).toBeGreaterThanOrEqual(trays!.x + trays!.width);
+    const board = await component.getByTestId("board-wrapper").boundingBox();
+    expect(board!.width / board!.height).toBeCloseTo(1.6, 2);
+    expect(settings!.x + settings!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 1);
+    expect(settings!.x).toBeLessThan(board!.x + board!.width);
   });
 }
 
@@ -912,6 +917,133 @@ test("confirm button appears when dice are spent on your turn and clicking calls
   expect(endTurnCalled).toBe(1);
 });
 
+for (const color of ["white", "black"] as const) {
+  const otherColor = color === "white" ? "black" : "white";
+  const point = (whitePoint: number) => color === "white" ? whitePoint : 23 - whitePoint;
+  const turnStates = () => {
+    const sign = color === "white" ? 1 : -1;
+    const points = Array<number>(24).fill(0);
+    points[point(23)] = 2 * sign;
+    points[point(12)] = 2 * sign;
+    points[point(18)] = -2 * sign;
+    const initial = movingState({
+      points,
+      turn: color,
+      home: color === "white" ? { white: 11, black: 13 } : { white: 13, black: 11 },
+      dice: [4, 3],
+      remaining: [4, 3],
+    });
+    const active = applyMove(initial, { from: point(23), to: point(19), die: 4 }, color);
+    const completed = applyMove(active, { from: point(19), to: point(16), die: 3 }, color);
+    return { active, completed };
+  };
+
+  test(`confirm replaces own dice only after the full turn and undo stays opposite (${color})`, async ({ mount, page }) => {
+    await page.setViewportSize(color === "white" ? { width: 844, height: 390 } : { width: 390, height: 844 });
+    const { active, completed } = turnStates();
+    let confirmed = 0;
+    const render = (state: GameState) => (
+      <MockGameWrapper state={state} playerColor={color}>
+        <GameBoard state={state} playerColor={color} makeMove={() => {}}
+          undoMove={() => {}} endTurn={() => confirmed++} />
+      </MockGameWrapper>
+    );
+    const component = await mount(render(active));
+    await expect(component.locator('[data-roll-owner="self"]')).toBeVisible();
+    await expect(component.getByTestId("board-confirm-action")).toHaveCount(0);
+    await expect(component.getByTestId("board-undo-action").locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "left");
+
+    // The original dice values remain in state after their last use.
+    await component.update(render(completed));
+    await expect(component.locator('[data-roll-owner="self"]')).toHaveCount(0);
+    const confirm = component.getByTestId("board-confirm-action");
+    await expect(confirm).toBeVisible();
+    await expect(confirm.locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "right");
+    await expect(component.getByTestId("board-undo-action").locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "left");
+    await confirm.getByRole("button").click();
+    await expect.poll(() => confirmed).toBe(1);
+  });
+
+  test(`completed opponent dice remain visible without a confirm action (${color})`, async ({ mount }) => {
+    const { completed } = turnStates();
+    const component = await mountBoard(mount, {
+      state: completed,
+      playerColor: otherColor,
+      endTurn: () => {},
+    });
+    const dice = component.locator('[data-roll-owner="opponent"]');
+    await expect(dice).toBeVisible();
+    await expect(dice.getByTestId("die")).toHaveCount(2);
+    await expect(dice.locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "left");
+    await expect(component.getByTestId("board-confirm-action")).toHaveCount(0);
+  });
+
+  test(`confirm replaces a completed own following roll while the blocked opponent roll stays (${color})`, async ({ mount }) => {
+    const { active, completed } = turnStates();
+    const message: NoMovesMessage = {
+      id: `confirm-${color}`,
+      color: otherColor,
+      dice: [2, 4],
+      remaining: [2, 4],
+      noticeVisible: false,
+      followingRoll: { color, dice: [4, 3] },
+    };
+    const render = (state: GameState) => (
+      <MockGameWrapper state={state} playerColor={color}>
+        <GameBoard state={state} playerColor={color} makeMove={() => {}}
+          undoMove={() => {}} endTurn={() => {}} noMovesMessage={message} />
+      </MockGameWrapper>
+    );
+    const component = await mount(render(active));
+    await expect(component.locator('[data-roll-kind="following"]')).toHaveAttribute("data-roll-owner", "self");
+    await expect(component.getByTestId("board-confirm-action")).toHaveCount(0);
+    await component.update(render(completed));
+    await expect(component.locator('[data-roll-kind="following"]')).toHaveCount(0);
+    const blockedDice = component.locator('[data-roll-kind="blocked"]');
+    await expect(blockedDice).toBeVisible();
+    await expect(blockedDice).toHaveAttribute("data-roll-owner", "opponent");
+    await expect(blockedDice.locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "left");
+    await expect(component.getByTestId("board-confirm-action").locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "right");
+  });
+
+  test(`an old own blocked roll does not share the completed turn confirm (${color})`, async ({ mount }) => {
+    const { active, completed } = turnStates();
+    const message: NoMovesMessage = {
+      id: `old-blocked-${color}`,
+      color,
+      dice: [2, 4],
+      remaining: [2, 4],
+      followingRoll: { color: otherColor, dice: [6, 3] },
+    };
+    const render = (state: GameState) => (
+      <MockGameWrapper state={state} playerColor={color}>
+        <GameBoard state={state} playerColor={color} makeMove={() => {}}
+          undoMove={() => {}} endTurn={() => {}} noMovesMessage={message} />
+      </MockGameWrapper>
+    );
+    const component = await mount(render(active));
+    await expect(component.locator('[data-roll-kind="blocked"]')).toHaveAttribute("data-roll-owner", "self");
+    await expect(component.locator('[data-roll-kind="live"][data-roll-owner="self"]')).toBeVisible();
+    await expect(component.getByTestId("board-confirm-action")).toHaveCount(0);
+
+    await component.update(render(completed));
+    await expect(component.locator('[data-roll-owner="self"]')).toHaveCount(0);
+    await expect(component.locator('[data-roll-kind="blocked"]')).toHaveCount(0);
+    await expect(component.locator('[data-roll-kind="following"]')).toHaveAttribute("data-roll-owner", "opponent");
+    await expect(component.getByTestId("board-confirm-action")).toBeVisible();
+    await expect(component.getByTestId("board-confirm-action").locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "right");
+    await expect(component.getByTestId("board-undo-action").locator('xpath=ancestor::*[@data-overlay-side][1]'))
+      .toHaveAttribute("data-overlay-side", "left");
+  });
+}
+
 test("no confirm button when it is not your turn", async ({ mount }) => {
   const state = movingState({
     turn: "black",
@@ -1012,18 +1144,23 @@ test("banner shows Accept/Decline when opponent offers a double", async ({ mount
   await expect.poll(() => accepted).toBe(true);
 });
 
-test("visible settings do not cover dice or board actions", async ({ mount, page }) => {
+test("settings start closed and can be opened and dismissed without hiding the dice", async ({ mount, page }) => {
   await page.setViewportSize({ width: 474, height: 330 });
   const state = movingState({ phase: "moving", turn: "white", dice: [5, 3], remaining: [5, 3] });
   const component = await mountBoard(mount, { state, playerColor: "white" });
   const settings = component.getByTestId("game-settings-panel");
   const dice = component.getByTestId("dice-overlay");
-  await expect(settings).toBeVisible();
+  await expect(settings).toBeHidden();
   await expect(dice).toBeVisible();
-  await expect(component.getByRole("button", { name: "Match control" })).toHaveCount(0);
-  const settingsBox = await settings.boundingBox();
-  const boardBox = await component.getByTestId("board-wrapper").boundingBox();
-  expect(settingsBox!.y).toBeGreaterThanOrEqual(boardBox!.y + boardBox!.height);
+  const toggle = component.getByTestId("game-settings-toggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  await expect(settings).toBeVisible();
+  await toggle.press("Enter");
+  await expect(settings).toBeHidden();
+  await expect(dice).toBeVisible();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
 });
 // ---------------------------------------------------------------------------
 // Bear-off orientation regression (viewer-relative trays) - corrected fixtures & real geometry
@@ -1204,6 +1341,7 @@ test("settings controls remain separate from bear-off move targets", async ({ mo
   );
   const column = component.getByTestId("bear-off-column");
   const controls = component.getByTestId("game-settings-panel");
+  await component.getByTestId("game-settings-toggle").press("Enter");
   await expect(controls.getByTestId("auto-roll-toggle")).toBeVisible();
   await expect(column.locator('button button')).toHaveCount(0);
   await expect(controls.locator('[data-point-idx]')).toHaveCount(0);
@@ -1211,7 +1349,7 @@ test("settings controls remain separate from bear-off move targets", async ({ mo
   await expect(column.getByTestId("bear-off-bottom")).toBeEnabled();
   await controls.getByTestId("auto-roll-toggle").click();
   await expect.poll(() => toggles).toBe(1);
-  await expect(component.getByRole("button", { name: "Match control" })).toHaveCount(0);
+  await expect(component.getByTestId("game-settings-toggle")).toHaveAttribute("aria-expanded", "true");
   await expect(component.getByTestId("game-settings-panel")).toBeVisible();
   expect(moves).toBe(0);
 });

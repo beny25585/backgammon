@@ -9,7 +9,7 @@ export default function App() {
   const { direction } = useI18n();
   const location = useLocation();
   const isGameRoute =
-    location.pathname === "/local" || location.pathname.startsWith("/game/");
+    location.pathname === "/local" || location.pathname.startsWith("/game/") || location.pathname.startsWith("/watch/");
 
   useEffect(() => {
     function syncViewportHeight() {

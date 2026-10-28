@@ -158,6 +158,11 @@ class PracticeGameConsumer(GameConsumer):
                     if not owned:
                         raise RuntimeError('AI command lease expired')
                     await GameConsumer._handle_intent(actor, intent)
+                    next_state = (await get_game_state(room)).state_data
+                    if next_state['turn'] == 'white' and next_state['phase'] == 'rolling':
+                        # The human can already roll after this broadcast. Release
+                        # the lease instead of keeping the bot's action delay.
+                        return
                     await asyncio.sleep(1.5)
             raise RuntimeError('AI turn did not complete')
         except Exception:

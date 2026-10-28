@@ -125,6 +125,7 @@ export function GameProvider({
     useState<OpeningRollResult | null>(null);
   const { noMovesMessage, revealNoMoves, clearNoMoves, captureFollowingRoll } = useNoMovesNotice(roomId);
   const [reconnected, setReconnected] = useState(false);
+  const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [opponentConnected, setOpponentConnected] = useState(true);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
   const [targetPoints, setTargetPoints] = useState<number | null>(null);
@@ -168,6 +169,10 @@ export function GameProvider({
   // Replay moves and undo in send order so an earlier acknowledgement cannot
   // temporarily put back a checker the player has already undone.
   const pendingActionsRef = useRef<PendingAction[]>([]);
+  const hasPendingMoves = useCallback(
+    () => pendingActionsRef.current.some((action) => action.action === "move"),
+    [],
+  );
   const playerColorRef = useRef(playerColor);
   // Terminal lockdown: once a match-over game_ended is processed, no further
   // gameplay intents may be emitted until a fresh non-terminal state arrives.
@@ -328,6 +333,7 @@ export function GameProvider({
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
+            setConnectionEpoch((epoch) => epoch + 1);
             autoConfirmArmedRef.current = false;
             endTurnInFlightRef.current = false;
             setAutoConfirmPending(false);
@@ -1202,6 +1208,7 @@ export function GameProvider({
         setOpeningRollResult,
         noMovesMessage,
         autoConfirmPending,
+        hasPendingMoves,
         rematchState,
         rematchReady,
         requestRematch,
@@ -1209,6 +1216,7 @@ export function GameProvider({
         declineRematch,
         cancelRematch,
         reconnected,
+        connectionEpoch,
         opponentConnected,
         timeControl,
         targetPoints,

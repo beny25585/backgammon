@@ -240,7 +240,7 @@ test("initial snapshot scales the online preset and keeps the authoritative bank
   });
 
   await expect(component.getByTestId("online-time-control")).toHaveText(
-    '{"base":300000,"delay":10000}',
+    '{"base":300000,"delay":12000}',
   );
   await expect(component.getByTestId("online-clock")).toHaveText(
     '{"white":275000,"black":250000}',
@@ -324,6 +324,33 @@ test("move sends a move intent with from and to", async ({ mount, page }) => {
   await expect(component.getByTestId("point-19")).toHaveText("1");
 });
 
+test("pending move waits for its acknowledgement through a newer unrelated broadcast", async ({
+  mount,
+  page,
+}) => {
+  const initial = midGameState();
+  const component = await mountProbe(mount, page);
+  await emitInitialState(page, initial);
+  await expect(component.getByTestId("pending-moves")).toHaveText("false");
+
+  await component.getByTestId("move").click();
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await expect(component.getByTestId("pending-moves")).toHaveText("true");
+
+  // An inactivity update advances the server version without applying the move.
+  // Replaying the optimistic move must not be mistaken for its acknowledgement.
+  await emitBroadcast(page, { ...initial, version: 2 }, "white", "inactivity_warning");
+  await expect(component.getByTestId("version")).toHaveText("2");
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await expect(component.getByTestId("pending-moves")).toHaveText("true");
+
+  const acknowledged = applyMove(initial, { from: 23, to: 19, die: 4 }, "white");
+  await emitBroadcast(page, { ...acknowledged, version: 3 }, "white", "move");
+  await expect(component.getByTestId("version")).toHaveText("3");
+  await expect(component.getByTestId("point-19")).toHaveText("1");
+  await expect(component.getByTestId("pending-moves")).toHaveText("false");
+});
+
 test("keeps a later optimistic move while the first server acknowledgement arrives", async ({
   mount,
   page,
@@ -373,6 +400,7 @@ test("rolls an optimistic move back when the server rejects it", async ({
 
   await component.getByTestId("move").click();
   await expect(component.getByTestId("point-23")).toHaveText("0");
+  await expect(component.getByTestId("pending-moves")).toHaveText("true");
   await page.evaluate(() => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({ type: "error", message: "Invalid move", action: "move" });
@@ -381,6 +409,7 @@ test("rolls an optimistic move back when the server rejects it", async ({
   await expect(component.getByTestId("point-23")).toHaveText("1");
   await expect(component.getByTestId("point-19")).toHaveText("0");
   await expect(component.getByTestId("error")).toHaveText("Invalid move");
+  await expect(component.getByTestId("pending-moves")).toHaveText("false");
 });
 
 test("a move during disconnection does not leave an unsent checker on the board", async ({ mount, page }) => {

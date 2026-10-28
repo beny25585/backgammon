@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, type ReactNode } from "react";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
 import Clock from "../Clock";
@@ -14,9 +14,10 @@ interface SidePanelProps {
   clock?: Record<Color, number> | null;
   turnStartedAt?: number | null;
   timeControl?: TimeControl | null;
+  settingsToggle?: ReactNode;
 }
 
-function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl }: SidePanelProps) {
+function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl, settingsToggle }: SidePanelProps) {
   const { t } = useI18n();
   const { whiteName, blackName, matchScore, targetPoints, roomId } = useGame();
   const details = useRoomPlayerDetails(roomId);
@@ -35,6 +36,7 @@ function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl }: Si
           score={matchScore?.[opponentColor] ?? 0} details={details.players?.[opponentColor]} />
       </div>
         <div className={`col-start-1 row-start-3 min-w-0 self-center py-3 [@container_game-layout_(height<500px)]:py-0 ${timeControl?.delay ? "[@container_game-layout_(height<500px)]:mb-7" : ""}`}>
+          {settingsToggle && <div className="mb-3 [@container_game-layout_(height<500px)]:mb-1">{settingsToggle}</div>}
           <GameInfoCard state={state} targetPoints={targetPoints}
             leadingScore={Math.max(matchScore?.white ?? 0, matchScore?.black ?? 0)} />
           {details.loading && <span role="status" className="sr-only">{t("game.loadingPlayerDetails")}</span>}

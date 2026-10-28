@@ -1,42 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameState } from "../lib/backgammon/engine";
+import { createGameAudio, type GameAudio } from "../lib/audio/gameAudio";
+import { getGameSound, isGameSoundBoundary, type GameSoundSnapshot } from "../lib/audio/gameSoundEvents";
 
 const STORAGE_KEY = "6b-game-sounds";
-type GameSound = "roll" | "move" | "hit" | "undo" | "confirm";
+type GameSoundOptions = Omit<GameSoundSnapshot, "state" | "roomId">;
 
-function playSound(context: AudioContext, sound: GameSound) {
-  if (context.state !== "running") return;
-  const start = context.currentTime;
-  const taps = sound === "roll" ? 5 : sound === "hit" || sound === "confirm" ? 2 : 1;
-  for (let index = 0; index < taps; index++) {
-    const at = start + index * (sound === "roll" ? 0.04 : 0.075);
-    const oscillator = context.createOscillator();
-    const gain = context.createGain();
-    oscillator.type = "triangle";
-    const frequency = sound === "hit" ? 260 : sound === "undo" ? 400 :
-      sound === "confirm" ? 600 + index * 200 : 520 + index * 80;
-    oscillator.frequency.setValueAtTime(frequency, at);
-    oscillator.frequency.exponentialRampToValueAtTime(sound === "confirm" ? frequency * 1.2 : 100, at + 0.055);
-    gain.gain.setValueAtTime(0.0001, at);
-    gain.gain.exponentialRampToValueAtTime(0.12, at + 0.003);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + 0.07);
-    oscillator.connect(gain);
-    gain.connect(context.destination);
-    oscillator.onended = () => { oscillator.disconnect(); gain.disconnect(); };
-    oscillator.start(at);
-    oscillator.stop(at + 0.08);
-  }
-}
-
-export function useGameSounds(state: GameState | null, roomId?: string) {
+export function useGameSounds(state: GameState | null, roomId: string | undefined, {
+  playerColor, matchScore, isLoading, reconnected, connectionEpoch = 0,
+}: GameSoundOptions) {
   const [soundEnabled, setSoundEnabled] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) !== "false"; }
     catch { return true; }
   });
-  const audioRef = useRef<AudioContext | null>(null);
-  const previousRef = useRef<{ state: GameState | null; roomId?: string }>({ state, roomId });
+  const audioRef = useRef<GameAudio | null>(null);
+  const previousRef = useRef<GameSoundSnapshot>({ state, roomId, playerColor, matchScore, isLoading, reconnected, connectionEpoch });
+  const victoryConsumedRef = useRef(state?.phase === "game_over");
   const playActionSound = useCallback((sound: "undo" | "confirm") => {
-    if (soundEnabled && audioRef.current) playSound(audioRef.current, sound);
+    if (soundEnabled) audioRef.current?.play(sound);
   }, [soundEnabled]);
 
   useEffect(() => {
@@ -50,47 +31,39 @@ export function useGameSounds(state: GameState | null, roomId?: string) {
           webkitAudioContext?: typeof AudioContext;
         }).webkitAudioContext;
         if (!Audio) return;
-        audioRef.current = new Audio();
+        audioRef.current = createGameAudio(new Audio());
+        audioRef.current.preload();
       }
-      if (audioRef.current.state === "suspended") void audioRef.current.resume().catch(() => {});
+      audioRef.current.resume();
     };
     window.addEventListener("pointerdown", unlockAudio);
     window.addEventListener("keydown", unlockAudio);
     return () => {
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
-      const audio = audioRef.current;
+      audioRef.current?.close();
       audioRef.current = null;
-      if (audio && audio.state !== "closed") void audio.close().catch(() => {});
     };
   }, [soundEnabled]);
 
   useEffect(() => {
     const previous = previousRef.current;
-    previousRef.current = { state, roomId };
-    const before = previous.state;
-    const audio = audioRef.current;
-    if (!state || !before || previous.roomId !== roomId || !soundEnabled || !audio) return;
-
-    const openingRolled = (Object.keys(state.openingRoll) as ("white" | "black")[]).some(
-      (color) => before.openingRoll[color] === null && state.openingRoll[color] !== null,
-    );
-    const rolled = before.phase === "rolling" && state.phase === "moving" && state.dice.length > 0;
-    // The server may clear lastMove when a hit also ends the turn. Identify
-    // the captured blot on the board instead of depending on history length.
-    const hit = (state.bar.white > before.bar.white || state.bar.black > before.bar.black) &&
-      state.points.some((point, index) => Math.abs(before.points[index]) === 1 &&
-        point === -before.points[index]);
-    if (hit) {
-      playSound(audio, "hit");
-    } else if (openingRolled || rolled) {
-      playSound(audio, "roll");
-    } else if ((state.lastMove?.length ?? 0) > (before.lastMove?.length ?? 0) &&
-      (state.home.white !== before.home.white || state.home.black !== before.home.black ||
-        state.points.some((point, index) => point !== before.points[index]))) {
-      playSound(audio, "move");
+    const next = { state, roomId, playerColor, matchScore, isLoading, reconnected, connectionEpoch };
+    previousRef.current = next;
+    if (isGameSoundBoundary(previous, next)) {
+      audioRef.current?.stop();
+      victoryConsumedRef.current = state?.phase === "game_over";
+    } else if (state?.phase !== "game_over") {
+      victoryConsumedRef.current = false;
     }
-  }, [state, roomId, soundEnabled]);
+    const sound = getGameSound(previous, next);
+    if (sound === "win") {
+      if (victoryConsumedRef.current) return;
+      // Consume muted wins too: enabling sound or a score correction cannot replay them.
+      victoryConsumedRef.current = true;
+    }
+    if (soundEnabled && sound) audioRef.current?.play(sound);
+  }, [state, roomId, playerColor, matchScore, isLoading, reconnected, connectionEpoch, soundEnabled]);
 
   return { soundEnabled, setSoundEnabled, playActionSound };
 }

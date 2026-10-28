@@ -86,9 +86,11 @@ export default function GameScreen({
     rollDice,
     reorderDice,
     reconnected,
+    connectionEpoch,
     opponentConnected,
     undoMove,
     autoConfirmPending,
+    hasPendingMoves,
     endTurn,
     respondToDouble,
     offerDouble,
@@ -96,6 +98,7 @@ export default function GameScreen({
     turnStartedAt,
     timeControl,
     gameResult,
+    matchScore,
     whiteName,
     blackName,
     openingRollResult,
@@ -110,7 +113,9 @@ export default function GameScreen({
     cancelRematch,
     gameType: contextGameType,
   } = useGame();
-  const { soundEnabled, setSoundEnabled, playActionSound } = useGameSounds(state, roomId);
+  const { soundEnabled, setSoundEnabled, playActionSound } = useGameSounds(state, roomId, {
+    playerColor, matchScore, isLoading, reconnected, connectionEpoch,
+  });
   const [autoRoll, setAutoRoll] = useAutoRoll();
   const requestedRollRef = useRef<string | null>(null);
   const handleUndo = useCallback(() => {
@@ -283,7 +288,8 @@ export default function GameScreen({
     !opponentConnected || Boolean(gameResult);
 
   useEffect(() => {
-    requestedRollRef.current = null;
+    // Keep an in-flight request guarded when StrictMode replays the effects.
+    if (!regularRollKey || error) requestedRollRef.current = null;
   }, [regularRollKey, error]);
 
   const handleRoll = useCallback(() => {
@@ -294,9 +300,7 @@ export default function GameScreen({
 
   useEffect(() => {
     if (!autoRoll || !regularRollKey || rollPaused || error) return;
-    // Leave a short window to offer a double or switch automatic rolling off.
-    const timer = window.setTimeout(handleRoll, 350);
-    return () => window.clearTimeout(timer);
+    handleRoll();
   }, [autoRoll, regularRollKey, rollPaused, error, handleRoll]);
 
   if (showCloseExisting && !gameResult?.matchOver) {
@@ -515,6 +519,7 @@ export default function GameScreen({
             reorderDice={reorderDice}
             undoMove={handleUndo}
             autoConfirmPending={autoConfirmPending}
+            hasPendingMoves={hasPendingMoves}
             endTurn={handleConfirm}
             offerDouble={offerDouble}
             boardTheme={boardTheme}

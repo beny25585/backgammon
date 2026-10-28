@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, applyMove, undoLastMove, BAR, OFF, getAutomaticMove, getDeterministicTurnSequence, isWholeTurnDeterministic, type Color, type GameState } from "./engine";
+import { newGame, initialBoard, applyOpeningRoll, applyRoll, reorderDice, pipCount, allLegalMoves, legalMovesFrom, getCheckerMoveSequences, applyMove, undoLastMove, BAR, OFF, getAutomaticMove, getDeterministicTurnSequence, isWholeTurnDeterministic, type Color, type GameState } from "./engine";
 
 for (const color of ["white", "black"] as Color[]) {
   const point = (whitePoint: number) => color === "white" ? whitePoint : 23 - whitePoint;
@@ -61,6 +61,170 @@ for (const color of ["white", "black"] as Color[]) {
     state.points[point(23)] = -2 * sign;
     state.points[point(22)] = -2 * sign;
     expect(allLegalMoves(state, color)).toEqual([]);
+  });
+
+  test(`${color}: checker paths include both single dice and their combined endpoint`, () => {
+    const state = position([5, 3]);
+    state.points[point(12)] = sign;
+    state.home[color] = 14;
+    expect(getCheckerMoveSequences(state, point(12), color)).toEqual([
+      [{ from: point(12), to: point(7), die: 5 }],
+      [{ from: point(12), to: point(9), die: 3 }],
+      [
+        { from: point(12), to: point(7), die: 5 },
+        { from: point(7), to: point(4), die: 3 },
+      ],
+    ]);
+  });
+
+  test(`${color}: equivalent checker paths follow the current dice order`, () => {
+    const state = position([3, 5]);
+    state.points[point(12)] = sign;
+    state.home[color] = 14;
+    const paths = getCheckerMoveSequences(state, point(12), color);
+    expect(paths.find((path) => path[path.length - 1]?.to === point(4))).toEqual([
+      { from: point(12), to: point(9), die: 3 },
+      { from: point(9), to: point(4), die: 5 },
+    ]);
+    expect(new Set(paths.map((path) => path[path.length - 1]?.to)).size).toBe(paths.length);
+  });
+
+  test(`${color}: checker paths reverse dice order when the preferred intermediate is blocked`, () => {
+    const state = position([5, 3]);
+    state.points[point(12)] = sign;
+    state.points[point(7)] = -2 * sign;
+    state.home[color] = 14;
+    expect(getCheckerMoveSequences(state, point(12), color)).toEqual([
+      [{ from: point(12), to: point(9), die: 3 }],
+      [
+        { from: point(12), to: point(9), die: 3 },
+        { from: point(9), to: point(4), die: 5 },
+      ],
+    ]);
+  });
+
+  test(`${color}: an open combined endpoint cannot bypass two blocked intermediates`, () => {
+    const state = position([5, 3]);
+    state.points[point(12)] = sign;
+    state.points[point(7)] = -2 * sign;
+    state.points[point(9)] = -2 * sign;
+    state.home[color] = 14;
+    expect(getCheckerMoveSequences(state, point(12), color)).toEqual([]);
+  });
+
+  test(`${color}: checker paths can consume all four double moves`, () => {
+    const state = position([2, 2, 2, 2]);
+    state.points[point(12)] = sign;
+    state.home[color] = 14;
+    const paths = getCheckerMoveSequences(state, point(12), color);
+    expect(paths.map((path) => path.length)).toEqual([1, 2, 3, 4]);
+    expect(paths.map((path) => path[path.length - 1]?.to)).toEqual([10, 8, 6, 4].map(point));
+    expect(paths[3]).toEqual([
+      { from: point(12), to: point(10), die: 2 },
+      { from: point(10), to: point(8), die: 2 },
+      { from: point(8), to: point(6), die: 2 },
+      { from: point(6), to: point(4), die: 2 },
+    ]);
+  });
+
+  test(`${color}: a checker can enter from the bar and continue with the other die`, () => {
+    const state = position([5, 3]);
+    state.bar[color] = 1;
+    state.home[color] = 14;
+    const paths = getCheckerMoveSequences(state, BAR, color);
+    expect(paths.find((path) => path[path.length - 1]?.to === point(16))).toEqual([
+      { from: BAR, to: point(19), die: 5 },
+      { from: point(19), to: point(16), die: 3 },
+    ]);
+  });
+
+  test(`${color}: checker paths keep bar priority until every checker has entered`, () => {
+    const state = position([5, 3]);
+    state.bar[color] = 2;
+    state.points[point(12)] = sign;
+    state.home[color] = 12;
+    expect(getCheckerMoveSequences(state, point(12), color)).toEqual([]);
+    expect(getCheckerMoveSequences(state, BAR, color)).toEqual([
+      [{ from: BAR, to: point(19), die: 5 }],
+      [{ from: BAR, to: point(21), die: 3 }],
+    ]);
+  });
+
+  test(`${color}: checker paths keep the higher-die rule when only one entry can be played`, () => {
+    const state = position([1, 2]);
+    state.bar[color] = 1;
+    state.home[color] = 14;
+    state.points[point(21)] = -2 * sign;
+    expect(getCheckerMoveSequences(state, BAR, color)).toEqual([
+      [{ from: BAR, to: point(22), die: 2 }],
+    ]);
+  });
+
+  test(`${color}: a combined checker path preserves a hit at its intermediate point`, () => {
+    const state = position([5, 3]);
+    state.points[point(12)] = sign;
+    state.points[point(7)] = -sign;
+    state.home[color] = 14;
+    const path = getCheckerMoveSequences(state, point(12), color)
+      .find((moves) => moves[moves.length - 1]?.to === point(4));
+    expect(path).toEqual([
+      { from: point(12), to: point(7), die: 5 },
+      { from: point(7), to: point(4), die: 3 },
+    ]);
+    const moved = path!.reduce((current, move) => applyMove(current, move, color), state);
+    expect(moved.bar[color === "white" ? "black" : "white"]).toBe(1);
+    expect(moved.points[point(7)]).toBe(0);
+    expect(moved.points[point(4)]).toBe(sign);
+    expect(moved.remaining).toEqual([]);
+  });
+
+  test(`${color}: bearing off the last checker still uses both dice when required`, () => {
+    const state = position([2, 1]);
+    state.points[point(1)] = sign;
+    state.home[color] = 14;
+    expect(getCheckerMoveSequences(state, point(1), color)).toEqual([
+      [{ from: point(1), to: point(0), die: 1 }],
+      [
+        { from: point(1), to: point(0), die: 1 },
+        { from: point(0), to: OFF, die: 2 },
+      ],
+    ]);
+  });
+
+  test(`${color}: a legal direct bearoff wins over a longer path to the same endpoint`, () => {
+    const state = position([1, 2]);
+    state.points[point(1)] = 2 * sign;
+    state.home[color] = 13;
+    const paths = getCheckerMoveSequences(state, point(1), color);
+    expect(paths.find((path) => path[path.length - 1]?.to === OFF)).toEqual([
+      { from: point(1), to: OFF, die: 2 },
+    ]);
+    expect(paths.filter((path) => path[path.length - 1]?.to === OFF)).toHaveLength(1);
+  });
+
+  test(`${color}: checker path search leaves the full state and history untouched`, () => {
+    const state = position([5, 3]);
+    state.points[point(12)] = sign;
+    state.points[point(7)] = -sign;
+    state.home[color] = 14;
+    state.lastMove = [{ from: point(15), to: point(12) }];
+    state.moveHistory = [newGame()];
+    const before = JSON.parse(JSON.stringify(state)) as GameState;
+    getCheckerMoveSequences(state, point(12), color);
+    expect(state).toEqual(before);
+  });
+
+  test(`${color}: checker paths reject an inactive turn, phase or source`, () => {
+    const state = position([5, 3]);
+    state.points[point(12)] = sign;
+    state.home[color] = 14;
+    expect(getCheckerMoveSequences({ ...state, phase: "rolling" }, point(12), color)).toEqual([]);
+    expect(getCheckerMoveSequences({ ...state, turn: color === "white" ? "black" : "white" }, point(12), color)).toEqual([]);
+    expect(getCheckerMoveSequences({ ...state, remaining: [] }, point(12), color)).toEqual([]);
+    expect(getCheckerMoveSequences(state, point(11), color)).toEqual([]);
+    expect(getCheckerMoveSequences(state, BAR, color)).toEqual([]);
+    expect(getCheckerMoveSequences(state, -1, color)).toEqual([]);
+    expect(getCheckerMoveSequences(state, 24, color)).toEqual([]);
   });
 }
 

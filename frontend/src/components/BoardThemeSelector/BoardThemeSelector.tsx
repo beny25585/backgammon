@@ -43,15 +43,15 @@ export default function BoardThemeSelector({
 
   if (compact) {
     return (
-      <label className="relative grid min-h-[clamp(64px,9.6cqh,95px)] min-w-0 gap-[clamp(4px,0.8cqh,8px)] rounded-[10px] border border-white/15 bg-[#101515] px-3 py-[clamp(6px,1.2cqh,12px)] text-left text-[clamp(13px,1.05cqw,16px)] font-normal leading-tight text-white/90 hover:border-amber-200/35 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-amber-300 @max-[620px]/game-layout:min-h-11 @max-[620px]/game-layout:grid-cols-[2.5rem_minmax(0,1fr)] @max-[620px]/game-layout:items-center @max-[620px]/game-layout:gap-2 @max-[620px]/game-layout:px-2 @max-[620px]/game-layout:py-1" dir="ltr">
-        <span className="@max-[620px]/game-layout:sr-only" dir={direction}>{t("game.boardTheme")}</span>
-        <span aria-hidden="true" className={`grid h-[clamp(24px,4cqh,40px)] w-[clamp(48px,5cqw,80px)] grid-cols-3 overflow-hidden rounded border border-amber-200/65 bg-[#151919] ${themeSwatches[value]} @max-[620px]/game-layout:h-7 @max-[620px]/game-layout:w-10`}>
+      <label className="relative grid min-h-[clamp(64px,9.6cqh,95px)] min-w-0 gap-[clamp(4px,0.8cqh,8px)] rounded-[10px] border border-white/15 bg-[#101515] px-3 py-[clamp(6px,1.2cqh,12px)] text-left text-[clamp(13px,1.05cqw,16px)] font-normal leading-tight text-white/90 hover:border-amber-200/35 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-amber-300" dir="ltr">
+        <span dir={direction}>{t("game.boardTheme")}</span>
+        <span aria-hidden="true" className={`grid h-[clamp(24px,4cqh,40px)] w-[clamp(48px,5cqw,80px)] grid-cols-3 overflow-hidden rounded border border-amber-200/65 bg-[#151919] ${themeSwatches[value]}`}>
           <span className="[clip-path:polygon(0_0,100%_0,50%_100%)]" />
           <span className="rotate-180 [clip-path:polygon(0_0,100%_0,50%_100%)]" />
           <span className="[clip-path:polygon(0_0,100%_0,50%_100%)]" />
         </span>
         <select
-          className="absolute inset-0 size-full cursor-pointer appearance-none rounded-[10px] bg-transparent text-transparent focus:outline-none @max-[620px]/game-layout:relative @max-[620px]/game-layout:min-h-9 @max-[620px]/game-layout:min-w-0 @max-[620px]/game-layout:pr-4 @max-[620px]/game-layout:text-xs @max-[620px]/game-layout:text-white/85 [&>option]:bg-[#101515] [&>option]:text-white"
+          className="absolute inset-0 size-full cursor-pointer appearance-none rounded-[10px] bg-transparent text-transparent focus:outline-none [&>option]:bg-[#101515] [&>option]:text-white"
           value={value}
           dir={direction}
           title={t(themeLabelKeys[value])}
@@ -61,7 +61,7 @@ export default function BoardThemeSelector({
             <option key={theme} value={theme}>{t(themeLabelKeys[theme])}</option>
           ))}
         </select>
-        <svg className="pointer-events-none absolute top-1/2 right-3 size-5 -translate-y-1/2 text-[#ebc879] @max-[620px]/game-layout:right-2 @max-[620px]/game-layout:size-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+        <svg className="pointer-events-none absolute top-1/2 right-3 size-5 -translate-y-1/2 text-[#ebc879]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
       </label>
     );
   }

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent, MouseEvent, RefObject } from "react";
-import { BAR, OFF, legalMovesFrom } from "@/lib/backgammon/engine";
-import type { Color, GameState, Source, Target } from "@/lib/backgammon/engine";
+import { BAR, OFF, getCheckerMoveSequences } from "@/lib/backgammon/engine";
+import type { Color, GameState, Move, Source, Target } from "@/lib/backgammon/engine";
 
 import { boardPoint, boardRect } from "./boardCoordinates";
 
@@ -27,7 +27,7 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
   legalFromPoints: Source[];
   boardRef: RefObject<HTMLDivElement>;
   wrapperRef: RefObject<HTMLDivElement>;
-  onDrop: (from: Source, to: Target, origin: { x: number; y: number }) => void;
+  onDrop: (moves: Move[], origin: { x: number; y: number }) => void;
 }) {
   const pending = useRef<Drag | null>(null);
   const suppressClick = useRef(false);
@@ -74,7 +74,15 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const targets = drag ? legalMovesFrom(state, drag.from, drag.color).map(move => move.to) : [];
+  const dragFrom = drag?.from;
+  const dragColor = drag?.color;
+  const sequences = useMemo(
+    () => dragFrom !== undefined && dragColor
+      ? getCheckerMoveSequences(state, dragFrom, dragColor)
+      : [],
+    [state, dragFrom, dragColor],
+  );
+  const targets = sequences.map(moves => moves[moves.length - 1].to);
 
   return {
     drag,
@@ -133,8 +141,10 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
         if (location === BAR || location === undefined) return;
         if (location === OFF && cell.dataset.color !== current.color) return;
         const to: Target = location === OFF ? OFF : Number(location);
-        if (legalMovesFrom(state, current.from, current.color).some(move => move.to === to)) {
-          onDrop(current.from, to, { x: event.clientX, y: event.clientY });
+        const moves = getCheckerMoveSequences(state, current.from, current.color)
+          .find(sequence => sequence[sequence.length - 1].to === to);
+        if (moves) {
+          onDrop(moves, { x: event.clientX, y: event.clientY });
         }
       },
       onPointerCancel(event: PointerEvent<HTMLDivElement>) {

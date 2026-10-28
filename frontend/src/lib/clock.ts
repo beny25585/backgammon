@@ -15,7 +15,7 @@ export interface TimeControlPreset {
 export const TIME_CONTROL_PRESETS: TimeControlPreset[] = [
   { id: "none", label: "No limit", secondsPerPoint: 0, delay: 0 },
   { id: "fast", label: "Fast", secondsPerPoint: 30, delay: 10_000 },
-  { id: "normal", label: "Normal", secondsPerPoint: 60, delay: 10_000 },
+  { id: "normal", label: "Normal", secondsPerPoint: 60, delay: 12_000 },
   { id: "slow", label: "Slow", secondsPerPoint: 120, delay: 10_000 },
 ];
 

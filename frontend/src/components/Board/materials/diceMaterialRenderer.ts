@@ -17,7 +17,7 @@ export type DiceMaterialImages = Record<"light" | "dark", Record<number, string>
 const SIZE = 256;
 const BODY_PADDING = 4;
 const BODY_RADIUS = 31.5;
-const PIP_RADIUS = 16.5;
+const PIP_RADIUS = 21.5;
 
 // Main rounded-square bodies, excluding the transparent atlas-cell gutters.
 const BODY_FRAMES = {
@@ -34,11 +34,19 @@ export function createDiceMaterialImages(app: Application, bodyAtlas: Texture,
     const end = new Color(to).toRgbArray();
     return new Color(start.map((channel, index) => channel + (end[index] - channel) * amount)).toHex();
   };
+  const darkDiceRamp = theme.diceDark ?? { dark: "#101415", light: "#34393b", gain: 3 };
+  const readableDarkDiceRamp = {
+    ...darkDiceRamp,
+    dark: mixColor(darkDiceRamp.dark, "#ffffff", 0.12),
+    light: mixColor(darkDiceRamp.light, "#ffffff", 0.08),
+  };
+  const darkPipLight = mixColor(theme.pipLight, "#ffffff", 0.78);
+  const darkPipWell = [[0, mixColor(darkPipLight, theme.pipDark, 0.09)],
+    [0.5, darkPipLight], [1, "#ffffff"]] as const;
   const themedPips = theme.id === "charcoalGold" ? null : {
     lightLip: [[0, theme.pipDark], [0.45, mixColor(theme.pipDark, theme.pipLight, 0.35)], [1, theme.pipLight]] as const,
     darkLip: [[0, theme.pipDark], [0.5, mixColor(theme.pipDark, theme.pipLight, 0.12)], [1, mixColor(theme.pipDark, theme.pipLight, 0.4)]] as const,
     lightWell: [[0, theme.pipDark], [0.55, theme.pipDark], [1, mixColor(theme.pipDark, theme.pipLight, 0.18)]] as const,
-    darkWell: [[0, mixColor(theme.pipDark, theme.pipLight, 0.55)], [0.5, theme.pipLight], [1, mixColor(theme.pipLight, "#ffffff", 0.25)]] as const,
   };
 
   for (const tone of ["light", "dark"] as const) {
@@ -71,8 +79,9 @@ export function createDiceMaterialImages(app: Application, bodyAtlas: Texture,
         pips.context.batchMode = "batch";
         pips.eventMode = "none";
         const gradients: FillGradient[] = [];
-        const ramp = value === 0 && tone === "light" ? theme.cube
+        const baseRamp = value === 0 && tone === "light" ? theme.cube
           : tone === "light" ? theme.diceLight : theme.diceDark;
+        const ramp = tone === "dark" && value > 0 ? readableDarkDiceRamp : baseRamp;
         let colorFilter: ReturnType<typeof createMaterialColorFilter> | null = null;
         group.addChild(shadow, body, bodyMask, pips);
 
@@ -90,6 +99,11 @@ export function createDiceMaterialImages(app: Application, bodyAtlas: Texture,
             colorFilter = createMaterialColorFilter(ramp);
             body.filters = [colorFilter];
           }
+          if (tone === "dark" && value > 0) {
+            pips.roundRect(BODY_PADDING + 2.5, BODY_PADDING + 2.5,
+              SIZE - BODY_PADDING * 2 - 5, SIZE - BODY_PADDING * 2 - 5,
+              BODY_RADIUS - 2.5).stroke({ width: 5, color: theme.pipLight, alpha: 0.48 });
+          }
           for (const [percentX, percentY] of positions) {
             const x = SIZE * percentX / 100;
             const y = SIZE * percentY / 100;
@@ -98,17 +112,17 @@ export function createDiceMaterialImages(app: Application, bodyAtlas: Texture,
               ? [[0, "#63543a"], [0.45, "#a38d67"], [1, "#fff4d9"]]
               : [[0, "#020405"], [0.5, "#161c1d"], [1, "#767c76"]]);
             pips.circle(x, y, PIP_RADIUS + 1.8).fill(lip);
-            const well = pipGradient(x, y, themedPips ? light ? themedPips.lightWell : themedPips.darkWell : light
-              ? [[0, "#010303"], [0.55, "#111615"], [1, "#343a34"]]
-              : [[0, "#a49778"], [0.5, "#dfd1af"], [1, "#fff5dc"]]);
+            const well = pipGradient(x, y, light
+              ? themedPips?.lightWell ?? [[0, "#010303"], [0.55, "#111615"], [1, "#343a34"]]
+              : darkPipWell);
             pips.circle(x, y, PIP_RADIUS).fill(well);
             // The upper-left wall is shaded; a restrained lower inner lip catches the light.
             pips.beginPath().arc(x, y, PIP_RADIUS - 0.8, Math.PI * 1.02, Math.PI * 1.78)
               .stroke({ width: 2.1, color: themedPips ? theme.pipDark : 0x010303, alpha: light ? 0.58 : 0.36 });
             pips.beginPath().arc(x, y, PIP_RADIUS - 0.8, Math.PI * 0.12, Math.PI * 0.88)
-              .stroke({ width: 1.1, color: themedPips
-                ? light ? mixColor(theme.pipDark, theme.pipLight, 0.3) : theme.pipLight
-                : light ? 0xa7b3a7 : 0xfff7e5, alpha: light ? 0.2 : 0.48 });
+              .stroke({ width: 1.1, color: light
+                ? themedPips ? mixColor(theme.pipDark, theme.pipLight, 0.3) : 0xa7b3a7
+                : darkPipLight, alpha: light ? 0.2 : 0.48 });
           }
           app.renderer.render({ container: group });
           const extracted = app.renderer.extract.canvas({ target: group,

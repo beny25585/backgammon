@@ -43,6 +43,7 @@ interface GameBoardProps {
   onBoardThemeChange?: (theme: BoardTheme) => void;
   noMovesMessage?: NoMovesMessage | null;
   autoConfirmPending?: boolean;
+  hasPendingMoves?: () => boolean;
   soundEnabled?: boolean;
   onSoundEnabledChange?: (enabled: boolean) => void;
   bracketUrl?: string;
@@ -77,6 +78,7 @@ export default function GameBoard({
   onBoardThemeChange,
   noMovesMessage,
   autoConfirmPending = false,
+  hasPendingMoves,
   soundEnabled,
   onSoundEnabledChange,
   bracketUrl,
@@ -310,9 +312,10 @@ export default function GameBoard({
   }, [turnNotice]);
 
   const followingRoll = useFollowingRoll(state, noMovesMessage);
+  const turnComplete = isMyTurn && state.remaining.length === 0;
   const completedRoll = state.phase === "moving" && state.dice.length > 0 && state.remaining.length === 0 &&
     hasPlayedMoveThisTurn && !noMovesMessage;
-  const liveRoll = state.phase === "moving" && (state.remaining.length > 0 || completedRoll) &&
+  const liveRoll = !turnComplete && state.phase === "moving" && (state.remaining.length > 0 || completedRoll) &&
     (!noMovesMessage || state.turn === noMovesMessage.color);
   const onReorder = isMyTurn && !autoPointSequenceActive && !autoConfirmPending ? reorderDice : undefined;
   const liveDice = liveRoll ? (
@@ -321,18 +324,18 @@ export default function GameBoard({
       onReorder={state.turn === playerColor && !completedRoll ? onReorder : undefined} />
   ) : null;
   const ownFollowingRollActive = followingRoll?.color === playerColor && isMyTurn && state.remaining.length > 0;
-  const followingDice = followingRoll ? (
+  const followingDice = followingRoll && !(turnComplete && followingRoll.color === playerColor) ? (
     <DiceOverlay kind="following" dice={followingRoll.dice} color={followingRoll.color} playerColor={playerColor}
       remaining={ownFollowingRollActive ? state.remaining : followingRoll.dice}
       forceActive={!ownFollowingRollActive}
       onReorder={ownFollowingRollActive ? onReorder : undefined} />
   ) : null;
-  // A blocked roll belongs to its roller for the entire notice lifetime, regardless
-  // of the authoritative turn. The following roll has its own, separate snapshot.
+  // Roll snapshots keep their roller's side across turn changes. Completing our
+  // own turn replaces any own snapshot with confirmation in the same position.
   const blockedSide = noMovesMessage?.color === playerColor ? "right" : "left";
   const followingSide = blockedSide === "right" ? "left" : "right";
   const rollDetails = noMovesMessage ? {
-    [blockedSide]: (
+    [blockedSide]: turnComplete && noMovesMessage.color === playerColor ? null : (
       <>
         <DiceOverlay kind="blocked" dice={noMovesMessage.dice} remaining={noMovesMessage.remaining}
           color={noMovesMessage.color} playerColor={playerColor} forceActive />
@@ -387,12 +390,12 @@ export default function GameBoard({
         onSoundEnabledChange={onSoundEnabledChange} bracketUrl={bracketUrl}
         autoRoll={autoRoll} onAutoRollChange={onAutoRollChange} />
     }>
+      {(settingsToggle) => <>
       <SidePanel state={state} playerColor={playerColor} clock={clock}
-        turnStartedAt={turnStartedAt} timeControl={timeControl} />
+        turnStartedAt={turnStartedAt} timeControl={timeControl} settingsToggle={settingsToggle} />
       <div className={`${styles.boardArea} col-start-2 row-start-2`}>
         <Board
           state={state}
-          groupTurnActions
           myColor={playerColor}
           selected={selectedSource}
           legalTargets={legalTargets}
@@ -409,6 +412,7 @@ export default function GameBoard({
           rollDetails={rollDetails}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
           inputDisabled={autoConfirmPending}
+          hasPendingMoves={hasPendingMoves}
           overlay={
             <>
               {!noMovesMessage && liveDice && (
@@ -422,6 +426,7 @@ export default function GameBoard({
           }
         />
       </div>
+      </>}
     </GameFrame>
   );
 }

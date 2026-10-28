@@ -82,8 +82,11 @@ export interface GameContextType {
   openingRollResult: OpeningRollResult | null;
   setOpeningRollResult: (result: OpeningRollResult | null) => void;
   reconnected: boolean;
+  /** Changes for every initial server snapshot, including rapid reconnects. */
+  connectionEpoch?: number;
   opponentConnected: boolean;
   autoConfirmPending?: boolean;
+  hasPendingMoves?: () => boolean;
   rematchState?: { status: string; reason?: string } | null;
   rematchReady?: {
     ticket?: string;

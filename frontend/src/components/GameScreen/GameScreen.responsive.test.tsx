@@ -74,10 +74,10 @@ for (const vp of VIEWPORTS) {
     await assertNoHorizontalOverflow(page.getByTestId("board-frame"));
   });
 
-  test(`board fills the screen (${vp.name})`, async ({ mount, page }) => {
+  test(`board fits proportionally and stays stable when settings toggle (${vp.name})`, async ({ mount, page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     const state = movingState();
-    await mountBoard(mount, state);
+    const component = await mountBoard(mount, state);
 
     const box = await page
       .getByTestId("board-frame")
@@ -90,17 +90,42 @@ for (const vp of VIEWPORTS) {
     const height = portrait ? box.width : box.height;
     const slot = await page.getByTestId("board-frame").locator("..").boundingBox();
     const availableWidth = portrait ? slot!.height : slot!.width;
-    expect(Math.abs(width - availableWidth)).toBeLessThanOrEqual(1);
+    const availableHeight = portrait ? slot!.width : slot!.height;
+    expect(width).toBeLessThanOrEqual(availableWidth + 1);
+    expect(height).toBeLessThanOrEqual(availableHeight + 1);
     expect(height).toBeGreaterThan(0);
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.top).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(vw + 1);
     expect(box.bottom).toBeLessThanOrEqual(vh + 1);
-    // The game fills the available width, including a persistent settings region.
+    // Proportional fitting fills whichever viewport axis limits the board.
     expect(
       Math.max(box.width / vw, box.height / vh),
       `board should fill its limiting viewport axis (${vp.name})`,
     ).toBeGreaterThanOrEqual(MIN_LIMITING_AXIS_FILL);
+
+    const board = component.getByTestId("board-wrapper");
+    const before = await board.boundingBox();
+    expect(before).not.toBeNull();
+    const boardWidth = portrait ? before!.height : before!.width;
+    const boardHeight = portrait ? before!.width : before!.height;
+    expect(boardWidth / boardHeight).toBeCloseTo(1.6, 2);
+
+    const toggle = component.getByTestId("game-settings-toggle");
+    const settings = component.getByTestId("game-settings-panel");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(settings).toBeHidden();
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(settings).toBeVisible();
+    expect(await board.boundingBox()).toEqual(before);
+    await settings.getByRole("combobox", { name: "Language" }).focus();
+    await page.keyboard.press("Escape");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(settings).toBeHidden();
+    await expect(toggle).toBeFocused();
+    expect(await board.boundingBox()).toEqual(before);
   });
 
 }
@@ -186,14 +211,14 @@ test("landscape iPhone safe areas keep the clock and board out of the notch", as
   expect(clock!.x + clock!.width).toBeLessThanOrEqual(viewport.width - safeRight + 1);
 });
 
-test("desktop dice are larger while mobile dice keep their compact size", async ({ mount, page }) => {
+test("desktop dice keep their full size while mobile dice stay readable and smaller", async ({ mount, page }) => {
   const state = movingState();
   await page.setViewportSize({ width: 1280, height: 800 });
   let component = await mountBoard(mount, state);
   const desktopWidth = await component.getByTestId("dice-overlay").getByTestId("die").first().evaluate(
     (element: HTMLElement) => parseFloat(getComputedStyle(element).width),
   );
-  expect(desktopWidth).toBeGreaterThanOrEqual(34);
+  expect(desktopWidth).toBeCloseTo(52, 1);
 
   await component.unmount();
   await page.setViewportSize({ width: 375, height: 812 });
@@ -201,7 +226,8 @@ test("desktop dice are larger while mobile dice keep their compact size", async 
   const mobileWidth = await component.getByTestId("dice-overlay").getByTestId("die").first().evaluate(
     (element: HTMLElement) => parseFloat(getComputedStyle(element).width),
   );
-  expect(mobileWidth).toBeLessThanOrEqual(28);
+  expect(mobileWidth).toBeGreaterThanOrEqual(25.5);
+  expect(mobileWidth).toBeLessThanOrEqual(42);
   expect(desktopWidth).toBeGreaterThan(mobileWidth);
 });
 
@@ -246,6 +272,7 @@ for (const [theme, expectedAccent] of [
       </div>,
     );
 
+    await component.getByTestId("game-settings-toggle").press("Enter");
     const leaveColor = await component
       .getByTestId("game-settings-panel")
       .getByRole("button", { name: "Leave and forfeit match", exact: true })
@@ -267,15 +294,21 @@ for (const [theme, expectedAccent] of [
   });
 }
 
-test("the shared player rail, board, and settings follow the approved order", async ({ mount, page }) => {
+test("the settings toggle belongs to the player rail and the drawer opens over the left board edge", async ({ mount, page }) => {
   await page.setViewportSize({ width: 844, height: 390 });
   const component = await mountBoard(mount, movingState());
   const rail = component.getByTestId("side-panel");
   const railBox = await rail.boundingBox();
+  const toggle = rail.getByTestId("game-settings-toggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.press("Enter");
   const board = await component.getByTestId("board-wrapper").boundingBox();
   const settings = await component.getByTestId("game-settings-panel").boundingBox();
+  const frame = await component.getByTestId("board-frame").boundingBox();
   expect(railBox!.x + railBox!.width).toBeLessThanOrEqual(board!.x);
-  expect(board!.x + board!.width).toBeLessThanOrEqual(settings!.x);
+  expect(settings!.x).toBeGreaterThanOrEqual(railBox!.x + railBox!.width);
+  expect(settings!.x).toBeCloseTo(board!.x, 0);
+  expect(settings!.x + settings!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 1);
   await expect(rail.locator('[data-player="self"]').getByTestId("player-score-white")).toHaveCount(1);
   await expect(rail.locator('[data-player="opponent"]').getByTestId("player-score-black")).toHaveCount(1);
   for (const id of ["clock-my", "clock-opp"]) {
@@ -306,9 +339,10 @@ for (const viewport of [
       </div>,
     );
 
+    await component.getByTestId("game-settings-toggle").press("Enter");
     const drawer = component.getByTestId("game-settings-panel");
     await expect(drawer).toBeVisible();
-    const leaveButton = component.getByRole("button", { name: "Leave" });
+    const leaveButton = component.getByRole("button", { name: "Leave and forfeit match", exact: true });
     await leaveButton.scrollIntoViewIfNeeded();
     await expect(leaveButton).toBeVisible();
     const classicButton = component.getByRole("combobox", { name: "Board style" });

@@ -53,6 +53,7 @@ interface BoardProps {
   onOfferDouble?: () => void;
   autoMove?: { id: number; fromPositionKey: string; move: Move } | null;
   inputDisabled?: boolean;
+  hasPendingMoves?: () => boolean;
   turnNotice?: GuidanceMessage | null;
   noticeSide?: BoardSide;
   noticeDetails?: ReactNode;
@@ -60,7 +61,6 @@ interface BoardProps {
   overlay?: ReactNode;
   onAutoPointSequenceChange?: (active: boolean) => void;
   onControlsTargetChange?: (target: HTMLDivElement | null) => void;
-  groupTurnActions?: boolean;
 }
 
 function getCheckerSize(board: HTMLElement): number {
@@ -151,6 +151,7 @@ export function Board({
   onOfferDouble,
   autoMove,
   inputDisabled = false,
+  hasPendingMoves,
   turnNotice,
   noticeSide,
   noticeDetails,
@@ -158,7 +159,6 @@ export function Board({
   overlay,
   onAutoPointSequenceChange,
   onControlsTargetChange,
-  groupTurnActions = false,
 }: BoardProps) {
   const materials = useBoardMaterials();
   const boardRef = useRef<HTMLDivElement>(null);
@@ -234,13 +234,11 @@ export function Board({
 
   const [autoPointSequenceActive, setAutoPointSequenceActive] = useState(false);
   const autoPointRunRef = useRef<{
-    id: number;
-    target: number;
+    color: Color;
     remaining: Move[];
     dispatched: { move: Move; fromState: GameState; toState: GameState; observedApplied: boolean } | null;
     timer: number | null;
   } | null>(null);
-  const autoPointRunIdRef = useRef(0);
   const forcedExecRef = useRef<{ id: number; posKey: string; from: Source; to: Target } | null>(null);
 
   const clearAutoPointSequence = useCallback(
@@ -434,9 +432,67 @@ export function Board({
     ],
   );
 
+  const dispatchSequenceMove = useCallback(
+    (origin?: { x: number; y: number }) => {
+      const run = autoPointRunRef.current;
+      const move = run?.remaining[0];
+      if (!run || !move || myColor === null) return;
+      const legal = allLegalMoves(state, myColor).some(
+        candidate => candidate.from === move.from && candidate.to === move.to && candidate.die === move.die,
+      );
+      if (!legal) {
+        clearAutoPointSequence();
+        return;
+      }
+      const step = {
+        move,
+        fromState: state,
+        toState: applyMove(state, move, myColor),
+        observedApplied: false,
+      };
+      run.remaining = run.remaining.slice(1);
+      run.dispatched = step;
+      run.timer = window.setTimeout(() => {
+        if (autoPointRunRef.current === run && run.dispatched === step) {
+          clearAutoPointSequence();
+        }
+      }, 2000);
+      triggerFly(move.from, move.to, origin, { die: move.die });
+    },
+    [state, myColor, clearAutoPointSequence, triggerFly],
+  );
+
+  const startMoveSequence = useCallback(
+    (moves: Move[], origin?: { x: number; y: number }) => {
+      if (
+        !moves.length || myColor === null || inputDisabled ||
+        state.turn !== myColor || state.phase !== "moving" || autoPointRunRef.current
+      ) return;
+      const first = moves[0];
+      const legal = allLegalMoves(state, myColor).some(
+        move => move.from === first.from && move.to === first.to && move.die === first.die,
+      );
+      if (!legal) return;
+      if (moves.length === 1) {
+        triggerFly(first.from, first.to, origin, { die: first.die });
+        return;
+      }
+      autoPointRunRef.current = {
+        color: myColor,
+        remaining: [...moves],
+        dispatched: null,
+        timer: null,
+      };
+      setAutoPointSequenceActive(true);
+      onAutoPointSequenceChangeRef.current?.(true);
+      dispatchSequenceMove(origin);
+    },
+    [state, myColor, inputDisabled, triggerFly, dispatchSequenceMove],
+  );
+
   const { drag, pointerDown, hasPointerInteraction, targets: dragTargets, handlers: dragHandlers } = useCheckerDrag({
     state, myColor, blocked: interactionBlocked, legalFromPoints, boardRef, wrapperRef,
-    onDrop: triggerFly,
+    onDrop: startMoveSequence,
   });
   const displayedTargets = drag ? dragTargets : legalTargets;
 
@@ -534,9 +590,9 @@ export function Board({
     humanMoveRef.current = null;
     if (isHuman) return;
     // Replace a superseded flight instead of dropping the new server update.
-    const mover: Color = myColor === "black" ? "white" : "black";
+    const mover: Color = myColor === null ? state.turn : myColor === "black" ? "white" : "black";
     animateExternalMove(last.from, last.to, mover);
-  }, [state.lastMove, flyChecker, myColor, animateExternalMove]);
+  }, [state.lastMove, state.turn, flyChecker, myColor, animateExternalMove]);
 
   useEffect(() => {
     if (autoPointRunRef.current) return;
@@ -668,17 +724,19 @@ export function Board({
     clearAutoPointSequence,
   ]);
 
-  // Auto make-point sequence: advance on state + animation completion
-  // Auto make-point sequence: advance on state + animation completion
+  // Shared by make-point clicks and multi-die checker drags. Online optimistic
+  // positions do not acknowledge a step until its server move is no longer pending.
   useEffect(() => {
     const run = autoPointRunRef.current;
     if (!run || !run.dispatched) return;
-    if (inputDisabled || myColor === null || state.turn !== myColor || state.phase !== "moving") {
+    if (inputDisabled || myColor === null || run.color !== myColor || state.turn !== myColor || state.phase !== "moving") {
+      clearAutoPointSequence();
       return;
     }
     const step = run.dispatched;
     if (gameplayEqual(state, step.toState)) {
       step.observedApplied = true;
+      if (hasPendingMoves?.()) return;
       if (run.timer !== null) {
         window.clearTimeout(run.timer);
         run.timer = null;
@@ -696,29 +754,8 @@ export function Board({
       clearAutoPointSequence(true);
       return;
     }
-    const nextMove = run.remaining[0];
-    const legal = allLegalMoves(state, myColor as Color).some(
-      (m) => m.from === nextMove.from && m.to === nextMove.to && m.die === nextMove.die,
-    );
-    if (!legal) {
-      clearAutoPointSequence(true);
-      return;
-    }
-    const fromState = state;
-    const toState = applyMove(fromState, nextMove, myColor as Color);
-    const newStep = { move: nextMove, fromState, toState, observedApplied: false };
-    run.remaining = run.remaining.slice(1);
-    run.dispatched = newStep;
-    const capturedRun = run;
-    const capturedStep = newStep;
-    capturedRun.timer = window.setTimeout(() => {
-      if (autoPointRunRef.current !== capturedRun) return;
-      if (capturedRun.dispatched !== capturedStep) return;
-      if (capturedStep.observedApplied) return;
-      clearAutoPointSequence(true);
-    }, 2000);
-    triggerFly(nextMove.from, nextMove.to);
-  }, [state, flyChecker, myColor, inputDisabled, clearAutoPointSequence, triggerFly]);
+    dispatchSequenceMove();
+  }, [state, flyChecker, myColor, inputDisabled, hasPendingMoves, clearAutoPointSequence, dispatchSequenceMove]);
 
   useEffect(() => {
     return () => {
@@ -761,34 +798,8 @@ export function Board({
     ) {
       const seq = getMakePointSequence(state, myColor, idx);
       if (seq && seq.length > 0) {
-        // Validate again against live legal moves for the first step
-        const firstLegal = allLegalMoves(state, myColor).some(
-          (m) => m.from === seq[0].from && m.to === seq[0].to && m.die === seq[0].die,
-        );
-        if (firstLegal) {
-          const fromState = state;
-          const toState = applyMove(fromState, seq[0], myColor);
-          const runId = ++autoPointRunIdRef.current;
-          const newStep = { move: seq[0], fromState, toState, observedApplied: false };
-          const run = {
-            id: runId,
-            target: idx,
-            remaining: seq.slice(1),
-            dispatched: newStep,
-            timer: null as number | null,
-          };
-          autoPointRunRef.current = run;
-          setAutoPointSequenceActive(true);
-          onAutoPointSequenceChangeRef.current?.(true);
-          run.timer = window.setTimeout(() => {
-            if (autoPointRunRef.current !== run) return;
-            if (run.dispatched !== newStep) return;
-            if (newStep.observedApplied) return;
-            clearAutoPointSequence(true);
-          }, 2000);
-          triggerFly(seq[0].from, seq[0].to);
-          return;
-        }
+        startMoveSequence(seq);
+        return;
       }
     }
     if (typeof idx === "number" && legalTargets.includes(idx)) {
@@ -828,7 +839,7 @@ export function Board({
     myColor,
     state,
     onSelect,
-    clearAutoPointSequence,
+    startMoveSequence,
   ]);
 
   // Point cells are memoized. Keep the callback passed to all 24 cells stable,
@@ -864,7 +875,7 @@ export function Board({
   const cubePosition =
     state.cubeOwner === "center"
       ? "center"
-      : state.cubeOwner === myColor
+      : state.cubeOwner === (myColor ?? "white")
         ? "bottom"
         : "top";
 
@@ -999,7 +1010,7 @@ export function Board({
             onControlsTargetChange={onControlsTargetChange}
             state={state}
             myColor={myColor}
-            isLegalTarget={!interactionBlocked && bearOffMove !== null}
+            isLegalTarget={!interactionBlocked && (drag ? displayedTargets.includes(OFF) : bearOffMove !== null)}
             onClick={() => {
               if (interactionBlocked || !bearOffMove) return;
               triggerFly(bearOffMove.from, OFF, undefined, { die: bearOffMove.die });
@@ -1022,7 +1033,6 @@ export function Board({
               noticeSide={noticeSide}
               noticeDetails={noticeDetails}
               rollDetails={rollDetails}
-              groupTurnActions={groupTurnActions}
             />
             {overlay}
           </div>

@@ -11,7 +11,7 @@ export function Die({
   value,
   used,
   dark,
-  usedOpacity = 0.3,
+  usedOpacity = 0.65,
 }: {
   value: number;
   used?: boolean;
@@ -35,9 +35,10 @@ export function Die({
       initial={{ opacity: 0 }}
       animate={{ transform: "rotate(1deg)", opacity: used ? usedOpacity : 1 }}
       transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
-      className={materialReady
-        ? "relative size-[var(--die-size,clamp(2rem,10vw,3rem))] shrink-0 rounded-[var(--die-radius,5px)]"
-        : `${styles.die} ${dark ? styles.dieDark : styles.dieLight}`}
+      className={`relative size-[var(--die-size,clamp(2rem,10vw,3rem))] shrink-0 rounded-[var(--die-radius,5px)] ${materialReady ? "" :
+        "border shadow-[0_6px_14px_#02051261,inset_0_1px_1px_#ffffff38,inset_0_-3px_5px_#00000047]"} ${materialReady ? "" : dark
+        ? "border-[#e6edeb7a] text-[#ffffff] [background:linear-gradient(145deg,color-mix(in_srgb,var(--lux-die-dark-hi,#34393b),#ffffff_8%),color-mix(in_srgb,var(--lux-die-dark-low,#101415),#ffffff_12%))]"
+        : "border-[#e5b44d8c] text-[var(--lux-die-pip-dark,#19130d)] [background:radial-gradient(circle_at_28%_22%,#ffffff94,transparent_28%),linear-gradient(145deg,var(--lux-checker-light-hi,#fff8e7),var(--lux-checker-light-low,#ddc391))]"}`}
       data-testid="die"
       data-die-value={value}
       data-die-dark={String(Boolean(dark))}
@@ -56,7 +57,7 @@ export function Die({
           key={i}
           aria-hidden="true"
           data-die-pip={i + 1}
-          className={`${styles.pip} ${styles.pipCurrent} ${materialReady || showLanding ? "invisible" : ""}`}
+          className={`absolute size-[var(--pip-size,16.8%)] -translate-x-1/2 -translate-y-1/2 rounded-full bg-current ${materialReady || showLanding ? "invisible" : ""}`}
           style={{
             left: `${x}%`,
             top: `${y}%`,

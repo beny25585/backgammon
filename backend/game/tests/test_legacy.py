@@ -486,7 +486,7 @@ class GameConsumerTests(TransactionTestCase):
         self.assertTrue(engine.make_move(9, 4, 'white')['success'])
         stored.update({
             'clock': {'white': 120_000, 'black': 120_000},
-            # White has been thinking 15s; the 10s delay leaves a 5s charge.
+            # White has been thinking 15s; the 12s normal delay leaves a 3s charge.
             'turnStartedAt': int(time_module.time() * 1000) - 15_000,
         })
         gs = await get_game_state(self.room)
@@ -502,7 +502,7 @@ class GameConsumerTests(TransactionTestCase):
         event = await self._receive_until(comm_black, lambda e: e.get('type') == 'state_update' and not e.get('initial'))
         clock = event['payload']['clock']
         self.assertEqual(clock['black'], 120_000)  # frozen while white acted
-        self.assertTrue(114_000 <= clock['white'] <= 115_000)
+        self.assertTrue(116_000 <= clock['white'] <= 117_000)
         await comm_white.disconnect()
         await comm_black.disconnect()
 
@@ -534,9 +534,9 @@ class GameConsumerTests(TransactionTestCase):
             'dice': [3, 5],
             'remaining': [3, 5],
             'clock': {'white': 100, 'black': 120_000},
-            # White's deadline is 10s delay + 100ms reserve after turnStartedAt;
+            # White's deadline is 12s normal delay + 100ms reserve after turnStartedAt;
             # put turnStartedAt in the past so the deadline is effectively now.
-            'turnStartedAt': int(time_module.time() * 1000) - 10_100,
+            'turnStartedAt': int(time_module.time() * 1000) - 12_100,
         }
         gs = await get_game_state(self.room)
         gs.state_data = stored
@@ -627,7 +627,7 @@ class GameConsumerTests(TransactionTestCase):
             self.assertEqual(second['payload']['revealAfterMs'], 350)
 
             # The notice is display-only: it does not hold the opponent's turn
-            # or consume reserve inside the normal 10-second delay.
+            # or consume reserve inside the normal 12-second delay.
             await comm_black.send_json_to({
                 'type': 'state_update',
                 'payload': {'action': 'roll'},
@@ -2042,7 +2042,7 @@ class ClockHelperTests(TestCase):
     def test_parse_time_control(self):
         from game.clock import parse_time_control
         self.assertEqual(parse_time_control('fast', 1), (30_000, 10_000))
-        self.assertEqual(parse_time_control('normal', 5), (300_000, 10_000))
+        self.assertEqual(parse_time_control('normal', 5), (300_000, 12_000))
         self.assertEqual(parse_time_control('slow', 7), (840_000, 10_000))
         self.assertIsNone(parse_time_control('none'))
         self.assertIsNone(parse_time_control(None))
@@ -2089,7 +2089,7 @@ class ClockHelperTests(TestCase):
         self.assertEqual(turn_started_at, 9_000)
         self.assertEqual(active, 'white')
         self.assertFalse(timed_out)
-        self.assertEqual(deadline, 9_000 + 10_000 + 120_000)
+        self.assertEqual(deadline, 9_000 + 12_000 + 120_000)
 
     def test_clock_starts_when_dice_are_rolled_and_player_can_move(self):
         from game.clock import compute_clock
@@ -2113,7 +2113,7 @@ class ClockHelperTests(TestCase):
         self.assertEqual(turn_started_at, 9_000)
         self.assertEqual(active, 'white')
         self.assertFalse(timed_out)
-        self.assertEqual(deadline, 9_000 + 10_000 + 120_000)
+        self.assertEqual(deadline, 9_000 + 12_000 + 120_000)
 
     def test_active_player_responder_pays_during_doubling(self):
         from game.clock import active_player
@@ -2190,7 +2190,7 @@ class ClockHelperTests(TestCase):
         self.assertEqual(started, 50_000)
         self.assertEqual(active, 'black')
         self.assertFalse(timed_out)
-        self.assertEqual(deadline, 50_000 + 10_000 + 250_000)
+        self.assertEqual(deadline, 50_000 + 12_000 + 250_000)
 
     def test_action_at_zero_bank_times_out_the_player_who_was_active(self):
         from game.clock import compute_clock

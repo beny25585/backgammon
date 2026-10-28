@@ -10,9 +10,9 @@ import {
 } from "./clock";
 import { newGame } from "./backgammon/engine";
 
-test("parseTimeControl scales named presets by match target with a 10s delay", () => {
+test("parseTimeControl scales named presets by match target with each preset's delay", () => {
   expect(parseTimeControl("fast", 1)).toEqual({ base: 30_000, delay: 10_000 });
-  expect(parseTimeControl("normal", 5)).toEqual({ base: 300_000, delay: 10_000 });
+  expect(parseTimeControl("normal", 5)).toEqual({ base: 300_000, delay: 12_000 });
   expect(parseTimeControl("slow", 7)).toEqual({ base: 840_000, delay: 10_000 });
   expect(parseTimeControl("none")).toBeNull();
   expect(parseTimeControl(null)).toBeNull();

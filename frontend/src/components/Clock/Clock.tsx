@@ -11,7 +11,7 @@ interface ClockProps {
   oppLabel: string;
   delayMs?: number;
   turnStartedAt?: number | null;
-  layout?: "strip" | "rail";
+  layout?: "strip" | "rail" | "stacked";
 }
 
 const DISPLAY_TICK_MS = 250;
@@ -81,8 +81,9 @@ export default function Clock({
   const oppLow = oppValue != null && oppValue <= 10_000;
 
   const rail = layout === "rail";
-  const sideClass = "flex min-h-[clamp(28px,5.1cqh,50px)] min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 tabular-nums [@container_game-layout_(height<500px)]:min-h-7 [@container_game-layout_(height<500px)]:py-1";
-  const timeClass = "text-[clamp(15px,18cqw,28px)] font-medium leading-none tracking-tight [@container_game-layout_(height<500px)]:text-base";
+  const stacked = layout === "stacked";
+  const sideClass = `flex min-h-[clamp(28px,5.1cqh,50px)] min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 tabular-nums [@container_game-layout_(height<500px)]:min-h-7 [@container_game-layout_(height<500px)]:py-1 ${stacked ? "[@container_game-layout_(height<500px)]:flex-row [@container_game-layout_(height<500px)]:justify-between [@container_game-layout_(height<500px)]:px-2" : ""}`;
+  const timeClass = `text-[clamp(15px,18cqw,28px)] font-medium leading-none tracking-tight [@container_game-layout_(height<500px)]:text-base ${stacked ? "shrink-0" : ""}`;
   const activeClass = "border-2 border-[#e1be73] bg-black/10 text-[#f0ce85]";
   const idleClass = "border-white/20 bg-white/3 text-[#f1ebdf]";
   const lowClass = "low border-rose-400/70 bg-rose-400/8 text-rose-300";
@@ -90,13 +91,13 @@ export default function Clock({
   const oppCls = `${sideClass} ${rail ? "col-start-1 row-start-2" : ""} ${oppActive ? "oppActive" : "idle"} ${oppLow ? lowClass : oppActive ? activeClass : idleClass}`;
 
   return (
-    <div className={rail ? "contents" : "grid min-w-0 grid-flow-col auto-cols-fr gap-1"}>
+    <div className={rail ? "contents" : stacked ? "grid min-w-0 grid-cols-1 gap-1" : "grid min-w-0 grid-flow-col auto-cols-fr gap-1"}>
       <div className={oppCls} data-testid="clock-opp">
         <span className={rail ? "sr-only" : "max-w-full truncate text-xs"}>{oppLabel}</span>
         <span className={timeClass} dir="ltr">{formatClock(oppValue)}</span>
       </div>
       {showDelay && (
-        <div className={`flex min-w-0 items-center justify-center gap-2 text-[#c8bda8] ${rail ? "col-start-1 row-start-3 self-end border-t border-white/10 py-2" : "flex-col px-1"}`} data-testid="clock-delay">
+        <div className={`flex min-w-0 items-center justify-center gap-2 text-[#c8bda8] ${rail ? "col-start-1 row-start-3 self-end border-t border-white/10 py-2" : stacked ? "px-1 py-0.5" : "flex-col px-1"}`} data-testid="clock-delay">
           <span className="text-[clamp(9px,5cqw,12px)]">{t("common.delay")}</span>
           <span className="text-sm font-semibold tabular-nums text-[#f0ce85]" dir="ltr">{formatSeconds(delayMsLeft)}</span>
         </div>

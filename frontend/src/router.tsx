@@ -15,6 +15,7 @@ import GameScreen from "./components/GameScreen";
 import LinkEntry from "./components/LinkEntry";
 import MatchDetail from "./components/MatchDetail";
 import MatchHistory from "./components/MatchHistory";
+import SpectatorScreen from "./components/spectator/SpectatorScreen";
 import { GameProvider } from "./services/gameContext";
 import { LocalGameProvider } from "./services/localGameContext";
 import { parseTimeControl } from "./lib/clock";
@@ -242,6 +243,15 @@ function LocalRoute() {
   );
 }
 
+function SpectatorRoute() {
+  const [params] = useSearchParams();
+  const tournamentId = params.get("tournament");
+  const returnUrl = isValidTournamentId(tournamentId)
+    ? new URL(`tournaments/${encodeURIComponent(tournamentId!)}/bracket`, tournamentLobbyUrl()).toString()
+    : tournamentLobbyUrl().toString();
+  return <SpectatorScreen returnUrl={returnUrl} serverUrl={import.meta.env.VITE_SERVER_URL} />;
+}
+
 export default function Router() {
   return (
     <Routes>
@@ -266,6 +276,8 @@ export default function Router() {
       {/* Deliberately outside RequireAuth: arriving here with a ticket-issued session in
           the fragment is what establishes auth in the first place. */}
       <Route path="/link" element={<LinkEntry />} />
+      {/* A scoped spectator ticket establishes read-only access without a player session. */}
+      <Route path="/watch/:roomId" element={<SpectatorRoute />} />
       <Route path="/local" element={<LocalRoute />} />
       <Route
         path="/history"

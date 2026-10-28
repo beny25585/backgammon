@@ -57,7 +57,7 @@ test("local match keeps spent bank when the next game starts", async ({ mount, p
   const component = await mount(
     <LocalGameProvider
       matchTarget={5}
-      timeControl={{ base: 300_000, delay: 10_000 }}
+      timeControl={{ base: 300_000, delay: 12_000 }}
     >
       <ClockMatchLifecycleProbe />
     </LocalGameProvider>,
@@ -72,8 +72,8 @@ test("local match keeps spent bank when the next game starts", async ({ mount, p
   await expect(component.getByTestId("match-started")).toHaveText("null");
   const spentClock = await component.getByTestId("match-clock").textContent();
   const parsed = JSON.parse(spentClock || "{}") as { white: number; black: number };
-  expect(parsed.white).toBeGreaterThanOrEqual(294_900);
-  expect(parsed.white).toBeLessThanOrEqual(295_000);
+  expect(parsed.white).toBeGreaterThanOrEqual(296_900);
+  expect(parsed.white).toBeLessThanOrEqual(297_000);
   expect(parsed.black).toBe(300_000);
 
   await page.clock.fastForward(1_500);

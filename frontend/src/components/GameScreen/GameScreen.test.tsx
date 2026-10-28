@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
+import { StrictMode } from "react";
 import GameScreen from "./GameScreen";
 import { MockGameWrapper } from "../../test-utils/wrappers";
 import { makeGameState } from "../../test-utils/gameState";
@@ -21,6 +22,8 @@ for (const [theme, label, fieldColor] of [
       </MockGameWrapper>
     );
     const component = await mount(screen);
+    await expect(component.getByTestId("game-settings-toggle")).toHaveAttribute("aria-expanded", "false");
+    await component.getByTestId("game-settings-toggle").press("Enter");
     const selector = component.getByRole("combobox", { name: "Board style" });
     await selector.selectOption({ label });
     await expect(selector).toHaveValue(theme);
@@ -33,6 +36,7 @@ for (const [theme, label, fieldColor] of [
     await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-board-theme"))).toBe(theme);
     await component.unmount();
     const reopened = await mount(screen);
+    await expect(reopened.getByTestId("game-settings-toggle")).toHaveAttribute("aria-expanded", "false");
     await expect(reopened.getByTestId("board-inner")).toHaveCSS("background-color", fieldColor);
   });
 }
@@ -45,6 +49,7 @@ test("game sounds can be muted and the preference survives reopening", async ({ 
     </MockGameWrapper>
   );
   const component = await mount(screen);
+  await component.getByTestId("game-settings-toggle").press("Enter");
   const sounds = component.getByRole("checkbox", { name: "Game sounds" });
   await expect(sounds).toBeChecked();
   await component.getByText("Game sounds", { exact: true }).click();
@@ -52,6 +57,7 @@ test("game sounds can be muted and the preference survives reopening", async ({ 
   await expect.poll(() => page.evaluate(() => localStorage.getItem("6b-game-sounds"))).toBe("false");
   await component.unmount();
   const reopened = await mount(screen);
+  await reopened.getByTestId("game-settings-toggle").press("Enter");
   await expect(reopened.getByRole("checkbox", { name: "Game sounds" })).not.toBeChecked();
 });
 
@@ -164,7 +170,7 @@ test("roll action remains available after a server auto-pass with stale dice", a
   await expect(component.getByTitle("Tap to roll")).toBeVisible();
 });
 
-test("auto roll can be switched off before its timer and preserves its preference", async ({ mount, page }) => {
+test("auto roll starts immediately and preserves its preference", async ({ mount, page }) => {
   await page.evaluate(() => localStorage.removeItem("bg_auto_roll"));
   await page.clock.install();
   await page.clock.pauseAt(new Date());
@@ -176,19 +182,17 @@ test("auto roll can be switched off before its timer and preserves its preferenc
     </MockGameWrapper>
   );
   const component = await mount(screen);
+  await component.getByTestId("game-settings-toggle").press("Enter");
   const toggle = component.getByTestId("auto-roll-toggle");
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   await page.clock.runFor(1500);
   expect(rolls).toBe(0);
   await toggle.click();
-  await page.clock.runFor(300);
+  await expect.poll(() => rolls).toBe(1);
   await toggle.click();
   await page.clock.runFor(1000);
-  expect(rolls).toBe(0);
+  expect(rolls).toBe(1);
   await toggle.click();
-  await page.clock.runFor(349);
-  expect(rolls).toBe(0);
-  await page.clock.runFor(1);
   await expect.poll(() => rolls).toBe(1);
   await page.clock.runFor(3000);
   expect(rolls).toBe(1);
@@ -198,7 +202,7 @@ test("auto roll can be switched off before its timer and preserves its preferenc
   await expect(reopened.getByTestId("auto-roll-toggle")).toHaveAttribute("aria-pressed", "true");
 });
 
-test("a manual roll cancels the automatic request for that turn", async ({ mount, page }) => {
+test("a manual roll does not repeat an immediate automatic roll", async ({ mount, page }) => {
   await page.evaluate(() => localStorage.setItem("bg_auto_roll", "true"));
   await page.clock.install();
   await page.clock.pauseAt(new Date());
@@ -209,6 +213,7 @@ test("a manual roll cancels the automatic request for that turn", async ({ mount
       <GameScreen />
     </MockGameWrapper>,
   );
+  await expect.poll(() => rolls).toBe(1);
   await component.getByTitle("Tap to roll").click();
   await page.clock.runFor(2000);
   await expect.poll(() => rolls).toBe(1);
@@ -228,12 +233,83 @@ test("auto roll proceeds while the opponent's blocked notice is visible", async 
   );
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
   await expect(component.getByTitle("Tap to roll")).toBeVisible();
-  await page.clock.runFor(349);
-  expect(rolls).toBe(0);
-  await page.clock.runFor(1);
   await expect.poll(() => rolls).toBe(1);
   await expect(component.getByTestId("no-moves-overlay")).toBeVisible();
 });
+
+test("auto roll waits for an error to clear and retries immediately once", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.setItem("bg_auto_roll", "true"));
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let rolls = 0;
+  const screen = (error: string | null) => (
+    <MockGameWrapper state={makeGameState({ phase: "rolling", turn: "white" })}
+      context={{ error, rollDice: () => rolls++ }}>
+      <GameScreen />
+    </MockGameWrapper>
+  );
+  const component = await mount(screen("Dice service unavailable"));
+  expect(rolls).toBe(0);
+  await component.update(screen(null));
+  await expect.poll(() => rolls).toBe(1);
+  await component.update(screen(null));
+  expect(rolls).toBe(1);
+  await component.update(screen("Dice service unavailable"));
+  await component.update(screen(null));
+  await expect.poll(() => rolls).toBe(2);
+});
+
+for (const playerColor of ["white", "black"] as const) {
+  test(`auto roll sends once immediately for ${playerColor} under StrictMode`, async ({ mount, page }) => {
+    await page.evaluate(() => localStorage.setItem("bg_auto_roll", "true"));
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    let rolls = 0;
+    await mount(
+      <StrictMode>
+        <MockGameWrapper playerColor={playerColor}
+          state={makeGameState({ phase: "rolling", turn: playerColor })}
+          context={{ rollDice: () => rolls++ }}>
+          <GameScreen />
+        </MockGameWrapper>
+      </StrictMode>,
+    );
+    await expect.poll(() => rolls).toBe(1);
+    await page.clock.runFor(1000);
+    expect(rolls).toBe(1);
+  });
+
+  test(`auto roll starts immediately when the turn returns to ${playerColor}`, async ({ mount, page }) => {
+    await page.evaluate(() => localStorage.setItem("bg_auto_roll", "true"));
+    await page.clock.install();
+    await page.clock.pauseAt(new Date());
+    let rolls = 0;
+    const opponent = playerColor === "white" ? "black" : "white";
+    const screen = (turn: typeof playerColor | typeof opponent) => (
+      <MockGameWrapper playerColor={playerColor}
+        state={makeGameState({ phase: "rolling", turn })}
+        context={{ rollDice: () => rolls++ }}>
+        <GameScreen />
+      </MockGameWrapper>
+    );
+    const component = await mount(screen(opponent));
+    expect(rolls).toBe(0);
+    await component.update(screen(playerColor));
+    await expect.poll(() => rolls).toBe(1);
+    await component.update(screen(playerColor));
+    expect(rolls).toBe(1);
+    await component.update(screen(opponent));
+    expect(rolls).toBe(1);
+    await component.update(screen(playerColor));
+    await expect.poll(() => rolls).toBe(2);
+    await component.getByTestId("game-settings-toggle").press("Enter");
+    await component.getByTestId("auto-roll-toggle").click();
+    await component.update(screen(opponent));
+    await component.update(screen(playerColor));
+    await page.clock.runFor(1000);
+    expect(rolls).toBe(2);
+  });
+}
 
 test("in-game errors show as a floating card and keep the board visible", async ({
   mount,
