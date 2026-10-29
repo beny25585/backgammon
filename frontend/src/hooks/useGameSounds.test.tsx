@@ -43,7 +43,7 @@ function rollAfter(before: GameSoundSnapshot): GameSoundSnapshot {
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.evaluate(() => {
     const decodes: (() => void)[] = [];
     const probe: AudioProbe = {
       now: 1000,
@@ -144,7 +144,7 @@ test("audio waits for a gesture, preloads once and closes on unmount", async ({ 
 });
 
 test("a saved mute preference stays silent and enabling never replays a missed roll", async ({ mount, page }) => {
-  await page.addInitScript(() => localStorage.setItem("6b-game-sounds", "false"));
+  await page.evaluate(() => localStorage.setItem("6b-game-sounds", "false"));
   const before = snapshot();
   const component = await mount(<GameSoundsHarness snapshot={before} />);
   await expect(component.getByTestId("sound-enabled")).toHaveText("muted");
@@ -262,7 +262,7 @@ test("one confirmed victory plays once despite score corrections, then a new gam
 });
 
 test("a muted victory is consumed and cannot replay after enabling or a score correction", async ({ mount, page }) => {
-  await page.addInitScript(() => localStorage.setItem("6b-game-sounds", "false"));
+  await page.evaluate(() => localStorage.setItem("6b-game-sounds", "false"));
   const before = snapshot();
   const component = await mount(<GameSoundsHarness snapshot={before} />);
   await expect(component.getByTestId("sound-enabled")).toHaveText("muted");

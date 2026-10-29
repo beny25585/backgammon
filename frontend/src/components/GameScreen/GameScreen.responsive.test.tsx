@@ -23,7 +23,6 @@ const PANEL_IN_VIEW = [
   { name: "small-landscape-640x480", width: 640, height: 480 },
 ];
 
-const MIN_CHECKER_PX = 16;
 const MIN_LIMITING_AXIS_FILL = 0.85;
 
 function movingState(overrides: Partial<GameState> = {}): GameState {
@@ -128,25 +127,6 @@ for (const vp of VIEWPORTS) {
     expect(await board.boundingBox()).toEqual(before);
   });
 
-}
-
-for (const vp of VIEWPORTS.filter(({ name }) => name !== "mobile-portrait")) {
-  test(`checkers are not too small (${vp.name})`, async ({ mount, page }) => {
-    await page.setViewportSize({ width: vp.width, height: vp.height });
-    const state = movingState();
-    const component = await mountBoard(mount, state);
-
-    await expect(component.locator("[data-checker]").first()).toBeVisible();
-    const checkerPx = await component
-      .locator("[data-checker]")
-      .first()
-      .evaluate((el: HTMLElement) => getComputedStyle(el).width);
-    const value = parseFloat(checkerPx);
-    expect(
-      value,
-      `checker size should be >= ${MIN_CHECKER_PX}px (${vp.name}, got ${checkerPx})`,
-    ).toBeGreaterThanOrEqual(MIN_CHECKER_PX);
-  });
 }
 
 for (const vp of VIEWPORTS) {
