@@ -160,9 +160,13 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
         </MockGameWrapper>
       </div>,
     );
-    const frame = await component.getByTestId("board-frame").boundingBox();
+    const frameElement = component.getByTestId("board-frame");
+    const frame = await frameElement.boundingBox();
+    const slot = await frameElement.locator("..").boundingBox();
     expect(frame).not.toBeNull();
+    expect(slot).not.toBeNull();
     expect(frame!.width).toBeGreaterThan(0);
+    expect(Math.abs(frame!.width - slot!.width)).toBeLessThanOrEqual(1);
     expect(frame!.x).toBeGreaterThanOrEqual(0);
     expect(frame!.x + frame!.width).toBeLessThanOrEqual(viewport.width + 1);
     expect(frame!.height).toBeLessThanOrEqual(viewport.height);
@@ -172,7 +176,6 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
     await component.getByTestId("game-settings-toggle").press("Enter");
     const settings = await component.getByTestId("game-settings-panel").boundingBox();
     const board = await component.getByTestId("board-wrapper").boundingBox();
-    expect(board!.width / board!.height).toBeCloseTo(1.6, 2);
     expect(settings!.x + settings!.width).toBeLessThanOrEqual(frame!.x + frame!.width + 1);
     expect(settings!.x).toBeLessThan(board!.x + board!.width);
   });

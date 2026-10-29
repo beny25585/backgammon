@@ -73,7 +73,7 @@ for (const vp of VIEWPORTS) {
     await assertNoHorizontalOverflow(page.getByTestId("board-frame"));
   });
 
-  test(`board fits proportionally and stays stable when settings toggle (${vp.name})`, async ({ mount, page }) => {
+  test(`game frame fills available width and stays stable when settings toggle (${vp.name})`, async ({ mount, page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
     const state = movingState();
     const component = await mountBoard(mount, state);
@@ -88,16 +88,20 @@ for (const vp of VIEWPORTS) {
     const width = portrait ? box.height : box.width;
     const height = portrait ? box.width : box.height;
     const slot = await page.getByTestId("board-frame").locator("..").boundingBox();
+    expect(slot).not.toBeNull();
     const availableWidth = portrait ? slot!.height : slot!.width;
     const availableHeight = portrait ? slot!.width : slot!.height;
-    expect(width).toBeLessThanOrEqual(availableWidth + 1);
+    expect(
+      Math.abs(width - availableWidth),
+      `game frame should fill its available width (${vp.name})`,
+    ).toBeLessThanOrEqual(1);
     expect(height).toBeLessThanOrEqual(availableHeight + 1);
     expect(height).toBeGreaterThan(0);
     expect(box.left).toBeGreaterThanOrEqual(0);
     expect(box.top).toBeGreaterThanOrEqual(0);
     expect(box.right).toBeLessThanOrEqual(vw + 1);
     expect(box.bottom).toBeLessThanOrEqual(vh + 1);
-    // Proportional fitting fills whichever viewport axis limits the board.
+    // The frame fills its available width while its height stays within the viewport.
     expect(
       Math.max(box.width / vw, box.height / vh),
       `board should fill its limiting viewport axis (${vp.name})`,
@@ -106,9 +110,6 @@ for (const vp of VIEWPORTS) {
     const board = component.getByTestId("board-wrapper");
     const before = await board.boundingBox();
     expect(before).not.toBeNull();
-    const boardWidth = portrait ? before!.height : before!.width;
-    const boardHeight = portrait ? before!.width : before!.height;
-    expect(boardWidth / boardHeight).toBeCloseTo(1.6, 2);
 
     const toggle = component.getByTestId("game-settings-toggle");
     const settings = component.getByTestId("game-settings-panel");

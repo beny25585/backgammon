@@ -20,12 +20,12 @@ export default function GameFrame({
   theme?: BoardTheme;
   settings?: ReactNode;
 }) {
-  // Fit the board itself to 8:5; the player rail sits outside that ratio.
+  // Fill the available width and cap the height to the available space.
   return (
     <BoardMaterialProvider enabled theme={theme}>
     <div className="@container/game-layout grid size-full min-h-0 min-w-0 place-items-center [container-type:size]">
       <div
-        className={`${styles.gameFrame} ${boardThemeClasses[theme]} grid h-[min(100cqh,calc((100cqw_-_var(--player-rail-width))/1.6))] w-[min(100cqw,calc(160cqh_+_var(--player-rail-width)))] min-w-0 grid-cols-[var(--player-rail-width)_minmax(0,1fr)] grid-rows-[0px_minmax(0,1fr)_0px] gap-x-0 bg-[#090b0b] text-[#efe4ca] [--player-rail-width:clamp(88px,12cqw,192px)] [font-family:'6B_Heebo',Arial,sans-serif] selection:bg-[#c8a66a] selection:text-[#17130c]`}
+        className={`${styles.gameFrame} ${boardThemeClasses[theme]} grid h-[min(100cqh,calc(100cqw/1.6))] w-full min-w-0 grid-cols-[var(--player-rail-width)_minmax(0,1fr)] grid-rows-[0px_minmax(0,1fr)_0px] gap-x-0 bg-[#090b0b] text-[#efe4ca] [--player-rail-width:clamp(88px,12cqw,192px)] [font-family:'6B_Heebo',Arial,sans-serif] selection:bg-[#c8a66a] selection:text-[#17130c]`}
         data-testid="board-frame"
         data-board-theme={theme}
         style={{ "--board-leather-image": `url("${charcoalLeather}")`,
