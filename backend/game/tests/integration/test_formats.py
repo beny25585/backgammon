@@ -92,6 +92,27 @@ class FormatEngineTests(SimpleTestCase):
         consumer._send_error.assert_awaited_once()
         consumer._finalize_and_broadcast.assert_not_awaited()
 
+    def test_double_uses_room_score_instead_of_client_supplied_match_context(self):
+        state = self.state(tp=3)
+        state.update(phase='rolling', turn='white', cube=2)
+        room = SimpleNamespace(target_points=3, white_score=1, black_score=0)
+        consumer = GameConsumer()
+        consumer.room_id = 'room'
+        consumer.player_color = 'white'
+        consumer._send_error = AsyncMock()
+        with patch('game.consumers.apply_server_game_action', AsyncMock()) as persist:
+            async_to_sync(consumer._handle_intent)(
+                {'action': 'double', 'target_points': 99,
+                 'scores': {'white': 0, 'black': 0}},
+                context=(room, SimpleNamespace(state_data=state)),
+            )
+        consumer._send_error.assert_awaited_once_with(
+            'Cube is dead for this player', action='double',
+        )
+        persist.assert_not_awaited()
+        self.assertEqual(state['phase'], 'rolling')
+        self.assertEqual(state['cube'], 2)
+
 
 class FinancialResultTests(TestCase):
     @link_settings

@@ -9,7 +9,7 @@ import {
   useLayoutEffect,
 } from "react";
 import type { ReactNode } from "react";
-import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
+import type { GameState, Color, Source, Target, MatchContext } from "@/lib/backgammon/engine";
 import {
   BAR,
   OFF,
@@ -41,6 +41,7 @@ import { useBoardMaterials } from "./materials/boardMaterialContext";
 
 interface BoardProps {
   state: GameState;
+  match?: MatchContext;
   myColor: Color | null;
   selected: Source | null;
   legalTargets: Target[];
@@ -139,6 +140,7 @@ const CHECKER_STACK_CLEARANCE_PX = 8;
 
 export function Board({
   state,
+  match,
   myColor,
   selected,
   legalTargets,
@@ -871,7 +873,7 @@ export function Board({
   const canDouble =
     Boolean(onOfferDouble) &&
     myColor !== null &&
-    canOfferDouble(state, myColor);
+    canOfferDouble(state, myColor, match);
   const cubePosition =
     state.cubeOwner === "center"
       ? "center"

@@ -7,6 +7,9 @@ import type { GuidanceVariant } from "./guidance";
 import { useI18n } from "../../i18n/I18nProvider";
 
 export interface GuidanceMessage {
+  id?: string;
+  /** Local visual deadline; never controls game or turn timing. */
+  expiresAt?: number;
   variant: GuidanceVariant;
   textKey: string;
 }
@@ -84,13 +87,13 @@ export default function GuidanceBanner({
       className={inline ? "pointer-events-none relative w-full" : "pointer-events-none absolute top-3 left-1/2 z-45 w-[calc(100%_-_32px)] max-w-56 -translate-x-1/2"}
     >
       <div
-        className={`pointer-events-none flex min-h-7 w-full items-center justify-center rounded-md border px-2 py-0.75 shadow-[0_5px_14px_#00000047] ${guidance.variant === "no-moves" ? "border-[#ec7485b3] bg-[#2d1014f5]" : "border-[#e5b44db8] bg-[#08171bf7]"}`}
+        className={`pointer-events-none flex min-h-9 w-full items-center justify-center rounded-md border px-2 py-1 shadow-[0_5px_14px_#00000047] ${guidance.variant === "no-moves" ? "border-[#ec7485b3] bg-[#2d1014f5]" : "border-[#e5b44db8] bg-[#08171bf7]"}`}
         data-testid="guidance-banner"
         data-variant={guidance.variant}
         role="status"
       >
         <span
-          className="pointer-events-none text-center text-[clamp(11px,1.55cqw,13px)] leading-[1.35] font-semibold text-[#fff8eb] [unicode-bidi:plaintext]"
+          className="pointer-events-none block min-w-0 max-w-full whitespace-normal text-center text-[clamp(14px,1.8cqw,16px)] leading-[1.45] font-semibold text-[#fff8eb] [overflow-wrap:anywhere] [unicode-bidi:plaintext]"
           data-testid="guidance-text"
           dir={direction}
           lang={locale}

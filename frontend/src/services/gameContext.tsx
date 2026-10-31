@@ -19,6 +19,8 @@ import type {
 import type { GameState, Color, Move } from "../types/game";
 import {
   allLegalMoves,
+  canOfferDouble,
+  isBarEntryFullyBlocked,
   isWholeTurnDeterministic,
   applyMove,
   undoLastMove,
@@ -473,6 +475,15 @@ export function GameProvider({
             setAutoConfirmPending(sendIntent({ action: "end_turn" }));
           }
 
+          if (
+            prev && prev.phase === "rolling" && next.phase === "rolling" &&
+            prev.turn !== next.turn && acknowledgedAction === "roll" &&
+            next.dice.length === 0 && next.remaining.length === 0 &&
+            isBarEntryFullyBlocked(prev, prev.turn)
+          ) {
+            revealNoMoves({ kind: "blocked_pass", dice: [], remaining: [], color: prev.turn }, 0, next.version);
+          }
+
           // Preserve an auto-passed roll for both players, including older
           // servers that only send state_update instead of turn_notice.
           if (
@@ -751,7 +762,7 @@ export function GameProvider({
           const payload = (message as Record<string, unknown>).payload as
             | Record<string, unknown>
             | undefined;
-          if (payload?.kind !== "no_moves") return;
+          if (payload?.kind !== "no_moves" && payload?.kind !== "blocked_pass") return;
           const dice = Array.isArray(payload.dice)
             ? payload.dice.filter(
                 (die): die is number => typeof die === "number",
@@ -763,9 +774,15 @@ export function GameProvider({
               )
             : [];
           const color = payload.color;
-          if (dice.length === 0 || (color !== "white" && color !== "black")) {
+          if (color !== "white" && color !== "black") {
             return;
           }
+          if (payload.kind === "blocked_pass") {
+            const version = typeof payload.version === "number" ? payload.version : stateRef.current?.version;
+            revealNoMoves({ kind: "blocked_pass", dice: [], remaining: [], color }, 0, version);
+            return;
+          }
+          if (dice.length === 0) return;
           const revealAfterMs =
             typeof payload.revealAfterMs === "number"
               ? Math.max(0, payload.revealAfterMs)
@@ -1075,9 +1092,9 @@ export function GameProvider({
 
   const offerDoubleAction = useCallback(() => {
     const current = stateRef.current;
-    if (!current || current.phase !== "rolling") return;
+    if (!current || !canOfferDouble(current, playerColorRef.current, { targetPoints, matchScore })) return;
     sendIntent({ action: "double" });
-  }, [sendIntent]);
+  }, [sendIntent, targetPoints, matchScore]);
 
   const respondToDouble = useCallback(
     (accept: boolean) => {

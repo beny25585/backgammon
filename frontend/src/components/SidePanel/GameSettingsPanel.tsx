@@ -66,7 +66,7 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, sou
   return (
     <aside className="flex h-full min-h-0 min-w-0 flex-col gap-[clamp(8px,2cqh,20px)] overflow-y-auto overscroll-contain bg-[#0b0f0f] px-3 pb-5 text-white [scrollbar-color:#a98a51_#0b0f0f] [scrollbar-width:thin] [&>div]:shrink-0"
       aria-label={t("game.matchControl")} data-testid="game-settings-panel" dir={direction}>
-      <h2 className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center bg-[#0b0f0f] py-3 text-start text-[clamp(16px,1.6cqw,23px)] leading-tight font-bold text-[#ebc879]">{t("game.settingsTitle")}</h2>
+      <h2 className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center bg-[#0b0f0f] py-3 pe-12 text-start text-[clamp(16px,1.6cqw,23px)] leading-tight font-bold text-[#ebc879]">{t("game.settingsTitle")}</h2>
       <div>
         <label className="relative block">
           <span className="sr-only">{t("common.language")}</span>

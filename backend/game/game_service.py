@@ -129,7 +129,17 @@ def _transcript_from_events(events):
     current = None
     for event in events:
         payload = event.payload or {}
-        if event.event_type == 'roll':
+        if event.event_type == 'blocked_pass':
+            if current:
+                transcript.append(current)
+                current = None
+            actor = payload.get('actorColor')
+            if actor not in ('white', 'black'):
+                actor = 'black' if payload.get('turn') == 'white' else 'white'
+            transcript.append({
+                'kind': 'blocked_pass', 'turn': actor, 'roll': [], 'moves': [],
+            })
+        elif event.event_type == 'roll':
             if current:
                 transcript.append(current)
             current = {

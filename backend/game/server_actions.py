@@ -68,8 +68,8 @@ async def apply_server_game_action(
       Timing here therefore measures only the post-engine pipeline.
     - State and history commit together before the state is broadcast.
     - Analysis HTTP delivery belongs to the existing task worker.
-    - On end_turn, the next player's turnStartedAt is reset immediately before
-      persistence so server-side processing does not consume their free delay.
+    - On end_turn or a blocked pass, the next player's turnStartedAt is reset
+      immediately before persistence so processing does not consume their delay.
 
     Returns:
         {
@@ -81,6 +81,11 @@ async def apply_server_game_action(
     perf_started = time_module.perf_counter()
     pipeline_started_ms = int(time_module.time() * 1000)
     now_ms = pipeline_started_ms
+    event_type = (
+        'blocked_pass'
+        if action == 'roll' and (result or {}).get('event_type') == 'blocked_pass'
+        else action
+    )
 
     timings = {
         "clock_ms": 0,
@@ -219,7 +224,7 @@ async def apply_server_game_action(
         )
 
         persist_started = time_module.perf_counter()
-        sequence = await persist_state_and_advance(room.id, new_state, player_color, action)
+        sequence = await persist_state_and_advance(room.id, new_state, player_color, event_type)
         timings["persist_ms"] = _elapsed_ms(persist_started)
         new_state["version"] = sequence
 
@@ -307,7 +312,7 @@ async def apply_server_game_action(
 
     # 5. Turn handoff fairness
     is_turn_handoff = (
-        action == "end_turn"
+        (action == "end_turn" or event_type == 'blocked_pass')
         and clock is not None
         and previous_active is not None
         and new_active is not None
@@ -338,7 +343,7 @@ async def apply_server_game_action(
         room.id,
         new_state,
         player_color,
-        action,
+        event_type,
     )
 
     timings["persist_ms"] = _elapsed_ms(persist_started)

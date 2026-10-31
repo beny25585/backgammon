@@ -6,6 +6,41 @@ import BoardActionButton from "./buttons/BoardActionButton";
 import BoardHalfOverlay, { type BoardSide } from "./BoardHalfOverlay";
 import GuidanceBanner from "../GuidanceBanner";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
+import IllustratedTurnNotice, { type IllustratedNoticeAsset } from "../TurnNotice/IllustratedTurnNotice";
+
+const barBlockedAsset: IllustratedNoticeAsset = {
+  id: "bar-blocked",
+  url: `${import.meta.env.BASE_URL}assets/notices/bar-blocked.png`,
+  width: 1586,
+  height: 992,
+};
+const noMovesAsset: IllustratedNoticeAsset = {
+  id: "no-legal-moves",
+  url: `${import.meta.env.BASE_URL}assets/notices/no-legal-moves.png`,
+  width: 1586,
+  height: 992,
+};
+const barClosedAsset: IllustratedNoticeAsset = {
+  id: "all-entries-blocked",
+  url: `${import.meta.env.BASE_URL}assets/notices/all-entries-blocked.png`,
+  width: 1586,
+  height: 992,
+};
+const forcedMoveAsset: IllustratedNoticeAsset = {
+  id: "only-one-move",
+  url: `${import.meta.env.BASE_URL}assets/notices/only-one-move.png`,
+  width: 1586,
+  height: 992,
+};
+const illustratedNoticeAssets: Partial<Record<string, IllustratedNoticeAsset>> = {
+  "guidance.barBlocked": barBlockedAsset,
+  "guidance.barBlockedOpponent": barBlockedAsset,
+  "guidance.barClosed": barClosedAsset,
+  "guidance.barClosedOpponent": barClosedAsset,
+  "guidance.noMoves": noMovesAsset,
+  "guidance.noMovesOpponent": noMovesAsset,
+  "guidance.forced": forcedMoveAsset,
+};
 
 interface Props {
   canUndo: boolean;
@@ -23,7 +58,10 @@ interface Props {
 }
 
 export default function BoardActions({ noticeSide = "left", ...props }: Props) {
-  const { t } = useI18n();
+  const { t, locale, direction } = useI18n();
+  const noticeAsset = props.turnNotice ? illustratedNoticeAssets[props.turnNotice.textKey] ?? null : null;
+  const illustratedNotice = noticeAsset !== null;
+  const isForcedNotice = props.turnNotice?.variant === "forced";
   const leftAction = props.canUndo ? {
     id: "board-undo-action",
     content: <UndoButton onClick={props.onUndo} />,
@@ -44,17 +82,28 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
       {t("game.rollNow")}
     </BoardActionButton>,
   } : null;
-  const noticeAction = noticeSide === "left" ? leftAction : rightAction;
+  const noticeAction = isForcedNotice ? null : noticeSide === "left" ? leftAction : rightAction;
   return (
     <>
-      {props.turnNotice && (
-        <BoardHalfOverlay side={noticeSide}>
+        <BoardHalfOverlay side={noticeSide} className={props.turnNotice ? "" : "invisible"}>
           <div
-            className="pointer-events-none relative w-[calc(100%_-_16px)] max-w-56"
-            data-testid={props.turnNotice.variant === "no-moves" ? "no-moves-overlay" : "forced-move-notice"}
+            className={`pointer-events-none relative w-[calc(100%_-_16px)] max-w-56 ${illustratedNotice ? "min-h-9" : ""}`}
+            data-testid={props.turnNotice ? props.turnNotice.variant === "no-moves" ? "no-moves-overlay" : "forced-move-notice" : undefined}
           >
-            <GuidanceBanner message={props.turnNotice} inline />
-            {(props.noticeDetails || noticeAction || props.rollDetails?.[noticeSide]) && (
+            <div className={`pointer-events-none absolute inset-x-0 ${isForcedNotice ? "bottom-[calc(50%+var(--board-live-die-size,52px)/2+8px)]" : "bottom-0"} ${illustratedNotice ? "" : "invisible"}`}>
+              <IllustratedTurnNotice
+                active={illustratedNotice}
+                asset={noticeAsset}
+                eventKey={`${noticeAsset?.id ?? ""}:${props.turnNotice?.id ?? props.turnNotice?.textKey ?? ""}`}
+                expiresAt={props.turnNotice?.expiresAt}
+                variant={props.turnNotice?.variant ?? "no-moves"}
+                text={props.turnNotice ? t(props.turnNotice.textKey) : ""}
+                locale={locale}
+                direction={direction}
+              />
+            </div>
+            {props.turnNotice && !illustratedNotice && <GuidanceBanner message={props.turnNotice} inline />}
+            {props.turnNotice && (props.noticeDetails || noticeAction || props.rollDetails?.[noticeSide]) && (
               <div className="absolute top-[calc(100%_+_8px)] left-1/2 flex w-full -translate-x-1/2 flex-col items-center gap-2" data-testid="turn-notice-details">
                 {props.noticeDetails}
                 {props.rollDetails?.[noticeSide]}
@@ -67,11 +116,10 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
             )}
           </div>
         </BoardHalfOverlay>
-      )}
       {(["left", "right"] as const).map(side => {
         const action = side === "left" ? leftAction : rightAction;
         const dice = props.rollDetails?.[side];
-        if ((!action && !dice) || (props.turnNotice && noticeSide === side)) return null;
+        if ((!action && !dice) || (props.turnNotice && !isForcedNotice && noticeSide === side)) return null;
         return (
           <BoardHalfOverlay key={side} side={side}>
             {dice ? (

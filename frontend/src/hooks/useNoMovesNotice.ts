@@ -5,7 +5,7 @@ import type { GameState } from "../lib/backgammon/engine";
 export const NO_MOVES_DISPLAY_MS = 3000;
 const NOTICE_REVEAL_MS = 350;
 
-/** Keep the rolled dice visible while the authoritative game can advance. */
+/** Show a blocked-turn notice, keeping any real dice separate from unrolled passes. */
 export function useNoMovesNotice(scope: string) {
   const [notice, setNotice] = useState<{
     scope: string;
@@ -29,7 +29,7 @@ export function useNoMovesNotice(scope: string) {
   }, [cancelTimers]);
 
   const revealNoMoves = useCallback((
-    message: Pick<NoMovesMessage, "color" | "dice" | "remaining">,
+    message: Pick<NoMovesMessage, "kind" | "color" | "dice" | "remaining">,
     revealAfterMs = NOTICE_REVEAL_MS,
     eventVersion?: number,
   ) => {
@@ -38,7 +38,13 @@ export function useNoMovesNotice(scope: string) {
     cancelTimers();
     activeKey.current = key;
     const id = generation.current;
-    const snapshot = { ...message, dice: [...message.dice], remaining: [...message.remaining], id: `${scope}:${id}` };
+    const snapshot = {
+      ...message,
+      dice: [...message.dice],
+      remaining: [...message.remaining],
+      id: `${scope}:${id}`,
+      expiresAt: Date.now() + NO_MOVES_DISPLAY_MS,
+    };
     setNotice({ scope, message: { ...snapshot, noticeVisible: false } });
     timers.current = [
       setTimeout(() => {

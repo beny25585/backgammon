@@ -296,7 +296,7 @@ for (const color of ["white", "black"] as const) {
   }
 }
 
-test("shows a forced-move message at the undo position before auto-moving", async ({
+test("shows the illustrated forced-move notice beside our dice before auto-moving", async ({
   mount,
   page,
 }) => {
@@ -310,7 +310,10 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   });
 
   await expect(component.getByTestId("forced-move-notice")).toContainText(
-    "Only one legal move — playing it automatically.",
+    "Only one legal move — automatic play.",
+  );
+  await expect(component.getByTestId("forced-move-notice").locator("img")).toHaveAttribute(
+    "src", /only-one-move\.png$/,
   );
   await expect(component.getByTestId("dice-overlay").getByTestId("die")).toHaveCount(1);
   const readBox = (testId: string) =>
@@ -325,8 +328,9 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   const noticeBox = await readBox("forced-move-notice");
   const diceBox = await readBox("dice-overlay");
   const boardMiddle = boardBox.x + boardBox.width / 2;
-  expect(noticeBox.x + noticeBox.width / 2).toBeLessThan(boardMiddle);
+  expect(noticeBox.x + noticeBox.width / 2).toBeGreaterThan(boardMiddle);
   expect(diceBox.x + diceBox.width / 2).toBeGreaterThan(boardMiddle);
+  expect(noticeBox.x + noticeBox.width / 2).toBeCloseTo(diceBox.x + diceBox.width / 2, 0);
   expect(moveCalls).toHaveLength(0);
 
   await page.clock.runFor(199);
@@ -341,8 +345,60 @@ test("shows a forced-move message at the undo position before auto-moving", asyn
   await expect(component.getByTestId("forced-move-notice")).toHaveCount(0);
 });
 
+for (const color of ["white", "black"] as const) {
+  test(`forced notice survives completed moves and reappears on a new roll for ${color}`, async ({ mount, page }) => {
+    await page.clock.install();
+    await page.clock.pauseAt(new Date("2026-10-31T10:00:00Z"));
+    const points = new Array(24).fill(0);
+    const from = color === "white" ? 23 : 0;
+    const to = color === "white" ? 19 : 4;
+    points[from] = color === "white" ? 1 : -1;
+    const initial = movingState({ points, turn: color, version: 100 });
+    const calls: [Source, Target][] = [];
+    const makeMove = (source: Source, target: Target) => calls.push([source, target]);
+    const render = (state: GameState) => (
+      <MockGameWrapper playerColor={color} state={state}>
+        <GameBoard state={state} playerColor={color} makeMove={makeMove} />
+      </MockGameWrapper>
+    );
+    const component = await mount(render(initial));
+    const notice = component.getByTestId("forced-move-notice");
+    await expect(notice).toBeVisible();
+    expect(await notice.evaluate(element => element.closest("[data-overlay-side]")?.getAttribute("data-overlay-side"))).toBe("right");
+
+    await page.clock.runFor(200);
+    await expect.poll(() => calls.length).toBe(1);
+    expect(calls[0]).toEqual([from, to]);
+    const moved = { ...applyMove(initial, { from, to, die: 4 }, color), version: 101 };
+    expect(moved.remaining).toHaveLength(0);
+    await component.update(render(moved));
+    await expect(notice).toBeVisible();
+    await expect(notice.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "forced");
+
+    await page.clock.runFor(1800);
+    await component.update(render({
+      ...moved, turn: color === "white" ? "black" : "white", phase: "rolling", dice: [],
+      lastMove: [], moveHistory: [], version: 102,
+    }));
+    await expect(notice).toBeVisible();
+    await page.clock.runFor(999);
+    await expect(notice).toBeVisible();
+    await page.clock.runFor(1);
+    await expect(notice).toHaveCount(0);
+
+    await component.update(render({
+      ...moved, dice: [3], remaining: [3], lastMove: [], moveHistory: [], version: 103,
+    }));
+    await expect(notice).toContainText("Only one legal move — automatic play.");
+    await page.clock.runFor(2999);
+    await expect(notice).toBeVisible();
+    await page.clock.runFor(1);
+    await expect(notice).toHaveCount(0);
+  });
+}
+
 for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }, { width: 1280, height: 800 }]) {
-  test(`notice keeps its anchor and undo stays usable below it (${viewport.width}px)`, async ({ mount, page }) => {
+  test(`notice stays on our half and undo remains usable on the opposite half (${viewport.width}px)`, async ({ mount, page }) => {
     await page.setViewportSize(viewport);
     await page.clock.install();
     await page.clock.pauseAt(new Date());
@@ -357,7 +413,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }
     const geometry = await notice.evaluate((element) => {
       const box = element.getBoundingClientRect();
       const half = element.closest('[data-testid="board-inner"]')!
-        .querySelector('[data-testid="board-half-left"]')!.getBoundingClientRect();
+        .querySelector('[data-testid="board-half-right"]')!.getBoundingClientRect();
       return { x: box.x + box.width / 2, y: box.y + box.height / 2,
         targetX: half.x + half.width / 2, targetY: half.y + half.height / 2 };
     });
@@ -367,9 +423,11 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 740, height: 360 }
     expect(await notice.locator("span").first().evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(11);
     const undo = component.getByTitle("Undo last move");
     await expect(undo).toBeVisible();
-    const noticeBox = await notice.boundingBox();
+    expect(await undo.evaluate(element => element.closest("[data-overlay-side]")?.getAttribute("data-overlay-side"))).toBe("left");
+    const noticeBox = await notice.locator('[data-notice-animation="motion"]').boundingBox();
     const undoBox = await undo.boundingBox();
-    expect(undoBox!.y).toBeGreaterThanOrEqual(noticeBox!.y + noticeBox!.height);
+    expect(undoBox!.x + undoBox!.width <= noticeBox!.x || noticeBox!.x + noticeBox!.width <= undoBox!.x ||
+      undoBox!.y + undoBox!.height <= noticeBox!.y || noticeBox!.y + noticeBox!.height <= undoBox!.y).toBe(true);
     await undo.click();
     await expect.poll(() => undoCalls).toBe(1);
     await expect(notice).toBeVisible();

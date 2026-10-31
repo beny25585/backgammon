@@ -619,6 +619,43 @@ test("server auto-pass after a roll shows the no-moves overlay", async ({
   await expect(component.getByTestId("phase")).toHaveText("rolling");
 });
 
+for (const color of ["white", "black"] as const) {
+  test(`${color}: an unrolled blocked pass shows immediately and its notice does not restart after the next roll`, async ({ mount, page }) => {
+    const component = await mountProbe(mount, page);
+    await pauseGameClock(page);
+    const other = color === "white" ? "black" : "white";
+    const points = Array<number>(24).fill(0);
+    for (let die = 1; die <= 6; die++) points[color === "white" ? 24 - die : die - 1] = color === "white" ? -2 : 2;
+    points[color === "white" ? 5 : 18] = color === "white" ? 14 : -14;
+    points[color === "white" ? 0 : 23] = color === "white" ? -3 : 3;
+    const state: GameState = {
+      ...newGame(), points, bar: { white: 0, black: 0, [color]: 1 },
+      phase: "rolling", turn: color, version: 1,
+    };
+    await emitInitialState(page, state, color);
+    const passed: GameState = { ...state, turn: other, version: 2 };
+    await emitBroadcast(page, passed, color, "roll");
+    await page.clock.runFor(1);
+    await expect(component.getByTestId("no-moves-visible")).toHaveText("true");
+    await expect(component.getByTestId("dice")).toHaveText("[]");
+
+    await page.clock.runFor(200);
+    await emitBroadcast(page, { ...passed, phase: "moving", dice: [6, 3], remaining: [6, 3], version: 3 }, other, "roll");
+    await page.evaluate(({ actor }) => {
+      const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+      ws.emit({ type: "turn_notice", payload: {
+        kind: "blocked_pass", color: actor, dice: [], remaining: [], version: 2,
+      } });
+    }, { actor: color });
+    await expect(component.getByTestId("no-moves-visible")).toHaveText("true");
+    await expect(component.getByTestId("dice")).toHaveText("[6,3]");
+    await page.clock.runFor(2798);
+    await expect(component.getByTestId("no-moves")).toHaveText("true");
+    await page.clock.runFor(1);
+    await expect(component.getByTestId("no-moves")).toHaveText("false");
+  });
+}
+
 test("server no-moves notice after a partial turn reaches the UI", async ({
   mount,
   page,

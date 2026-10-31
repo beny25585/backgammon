@@ -15,7 +15,7 @@ import {
   type Target,
   type Move,
 } from "@/lib/backgammon/engine";
-import type { GameState, Color } from "@/lib/backgammon/engine";
+import type { GameState, Color, MatchContext } from "@/lib/backgammon/engine";
 import type { NoMovesMessage, MakeMoveOptions } from "../../types/context";
 import {
   DEFAULT_BOARD_THEME,
@@ -23,9 +23,12 @@ import {
 } from "../BoardThemeSelector/boardThemes";
 import GameFrame from "./GameFrame";
 import { useFollowingRoll } from "../../hooks/useFollowingRoll";
+import { useForcedMoveNotice } from "../../hooks/useForcedMoveNotice";
 
 interface GameBoardProps {
   state: GameState;
+  noticeScope?: string;
+  match?: MatchContext;
   playerColor: Color;
   makeMove: (from: Source, to: Target, options?: MakeMoveOptions) => void;
   reorderDice?: () => void;
@@ -61,6 +64,8 @@ const TURN_NOTICE_DURATION_MS = 3000;
 
 export default function GameBoard({
   state,
+  noticeScope = "local",
+  match,
   playerColor,
   makeMove,
   reorderDice,
@@ -156,6 +161,15 @@ export default function GameBoard({
     return getAutomaticMove(state, playerColor);
   }, [state, playerColor, isMyTurn]);
 
+  const forcedNotice = useForcedMoveNotice({
+    state,
+    playerColor,
+    scope: `${noticeScope}:${match?.matchScore?.white ?? 0}:${match?.matchScore?.black ?? 0}`,
+    eligible: !autoPointSequenceActive && forcedSequenceAllowed && isMyTurn &&
+      state.remaining.length > 0 && forcedMove !== null,
+    suppressed: Boolean(noMovesMessage),
+  });
+
   useEffect(() => {
     const pending = forcedAwaitingAck;
     if (!pending) return;
@@ -217,36 +231,23 @@ export default function GameBoard({
       const ownRoll = noMovesMessage.color === playerColor;
       const blockedOnBar = state.bar[noMovesMessage.color] > 0;
       return {
+        id: noMovesMessage.id,
+        expiresAt: noMovesMessage.expiresAt,
         variant: "no-moves",
-        textKey: blockedOnBar
-          ? ownRoll ? "guidance.barBlocked" : "guidance.barBlockedOpponent"
-          : ownRoll ? "guidance.noMoves" : "guidance.noMovesOpponent",
+        textKey: noMovesMessage.kind === "blocked_pass"
+          ? ownRoll ? "guidance.barClosed" : "guidance.barClosedOpponent"
+          : blockedOnBar
+            ? ownRoll ? "guidance.barBlocked" : "guidance.barBlockedOpponent"
+            : ownRoll ? "guidance.noMoves" : "guidance.noMovesOpponent",
       };
     }
 
-    if (
-      !autoPointSequenceActive &&
-      forcedSequenceAllowed &&
-      isMyTurn &&
-      state.remaining.length > 0 &&
-      forcedMove
-    ) {
-      return {
-        variant: "forced",
-        textKey: "guidance.forced",
-      };
-    }
-
-    return null;
+    return forcedNotice;
   }, [
     noMovesMessage,
     state.bar,
     playerColor,
-    autoPointSequenceActive,
-    forcedSequenceAllowed,
-    isMyTurn,
-    state.remaining.length,
-    forcedMove,
+    forcedNotice,
   ]);
 
   const visibleTurnNotice = turnNotice === hiddenTurnNotice ? null : turnNotice;
@@ -337,8 +338,10 @@ export default function GameBoard({
   const rollDetails = noMovesMessage ? {
     [blockedSide]: turnComplete && noMovesMessage.color === playerColor ? null : (
       <>
-        <DiceOverlay kind="blocked" dice={noMovesMessage.dice} remaining={noMovesMessage.remaining}
-          color={noMovesMessage.color} playerColor={playerColor} forceActive />
+        {noMovesMessage.dice.length > 0 && (
+          <DiceOverlay kind="blocked" dice={noMovesMessage.dice} remaining={noMovesMessage.remaining}
+            color={noMovesMessage.color} playerColor={playerColor} forceActive />
+        )}
         {liveDice}
       </>
     ),
@@ -396,6 +399,7 @@ export default function GameBoard({
       <div className={`${styles.boardArea} col-start-2 row-start-2`}>
         <Board
           state={state}
+          match={match}
           myColor={playerColor}
           selected={selectedSource}
           legalTargets={legalTargets}
@@ -408,7 +412,7 @@ export default function GameBoard({
           onOfferDouble={offerDouble}
           autoMove={activeAutoMove}
           turnNotice={visibleTurnNotice}
-          noticeSide={noMovesMessage ? blockedSide : "left"}
+          noticeSide={noMovesMessage ? blockedSide : "right"}
           rollDetails={rollDetails}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
           inputDisabled={autoConfirmPending}

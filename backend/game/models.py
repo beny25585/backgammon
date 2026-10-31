@@ -112,6 +112,7 @@ class Match(models.Model):
 class GameEvent(models.Model):
     EVENT_TYPES = [
         ('roll', 'Roll'),
+        ('blocked_pass', 'Blocked bar pass'),
         ('move', 'Move'),
         ('undo', 'Undo'),
         ('end_turn', 'End turn'),

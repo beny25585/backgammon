@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { newGame, applyMove, BAR, OFF } from "@/lib/backgammon/engine";
 import { Board } from "@/components/Board";
 import type { Color, GameState, Move, Phase } from "@/lib/backgammon/engine";
+import { useI18n } from "../../i18n/I18nProvider";
 
 interface ApiMove {
   from: number | string;
@@ -9,6 +10,7 @@ interface ApiMove {
 }
 
 interface TurnEntry {
+  kind?: "blocked_pass";
   turn: string;
   roll: number[];
   moves: ApiMove[];
@@ -25,6 +27,7 @@ function computeDie(from: number | string, to: number | string, color: Color): n
 }
 
 export default function ReplayPlayer({ transcript }: { transcript: TurnEntry[] }) {
+  const { t } = useI18n();
   const [step, setStep] = useState(0);
 
   const boardState = useMemo(() => {
@@ -32,6 +35,13 @@ export default function ReplayPlayer({ transcript }: { transcript: TurnEntry[] }
     for (let i = 0; i < Math.min(step, transcript.length); i++) {
       const turn = transcript[i];
       const turnColor = turn.turn as Color;
+      if (turn.kind === "blocked_pass") {
+        state = {
+          ...state, turn: turnColor === "white" ? "black" : "white", phase: "rolling",
+          dice: [], remaining: [], lastMove: null, moveHistory: null,
+        };
+        continue;
+      }
       state = {
         ...state,
         dice: turn.roll,
@@ -50,9 +60,12 @@ export default function ReplayPlayer({ transcript }: { transcript: TurnEntry[] }
     return state;
   }, [step, transcript]);
 
-  const turnInfo = step > 0 && step <= transcript.length
-    ? `Turn ${step}: ${transcript[step - 1].turn} rolled [${transcript[step - 1].roll.join(", ")}]`
-    : "Game start";
+  const current = step > 0 && step <= transcript.length ? transcript[step - 1] : null;
+  const turnInfo = current
+    ? t(current.kind === "blocked_pass" ? "match.replayBlockedPass" : "match.replayRolled", {
+      turn: step, player: t(`common.${current.turn}`), dice: current.roll.join(", "),
+    })
+    : t("match.replayStart");
 
   return (
     <div className="replayContainer">
@@ -79,7 +92,7 @@ export default function ReplayPlayer({ transcript }: { transcript: TurnEntry[] }
             fontSize: "0.8rem",
           }}
         >
-          Back
+          {t("match.replayBack")}
         </button>
         <span style={{ color: "rgba(255, 255, 255, 0.7)", fontSize: "0.85rem" }}>
           {turnInfo}
@@ -97,7 +110,7 @@ export default function ReplayPlayer({ transcript }: { transcript: TurnEntry[] }
             fontSize: "0.8rem",
           }}
         >
-          Forward
+          {t("match.replayForward")}
         </button>
       </div>
     </div>

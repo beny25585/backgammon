@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from . import ai
 from .consumers import GameConsumer, get_room, get_game_state, run_in_background
+from .engine import BackgammonEngine
 from .models import AiSession
 
 logger = logging.getLogger(__name__)
@@ -130,9 +131,9 @@ class PracticeGameConsumer(GameConsumer):
                     return
                 if state['phase'] in ('opening_roll', 'rolling'):
                     await database_sync_to_async(AiSession.objects.filter(room_id=self.room_id).update)(target_board=None)
-                    if (state['phase'] == 'rolling' and state.get('doublingEnabled')
-                            and state.get('cubeOwner') in ('center', 'black')
-                            and state.get('cube', 1) < state.get('maxCube', 64)):
+                    engine = BackgammonEngine(state)
+                    if (not engine.is_bar_fully_blocked('black') and engine.can_offer_double(
+                            'black', target_points=room.target_points, scores=match['scores'])):
                         decision = await ai.request_decision(state, 'hard', match, 'cube')
                         if decision.get('should_double') is True:
                             await GameConsumer._handle_intent(actor, {'action': 'double'})

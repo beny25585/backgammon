@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/experimental-ct-react";
 import {
   OFF,
   newGame,
+  type Color,
   type GameState,
 } from "../lib/backgammon/engine";
 import { LocalGameProvider } from "./localGameContext";
@@ -18,6 +19,20 @@ import {
   StateSeedProbe,
   ForcedAutoConfirmProbe,
 } from "../test-utils/probes";
+
+function barredState(color: Color, closedEntries: readonly number[] = [1, 2, 3, 4, 5, 6]): GameState {
+  const points = Array<number>(24).fill(0);
+  const sign = color === "white" ? 1 : -1;
+  for (const die of closedEntries) {
+    points[color === "white" ? 24 - die : die - 1] = -2 * sign;
+  }
+  points[color === "white" ? 5 : 18] = 14 * sign;
+  points[color === "white" ? 11 : 12] = -(15 - 2 * closedEntries.length) * sign;
+  return {
+    ...newGame(), points, phase: "rolling", turn: color,
+    bar: { white: 0, black: 0, [color]: 1 },
+  };
+}
 
 test("clock does not run during the opening roll", async ({ mount, page }) => {
   await page.clock.install();
@@ -225,14 +240,7 @@ for (const blockedColor of ["white", "black"] as const) {
       requests += 1;
       await route.fulfill({ json: { dice: [2, 4] } });
     });
-    const points = new Array(24).fill(0);
-    for (let index = 0; index < 6; index++) {
-      points[blockedColor === "white" ? 23 - index : index] = blockedColor === "white" ? -2 : 2;
-    }
-    const state: GameState = {
-      ...newGame(), points, phase: "rolling", turn: blockedColor,
-      bar: { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 },
-    };
+    const state = barredState(blockedColor, [2, 4]);
     const component = await mount(
       <LocalGameProvider botColor="black">
         <StateSeedProbe state={state} />
@@ -269,14 +277,7 @@ for (const blockedColor of ["white", "black"] as const) {
       requests += 1;
       await route.fulfill({ json: { dice: requests === 1 ? [2, 4] : [6, 3] } });
     });
-    const points = new Array(24).fill(0);
-    for (let index = 0; index < 6; index++) {
-      points[blockedColor === "white" ? 23 - index : index] = blockedColor === "white" ? -2 : 2;
-    }
-    const initial: GameState = {
-      ...newGame(), points, phase: "rolling", turn: blockedColor,
-      bar: { white: blockedColor === "white" ? 1 : 0, black: blockedColor === "black" ? 1 : 0 },
-    };
+    const initial = barredState(blockedColor, [2, 4]);
     const render = (state: GameState) => (
       <MemoryRouter><LocalGameProvider botColor="black">
         <StateSeedProbe state={state} />
@@ -319,6 +320,110 @@ for (const blockedColor of ["white", "black"] as const) {
     await expect(following).toHaveCount(0);
   });
 }
+
+for (const blockedColor of ["white", "black"] as const) {
+  for (const blockedActor of ["human", "bot"] as const) {
+    test(`local ${blockedColor} ${blockedActor} passes a fully closed bar without requesting dice`, async ({ mount, page }) => {
+      await page.clock.install();
+      await page.clock.pauseAt(new Date());
+      await page.evaluate(() => localStorage.setItem("bg_auto_roll", "false"));
+      let requests = 0;
+      await page.route("**/api/dice/roll/**", async route => {
+        requests += 1;
+        await route.fulfill({ json: { dice: [6, 3] } });
+      });
+      const nextColor: Color = blockedColor === "white" ? "black" : "white";
+      const botColor = blockedActor === "bot" ? blockedColor : nextColor;
+      const state: GameState = {
+        ...barredState(blockedColor),
+        // A previous player's blocked roll can remain in a pre-roll snapshot.
+        dice: [6, 1], lastMove: [{ from: 12, to: 11 }], moveHistory: [newGame()],
+      };
+      const render = (showScreen: boolean) => (
+        <MemoryRouter><LocalGameProvider botColor={botColor}>
+          <StateSeedProbe state={state} />
+          <GameProbe from={0} to={0} />
+          <ForcedAutoConfirmProbe />
+          {showScreen && <GameScreen />}
+        </LocalGameProvider></MemoryRouter>
+      );
+      // Install the mid-game snapshot before GameScreen can request an opening roll.
+      const component = await mount(render(false), { hooksConfig: { locale: "en" } });
+      await expect(component.getByTestId("probe-turn")).toHaveText(blockedColor);
+      await expect(component.getByTestId("phase")).toHaveText("rolling");
+      await component.update(render(true));
+      if (blockedActor === "bot") await page.clock.runFor(1);
+      await expect(component.getByTestId("probe-turn")).toHaveText(nextColor);
+      await expect(component.getByTestId("phase")).toHaveText("rolling");
+      await expect(component.getByTestId("dice")).toHaveText("[]");
+      await expect(component.getByTestId("remaining")).toHaveText("[]");
+      await expect(component.getByTestId("probe-points")).toHaveText(JSON.stringify(state.points));
+      await expect(component.getByTestId("probe-winner")).toHaveText("");
+      await expect(component.getByTestId("error")).toHaveText("");
+      expect(requests).toBe(0);
+
+      await page.clock.runFor(1);
+      const notice = component.getByTestId("no-moves-overlay");
+      await expect(notice).toBeVisible();
+      await expect(notice).toContainText(blockedActor === "human"
+        ? "All bar entries are blocked. Turn passed to your opponent without rolling."
+        : "Your opponent's bar entries are all blocked. Turn passed to you without rolling.");
+      await expect(component.locator('[data-roll-kind="blocked"]')).toHaveCount(0);
+      await expect(component.getByTestId("die")).toHaveCount(0);
+
+      if (blockedActor === "human") await page.clock.runFor(1500);
+      else await component.getByTestId("roll").click();
+      await expect.poll(() => requests).toBe(1);
+      const following = component.locator('[data-roll-kind="following"]');
+      await expect(following).toHaveAttribute("data-roll-color", nextColor);
+      await expect(following).toHaveAttribute("data-roll-owner", blockedActor === "human" ? "opponent" : "self");
+      await expect(following.getByTestId("die")).toHaveCount(2);
+      await expect(following.getByTestId("die").nth(0).locator("span")).toHaveCount(6);
+      await expect(following.getByTestId("die").nth(1).locator("span")).toHaveCount(3);
+      await expect(component.locator('[data-roll-kind="blocked"]')).toHaveCount(0);
+      await expect(notice).toBeVisible();
+    });
+  }
+}
+
+test("a same-tick duplicate human roll cannot roll the bot's turn after a closed-bar pass", async ({ mount, page }) => {
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  let requests = 0;
+  await page.route("**/api/dice/roll/**", async route => {
+    requests += 1;
+    await route.fulfill({ json: { dice: [6, 3] } });
+  });
+  const component = await mount(
+    <LocalGameProvider botColor="black">
+      <StateSeedProbe state={barredState("white")} />
+      <GameProbe from={0} to={0} />
+      <ForcedAutoConfirmProbe />
+    </LocalGameProvider>,
+  );
+  await expect(component.getByTestId("phase")).toHaveText("rolling");
+  await expect(component.getByTestId("probe-turn")).toHaveText("white");
+  // Invoke the provider directly through the same old control, before React
+  // can replace it. GameScreen's own per-turn deduplication is not involved.
+  await page.evaluate(() => {
+    const button = document.querySelector<HTMLButtonElement>('[data-testid="roll"]');
+    if (!button) throw new Error("Roll probe is missing");
+    button.click();
+    button.click();
+  });
+  await expect(component.getByTestId("probe-turn")).toHaveText("black");
+  await expect(component.getByTestId("dice")).toHaveText("[]");
+  await expect(component.getByTestId("remaining")).toHaveText("[]");
+  await page.clock.runFor(1499);
+  expect(requests).toBe(0);
+  await expect(component.getByTestId("phase")).toHaveText("rolling");
+
+  // Only the bot's own scheduled action may request its dice.
+  await page.clock.runFor(1);
+  await expect.poll(() => requests).toBe(1);
+  await expect(component.getByTestId("phase")).toHaveText("moving");
+  await expect(component.getByTestId("dice")).toHaveText("[6,3]");
+});
 
 test("dice service failure shows an error and does not roll", async ({ mount, page }) => {
   await page.route("**/api/dice/roll/**", async (route) => {

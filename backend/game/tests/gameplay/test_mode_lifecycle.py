@@ -81,14 +81,19 @@ class ModeLifecycleTests(TestCase):
         self.assertEqual(len(Match.objects.get(room=room).games), 3)
 
     def test_match_cube_can_reach_64_but_cannot_exceed_it(self):
-        _, state = self.make_room('match', 9)
+        room, state = self.make_room('match', 65)
         state.update(phase='rolling', turn='white', cube=32)
         engine = BackgammonEngine(state)
-        self.assertTrue(engine.offer_double('white')['success'])
+        scores = {'white': room.white_score, 'black': room.black_score}
+        self.assertTrue(engine.offer_double(
+            'white', target_points=room.target_points, scores=scores,
+        )['success'])
         self.assertTrue(engine.respond_to_double(True, 'black')['success'])
         self.assertEqual(state['cube'], 64)
         state.update(phase='rolling', turn='black')
-        self.assertFalse(engine.offer_double('black')['success'])
+        self.assertFalse(engine.offer_double(
+            'black', target_points=room.target_points, scores=scores,
+        )['success'])
 
     def test_drop_scores_cube_before_offer_and_finishes_money_game(self):
         room, state = self.make_room('money', 1)

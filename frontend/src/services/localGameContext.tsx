@@ -24,6 +24,8 @@ import {
   respondDouble,
   undoLastMove,
   allLegalMoves,
+  isBarEntryFullyBlocked,
+  passBlockedTurn,
   isWholeTurnDeterministic,
   OFF,
   type Source,
@@ -168,6 +170,17 @@ export function LocalGameProvider({
   const betweenGamesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const MATCH_TARGET = matchTarget;
+
+  const passClosedBar = useCallback((color: Color) => {
+    const current = stateRef.current;
+    const passed = passBlockedTurn(current, color);
+    if (passed === current) return false;
+    stateRef.current = passed;
+    setState(passed);
+    setTurnColor(passed.turn);
+    revealNoMoves({ kind: "blocked_pass", dice: [], remaining: [], color }, 0);
+    return true;
+  }, [revealNoMoves, setTurnColor]);
 
   const handleNextGame = useCallback(() => {
     clearNoMoves();
@@ -324,6 +337,7 @@ export function LocalGameProvider({
         }
 
         if (state.phase === "rolling") {
+          if (passClosedBar(botColor)) return;
           const dice = await getTurnDice();
           if (!dice) return;
           setState((prev) => {
@@ -372,7 +386,7 @@ export function LocalGameProvider({
           });
         }
       })();
-    }, BOT_DELAY);
+    }, state.phase === "rolling" && isBarEntryFullyBlocked(state, botColor) ? 0 : BOT_DELAY);
 
     return () => clearTimeout(timer);
   }, [
@@ -384,6 +398,7 @@ export function LocalGameProvider({
     advanceToOpeningMove,
     revealNoMoves,
     captureFollowingRoll,
+    passClosedBar,
   ]);
 
   // ── Human actions ──────────────────────────────────────────────
@@ -397,6 +412,8 @@ export function LocalGameProvider({
     });
     if (!current) return;
     if (current.phase !== "opening_roll" && current.phase !== "rolling") return;
+    const actor = playerColorRef.current;
+    if (current.phase === "rolling" && current.turn !== actor) return;
     if (rollingRef.current) return;
     rollingRef.current = true;
 
@@ -440,6 +457,7 @@ export function LocalGameProvider({
           return;
         }
         if (current.phase === "rolling") {
+          if (passClosedBar(actor)) return;
           const dice = await getTurnDice();
           clientLogger.debug("[roll dice fetched]", {
             dice,
@@ -448,7 +466,7 @@ export function LocalGameProvider({
           });
           if (!dice) return;
           setState((prev) => {
-            if (prev.phase !== "rolling") return prev;
+            if (prev.phase !== "rolling" || prev.turn !== actor) return prev;
             const rolled = applyRoll(prev, dice);
             captureFollowingRoll(rolled);
             clientLogger.debug("[turn roll applied]", {
@@ -491,6 +509,7 @@ export function LocalGameProvider({
     advanceToOpeningMove,
     revealNoMoves,
     captureFollowingRoll,
+    passClosedBar,
   ]);
 
   const reorderDice = useCallback(() => {
@@ -580,9 +599,9 @@ export function LocalGameProvider({
   const offerDoubleAction = useCallback(() => {
     setState((prev) => {
       if (prev.phase !== "rolling") return prev;
-      return offerDouble(prev, prev.turn);
+      return offerDouble(prev, playerColorRef.current, { targetPoints: MATCH_TARGET, matchScore });
     });
-  }, []);
+  }, [MATCH_TARGET, matchScore]);
 
   const respondToDouble = useCallback(
     (accept: boolean) => {

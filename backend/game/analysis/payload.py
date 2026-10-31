@@ -99,7 +99,7 @@ def _serialize_event(event, *, ai=False):
     # Historical bot events have no RoomPlayer; system events stay unattributed.
     if actor not in ("white", "black"):
         actor = "black" if ai and event.event_type in {
-            "roll", "move", "undo", "end_turn", "double", "double_response",
+            "roll", "move", "undo", "end_turn", "blocked_pass", "double", "double_response",
         } else None
     return {
         "sequence": event.sequence,

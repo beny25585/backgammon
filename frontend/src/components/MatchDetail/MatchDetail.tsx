@@ -11,7 +11,7 @@ interface GameEntry {
   winner: string;
   win_type: string;
   points_awarded: number;
-  transcript: Array<{ turn: string; roll: number[]; moves: Array<{ from: number | "bar" | "off"; to: number | "bar" | "off" }> }>;
+  transcript: Array<{ kind?: "blocked_pass"; turn: string; roll: number[]; moves: Array<{ from: number | "bar" | "off"; to: number | "bar" | "off" }> }>;
 }
 
 interface MatchData {

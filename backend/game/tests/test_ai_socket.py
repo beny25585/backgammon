@@ -99,6 +99,27 @@ class PracticeSocketTests(TransactionTestCase):
         self.assertEqual(stored.state_data['bar']['black'], 15)
         await self.assert_bot_released_lease(consumer)
 
+    async def test_fully_closed_bar_bot_passes_without_dice_or_cube_request(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(turn='black', phase='rolling', doublingEnabled=True,
+            gameFormat='match', points=[2] * 6 + [3] + [0] * 17,
+            bar={'white': 0, 'black': 15}, home={'white': 0, 'black': 0})
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        await database_sync_to_async(GameRoom.objects.filter(pk=self.room.pk).update)(target_points=3)
+        consumer = self.bot_consumer()
+        with patch('game.ai.request_decision', AsyncMock()) as decision, patch(
+                'game.consumers.fetch_turn_dice', AsyncMock()) as dice:
+            await consumer._play_bot()
+        decision.assert_not_awaited()
+        dice.assert_not_awaited()
+        stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
+        self.assertEqual(stored.state_data['dice'], [])
+        self.assertEqual(stored.state_data['remaining'], [])
+        event = await database_sync_to_async(self.room.events.get)(event_type='blocked_pass')
+        self.assertEqual(event.payload['actorColor'], 'black')
+        await self.assert_bot_released_lease(consumer)
+
     async def test_bot_keeps_action_delays_only_during_its_turn(self):
         consumer = self.bot_consumer()
         delayed_states = []
@@ -186,6 +207,28 @@ class PracticeSocketTests(TransactionTestCase):
             event = await self.receive_until(comm, lambda e: e.get('payload', {}).get('phase') == 'doubling_offered')
             self.assertEqual(event['payload']['doubleOfferedBy'], 'black')
             await comm.disconnect()
+
+    async def test_dead_cube_bot_rolls_instead_of_requesting_a_cube_decision(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(turn='black', phase='rolling', doublingEnabled=True,
+            gameFormat='match', cube=2, cubeOwner='black', maxCube=64,
+            points=[5, 5, 5] + [0] * 21, bar={'white': 0, 'black': 15},
+            home={'white': 0, 'black': 0})
+        await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
+        await database_sync_to_async(GameRoom.objects.filter(pk=self.room.pk).update)(
+            target_points=3, black_score=1,
+        )
+        consumer = self.bot_consumer()
+        decision = AsyncMock(return_value={'should_double': True, 'should_take': True})
+        with patch('game.ai.request_decision', decision), patch(
+                'game.consumers.fetch_turn_dice', new=AsyncMock(return_value=(3, 1))) as dice:
+            await consumer._play_bot()
+        decision.assert_not_awaited()
+        dice.assert_awaited_once()
+        stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
+        self.assertEqual(stored.state_data['cube'], 2)
+        await self.assert_bot_released_lease(consumer)
 
     async def test_bot_takes_human_double(self):
         state = BackgammonEngine.get_initial_state()

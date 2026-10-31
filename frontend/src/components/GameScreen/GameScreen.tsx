@@ -10,6 +10,7 @@ import SamsungDarkModeHelp from "../SamsungDarkModeHelp/SamsungDarkModeHelp";
 import { DiceRow } from "../Dice";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color, GameState } from "../../lib/backgammon/engine";
+import { isBarEntryFullyBlocked } from "../../lib/backgammon/engine";
 import {
   DEFAULT_BOARD_THEME,
   isBoardTheme,
@@ -99,6 +100,7 @@ export default function GameScreen({
     timeControl,
     gameResult,
     matchScore,
+    targetPoints,
     whiteName,
     blackName,
     openingRollResult,
@@ -145,6 +147,9 @@ export default function GameScreen({
 
       case "leave_connection_lost":
         return t("game.leaveConnectionLost");
+
+      case "Cube is dead for this player":
+        return t("game.deadCube");
 
       default:
         return error;
@@ -286,6 +291,7 @@ export default function GameScreen({
     : null;
   const rollPaused = isLoading || showCloseExisting ||
     !opponentConnected || Boolean(gameResult);
+  const blockedOnBar = Boolean(state && isBarEntryFullyBlocked(state, playerColor));
 
   useEffect(() => {
     // Keep an in-flight request guarded when StrictMode replays the effects.
@@ -299,9 +305,10 @@ export default function GameScreen({
   }, [regularRollKey, rollPaused, rollDice]);
 
   useEffect(() => {
-    if (!autoRoll || !regularRollKey || rollPaused || error) return;
+    // Resolve a fully closed entry without dice, even with Auto Roll off.
+    if ((!autoRoll && !blockedOnBar) || !regularRollKey || rollPaused || error) return;
     handleRoll();
-  }, [autoRoll, regularRollKey, rollPaused, error, handleRoll]);
+  }, [autoRoll, blockedOnBar, regularRollKey, rollPaused, error, handleRoll]);
 
   if (showCloseExisting && !gameResult?.matchOver) {
     return (
@@ -514,6 +521,8 @@ export default function GameScreen({
 
           <GameBoard
             state={state}
+            noticeScope={roomId ?? "local"}
+            match={{ targetPoints, matchScore }}
             playerColor={playerColor}
             makeMove={makeMove}
             reorderDice={reorderDice}

@@ -63,6 +63,9 @@ export interface RollSnapshot {
 
 export interface NoMovesMessage {
   id?: string;
+  /** Local notice deadline in epoch milliseconds. */
+  expiresAt?: number;
+  kind?: "no_moves" | "blocked_pass";
   dice: number[];
   remaining: number[];
   color: Color;

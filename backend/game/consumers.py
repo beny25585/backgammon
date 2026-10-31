@@ -724,7 +724,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             else:
                 result = engine.undo_move()
         elif action == 'double':
-            result = engine.offer_double(self.player_color)
+            result = engine.offer_double(
+                self.player_color, target_points=room.target_points,
+                scores={'white': room.white_score, 'black': room.black_score},
+            )
         elif action == 'double_response':
             result = engine.respond_to_double(
                 bool(intent.get('accept')), self.player_color
@@ -783,7 +786,11 @@ class GameConsumer(AsyncWebsocketConsumer):
                     'event_type': 'turn_notice',
                     'payload': {
                         **turn_notice,
-                        'revealAfterMs': self.NO_MOVES_REVEAL_MS,
+                        'version': state.get('version'),
+                        'revealAfterMs': (
+                            0 if turn_notice.get('kind') == 'blocked_pass'
+                            else self.NO_MOVES_REVEAL_MS
+                        ),
                     },
                     'playerColor': player_color,
                 }
@@ -882,6 +889,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             die = seed[0] if self.player_color == 'white' else seed[1]
             return engine.roll_opening_die(self.player_color, die=die)
         if state.get('phase') == 'rolling' and state.get('turn') == self.player_color:
+            if engine.is_bar_fully_blocked(self.player_color):
+                return engine.pass_blocked_turn(self.player_color)
             try:
                 a, b = await fetch_turn_dice()
             except DiceServiceError as exc:

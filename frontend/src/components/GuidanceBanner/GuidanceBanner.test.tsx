@@ -95,7 +95,7 @@ test("renders a supplied board message", async ({ mount }) => {
   );
 
   await expect(c.getByTestId("guidance-banner")).toContainText(
-    "Only one legal move — playing it automatically.",
+    "Only one legal move — automatic play.",
   );
 });
 

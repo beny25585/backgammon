@@ -36,6 +36,11 @@ const HOME: Record<Color, { start: number; end: number }> = {
 
 export type Color = "white" | "black";
 
+export interface MatchContext {
+  targetPoints: number | null;
+  matchScore: Record<Color, number> | null;
+}
+
 export type Phase =
   | "waiting"
   | "opening_roll"
@@ -214,6 +219,22 @@ export function pipCount(state: GameState, color: Color): number {
 /** The entry point index when re-entering from the bar with die value `die`. */
 function barEntryPoint(die: number, color: Color): number {
   return color === "white" ? BOARD_SIZE - die : die - 1;
+}
+
+/** True when a checker on the bar cannot enter with any possible die. */
+export function isBarEntryFullyBlocked(state: GameState, color: Color): boolean {
+  if (state.bar[color] <= 0) return false;
+  for (let die = 1; die <= 6; die++) {
+    if (!isOpponentBlockade(state, barEntryPoint(die, color), color)) return false;
+  }
+  return true;
+}
+
+/** Pass an unrolled turn only when every possible entry from the bar is closed. */
+export function passBlockedTurn(state: GameState, color: Color): GameState {
+  if (state.phase !== "rolling" || state.turn !== color || !isBarEntryFullyBlocked(state, color))
+    return state;
+  return passTurn(cloneState(state), color);
 }
 
 // ============================================================
@@ -916,9 +937,9 @@ export function applyOpeningRoll(state: GameState, color: Color, customDie?: num
 // Doubling cube
 // ============================================================
 
-export function offerDouble(state: GameState, color: Color): GameState {
+export function offerDouble(state: GameState, color: Color, match?: MatchContext): GameState {
   const next = cloneState(state);
-  if (next.doublingEnabled === false) return next;
+  if (!canOfferDouble(state, color, match)) return next;
   next.phase = "doubling_offered";
   next.doubleOfferedBy = color;
   next.message = `${color === "white" ? "White" : "Black"} offers a double`;
@@ -927,13 +948,20 @@ export function offerDouble(state: GameState, color: Color): GameState {
 
 export function respondDouble(state: GameState, accept: boolean): GameState {
   const next = cloneState(state);
+  if (next.phase !== "doubling_offered" || !next.doubleOfferedBy) return next;
   const offerer = next.doubleOfferedBy!;
   const responder = opponent(offerer);
 
   if (accept) {
+    if (next.cube * 2 > (next.maxCube ?? CUBE_MAX)) return next;
     next.cube *= 2;
     next.cubeOwner = responder;
-    next.phase = next.dice.length === 0 ? "rolling" : "moving";
+    next.turn = offerer;
+    next.phase = "rolling";
+    next.dice = [];
+    next.remaining = [];
+    next.lastMove = null;
+    next.moveHistory = null;
     next.doubleOfferedBy = null;
     next.message = `Double accepted — cube is ${next.cube}`;
   } else {
@@ -965,13 +993,22 @@ export function undoLastMove(state: GameState): GameState | null {
   return restored;
 }
 
-export function canOfferDouble(state: GameState, color: Color): boolean {
+export function canOfferDouble(state: GameState, color: Color, match?: MatchContext): boolean {
+  const target = match?.targetPoints;
+  const score = match?.matchScore?.[color];
+  // The current cube already wins the match for this player on a single win.
+  const deadCube = state.gameFormat !== "money" &&
+    typeof target === "number" && Number.isInteger(target) && target > 0 &&
+    typeof score === "number" && Number.isInteger(score) && score >= 0 &&
+    state.cube >= target - score;
   return (
     state.phase === "rolling" &&
     state.turn === color &&
     state.doublingEnabled !== false &&
+    !state.crawfordGame &&
+    !deadCube &&
     (state.cubeOwner === "center" || state.cubeOwner === color) &&
-    state.cube < (state.maxCube ?? CUBE_MAX)
+    state.cube * 2 <= (state.maxCube ?? CUBE_MAX)
   );
 }
 

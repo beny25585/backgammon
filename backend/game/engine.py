@@ -239,6 +239,36 @@ class BackgammonEngine:
             moves = [move for move in moves if move['die'] == highest]
         return moves
 
+    def is_bar_fully_blocked(self, player_color):
+        if self.state['bar'][player_color] <= 0:
+            return False
+        entry_points = self.state['points'][18:24] if player_color == 'white' else self.state['points'][:6]
+        return len(entry_points) == 6 and all(
+            count <= -2 if player_color == 'white' else count >= 2 for count in entry_points
+        )
+
+    def pass_blocked_turn(self, player_color):
+        if self.state.get('phase') != 'rolling' or self.state.get('turn') != player_color:
+            return {'success': False, 'message': 'Cannot pass this turn'}
+        if not self.is_bar_fully_blocked(player_color):
+            return {'success': False, 'message': 'Bar entry is not fully blocked'}
+        self.state['turn'] = 'black' if player_color == 'white' else 'white'
+        self.state['phase'] = 'rolling'
+        self.state['dice'] = []
+        self.state['remaining'] = []
+        self.state['lastMove'] = None
+        self.state['moveHistory'] = None
+        self.state['message'] = 'Bar entry is fully blocked'
+        self.state['version'] = self.state.get('version', 0) + 1
+        return {
+            'success': True,
+            'event_type': 'blocked_pass',
+            'turn_notice': {
+                'kind': 'blocked_pass', 'color': player_color,
+                'dice': [], 'remaining': [],
+            },
+        }
+
     def roll_dice(self, dice=None):
         if self.state['phase'] != 'rolling':
             return {'success': False, 'message': 'Cannot roll now'}
@@ -494,17 +524,35 @@ class BackgammonEngine:
             turn_name = 'White' if s['turn'] == 'white' else 'Black'
             s['message'] = f"{turn_name}'s turn"
 
-    def offer_double(self, player_color):
-        if not self.state.get('doublingEnabled', True):
-            return {'success': False, 'message': 'Doubling is disabled for this match'}
+    def _double_error(self, player_color, *, target_points=None, scores=None):
+        if not self.state.get('doublingEnabled', True) or self.state.get('crawfordGame', False):
+            return 'Doubling is disabled for this match'
         if self.state['cubeOwner'] != 'center' and self.state['cubeOwner'] != player_color:
-            return {'success': False, 'message': 'Cannot double'}
+            return 'Cannot double'
         if self.state['phase'] != 'rolling':
-            return {'success': False, 'message': 'Can only double before rolling'}
+            return 'Can only double before rolling'
         if self.state.get('turn') != player_color:
-            return {'success': False, 'message': 'Not your turn'}
-        if self.state['cube'] >= self.state.get('maxCube', 64):
-            return {'success': False, 'message': 'Cube at maximum'}
+            return 'Not your turn'
+        if self.state['cube'] * 2 > self.state.get('maxCube', 64):
+            return 'Cube at maximum'
+        # Scores belong to the room, so callers supply authoritative match context.
+        if (self.state.get('gameFormat') != 'money' and target_points is not None
+                and target_points > 0 and scores is not None
+                and self.state['cube'] >= target_points - scores[player_color]):
+            return 'Cube is dead for this player'
+        return None
+
+    def can_offer_double(self, player_color, *, target_points=None, scores=None):
+        return self._double_error(
+            player_color, target_points=target_points, scores=scores,
+        ) is None
+
+    def offer_double(self, player_color, *, target_points=None, scores=None):
+        error = self._double_error(
+            player_color, target_points=target_points, scores=scores,
+        )
+        if error is not None:
+            return {'success': False, 'message': error}
 
         self.state['phase'] = 'doubling_offered'
         self.state['doubleOfferedBy'] = player_color
@@ -525,7 +573,12 @@ class BackgammonEngine:
                 return {'success': False, 'message': 'Cube at maximum'}
             self.state['cube'] *= 2
             self.state['cubeOwner'] = opponent
-            self.state['phase'] = 'rolling' if len(self.state['dice']) == 0 else 'moving'
+            self.state['turn'] = offerer
+            self.state['phase'] = 'rolling'
+            self.state['dice'] = []
+            self.state['remaining'] = []
+            self.state['lastMove'] = None
+            self.state['moveHistory'] = None
             self.state['doubleOfferedBy'] = None
         else:
             self.state['winner'] = offerer
