@@ -21,7 +21,7 @@ export function AutoRoll({
         title={label}
         aria-pressed={autoRoll}
         onClick={() => onChange(!autoRoll)}
-        className="group flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-transparent bg-transparent px-1 text-left text-[clamp(13px,1.1cqw,18px)] leading-snug text-white/90 hover:bg-white/[0.035] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+        className="group flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border border-transparent bg-transparent px-1 text-left text-[clamp(13px,1.1cqw,18px)] leading-snug text-white/90 hover:bg-white/[0.035] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:text-xs [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:gap-1"
         dir="ltr"
       >
         <span dir={direction}>{t("common.autoRoll")}</span>

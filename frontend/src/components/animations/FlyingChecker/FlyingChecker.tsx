@@ -13,6 +13,7 @@ interface FlyingCheckerProps {
   to: Point;
   color: "white" | "black";
   size: number;
+  toSize?: number;
   committed?: boolean;
   onComplete: () => void;
 }
@@ -22,6 +23,7 @@ export default function FlyingChecker({
   to,
   color,
   size,
+  toSize = size,
   committed,
   onComplete,
 }: FlyingCheckerProps) {
@@ -29,14 +31,15 @@ export default function FlyingChecker({
   const sizeStyle = {
     width: size,
     height: size,
-    "--checker": `${size}px`,
+    "--checker": "100%",
+    "--checker-height-limit": "100vmax",
   } as CSSProperties;
 
   if (committed) {
     return (
       <div
         className={styles.flyer}
-        style={{ ...sizeStyle, top: to.y, left: to.x }}
+        style={{ ...sizeStyle, width: toSize, height: toSize, top: to.y, left: to.x }}
         data-testid="flying-checker"
       >
         <Checker color={color} />
@@ -46,8 +49,8 @@ export default function FlyingChecker({
 
   return (
     <motion.div
-      initial={{ x: from.x, y: from.y, scale: 1, opacity: 1 }}
-      animate={{ x: to.x, y: to.y, scale: 1, opacity: 1 }}
+      initial={{ x: from.x, y: from.y, width: size, height: size, scale: 1, opacity: 1 }}
+      animate={{ x: to.x, y: to.y, width: toSize, height: toSize, scale: 1, opacity: 1 }}
       transition={{ duration: reduceMotion ? 0 : 0.18, ease: [0.25, 0.1, 0.25, 1] }}
       onAnimationComplete={onComplete}
       className={styles.flyer}

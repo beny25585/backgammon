@@ -5,6 +5,7 @@ import Checker from "../checker/Checker";
 import styles from "./Bar.module.css";
 import { useI18n } from "../../../../i18n/I18nProvider";
 import { useBoardMaterials } from "../../materials/boardMaterialContext";
+import { BAR_CHECKER_LIMIT, barStackOffset, type BarStackMetrics } from "../../checkerStackGeometry";
 
 interface BarProps {
   state: GameState;
@@ -14,22 +15,29 @@ interface BarProps {
   hideChecker?: "white" | "black" | null;
   doublingCube?: ReactNode;
   cubePosition?: "top" | "center" | "bottom";
+  checkerLayout?: BarStackMetrics | null;
   onClick: () => void;
 }
 
 const stackSlots = ["top-0", "top-1/2 -translate-y-1/2", "bottom-0"];
 
-function BarStack({ count, color, top }: { count: number; color: Color; top: boolean }) {
+function BarStack({ count, color, top, hiddenTop, layout }: {
+  count: number; color: Color; top: boolean; hiddenTop: boolean; layout?: BarStackMetrics | null;
+}) {
+  const displayedCount = Math.min(count, BAR_CHECKER_LIMIT);
+  const renderCount = Math.max(0, displayedCount - (hiddenTop ? 1 : 0));
   return (
     <div
       className={`absolute inset-x-0 z-2 h-[18%] ${top ? "top-[29%]" : "bottom-[29%]"}`}
       data-testid={`bar-checkers-${color}`}
+      data-bar-checker-stack
     >
-      {Array.from({ length: Math.min(count, 3) }).map((_, index, slots) => {
-        const slot = slots.length === 1 ? 1 : slots.length === 2 ? index * 2 : index;
+      {Array.from({ length: renderCount }).map((_, index) => {
+        const slot = displayedCount === 1 ? 1 : displayedCount === 2 ? index * 2 : index;
         return (
-          <div key={index} className={`absolute left-1/2 -translate-x-1/2 ${stackSlots[slot]}`}>
-            <Checker color={color} label={index === slots.length - 1 && count > 3 ? String(count) : undefined} />
+          <div key={index} className={`absolute left-1/2 -translate-x-1/2 ${layout ? "" : stackSlots[slot]}`}
+            style={layout ? { top: barStackOffset(layout, displayedCount, index) } : undefined}>
+            <Checker color={color} size={layout?.diameter} label={index === displayedCount - 1 && count > BAR_CHECKER_LIMIT ? String(count) : undefined} />
           </div>
         );
       })}
@@ -59,13 +67,13 @@ export default function Bar({
   hideChecker,
   doublingCube,
   cubePosition = "center",
+  checkerLayout,
   onClick,
 }: BarProps) {
   const { t } = useI18n();
   const { ready: materialReady } = useBoardMaterials();
   const bottomColor = myColor ?? "white";
   const topColor = bottomColor === "white" ? "black" : "white";
-  const visibleCount = (color: Color) => Math.max(state.bar[color] - (hideChecker === color ? 1 : 0), 0);
   return (
     <button type="button" onClick={onClick} className={`relative col-start-2 row-start-1 h-full [--bar-display-width:max(26px,var(--bar-w))] w-[var(--bar-display-width)] cursor-pointer rounded-sm border-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 ${materialReady ? "bg-transparent" : "shadow-[inset_2px_0_2px_#000000f2,inset_-2px_0_2px_#000000cc] [background:var(--lux-bar-bg,#071034)]"}`} data-point-idx="bar" aria-label={t("game.barSummary", { black: state.bar.black, white: state.bar.white })}>
       {!materialReady && <>
@@ -86,8 +94,8 @@ export default function Bar({
         </div>
       )}
 
-      <BarStack count={visibleCount(topColor)} color={topColor} top />
-      <BarStack count={visibleCount(bottomColor)} color={bottomColor} top={false} />
+      <BarStack count={state.bar[topColor]} color={topColor} top hiddenTop={hideChecker === topColor} layout={checkerLayout} />
+      <BarStack count={state.bar[bottomColor]} color={bottomColor} top={false} hiddenTop={hideChecker === bottomColor} layout={checkerLayout} />
 
       <PipMeter count={pipCount(state, bottomColor)} color={bottomColor} side="self" />
     </button>

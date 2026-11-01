@@ -180,7 +180,7 @@ export default function IllustratedTurnNotice({ active, eventKey, text, locale, 
   return (
     <div
       ref={noticeRef}
-      className="pointer-events-none relative w-full"
+      className="pointer-events-none relative mx-auto w-full [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:w-[64%]"
       hidden={!active}
       role={active ? "status" : undefined}
       data-testid={active ? "guidance-banner" : undefined}

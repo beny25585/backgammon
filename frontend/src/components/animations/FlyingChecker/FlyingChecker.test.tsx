@@ -11,6 +11,30 @@ const FROM = { x: 20, y: 20 };
 const TO = { x: 220, y: 180 };
 const SIZE = 30;
 
+test("bar-to-point flights finish at the destination diameter and keep the checker round", async ({ mount }) => {
+  let completed = false;
+  const component = await mount(
+    <FlyingChecker from={FROM} to={TO} color="white" size={24} toSize={56} onComplete={() => { completed = true; }} />,
+  );
+  await expect.poll(() => completed).toBe(true);
+  const flyer = component.getByTestId("flying-checker");
+  await expect(flyer).toHaveCSS("width", "56px");
+  await expect(flyer).toHaveCSS("height", "56px");
+  await expect(flyer.locator("[data-checker]")).toHaveCSS("width", "56px");
+  await expect(flyer.locator("[data-checker]")).toHaveCSS("height", "56px");
+});
+
+test("committed point-to-bar flights use the smaller destination diameter", async ({ mount }) => {
+  const component = await mount(
+    <FlyingChecker from={FROM} to={TO} color="black" size={56} toSize={24} committed onComplete={() => {}} />,
+  );
+  const flyer = component.getByTestId("flying-checker");
+  await expect(flyer).toHaveCSS("left", `${TO.x}px`);
+  await expect(flyer).toHaveCSS("top", `${TO.y}px`);
+  await expect(flyer.locator("[data-checker]")).toHaveCSS("width", "24px");
+  await expect(flyer.locator("[data-checker]")).toHaveCSS("height", "24px");
+});
+
 for (const vp of VIEWPORTS) {
   test(`renders the checker with the requested color and size (${vp.name})`, async ({
     mount,

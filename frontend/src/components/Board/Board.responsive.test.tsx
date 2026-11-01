@@ -142,14 +142,34 @@ for (const vp of VIEWPORTS) {
       await expect(point.locator("[data-checker]")).toHaveCount(5);
       const fits = await point.evaluate((element: HTMLElement) => {
         const bounds = element.getBoundingClientRect();
+        const rotated = getComputedStyle(element).getPropertyValue("--game-rotated").trim() === "1";
+        const pointTop = rotated ? -bounds.right : bounds.top;
+        const pointBottom = rotated ? -bounds.left : bounds.bottom;
         return [...element.querySelectorAll("[data-checker]")].every((checker) => {
           const rect = checker.getBoundingClientRect();
-          return rect.top >= bounds.top && rect.bottom <= bounds.bottom
+          const top = rotated ? -rect.right : rect.top;
+          const bottom = rotated ? -rect.left : rect.bottom;
+          return top >= pointTop && bottom <= pointBottom
             && Math.abs(rect.width - rect.height) < 1;
         });
       });
-      expect(fits, `all five checkers on point ${index} must be fully visible`).toBe(true);
+      expect(fits, `all five checker bounds must stay inside point ${index}`).toBe(true);
     }
+  });
+
+  test(`dense point checkers fill the point width and stay round (${vp.name})`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    const component = await mountBoard(mount, busyState());
+    const point = component.locator('[data-point-idx="23"]');
+    await expect.poll(() => point.evaluate((element: HTMLElement) => {
+      const checker = element.querySelector<HTMLElement>("[data-checker]");
+      if (!checker) return 0;
+      return parseFloat(getComputedStyle(checker).width) / element.clientWidth;
+    })).toBeGreaterThan(0.9);
+    const dimensions = await point.locator("[data-checker]").first().evaluate((element: HTMLElement) => ({
+      width: element.clientWidth, height: element.clientHeight,
+    }));
+    expect(dimensions.width).toBe(dimensions.height);
   });
 }
 
@@ -353,10 +373,8 @@ async function assertHeadToHeadGeometry(
     for (let i = 1; i < sorted.length; i++) {
       expect(
         sorted[i]!.top,
-        `checkers on point ${index} must not overlap (${label})`,
-      ).toBeGreaterThanOrEqual(
-        sorted[i - 1]!.bottom - STACK_OVERLAP_TOLERANCE_PX,
-      );
+        `compressed checkers on point ${index} must retain distinct ordered slots (${label})`,
+      ).toBeGreaterThan(sorted[i - 1]!.top);
     }
   }
 

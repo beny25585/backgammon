@@ -2,6 +2,7 @@ import { memo } from "react";
 import Checker from "../checker/Checker";
 import styles from "./PointCell.module.css";
 import { useBoardMaterials } from "../../materials/boardMaterialContext";
+import { POINT_CHECKER_LIMIT, pointStackOffset, type PointStackMetrics } from "../../checkerStackGeometry";
 
 interface PointCellProps {
   index: number;
@@ -12,6 +13,7 @@ interface PointCellProps {
   isLegalTarget: boolean;
   isLegalFrom: boolean;
   hideTopChecker?: boolean;
+  checkerLayout?: PointStackMetrics | null;
   onClick: (index: number) => void;
 }
 
@@ -24,6 +26,7 @@ function PointCell({
   isLegalTarget,
   isLegalFrom,
   hideTopChecker,
+  checkerLayout,
   onClick,
 }: PointCellProps) {
   const { ready: materialReady } = useBoardMaterials();
@@ -38,7 +41,7 @@ function PointCell({
         ? "black"
         : null;
 
-  const displayedCount = Math.min(count, 5);
+  const displayedCount = Math.min(count, POINT_CHECKER_LIMIT);
 
   const renderCount = hideTopChecker ? Math.max(displayedCount - 1, 0) : displayedCount;
 
@@ -92,13 +95,20 @@ function PointCell({
         {pointNumber}
       </span>
 
-      <div data-checker-stack className={`z-3 flex items-center gap-0.5 py-2 [@container_game-layout_(height<500px)]:py-[3px] ${top ? "relative flex-col" : "absolute bottom-0 flex-col-reverse"}`}>
+      <div data-checker-stack className={`absolute inset-0 z-3 flex items-center gap-0.5 py-2 [@container_game-layout_(height<500px)]:py-[3px] ${top ? "flex-col" : "flex-col-reverse"}`}>
         {Array.from({ length: renderCount }).map((_, i) => (
-          <Checker
+          <div
             key={i}
-            color={color!}
-            label={i === 4 && count > 5 ? String(count) : undefined}
-          />
+            data-checker-slot={i}
+            className={checkerLayout ? "absolute left-1/2 -translate-x-1/2" : "shrink-0"}
+            style={checkerLayout ? { top: pointStackOffset(checkerLayout, displayedCount, i, Boolean(top)) } : undefined}
+          >
+            <Checker
+              color={color!}
+              size={checkerLayout?.diameter}
+              label={i === POINT_CHECKER_LIMIT - 1 && count > POINT_CHECKER_LIMIT ? String(count) : undefined}
+            />
+          </div>
         ))}
       </div>
     </button>

@@ -1,6 +1,14 @@
 import { boardRect, boardPoint } from "./boardCoordinates";
 import { bearOffSlot } from "./bearOffSlot";
 import {
+  barStackMetrics,
+  barStackOffset,
+  pointStackMetrics,
+  pointStackOffset,
+  type BarStackMetrics,
+  type PointStackMetrics,
+} from "./checkerStackGeometry";
+import {
   useMemo,
   useRef,
   useState,
@@ -64,10 +72,21 @@ interface BoardProps {
   onControlsTargetChange?: (target: HTMLDivElement | null) => void;
 }
 
-function getCheckerSize(board: HTMLElement): number {
-  const checkerEl = board.querySelector<HTMLElement>("[data-checker]");
-  if (!checkerEl) return 30;
-  return boardRect(checkerEl).width;
+function measurePointStack(point: HTMLElement): PointStackMetrics {
+  const stack = point.querySelector<HTMLElement>("[data-checker-stack]");
+  const style = stack ? getComputedStyle(stack) : null;
+  return pointStackMetrics(
+    point.clientWidth,
+    Math.min(point.clientHeight, point.parentElement?.clientHeight ?? point.clientHeight),
+    style ? parseFloat(style.paddingTop) || 0 : 8,
+    style ? parseFloat(style.paddingBottom) || 0 : 8,
+    style ? parseFloat(style.rowGap) || 0 : 2,
+  );
+}
+
+function measureBarStack(bar: HTMLElement): BarStackMetrics {
+  const stack = bar.querySelector<HTMLElement>("[data-bar-checker-stack]");
+  return barStackMetrics(bar.clientWidth, stack?.clientHeight ?? bar.clientHeight * 0.18);
 }
 
 function checkerCountAt(
@@ -132,12 +151,6 @@ function getGameplayKey(s: GameState): string {
   return `${s.points.join(",")}|${s.bar.white},${s.bar.black}|${s.home.white},${s.home.black}|${s.remaining.join(",")}|${s.turn}|${s.phase}|${JSON.stringify(s.lastMove)}`;
 }
 
-// Deliberate vertical clearance (CSS px) kept free inside each point so the
-// top and bottom five-checker stacks never visually touch at the board center
-// on short landscape phones, where fractional-pixel and device-pixel rounding
-// can otherwise close an exact edge-to-edge fit.
-const CHECKER_STACK_CLEARANCE_PX = 8;
-
 export function Board({
   state,
   match,
@@ -165,6 +178,10 @@ export function Board({
   const materials = useBoardMaterials();
   const boardRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const [checkerLayout, setCheckerLayout] = useState<{
+    point: PointStackMetrics | null;
+    bar: BarStackMetrics | null;
+  }>({ point: null, bar: null });
   const onAutoPointSequenceChangeRef = useRef(onAutoPointSequenceChange);
   useLayoutEffect(() => {
     onAutoPointSequenceChangeRef.current = onAutoPointSequenceChange;
@@ -172,25 +189,20 @@ export function Board({
   useLayoutEffect(() => {
     const board = boardRef.current;
     const point = board?.querySelector<HTMLElement>("[data-point-idx]");
-    const stack = point?.lastElementChild;
-    if (!board || !point || !(stack instanceof HTMLElement)) return;
+    const stack = point?.querySelector<HTMLElement>("[data-checker-stack]");
+    const bar = board?.querySelector<HTMLElement>('[data-point-idx="bar"]');
+    if (!board || !point || !stack || !bar) return;
 
     const fitCheckers = () => {
       if (point.clientHeight <= 0) return;
-      const style = getComputedStyle(stack);
-      const padding = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
-      const gaps = 4 * (parseFloat(style.rowGap) || 0);
-      // All points have the same height. Reserve space for five full circles,
-      // stack padding, four gaps and a deliberate safety clearance, even on a
-      // short landscape viewport. The result is floored to a whole CSS pixel
-      // so physical devices never rely on subpixel rounding for the fit.
-      const rowHeight = point.parentElement?.clientHeight ?? point.clientHeight;
-      const availableHeight = Math.min(point.clientHeight, rowHeight) - padding - gaps - CHECKER_STACK_CLEARANCE_PX;
-      const size = Math.max(0, Math.floor(availableHeight / 5));
-      const limit = `${size}px`;
-      if (board.style.getPropertyValue("--checker-height-limit") !== limit) {
-        board.style.setProperty("--checker-height-limit", limit);
-      }
+      const nextPoint = measurePointStack(point);
+      const nextBar = measureBarStack(bar);
+      setCheckerLayout(current =>
+        current.point && current.bar &&
+        current.point.diameter === nextPoint.diameter && current.point.height === nextPoint.height &&
+        current.point.paddingTop === nextPoint.paddingTop && current.point.paddingBottom === nextPoint.paddingBottom &&
+        current.point.gap === nextPoint.gap && current.bar.diameter === nextBar.diameter && current.bar.height === nextBar.height
+          ? current : { point: nextPoint, bar: nextBar });
     };
     fitCheckers();
     let fitFrame: number | null = null;
@@ -205,6 +217,7 @@ export function Board({
     if (point.parentElement) observer.observe(point.parentElement);
     // CSS can arrive after mount without changing the point's outer size.
     observer.observe(stack);
+    observer.observe(bar);
     return () => {
       observer.disconnect();
       if (fitFrame !== null) window.cancelAnimationFrame(fitFrame);
@@ -221,6 +234,7 @@ export function Board({
     fromCount: number;
     color: Color;
     size: number;
+    toSize: number;
     to: Source | Target;
     undo?: boolean;
     external?: boolean;
@@ -300,34 +314,41 @@ export function Board({
 
   const bottomBearOffColor: Color = myColor ?? "white";
 
-  const computeSlotY = useCallback(
+  const computeSlot = useCallback(
     (
       el: HTMLElement,
+      count: number,
       stackIndex: number,
       isTop: boolean,
-      boardTop: number,
-      checkerPx: number,
-      trayCount?: number,
+      color: Color,
+      origin: { left: number; top: number },
     ) => {
-      if (el.dataset.pointIdx === OFF) {
-        return bearOffSlot(el, trayCount ?? 1, stackIndex, checkerPx).y - boardTop;
-      }
       const rect = boardRect(el);
-      const stack = el.querySelector<HTMLElement>("[data-checker-stack]");
-      const stackStyle = stack ? getComputedStyle(stack) : null;
-      const gap = stackStyle ? parseFloat(stackStyle.rowGap) || 0 : 2;
-      const pad = stackStyle
-        ? parseFloat(isTop ? stackStyle.paddingTop : stackStyle.paddingBottom) || 0
-        : 8;
-      // Returns the checker's TOP-LEFT corner so the flyer's translateY aligns.
-      return isTop
-        ? rect.top + pad + stackIndex * (checkerPx + gap) - boardTop
-        : rect.top +
-            rect.height -
-            (pad + stackIndex * (checkerPx + gap) + checkerPx) -
-            boardTop;
+      let size = checkerLayout.point?.diameter ?? 30;
+      let x: number;
+      let y: number;
+      if (el.dataset.pointIdx === OFF) {
+        const stack = el.querySelector<HTMLElement>("[data-borne-off-stack]");
+        size = Math.max(0, Math.floor(Math.min(size, stack?.clientWidth ?? el.clientWidth)));
+        const slot = bearOffSlot(el, count, stackIndex, size);
+        x = slot.x;
+        y = slot.y;
+      } else if (el.dataset.pointIdx === BAR) {
+        const layout = checkerLayout.bar ?? measureBarStack(el);
+        const stack = el.querySelector<HTMLElement>(`[data-testid="bar-checkers-${color}"]`);
+        const stackRect = stack ? boardRect(stack) : rect;
+        size = layout.diameter;
+        x = stackRect.left + stackRect.width / 2 - size / 2;
+        y = stackRect.top + barStackOffset(layout, count, stackIndex);
+      } else {
+        const layout = checkerLayout.point ?? measurePointStack(el);
+        size = layout.diameter;
+        x = rect.left + rect.width / 2 - size / 2;
+        y = rect.top + pointStackOffset(layout, count, stackIndex, isTop);
+      }
+      return { x: x - origin.left, y: y - origin.top, size };
     },
-    [],
+    [checkerLayout],
   );
 
   const triggerFly = useCallback(
@@ -364,9 +385,6 @@ export function Board({
 
       // The flyer is positioned inside the wrapper, outside the inset frame.
       const bRect = boardRect(wrapperRef.current ?? board);
-      const fRect = boardRect(fromEl);
-      const tRect = boardRect(toEl);
-      const checkerPx = getCheckerSize(board);
 
       // The checker being moved leaves from the TOP of the source stack.
       const fromCount =
@@ -387,34 +405,21 @@ export function Board({
       const toStackIndex = to === OFF ? Math.min(state.home[moverColor], 14) : Math.min(toCount, 4);
       const isToTop = typeof to === "number" && displayTopPoints.includes(to);
 
-      const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
-      const toY = computeSlotY(
-        toEl,
-        toStackIndex,
-        isToTop,
-        bRect.top,
-        checkerPx,
-        to === OFF ? state.home[moverColor] + 1 : undefined,
-      );
-      const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
-      const fromY = computeSlotY(
-        fromEl,
-        fromStackIndex,
-        isFromTop,
-        bRect.top,
-        checkerPx,
-      );
+      const targetCount = to === OFF ? state.home[moverColor] + 1 : toCount + 1;
+      const targetSlot = computeSlot(toEl, targetCount, toStackIndex, isToTop, moverColor, bRect);
+      const sourceSlot = computeSlot(fromEl, fromCount, fromStackIndex, isFromTop, moverColor, bRect);
 
       setFlyChecker({
         id: ++flightIdRef.current,
-        fromX: origin ? origin.x - bRect.left - checkerPx / 2 : fromX,
-        fromY: origin ? origin.y - bRect.top - checkerPx / 2 : fromY,
-        toX,
-        toY,
+        fromX: origin ? origin.x - bRect.left - sourceSlot.size / 2 : sourceSlot.x,
+        fromY: origin ? origin.y - bRect.top - sourceSlot.size / 2 : sourceSlot.y,
+        toX: targetSlot.x,
+        toY: targetSlot.y,
         from,
         fromCount,
         color: moverColor,
-        size: checkerPx,
+        size: sourceSlot.size,
+        toSize: targetSlot.size,
         to,
         committed: false,
       });
@@ -430,7 +435,7 @@ export function Board({
       state.bar,
       state.home,
       displayTopPoints,
-      computeSlotY,
+      computeSlot,
     ],
   );
 
@@ -517,9 +522,6 @@ export function Board({
       if (!fromEl || !toEl) return;
 
       const bRect = boardRect(wrapperRef.current ?? board);
-      const fRect = boardRect(fromEl);
-      const tRect = boardRect(toEl);
-      const checkerPx = getCheckerSize(board);
 
       // The move is already applied to the state, so the checker flew from the
       // OLD top of the source stack (one slot above the current top) and landed
@@ -534,41 +536,26 @@ export function Board({
       const fromStackIndex = Math.min(fromCount, from === OFF ? 14 : 4);
       const toStackIndex = Math.min(Math.max(toCount - 1, 0), to === OFF ? 14 : 4);
 
-      const toX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
-      const toY = computeSlotY(
-        toEl,
-        toStackIndex,
-        isToTop,
-        bRect.top,
-        checkerPx,
-        to === OFF ? toCount : undefined,
-      );
-      const fromX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
-      const fromY = computeSlotY(
-        fromEl,
-        fromStackIndex,
-        isFromTop,
-        bRect.top,
-        checkerPx,
-        from === OFF ? fromCount + 1 : undefined,
-      );
+      const targetSlot = computeSlot(toEl, toCount, toStackIndex, isToTop, mover, bRect);
+      const sourceSlot = computeSlot(fromEl, fromCount + 1, fromStackIndex, isFromTop, mover, bRect);
 
       setFlyChecker({
         id: ++flightIdRef.current,
-        fromX,
-        fromY,
-        toX,
-        toY,
+        fromX: sourceSlot.x,
+        fromY: sourceSlot.y,
+        toX: targetSlot.x,
+        toY: targetSlot.y,
         from,
         fromCount: fromCount + 1,
         color: mover,
-        size: checkerPx,
+        size: sourceSlot.size,
+        toSize: targetSlot.size,
         to,
         external: true,
         committed: false,
       });
     },
-    [state, displayTopPoints, computeSlotY, bottomBearOffColor],
+    [state, displayTopPoints, computeSlot, bottomBearOffColor],
   );
 
   useEffect(() => {
@@ -662,9 +649,6 @@ export function Board({
     }
 
     const bRect = boardRect(wrapperRef.current ?? board);
-    const tRect = boardRect(toEl);
-    const fRect = boardRect(fromEl);
-    const checkerPx = getCheckerSize(board);
 
     // Start from the TOP of the destination stack (the checker just moved there).
     const toCount = checkerCountAt(state, last.to, myColor ?? "white");
@@ -673,42 +657,25 @@ export function Board({
       typeof last.to === "number" && displayTopPoints.includes(last.to);
 
     // Land on TOP of the source stack after the checker returns (count + 1).
-    const fromCount =
-      typeof last.from === "number"
-        ? Math.abs(state.points[last.from] ?? 0)
-        : 0;
+    const fromCount = checkerCountAt(state, last.from, myColor ?? "white");
     const toStackIndex = Math.min(fromCount, 4);
     const isToTop =
       typeof last.from === "number" && displayTopPoints.includes(last.from);
 
-    const toX = fRect.left + fRect.width / 2 - bRect.left - checkerPx / 2;
-    const toY = computeSlotY(
-      fromEl,
-      toStackIndex,
-      isToTop,
-      bRect.top,
-      checkerPx,
-    );
-    const fromX = tRect.left + tRect.width / 2 - bRect.left - checkerPx / 2;
-    const fromY = computeSlotY(
-      toEl,
-      fromStackIndex,
-      isFromTop,
-      bRect.top,
-      checkerPx,
-      last.to === OFF ? toCount : undefined,
-    );
+    const targetSlot = computeSlot(fromEl, fromCount + 1, toStackIndex, isToTop, undoColor, bRect);
+    const sourceSlot = computeSlot(toEl, toCount, fromStackIndex, isFromTop, undoColor, bRect);
 
     setFlyChecker({
       id: ++flightIdRef.current,
-      fromX,
-      fromY,
-      toX,
-      toY,
+      fromX: sourceSlot.x,
+      fromY: sourceSlot.y,
+      toX: targetSlot.x,
+      toY: targetSlot.y,
       from: last.to,
       fromCount: toCount,
       color: myColor ?? "white",
-      size: checkerPx,
+      size: sourceSlot.size,
+      toSize: targetSlot.size,
       to: last.from,
       undo: true,
       committed: false,
@@ -720,7 +687,7 @@ export function Board({
     onUndo,
     state,
     displayTopPoints,
-    computeSlotY,
+    computeSlot,
     lastMoveLast,
     baseInteractionBlocked,
     clearAutoPointSequence,
@@ -874,6 +841,7 @@ export function Board({
     Boolean(onOfferDouble) &&
     myColor !== null &&
     canOfferDouble(state, myColor, match);
+  const doublingEnabled = state.doublingEnabled !== false;
   const cubePosition =
     state.cubeOwner === "center"
       ? "center"
@@ -924,6 +892,7 @@ export function Board({
                   pointNumber={pointNumberFor(idx, myColor)}
                   top
                   pointValue={state.points[idx] ?? 0}
+                  checkerLayout={checkerLayout.point}
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
@@ -940,6 +909,7 @@ export function Board({
                   index={idx}
                   pointNumber={pointNumberFor(idx, myColor)}
                   pointValue={state.points[idx] ?? 0}
+                  checkerLayout={checkerLayout.point}
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
@@ -964,13 +934,14 @@ export function Board({
                 ? flyChecker.color
                 : null
             }
-            doublingCube={
+            checkerLayout={checkerLayout.bar}
+            doublingCube={doublingEnabled ? (
               <DoublingCube
                 value={state.phase === "doubling_offered" ? state.cube * 2 : state.cube}
                 owner={state.cubeOwner}
                 showOwner={false}
               />
-            }
+            ) : null}
             cubePosition={cubePosition}
           />
 
@@ -983,6 +954,7 @@ export function Board({
                   pointNumber={pointNumberFor(idx, myColor)}
                   top
                   pointValue={state.points[idx] ?? 0}
+                  checkerLayout={checkerLayout.point}
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
@@ -998,6 +970,7 @@ export function Board({
                   index={idx}
                   pointNumber={pointNumberFor(idx, myColor)}
                   pointValue={state.points[idx] ?? 0}
+                  checkerLayout={checkerLayout.point}
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
@@ -1027,6 +1000,7 @@ export function Board({
               canConfirm={canConfirm}
               canRoll={canRoll}
               canDouble={canDouble}
+              doublingEnabled={doublingEnabled}
               onUndo={handleUndo}
               onConfirm={onConfirm}
               onRoll={onRoll}
@@ -1054,7 +1028,7 @@ export function Board({
             "--checker": `${drag.size}px`,
           } as React.CSSProperties}
         >
-          <Checker color={drag.color} />
+          <Checker color={drag.color} size={drag.size} />
         </div>
       )}
       {flyChecker && (
@@ -1064,6 +1038,7 @@ export function Board({
           to={{ x: flyChecker.toX, y: flyChecker.toY }}
           color={flyChecker.color}
           size={flyChecker.size}
+          toSize={flyChecker.toSize}
           committed={flyChecker.committed}
           onComplete={() => {
             setFlyChecker((current) => {

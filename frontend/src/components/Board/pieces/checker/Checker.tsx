@@ -1,12 +1,13 @@
-import { memo, useState } from "react";
+import { memo, useState, type CSSProperties } from "react";
 import { useBoardMaterials } from "../../materials/boardMaterialContext";
 
 interface CheckerProps {
   color: "white" | "black";
   label?: string;
+  size?: number;
 }
 
-function Checker({ color, label }: CheckerProps) {
+function Checker({ color, label, size }: CheckerProps) {
   const { checkerImages } = useBoardMaterials();
   const source = checkerImages?.[color];
   const [loadedURL, setLoadedURL] = useState<string | null>(null);
@@ -21,6 +22,7 @@ function Checker({ color, label }: CheckerProps) {
       data-checker-color={color}
       data-pixi-ready={String(decoded)}
       data-pixi-material={color}
+      style={size == null ? undefined : { "--checker": `${size}px`, "--checker-height-limit": `${size}px` } as CSSProperties}
       className={`relative isolate flex size-[min(var(--checker),var(--checker-height-limit,100vmax))] shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-extrabold ${color === "white" ? "text-[#2b2118]" : "text-[#f7f1e7]"} ${
         decoded
           ? "border-0 bg-transparent shadow-[1px_2px_2px_#00000080,2px_3px_4px_#00000033]"

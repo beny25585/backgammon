@@ -59,7 +59,7 @@ export default function GameSettingsDrawer({ children, settings }: {
         aria-expanded={open}
         aria-controls={panelId}
         data-testid="game-settings-toggle"
-        className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-amber-200/25 bg-[#171b19] px-2 text-xs font-semibold text-[#ebc879] hover:border-amber-200/60 hover:bg-[#252a24] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+        className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-amber-200/25 bg-[#171b19] px-1 text-[11px] font-semibold text-[#ebc879] hover:border-amber-200/60 hover:bg-[#252a24] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
         dir={direction}
         onClick={toggle}
         onKeyDown={(event) => {
@@ -88,9 +88,9 @@ export default function GameSettingsDrawer({ children, settings }: {
           title={t("game.closeSettings")}
           data-testid="game-settings-close"
           onClick={(event) => close(event.detail > 0)}
-          className="absolute end-3 top-1.5 z-20 flex size-11 items-center justify-center rounded-lg text-[#ebc879] hover:bg-white/10 hover:text-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+          className="absolute end-3 top-1.5 z-20 flex size-11 items-center justify-center rounded-lg text-[#ebc879] hover:bg-white/10 hover:text-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:top-0.5 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:end-2"
         >
-          <svg className="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true">
+          <svg className="size-6 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" aria-hidden="true">
             <path d="m6 6 12 12M6 18 18 6" />
           </svg>
         </button>

@@ -21,7 +21,7 @@ export default function GameInfoCard({ state, targetPoints, leadingScore }: {
     ? Math.min(targetPoints ?? 0, Math.max(0, Math.floor(leadingScore)))
     : null;
   return (
-    <div className="rounded-xl border border-white/20 bg-black/10 px-2 py-3 text-[clamp(11px,11cqw,18px)] leading-snug [@container_game-layout_(height<500px)]:px-1 [@container_game-layout_(height<500px)]:py-2 [@container_game-layout_(height<500px)]:text-[11px]" dir={direction} data-testid="game-info-card">
+    <div className="rounded-xl border border-white/20 bg-black/10 px-2 py-2 text-[clamp(11px,8.5cqw,14px)] leading-snug [@container_game-layout_(height<500px)]:px-1 [@container_game-layout_(height<500px)]:py-1.5 [@container_game-layout_(height<500px)]:text-[11px]" dir={direction} data-testid="game-info-card">
       {isMoney ? (
         <div data-testid="game-stakes">
           <div className="flex flex-wrap items-center justify-center gap-x-1 text-[#c8bda8]">
@@ -39,7 +39,7 @@ export default function GameInfoCard({ state, targetPoints, leadingScore }: {
             <span>{t("game.tableTarget")}</span>
             <bdi className="font-bold tabular-nums text-amber-400" data-testid="match-target">{t("game.targetPointsValue", { points: targetPoints! })}</bdi>
           </div>
-          <div className="mt-1 text-[clamp(10px,8cqw,12px)] text-[#c8bda8] [@container_game-layout_(height<500px)]:mt-0.5 [@container_game-layout_(height<500px)]:text-[10px]" data-testid="match-doubling-rule">
+          <div className="mt-1 text-[clamp(10px,7cqw,11px)] text-[#c8bda8] [@container_game-layout_(height<500px)]:mt-0.5 [@container_game-layout_(height<500px)]:text-[10px]" data-testid="match-doubling-rule">
             {state.crawfordGame
               ? t("game.crawfordRules")
               : state.doublingEnabled !== false

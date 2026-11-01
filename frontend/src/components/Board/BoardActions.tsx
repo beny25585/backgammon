@@ -47,6 +47,7 @@ interface Props {
   canConfirm: boolean;
   canRoll: boolean;
   canDouble: boolean;
+  doublingEnabled?: boolean;
   onUndo: () => void;
   onConfirm?: () => void;
   onRoll?: () => void;
@@ -57,7 +58,7 @@ interface Props {
   rollDetails?: Partial<Record<BoardSide, ReactNode>>;
 }
 
-export default function BoardActions({ noticeSide = "left", ...props }: Props) {
+export default function BoardActions({ noticeSide = "left", doublingEnabled = true, ...props }: Props) {
   const { t, locale, direction } = useI18n();
   const noticeAsset = props.turnNotice ? illustratedNoticeAssets[props.turnNotice.textKey] ?? null : null;
   const illustratedNotice = noticeAsset !== null;
@@ -65,7 +66,7 @@ export default function BoardActions({ noticeSide = "left", ...props }: Props) {
   const leftAction = props.canUndo ? {
     id: "board-undo-action",
     content: <UndoButton onClick={props.onUndo} />,
-  } : props.canRoll ? {
+  } : props.canRoll && doublingEnabled ? {
     id: "board-double-action",
     content: <BoardActionButton onClick={props.onDouble} disabled={!props.canDouble}
       title={t("common.offerDouble")} aria-label={t("common.offerDouble")}>

@@ -107,7 +107,7 @@ export function useCheckerDrag({ state, myColor, blocked, legalFromPoints, board
           pointerId: event.pointerId, from, color: myColor,
           startX: event.clientX, startY: event.clientY,
           x: point.x, y: point.y,
-          size: checker.getBoundingClientRect().width, active: false, state,
+          size: boardRect(checker).width, active: false, state,
           boardLeft: bounds.left, boardTop: bounds.top,
         };
         // Reserve the gesture before it crosses the drag threshold, so a
