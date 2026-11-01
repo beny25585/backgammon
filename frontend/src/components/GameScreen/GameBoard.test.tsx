@@ -347,7 +347,7 @@ test("shows the illustrated forced-move notice beside our dice before auto-movin
 
 for (const color of ["white", "black"] as const) {
   test(`forced notice survives completed moves and reappears on a new roll for ${color}`, async ({ mount, page }) => {
-    await page.clock.install();
+    await page.clock.install({ time: new Date("2026-10-31T08:00:00Z") });
     await page.clock.pauseAt(new Date("2026-10-31T10:00:00Z"));
     const points = new Array(24).fill(0);
     const from = color === "white" ? 23 : 0;
