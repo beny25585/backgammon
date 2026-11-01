@@ -52,6 +52,11 @@ BACKENDS = {
     'tournaments': ('/app/tournaments', 'tournaments.settings.docker'),
     'analysis': ('/app', 'config.docker'),
 }
+BACKEND_IMAGE_DEPENDENCIES = {
+    'game': ('game', 'dice'),
+    'tournaments': ('tournaments',),
+    'analysis': ('analysis',),
+}
 FRONTENDS = {
     'game': ('Backgammon Game', 'Backgammon Game/frontend'),
     'tournaments': ('backgammon-tournaments', 'backgammon-tournaments'),
@@ -68,8 +73,8 @@ SERVICE_IMAGE = {
 APPS = ('game-api', 'tournaments-api', 'analysis-api', 'game-frontend', 'tournaments-frontend', 'admin-frontend', 'dice')
 WORKERS = ('game-tasks', 'tournaments-tasks', 'analysis-worker', 'push-worker')
 PROFILES = ('--profile', 'live', '--profile', 'workers', '--profile', 'tournament-workers', '--profile', 'operations')
-# These files are outside the application/image inputs. Backend checks still rerun
-# with the current release-test settings mounted into the retained images.
+# These files are outside the application/image inputs. Backend receipts include
+# the release-test settings and tool hashes as well as the runtime image content.
 RESUME_TOOL_FILES = {
     'deploy/workspace/operations/release_pipeline.py',
     'deploy/workspace/operations/release_test_settings.py',
@@ -305,11 +310,12 @@ def latest_progress(base, sources, scope):
 
 
 class ReleaseProgress:
-    """Retain complete phases only, with unchanged sources, inputs and verified logs."""
+    """Retain complete phases with verified inputs and logs; isolate local/server evidence."""
 
     def __init__(self, runner, manifest, scope, previous=None):
         self.runner = runner
         self.previous = previous
+        self.fresh = manifest.get('fresh', False) is True
         self.value = {'workflow_version': WORKFLOW_VERSION, 'release_id': manifest['release_id'],
                       'sources': manifest['sources'], 'tools': tool_hashes(), 'scope': scope, 'phases': {}}
         if previous:
@@ -380,14 +386,83 @@ class ReleaseProgress:
             if status['sources'][source] == self.value['sources'][source]:
                 yield folder, phase
 
-    def run(self, name, stages, action, inputs=None, verify=None, reuse_frontend=False):
+    def backend_candidates(self, name, fingerprint, inputs):
+        """Find original receipts; source labels may differ when runtime content matches."""
+        reasons = set()
+        for folder in sorted(self.runner.directory.parent.iterdir(), key=lambda item: item.stat().st_mtime_ns, reverse=True):
+            if (folder == self.runner.directory or not folder.is_dir() or folder.is_symlink()
+                    or not re.fullmatch(r'bg-release-\d{8}t\d{6}z-[a-f0-9]{8}', folder.name)):
+                continue
+            path = folder / 'progress.json'
+            if not path.is_file():
+                continue
+            require(not path.is_symlink(), 'Redirected backend progress')
+            progress = json.loads(path.read_text(encoding='utf-8'))
+            if any(progress.get(key) != self.value[key] for key in ('workflow_version', 'tools', 'scope')):
+                reasons.add('workflow, tools or scope changed')
+                continue
+            phase = progress.get('phases', {}).get(name)
+            if not phase or phase.get('origin_release') != folder.name:
+                continue
+            details = phase.get('input_details')
+            if not details:
+                reasons.add('legacy receipt has no runtime input proof')
+                continue
+            if phase.get('inputs') != fingerprint:
+                reasons.add(backend_input_difference(details, inputs))
+                continue
+            require(hashlib.sha256(json.dumps(details, sort_keys=True).encode()).hexdigest() == fingerprint,
+                    'Retained backend input proof changed: ' + name)
+            require(progress.get('release_id') == folder.name, 'Backend progress belongs to another release')
+            status_path = folder / 'status.json'
+            require(status_path.is_file() and not status_path.is_symlink(), 'Missing or redirected backend status')
+            status = json.loads(status_path.read_text(encoding='utf-8'))
+            # Production.status predates the upload manifest's schema envelope.
+            validate_manifest(dict(status, schema_version=status.get('schema_version', 1)))
+            require(status['release_id'] == folder.name and status['sources'] == progress.get('sources'),
+                    'Backend status and progress sources differ')
+            require(all(status.get(key) == progress.get(key) for key in ('workflow_version', 'tools')),
+                    'Backend status and progress tool inputs differ')
+            if self.value['scope'] == 'server' and status.get('stage') != 'production_open':
+                if (status.get('stage') not in ('production_verified', 'images_verified', 'server_checks_passed',
+                                              'ready_for_maintenance', 'failed_before_production_change', 'failed')
+                        or not all(status.get(key) is False for key in
+                                   ('production_changed', 'migrations_started', 'public_writes_opened'))):
+                    reasons.add('server receipt requires recovery')
+                    continue
+            yield folder, phase
+        print('CACHE MISS ' + name + ': ' + ('; '.join(sorted(reasons)) or 'no matching original receipt'), flush=True)
+
+    def run(self, name, stages, action, inputs=None, verify=None, reuse_frontend=False, reuse_backend=False):
         require(bool(stages), 'A resumable phase must contain completed commands')
+        require(not (reuse_frontend and reuse_backend), 'Frontend and backend reuse flags cannot be combined')
         if reuse_frontend:
             require(self.value['scope'] == 'local' and name in {'frontend-' + site for site in FRONTENDS},
                     'Cross-release reuse is limited to local frontend phases')
+        if reuse_backend:
+            require(self.value['scope'] in ('local', 'server') and name in {'backend-' + kind for kind in BACKENDS},
+                    'Cross-release backend reuse requires a backend phase and local/server scope')
+        backend_proof = (name in {'backend-' + kind for kind in BACKENDS}
+                         and isinstance(inputs, dict) and inputs.get('backend_reuse_version') == 1)
+        if reuse_backend:
+            require(backend_proof, 'Missing backend runtime input proof')
         fingerprint = hashlib.sha256(json.dumps(inputs, sort_keys=True).encode()).hexdigest()
         extra = self.frontend_candidates(name, fingerprint) if reuse_frontend else ()
-        for folder, phase in itertools.chain(self.candidates(name, fingerprint), extra):
+        if reuse_backend and not self.fresh:
+            extra = self.backend_candidates(name, fingerprint, inputs)
+        if backend_proof and self.fresh:
+            print('CACHE MISS ' + name + ': Fresh requested', flush=True)
+        # Backend evidence always comes from its original receipt, even when the
+        # general continuation points at a more recent copy of that evidence.
+        prior = () if self.fresh or backend_proof else self.candidates(name, fingerprint)
+        for folder, phase in itertools.chain(prior, () if self.fresh else extra):
+            if backend_proof:
+                details = phase.get('input_details')
+                if not details:
+                    print('CACHE MISS ' + name + ': legacy receipt has no runtime input proof', flush=True)
+                    continue
+                require(hashlib.sha256(json.dumps(details, sort_keys=True).encode()).hexdigest() == fingerprint,
+                        'Retained backend input proof changed: ' + name)
             require(phase.get('result_sha256') == hashlib.sha256(json.dumps(phase['result'], sort_keys=True).encode()).hexdigest(),
                     'Retained phase result changed: ' + name)
             logs = phase.get('logs', [])
@@ -406,15 +481,19 @@ class ReleaseProgress:
                 start = len(self.runner.timings)
                 for item, path in zip(logs, paths):
                     self.runner.retain(item['stage'], path)
-                self.record(name, start, phase['result'], fingerprint, phase['origin_release'], stages)
+                self.record(name, start, phase['result'], fingerprint, phase['origin_release'], stages,
+                            input_details=inputs if backend_proof else None)
+                if backend_proof:
+                    print('CACHE HIT ' + name + ': verified original evidence from ' + phase['origin_release'], flush=True)
                 return phase['result']
             print('Retained resources are unavailable; rechecking phase: ' + name, flush=True)
         start = len(self.runner.timings)
         result = action()
-        self.record(name, start, result, fingerprint, self.value['release_id'], stages)
+        self.record(name, start, result, fingerprint, self.value['release_id'], stages,
+                    input_details=inputs if backend_proof else None)
         return result
 
-    def record(self, name, start, result, fingerprint, origin, stages):
+    def record(self, name, start, result, fingerprint, origin, stages, input_details=None):
         rows = self.runner.timings[start:]
         require([row['stage'] for row in rows] == list(stages) and all(row['exit_code'] == 0 for row in rows),
                 'Phase did not complete successfully: ' + name)
@@ -426,6 +505,8 @@ class ReleaseProgress:
             verify_image_logs(result, {item['stage']: self.runner.directory / item['file'] for item in logs})
         self.value['phases'][name] = {'inputs': fingerprint, 'origin_release': origin, 'logs': logs, 'result': result,
                                     'result_sha256': hashlib.sha256(json.dumps(result, sort_keys=True).encode()).hexdigest()}
+        if input_details is not None:
+            self.value['phases'][name]['input_details'] = copy.deepcopy(input_details)
         save(self.runner.directory / 'progress.json', self.value)
 
 
@@ -463,6 +544,58 @@ def checked_images(workspace, manifest, runner, progress, sudo=False):
                         verify=lambda images, origin: verify_images(images, manifest['sources'], origin, sudo=sudo))
 
 
+def image_runtime_fingerprint(item):
+    """Hash the complete filesystem/config, excluding only two provenance labels."""
+    require(isinstance(item, dict) and re.fullmatch(r'sha256:[a-f0-9]{64}', item.get('Id', '')),
+            'Invalid immutable runtime image identity')
+    require(all(isinstance(item.get(key), str) and item[key] for key in ('Os', 'Architecture')),
+            'Missing runtime image platform')
+    rootfs = item.get('RootFS')
+    require(isinstance(rootfs, dict) and rootfs.get('Type') == 'layers'
+            and isinstance(rootfs.get('Layers'), list) and bool(rootfs['Layers'])
+            and all(isinstance(layer, str) and re.fullmatch(r'sha256:[a-f0-9]{64}', layer)
+                    for layer in rootfs['Layers']), 'Missing immutable runtime image layers')
+    config = copy.deepcopy(item.get('Config'))
+    require(isinstance(config, dict), 'Missing runtime image configuration')
+    labels = config.get('Labels')
+    require(labels is None or isinstance(labels, dict), 'Invalid runtime image labels')
+    labels = dict(labels or {})
+    for key in ('org.opencontainers.image.revision', 'io.backgammon.release'):
+        labels.pop(key, None)
+    config['Labels'] = labels or None
+    runtime = {key: item.get(key) for key in ('Os', 'Architecture', 'Variant', 'OsVersion', 'OsFeatures')}
+    runtime.update(RootFS=rootfs, Config=config)
+    return hashlib.sha256(json.dumps(runtime, sort_keys=True).encode()).hexdigest()
+
+
+def backend_phase_inputs(kind, inspections, docker_engine, test_images):
+    require(kind in BACKEND_IMAGE_DEPENDENCIES, 'Unknown backend component')
+    require(isinstance(docker_engine, str) and bool(docker_engine.strip()), 'Missing Docker runtime version')
+    require(set(test_images) == {'postgres', 'redis'} and all(
+        isinstance(value, str) and re.fullmatch(r'sha256:[a-f0-9]{64}', value) for value in test_images.values()),
+        'Invalid disposable backend test image identities')
+    require(all(name in inspections for name in BACKEND_IMAGE_DEPENDENCIES[kind]), 'Missing backend dependency image')
+    return {'backend_reuse_version': 1, 'service': kind,
+            'images': {name: image_runtime_fingerprint(inspections[name]) for name in BACKEND_IMAGE_DEPENDENCIES[kind]},
+            'docker_engine': docker_engine, 'test_images': dict(test_images),
+            'settings_sha256': tool_hashes()['release_test_settings.py']}
+
+
+def backend_input_difference(previous, current):
+    """Describe cache invalidation without printing image configuration or secrets."""
+    if not isinstance(previous, dict):
+        return 'runtime input proof differs'
+    if previous.get('images') != current.get('images'):
+        return 'dependency image content or configuration changed'
+    if previous.get('test_images') != current.get('test_images'):
+        return 'PostgreSQL or Redis test image changed'
+    if previous.get('docker_engine') != current.get('docker_engine'):
+        return 'Docker runtime changed'
+    if previous.get('settings_sha256') != current.get('settings_sha256'):
+        return 'test settings changed'
+    return 'runtime input proof differs'
+
+
 def checked_backends(workspace, images, runner, progress, sudo=False):
     docker = ['sudo', '-n', 'docker'] if sudo else ['docker']
     engine = capture([*docker, 'version', '--format', '{{.Server.Version}} {{.Server.Arch}}']).decode().strip()
@@ -478,6 +611,13 @@ def checked_backends(workspace, images, runner, progress, sudo=False):
         require(len(items) == 1 and re.fullmatch(r'sha256:[a-f0-9]{64}', items[0]['Id']),
                 'Disposable test image identity differs: ' + service)
         test_images[service] = items[0]['Id']
+    inspections = {}
+    for kind in dict.fromkeys(name for names in BACKEND_IMAGE_DEPENDENCIES.values() for name in names):
+        require(isinstance(images.get(kind), str) and re.fullmatch(r'sha256:[a-f0-9]{64}', images[kind]),
+                'Backend image is not an immutable Docker ID: ' + kind)
+        items = json.loads(capture([*docker, 'image', 'inspect', images[kind]]))
+        require(len(items) == 1 and items[0].get('Id') == images[kind], 'Backend runtime image identity differs: ' + kind)
+        inspections[kind] = items[0]
     for kind in BACKENDS:
         stages = ['test-network', 'test-postgres', 'test-redis', kind + '-migrations']
         if kind == 'game':
@@ -486,7 +626,8 @@ def checked_backends(workspace, images, runner, progress, sudo=False):
         progress.run('backend-' + kind, stages,
                      lambda kind=kind: backend_checks(workspace, images, runner, sudo=sudo, only=(kind,),
                                                       test_images=test_images),
-                     inputs={'images': images, 'docker_engine': engine, 'test_images': test_images})
+                     inputs=backend_phase_inputs(kind, inspections, engine, test_images),
+                     reuse_backend=not progress.fresh)
 
 
 def git(repository, *args):

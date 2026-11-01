@@ -304,7 +304,8 @@ class AutomaticWorkflowTests(unittest.TestCase):
                 if 'inspect' in args:
                     if args[-1] in ('postgres:16', 'redis:7-alpine'):
                         return json.dumps([{'Id': 'sha256:' + ('e' if args[-1] == 'postgres:16' else 'f') * 64}]).encode()
-                    return json.dumps([{'Id': args[-1], 'Os': 'linux', 'Architecture': 'amd64', 'Config': {'Labels': {
+                    return json.dumps([{'Id': args[-1], 'Os': 'linux', 'Architecture': 'amd64',
+                        'RootFS': {'Type': 'layers', 'Layers': ['sha256:' + 'd' * 64]}, 'Config': {'Labels': {
                         'org.opencontainers.image.revision': 'a' * 40, 'io.backgammon.release': origin['release']}}}]).encode()
                 return b'linux' if 'info' in args else b'stable-runtime-version'
             def exported(source_root, value, target):
