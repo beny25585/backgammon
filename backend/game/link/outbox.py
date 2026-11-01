@@ -37,6 +37,8 @@ logger = logging.getLogger(__name__)
 RESULT_VERSION = 1
 RESULT_PATH = '/api/gamelink/result/'
 DELIVERY_TIMEOUT_SECONDS = 10.0
+TECHNICAL_SERIES_END_REASONS = frozenset({'time', 'leave', 'disconnect', 'inactivity_timeout'})
+MAX_RESULT_SCORE = 32767
 
 TASK_NAME = 'game.link.outbox.deliver_result'
 
@@ -76,6 +78,30 @@ def _refusal_message(response, fixture_id):
 # scoring; `completed` carries a score and advances the tournament.
 STATUS_COMPLETED = 'completed'
 STATUS_CANCELLED = 'cancelled'
+
+
+def _technical_tournament_result(link, room, score, winner_seat, end_reason, status, game_format):
+    """Separate an official series forfeit from the points actually played.
+
+    Room/Match history remains the played score. Only positive tournament
+    fixtures need a full-length official result to advance a score-based tree.
+    """
+    if (status != STATUS_COMPLETED or link.tournament_id <= 0 or link.fixture_id <= 0
+            or end_reason not in TECHNICAL_SERIES_END_REASONS or game_format == 'money'):
+        return score, {}
+    if winner_seat not in ('p1', 'p2'):
+        raise ValueError('A technical tournament result requires a valid winner seat')
+    target = room.target_points
+    if type(target) is not int or not 1 <= target <= MAX_RESULT_SCORE:
+        raise ValueError('A technical tournament result requires a valid match target')
+    if (not isinstance(score, dict) or any(type(score.get(seat)) is not int
+            or not 0 <= score[seat] <= MAX_RESULT_SCORE for seat in ('p1', 'p2'))):
+        raise ValueError('A technical tournament result requires valid played scores')
+    loser_seat = 'p2' if winner_seat == 'p1' else 'p1'
+    if score[loser_seat] >= target:
+        raise ValueError('The technical loser has already reached the match target')
+    official = {winner_seat: target, loser_seat: score[loser_seat]}
+    return official, {'technical_result': {'reason': end_reason, 'played_score': dict(score)}}
 
 
 @transaction.atomic
@@ -150,7 +176,8 @@ def build_result_body(link, room, match=None, *, status=STATUS_COMPLETED,
     p1_color = link.color_for_seat('p1')
     p2_color = link.color_for_seat('p2')
 
-    if score is None:
+    inferred_score = score is None
+    if inferred_score:
         by_color = {'white': room.white_score, 'black': room.black_score}
         score = {'p1': by_color.get(p1_color, 0), 'p2': by_color.get(p2_color, 0)}
 
@@ -171,8 +198,14 @@ def build_result_body(link, room, match=None, *, status=STATUS_COMPLETED,
             'format': saved['gameFormat'], 'cube': saved.get('cube', 1),
             'win_type': saved.get('winType') or 'single',
         }
+    technical = {}
+    if inferred_score:
+        score, technical = _technical_tournament_result(
+            link, room, score, winner_seat, end_reason, status, saved.get('gameFormat'),
+        )
     return {
         **financial,
+        **technical,
         **({'rating_policy': link.rating_policy} if link.rating_policy else {}),
         'v': RESULT_VERSION,
         'tournament_id': link.tournament_id,
