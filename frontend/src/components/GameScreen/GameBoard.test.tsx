@@ -153,6 +153,7 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
   test(`game frame fits the viewport and keeps circular checkers at ${viewport.width}x${viewport.height}`, async ({ mount, page }) => {
     await page.setViewportSize(viewport);
     const state = movingState();
+    state.points[12] = 1; // Keep layout measurements independent of the forced-turn animation.
     const component = await mount(
       <div className={screenStyles.container}>
         <MockGameWrapper state={state} playerColor="white">
@@ -170,7 +171,10 @@ for (const viewport of [{ width: 844, height: 390 }, { width: 1280, height: 800 
     expect(frame!.x).toBeGreaterThanOrEqual(0);
     expect(frame!.x + frame!.width).toBeLessThanOrEqual(viewport.width + 1);
     expect(frame!.height).toBeLessThanOrEqual(viewport.height);
-    const checker = await component.locator('[data-point-idx="23"] [data-checker]').first().boundingBox();
+    const checkerLocator = component.locator('[data-point-idx="23"] [data-checker]').first();
+    await expect(checkerLocator).toBeVisible();
+    const checker = await checkerLocator.boundingBox();
+    expect(checker).not.toBeNull();
     expect(checker!.width).toBeGreaterThan(16);
     expect(checker!.width).toBeCloseTo(checker!.height, 0);
     await component.getByTestId("game-settings-toggle").press("Enter");
