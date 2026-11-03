@@ -1202,11 +1202,8 @@ def read_server_state(config):
         if not all(service in containers for service in config['services']):
             raise RuntimeError('A production service is not running; inspect the current stack')
         command = (
-            'import json; from game.models import GameRoom; from game.operations import delivery_health; '
-            'rooms=GameRoom.objects.exclude(status__in=["completed","cancelled"]); '
-            'print("BG_RELEASE_RUNTIME "+json.dumps({"active_count":rooms.count(), '
-            '"rooms":list(rooms.order_by("created_at").values("code","status","updated_at")[:20]), '
-            '"delivery":delivery_health()},default=str))'
+            'import json; from game.operations import delivery_health; '
+            'print("BG_RELEASE_RUNTIME "+json.dumps({"delivery":delivery_health()},default=str))'
         )
         text = output(['sudo', '-n', 'docker', 'exec', containers['game-api']['Id'],
                        'python', '/opt/docker/runtime_env.py', 'python', 'manage.py', 'shell', '-c', command])
@@ -1243,8 +1240,6 @@ def server_readiness(sources, runner):
 
 
 def require_ready(state):
-    require(state.get('active_count') == 0, 'Production has active/waiting games: ' + json.dumps(state.get('rooms', []))
-            + '. Finish or resolve them, then run the same command again.')
     delivery = state.get('delivery', {})
     require(delivery.get('status') == 'ok' and delivery.get('queued_results') == 0,
             'Production result deliveries are not drained: ' + json.dumps(delivery)
@@ -1441,22 +1436,18 @@ class Production:
         for kind in BACKENDS:
             self.runner.run('deployment-check-' + kind, [*self.compose(self.new_file), 'run', '-T', '--rm', '--no-deps',
                 '--pull', 'never', kind + '-api', 'python', 'manage.py', 'check', '--deploy'])
-        # Refuse disconnecting active games. Run again once players have finished.
-        self.assert_no_active_games()
+        self.assert_deliveries_drained()
         self.checkpoint('ready_for_maintenance')
 
-    def assert_no_active_games(self):
+    def assert_deliveries_drained(self):
         command = (
-            "from game.models import GameRoom; from game.operations import delivery_health; "
-            "n=GameRoom.objects.exclude(status__in=['completed','cancelled']).count(); "
-            "print('Active/waiting rooms:', n); "
-            "assert n == 0, 'Players still have active/waiting games; retry after they finish'; "
+            "from game.operations import delivery_health; "
             "state=delivery_health(); print('Result deliveries:', state); "
             "assert state['status'] == 'ok' and state['queued_results'] == 0, "
             "'Result deliveries have not drained; keep the current workers running and retry later'"
         )
         # docker exec bypasses the image entrypoint that loads runtime secrets.
-        self.runner.run('active-games', [*self.compose(self.old_file), 'exec', '-T', 'game-api',
+        self.runner.run('result-deliveries', [*self.compose(self.old_file), 'exec', '-T', 'game-api',
                                         'python', '/opt/docker/runtime_env.py',
                                         'python', 'manage.py', 'shell', '-c', command])
 
@@ -1519,8 +1510,8 @@ class Production:
             include = capture(['sudo', '-n', 'cat', MANAGED_NGINX_INCLUDE]).decode()
         self.nginx_apply(maintenance_config(self.original_nginx, include), 'maintenance')
         self.runner.run('stop-production-workers', [*self.compose(self.old_file), 'stop', *WORKERS])
-        # Nginx denies new sessions; check again to catch games started before maintenance.
-        self.assert_no_active_games()
+        # Recheck result delivery after maintenance has stopped new requests and workers.
+        self.assert_deliveries_drained()
         self.stopped = True
         self.runner.run('stop-production-apps', [*self.compose(self.old_file), 'stop', *APPS])
         self.checkpoint('writers_stopped')

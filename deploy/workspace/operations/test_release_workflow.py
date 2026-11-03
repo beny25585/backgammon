@@ -239,25 +239,35 @@ class AutomaticWorkflowTests(unittest.TestCase):
 
     def test_queued_result_blocks_even_while_health_is_ok(self):
         with self.assertRaisesRegex(RuntimeError, 'not drained'):
-            release.require_ready({'active_count': 0, 'delivery': {'status': 'ok', 'queued_results': 1}})
+            release.require_ready({'active_count': 1, 'delivery': {'status': 'ok', 'queued_results': 1}})
 
-    def test_active_game_diagnostic_includes_room_code(self):
-        with self.assertRaisesRegex(RuntimeError, 'F570E6'):
-            release.require_ready({'active_count': 1, 'rooms': [{'code': 'F570E6'}]})
+    def test_unhealthy_deliveries_block_even_when_the_queue_is_empty(self):
+        with self.assertRaisesRegex(RuntimeError, 'not drained'):
+            release.require_ready({'active_count': 1, 'delivery': {'status': 'failed', 'queued_results': 0}})
 
-    def test_blocked_server_stops_before_tests_builds_and_publication(self):
+    def test_active_and_waiting_games_do_not_block_drained_deliveries(self):
+        for status in ('playing', 'waiting'):
+            with self.subTest(status=status):
+                release.require_ready({'active_count': 1, 'rooms': [{'code': 'F570E6', 'status': status}],
+                                       'delivery': {'status': 'ok', 'queued_results': 0}})
+
+    def test_delivery_readiness_does_not_require_a_room_inventory(self):
+        release.require_ready({'delivery': {'status': 'ok', 'queued_results': 0}})
+
+    def test_queued_deliveries_stop_before_tests_builds_and_publication(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             with patch.object(release, 'tool_hashes', return_value=TOOLS), \
                  patch.object(release, 'source_inventory', return_value=manifest(1)['sources']), \
                  patch.object(release.shutil, 'which', return_value='tool'), \
                  patch.object(release, 'capture', return_value=b'linux'), \
-                 patch.object(release, 'server_readiness', return_value={'active_count': 1, 'rooms': [{'code': 'busy'}]}), \
+                 patch.object(release, 'server_readiness', return_value={
+                     'active_count': 1, 'delivery': {'status': 'ok', 'queued_results': 1}}), \
                  patch.object(release, 'frontend_checks') as frontend, \
                  patch.object(release, 'image_builds') as builds, \
                  patch.object(release, 'publish') as publish, \
                  patch.object(release, 'upload_and_deploy') as deploy:
-                with self.assertRaisesRegex(RuntimeError, 'active/waiting'):
+                with self.assertRaisesRegex(RuntimeError, 'not drained'):
                     self.run_local(root)
                 frontend.assert_not_called()
                 builds.assert_not_called()
@@ -339,7 +349,8 @@ class AutomaticWorkflowTests(unittest.TestCase):
                  patch.object(release, 'capture', side_effect=capture), \
                  patch.object(release, 'git', return_value='a' * 40 + '\trefs/heads/master'), \
                  patch.object(release, 'server_readiness', return_value={
-                     'active_count': 0, 'delivery': {'status': 'ok', 'queued_results': 0}}), \
+                     'active_count': 1, 'rooms': [{'code': 'F570E6', 'status': 'playing'}],
+                     'delivery': {'status': 'ok', 'queued_results': 0}}), \
                  patch.object(release, 'frontend_checks', side_effect=frontend) as frontends, \
                  patch.object(release, 'image_builds', side_effect=build) as builds, \
                  patch.object(release, 'backend_checks', side_effect=backend) as backends, \

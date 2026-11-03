@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import sys
 import tempfile
+from types import ModuleType
 import unittest
 from unittest.mock import Mock, patch
 
@@ -622,6 +623,29 @@ class RuntimeTests(unittest.TestCase):
         production.migrations_started = False
         production.writes_opened = False
         return production
+
+    def test_server_delivery_gate_preserves_drain_and_health_without_reading_rooms(self):
+        production = self.production()
+        production.assert_deliveries_drained()
+        stage, command = production.runner.run.call_args.args
+        self.assertEqual(stage, 'result-deliveries')
+        self.assertIn('/opt/docker/runtime_env.py', command)
+        self.assertEqual(command[-2], '-c')
+        game = ModuleType('game')
+        operations = ModuleType('game.operations')
+        for delivery in ({'status': 'ok', 'queued_results': 0},
+                         {'status': 'ok', 'queued_results': 1},
+                         {'status': 'failed', 'queued_results': 0}):
+            with self.subTest(delivery=delivery):
+                operations.delivery_health = Mock(return_value=delivery)
+                with patch.dict(sys.modules, {'game': game, 'game.operations': operations}), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    if delivery == {'status': 'ok', 'queued_results': 0}:
+                        exec(command[-1], {})
+                    else:
+                        with self.assertRaisesRegex(AssertionError, 'Result deliveries'):
+                            exec(command[-1], {})
+                operations.delivery_health.assert_called_once_with()
 
     def test_failure_before_maintenance_does_not_restart_services(self):
         production = self.production()
