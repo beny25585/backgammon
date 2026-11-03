@@ -1,6 +1,6 @@
-"""Rules carried by the signed game contract, independent of matchmaking."""
+"""Rules carried by signed game and tournament contracts."""
 CONTRACT_KEYS = ('gameFormat', 'maxCube', 'jacoby', 'stake', 'lossLimit',
-                 'doublingAllowed', 'crawfordGame', 'crawfordUsed')
+                 'doublingAllowed', 'crawfordEnabled', 'crawfordGame', 'crawfordUsed')
 
 
 def forfeit_win_type(state, loser, fallback='single', *, reason='leave'):
@@ -29,12 +29,22 @@ def forfeit_win_type(state, loser, fallback='single', *, reason='leave'):
 
 def apply_ticket(state, ticket):
     state['doublingEnabled'] = bool(ticket.get('dbl', True))
-    if 'format' not in ticket:
+    tournament_match = (
+        'format' not in ticket
+        and ticket.get('trn', 0) > 0
+        and ticket.get('fix', 0) > 0
+    )
+    if 'format' not in ticket and not tournament_match:
         return
-    state.update(gameFormat=ticket['format'], maxCube=ticket['cube_max'],
-                 jacoby=ticket['jacoby'], stake=ticket['stake'],
-                 lossLimit=ticket['loss_limit'], doublingAllowed=state['doublingEnabled'],
-                 crawfordGame=ticket['format'] == 'match' and ticket['tp'] == 1,
+    if tournament_match:
+        # Tournament tickets carry match rules without a direct-game stake contract.
+        state['crawfordEnabled'] = True
+    else:
+        state.update(gameFormat=ticket['format'], maxCube=ticket['cube_max'],
+                     jacoby=ticket['jacoby'], stake=ticket['stake'],
+                     lossLimit=ticket['loss_limit'])
+    state.update(doublingAllowed=state['doublingEnabled'],
+                 crawfordGame=(tournament_match or ticket.get('format') == 'match') and ticket['tp'] == 1,
                  crawfordUsed=False)
     if state['crawfordGame']:
         state['doublingEnabled'] = False
@@ -43,7 +53,7 @@ def apply_ticket(state, ticket):
 def carry_contract(previous, fresh, room):
     fresh.update({key: previous[key] for key in CONTRACT_KEYS if key in previous})
     fresh['doublingEnabled'] = previous.get('doublingEnabled', True)
-    if previous.get('gameFormat') == 'match':
+    if previous.get('gameFormat') == 'match' or previous.get('crawfordEnabled', False):
         used = previous.get('crawfordUsed', False) or previous.get('crawfordGame', False)
         crawford = not used and room.target_points - 1 in (room.white_score, room.black_score)
         fresh.update(crawfordUsed=used, crawfordGame=crawford,
