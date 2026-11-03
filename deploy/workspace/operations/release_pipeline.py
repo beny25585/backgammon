@@ -22,9 +22,12 @@ import signal
 import subprocess
 import sys
 import tarfile
+import threading
 import time
 import uuid
 import zipfile
+
+from release_auth import DeploymentAuthentication, run_with_sudo
 
 SERVER_ROOT = Path('/home/dev/backgammon-project')
 SSH_TARGET = 'administrator@38.247.146.17'
@@ -32,6 +35,7 @@ PROJECT = 'backgammon-candidate-da383537b98a4b08b3fe814cd44c880a'
 ORIGIN = 'https://38.247.146.17.nip.io'
 CUTOVER = SERVER_ROOT / 'reports/production-cutover/r8-20261008T081712Z-7a2cfbd7edd9'
 WORKFLOW_VERSION = 2
+TOOL_FILES = ('release_pipeline.py', 'release_test_settings.py', 'release_auth.py')
 SOURCES = {
     'Backgammon Game': ('master', 'beny25585/backgammon', 'backgammon'),
     'backgammon-tournaments': ('master', 'beny25585/backgammon-tournament-ui', 'backgammon-tournament-ui'),
@@ -78,6 +82,8 @@ PROFILES = ('--profile', 'live', '--profile', 'workers', '--profile', 'tournamen
 RESUME_TOOL_FILES = {
     'deploy/workspace/operations/release_pipeline.py',
     'deploy/workspace/operations/release_test_settings.py',
+    'deploy/workspace/operations/release_auth.py',
+    'deploy/workspace/operations/test_release_auth.py',
     'deploy/workspace/operations/test_release_pipeline.py',
     'deploy/workspace/operations/publish_and_deploy.ps1',
     'deploy/workspace/operations/AUTOMATIC_RELEASE.he.md',
@@ -144,23 +150,67 @@ class Runner:
         self.stage = 'preflight'
         self.counter = 0
         self.timings = []
+        self.authentication = None
 
-    def run(self, stage, args, cwd=None, env=None):
+    def prepare_authentication(self):
+        if self.authentication is None:
+            self.authentication = DeploymentAuthentication(SSH_TARGET)
+        return self.authentication
+
+    def close_authentication(self):
+        authentication, self.authentication = self.authentication, None
+        if authentication is not None:
+            authentication.close()
+
+    def run(self, stage, args, cwd=None, env=None, sudo_marker=None):
         self.stage = stage
         self.counter += 1
         log = self.directory / f'{self.counter:03d}-{stage}.log'
         print(f'\n[{stage}] Log: {log}', flush=True)
         started = time.monotonic()
+        remote = Path(str(args[0])).stem.lower() in ('ssh', 'scp')
+        authentication = self.prepare_authentication() if remote else None
+        if authentication is not None:
+            args, env = authentication.prepare_command(args, env)
+        require(sudo_marker is None or authentication is not None,
+                'A sudo handshake requires an authenticated SSH command')
         with log.open('wb') as output:
             log.chmod(0o600)
             process = subprocess.Popen(list(map(str, args)), cwd=cwd, env=env,
+                                       stdin=subprocess.PIPE if remote else None,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            handshake_expired = threading.Event()
+            handshake_timer = None
+            password_sent = False
             try:
+                if authentication is not None:
+                    authentication.authorize_process(process.pid)
+                if sudo_marker is not None:
+                    def expire_handshake():
+                        handshake_expired.set()
+                        if process.poll() is None:
+                            with contextlib.suppress(OSError):
+                                process.terminate()
+                    handshake_timer = threading.Timer(60, expire_handshake)
+                    handshake_timer.daemon = True
+                    handshake_timer.start()
                 for line in iter(process.stdout.readline, b''):
+                    if sudo_marker is not None and line.rstrip(b'\r\n') == sudo_marker.encode('ascii'):
+                        require(not password_sent and not handshake_expired.is_set(),
+                                'Unexpected or expired server authentication handshake')
+                        handshake_timer.cancel()
+                        authentication.send_sudo_password(process.stdin)
+                        password_sent = True
+                        continue
+                    if authentication is not None:
+                        line = authentication.redact(line)
                     output.write(line)
                     output.flush()
                     print(line.decode('utf-8', errors='replace').rstrip(), flush=True)
                 result = process.wait()
+                require(not handshake_expired.is_set(), 'Server authentication handshake timed out')
+                require(sudo_marker is None or password_sent,
+                        'Server authentication did not reach its protected input handshake')
             except BaseException:
                 process.terminate()
                 try:
@@ -170,6 +220,13 @@ class Runner:
                     process.wait()
                 raise
             finally:
+                if handshake_timer is not None:
+                    handshake_timer.cancel()
+                if authentication is not None:
+                    authentication.release_process(process.pid)
+                if process.stdin is not None:
+                    with contextlib.suppress(OSError):
+                        process.stdin.close()
                 process.stdout.close()
         elapsed = round(time.monotonic() - started, 3)
         self.timings.append({'stage': stage, 'seconds': elapsed, 'exit_code': result})
@@ -190,7 +247,7 @@ class Runner:
 
 def tool_hashes():
     tool = Path(__file__).resolve()
-    return {name: sha(tool.with_name(name)) for name in ('release_pipeline.py', 'release_test_settings.py')}
+    return {name: sha(tool.with_name(name)) for name in TOOL_FILES}
 
 
 def print_timing_summary(rows):
@@ -1074,20 +1131,31 @@ def upload_and_deploy(manifest, runner):
     archive = runner.directory / (token + '.zip')
     tool = Path(__file__).resolve()
     with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as bundle:
-        bundle.write(tool, 'release_pipeline.py')
-        bundle.write(tool.with_name('release_test_settings.py'), 'release_test_settings.py')
+        for name in TOOL_FILES:
+            bundle.write(tool.with_name(name), name)
         bundle.writestr('manifest.json', json.dumps(manifest))
     runner.run('upload-release', ['scp', archive, SSH_TARGET + ':' + archive.name])
     bootstrap = (
-        'import hashlib,pathlib,zipfile,os,sys;'
+        'import hashlib,pathlib,zipfile,subprocess,sys;'
         f'p=pathlib.Path({archive.name!r});assert p.is_file() and not p.is_symlink();'
         f'assert hashlib.sha256(p.read_bytes()).hexdigest()=={sha(archive)!r};'
         f'd=pathlib.Path({token!r});d.mkdir(mode=0o700);'
-        'z=zipfile.ZipFile(p);assert set(z.namelist())=={"release_pipeline.py","release_test_settings.py","manifest.json"};'
-        'z.extractall(d);'
-        'os.execv(sys.executable,[sys.executable,str(d/"release_pipeline.py"),"--server","--manifest",str(d/"manifest.json")])'
+        f'z=zipfile.ZipFile(p);assert set(z.namelist())=={set(TOOL_FILES) | {"manifest.json"}!r};'
+        'z.extractall(d)'
     )
-    runner.run('server-pull-build-deploy', ['ssh', '-tt', SSH_TARGET, 'python3 -c ' + shlex.quote(bootstrap)])
+    marker = 'BG_RELEASE_SUDO_READY_' + uuid.uuid4().hex
+    code = (inspect.getsource(run_with_sudo) + '\ndef deploy_release():\n    ' + bootstrap + '\n'
+            + '    child = subprocess.Popen([sys.executable, str(d/"release_pipeline.py"), "--server", "--manifest", str(d/"manifest.json")])\n'
+            + '    try:\n        result = child.wait()\n'
+            + '    except BaseException:\n'
+            + '        if child.poll() is None:\n            child.terminate()\n'
+            + '        child.wait()\n        raise\n'
+            + '    if result:\n        raise RuntimeError("Server deployment failed (exit %s)" % result)\n'
+            + '\nrun_with_sudo(' + repr(marker) + ', deploy_release)\n')
+    encoded = base64.b64encode(code.encode()).decode('ascii')
+    protected = 'import base64;exec(compile(base64.b64decode(' + repr(encoded) + '),"release-authentication","exec"))'
+    runner.run('server-pull-build-deploy', ['ssh', '-tt', SSH_TARGET, 'python3 -c ' + shlex.quote(protected)],
+               sudo_marker=marker)
 
 
 def read_server_state(config):
@@ -1103,7 +1171,7 @@ def read_server_state(config):
             raise RuntimeError(result.stderr.decode('utf-8', errors='replace')[-2000:])
         return result.stdout.decode('utf-8')
 
-    subprocess.run(['sudo', '-v'], check=True)
+    subprocess.run(['sudo', '-n', '-v'], check=True)
     folder = Path(config['root']) / 'reports/auto-releases'
     current = folder / 'current.json'
     if not current.is_file() or current.is_symlink():
@@ -1158,11 +1226,15 @@ def server_readiness(sources, runner):
     config = {'root': SERVER_ROOT.as_posix(), 'project': PROJECT, 'sources': sources,
               'services': list(APPS + WORKERS + ('postgres', 'redis')),
               'apps': list(APPS), 'service_image': SERVICE_IMAGE}
-    code = inspect.getsource(read_server_state) + '\nimport json\nprint("BG_RELEASE_SERVER_STATE " + json.dumps(read_server_state('
-    code += repr(config) + '), ensure_ascii=True))\n'
+    marker = 'BG_RELEASE_SUDO_READY_' + uuid.uuid4().hex
+    code = inspect.getsource(run_with_sudo) + '\n' + inspect.getsource(read_server_state)
+    code += '\nimport json\nrun_with_sudo(' + repr(marker)
+    code += ', lambda: print("BG_RELEASE_SERVER_STATE " + json.dumps(read_server_state('
+    code += repr(config) + '), ensure_ascii=True)))\n'
     encoded = base64.b64encode(code.encode()).decode('ascii')
     bootstrap = 'import base64;exec(compile(base64.b64decode(' + repr(encoded) + '),"release-readiness","exec"))'
-    runner.run('server-readiness', ['ssh', '-tt', SSH_TARGET, 'python3 -c ' + shlex.quote(bootstrap)])
+    runner.run('server-readiness', ['ssh', '-tt', SSH_TARGET, 'python3 -c ' + shlex.quote(bootstrap)],
+               sudo_marker=marker)
     path = runner.directory / f'{runner.counter:03d}-server-readiness.log'
     marker = 'BG_RELEASE_SERVER_STATE '
     lines = [line.split(marker, 1)[1] for line in path.read_text(encoding='utf-8').splitlines() if marker in line]
@@ -1567,6 +1639,8 @@ def legacy_local_main(args):
         if receipt['published']:
             print('Already published commits (retained; no Git rollback): ' + json.dumps(receipt['published']), flush=True)
         raise
+    finally:
+        runner.close_authentication()
 
 
 def server_main(manifest):
@@ -1581,7 +1655,7 @@ def server_main(manifest):
     root.chmod(0o700)
     with (root / '.deployment.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        subprocess.run(['sudo', '-v'], check=True)
+        subprocess.run(['sudo', '-n', '-v'], check=True)
         directory = root / manifest['release_id']
         require(not directory.exists(), 'Release attempt already exists; inspect its receipt')
         runner = Runner(directory)
@@ -1717,6 +1791,7 @@ def automatic_local_main(args):
             print('Published commits retained: ' + json.dumps(receipt['published']), flush=True)
         raise
     finally:
+        runner.close_authentication()
         print_timing_summary(runner.timings)
 
 
