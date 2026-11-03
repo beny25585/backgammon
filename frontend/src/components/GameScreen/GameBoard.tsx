@@ -22,6 +22,7 @@ import {
   type BoardTheme,
 } from "../BoardThemeSelector/boardThemes";
 import GameFrame from "./GameFrame";
+import type { CheckerStyle } from "../Board/materials/checkerStyles";
 import { useFollowingRoll } from "../../hooks/useFollowingRoll";
 import { useForcedMoveNotice } from "../../hooks/useForcedMoveNotice";
 
@@ -44,6 +45,8 @@ interface GameBoardProps {
   timeControl?: import("../../lib/clock").TimeControl | null;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
+  checkerStyle?: CheckerStyle;
+  onCheckerStyleChange?: (style: CheckerStyle) => void;
   noMovesMessage?: NoMovesMessage | null;
   autoConfirmPending?: boolean;
   hasPendingMoves?: () => boolean;
@@ -51,6 +54,7 @@ interface GameBoardProps {
   onSoundEnabledChange?: (enabled: boolean) => void;
   bracketUrl?: string;
   autoRoll?: boolean;
+  autoRollCountdown?: number | null;
   onAutoRollChange?: (enabled: boolean) => void;
 }
 
@@ -81,6 +85,8 @@ export default function GameBoard({
   timeControl,
   boardTheme,
   onBoardThemeChange,
+  checkerStyle,
+  onCheckerStyleChange,
   noMovesMessage,
   autoConfirmPending = false,
   hasPendingMoves,
@@ -88,6 +94,7 @@ export default function GameBoard({
   onSoundEnabledChange,
   bracketUrl,
   autoRoll,
+  autoRollCountdown,
   onAutoRollChange,
 }: GameBoardProps) {
   const [selection, setSelection] = useState<{
@@ -387,14 +394,15 @@ export default function GameBoard({
   }
 
   return (
-    <GameFrame theme={selectedBoardTheme} settings={
+    <GameFrame theme={selectedBoardTheme} checkerStyle={checkerStyle} settings={
       <GameSettingsPanel state={state} onLeave={onLeave} boardTheme={boardTheme}
         onBoardThemeChange={onBoardThemeChange} soundEnabled={soundEnabled}
+        checkerStyle={checkerStyle} onCheckerStyleChange={onCheckerStyleChange}
         onSoundEnabledChange={onSoundEnabledChange} bracketUrl={bracketUrl}
         autoRoll={autoRoll} onAutoRollChange={onAutoRollChange} />
     }>
       {(settingsToggle) => <>
-      <SidePanel state={state} playerColor={playerColor} clock={clock}
+      <SidePanel key={`${noticeScope}:${playerColor}`} state={state} playerColor={playerColor} clock={clock}
         turnStartedAt={turnStartedAt} timeControl={timeControl} settingsToggle={settingsToggle} />
       <div className={`${styles.boardArea} col-start-2 row-start-2`}>
         <Board
@@ -409,6 +417,7 @@ export default function GameBoard({
           onUndo={autoConfirmPending ? undefined : undoMove}
           onConfirm={autoConfirmPending ? undefined : endTurn}
           onRoll={needsToRoll ? onRoll : undefined}
+          autoRollCountdown={autoRollCountdown}
           onOfferDouble={offerDouble}
           autoMove={activeAutoMove}
           turnNotice={visibleTurnNotice}

@@ -23,12 +23,15 @@ export function pointStackMetrics(
   gap: number,
 ): PointStackMetrics {
   const room = Math.max(0, height - paddingTop - paddingBottom - CHECKER_STACK_CLEARANCE_PX);
+  const safeGap = Math.max(0, gap);
+  // Four complete disks must fit before a fifth checker needs to overlap.
+  const fourCheckerDiameter = (room - safeGap * 3) / 4;
   return {
-    diameter: Math.max(0, Math.floor(Math.min(width * 0.95, room))),
+    diameter: Math.max(0, Math.floor(Math.min(width * 0.95, fourCheckerDiameter))),
     height,
     paddingTop,
     paddingBottom,
-    gap,
+    gap: safeGap,
   };
 }
 

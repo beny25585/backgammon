@@ -9,6 +9,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from game.models import GameRoom, GameState, Task
+from game.presence import confirm_tournament_entry, mark_connected
 from game.task_runner import run_task
 
 from . import tests as link_tests
@@ -24,13 +25,15 @@ class StatusEventTransactionTests(SimpleTestCase):
 
 @link_tests.link_settings
 class StatusEventStartTests(link_tests.LinkTestBase):
-    def test_second_seat_queues_one_start_and_reentry_does_not_queue_another(self):
+    def test_confirmed_game_sockets_queue_one_start_and_reentry_does_not_queue_another(self):
         subject = str(uuid.uuid4())
         with patch('game.link.live.httpx.post') as post:
             with self.captureOnCommitCallbacks(execute=True):
                 self.assertEqual(self.enter(link_tests.make_ticket()).status_code, 302)
                 self.assertFalse(Task.objects.filter(name=STATUS_TASK).exists())
                 self.assertEqual(self.enter(link_tests.make_ticket(seat='p2', sub=subject)).status_code, 302)
+                self.assertFalse(Task.objects.filter(name=STATUS_TASK).exists())
+                self.confirm_game_sockets(TournamentLink.objects.get().room)
                 self.assertEqual(self.enter(link_tests.make_ticket(seat='p2', sub=subject)).status_code, 302)
         post.assert_not_called()
         task = Task.objects.get(name=STATUS_TASK)
@@ -43,17 +46,25 @@ class StatusEventStartTests(link_tests.LinkTestBase):
         self.assertEqual(body['started_at'], link.status_started_at.isoformat())
         self.assertEqual(link.status_event_revision, 1)
 
-    def test_failed_outbox_write_rolls_back_second_seat_and_room_start(self):
+    def test_failed_outbox_write_rolls_back_second_confirmation_and_room_start(self):
         self.assertEqual(self.enter(link_tests.make_ticket()).status_code, 302)
+        self.assertEqual(self.enter(link_tests.make_ticket(seat='p2')).status_code, 302)
+        room = TournamentLink.objects.get().room
+        mark_connected(room.pk, 'white-test', 'white', now=100)
+        mark_connected(room.pk, 'black-test', 'black', now=101)
+        room.refresh_from_db()
+        challenge = room.state['presence']['entryChallenge']
+        confirm_tournament_entry(room.pk, 'white-test', challenge, now=102)
         with patch('game.link.live._snapshot_body', side_effect=RuntimeError('outbox failure')):
             with self.assertRaisesMessage(RuntimeError, 'outbox failure'):
-                self.enter(link_tests.make_ticket(seat='p2'))
+                confirm_tournament_entry(room.pk, 'black-test', challenge, now=103)
         link = TournamentLink.objects.select_related('room').get()
         self.assertEqual(link.room.status, 'waiting')
-        self.assertEqual(link.room.players.count(), 1)
+        self.assertEqual(link.room.players.count(), 2)
+        self.assertNotIn('entryReadyChallenge', link.room.state['presence']['connections']['black-test'])
         self.assertEqual(link.status_event_revision, 0)
         self.assertIsNone(link.status_started_at)
-        self.assertEqual(RedeemedTicket.objects.count(), 1)
+        self.assertEqual(RedeemedTicket.objects.count(), 2)
         self.assertFalse(Task.objects.filter(name=STATUS_TASK).exists())
 
 

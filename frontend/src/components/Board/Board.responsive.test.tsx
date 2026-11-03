@@ -157,19 +157,32 @@ for (const vp of VIEWPORTS) {
     }
   });
 
-  test(`dense point checkers fill the point width and stay round (${vp.name})`, async ({ mount, page }) => {
+  test(`four full point checkers stay separated and round (${vp.name})`, async ({ mount, page }) => {
     await page.setViewportSize({ width: vp.width, height: vp.height });
-    const component = await mountBoard(mount, busyState());
-    const point = component.locator('[data-point-idx="23"]');
-    await expect.poll(() => point.evaluate((element: HTMLElement) => {
-      const checker = element.querySelector<HTMLElement>("[data-checker]");
-      if (!checker) return 0;
-      return parseFloat(getComputedStyle(checker).width) / element.clientWidth;
-    })).toBeGreaterThan(0.9);
-    const dimensions = await point.locator("[data-checker]").first().evaluate((element: HTMLElement) => ({
-      width: element.clientWidth, height: element.clientHeight,
-    }));
-    expect(dimensions.width).toBe(dimensions.height);
+    const state = busyState();
+    state.points[23] = 4;
+    state.points[0] = -4;
+    const component = await mountBoard(mount, state);
+    for (const index of [23, 0]) {
+      const point = component.locator(`[data-point-idx="${index}"]`);
+      const checkers = point.locator("[data-checker]");
+      await expect(checkers).toHaveCount(4);
+      await expect.poll(async () => {
+        const boxes = await Promise.all((await checkers.all()).map(boardVerticalBounds));
+        boxes.sort((a, b) => a.top - b.top);
+        return Math.min(...boxes.slice(1).map((box, position) => box.top - boxes[position].bottom));
+      }).toBeGreaterThanOrEqual(0);
+      const bounds = await boardVerticalBounds(point);
+      for (const checker of await checkers.all()) {
+        const box = await boardVerticalBounds(checker);
+        expect(box.top).toBeGreaterThanOrEqual(bounds.top);
+        expect(box.bottom).toBeLessThanOrEqual(bounds.bottom);
+        const dimensions = await checker.evaluate((element: HTMLElement) => ({
+          width: element.clientWidth, height: element.clientHeight,
+        }));
+        expect(dimensions.width).toBe(dimensions.height);
+      }
+    }
   });
 }
 

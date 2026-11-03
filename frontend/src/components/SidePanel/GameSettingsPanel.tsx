@@ -6,12 +6,15 @@ import BoardThemeSelector from "../BoardThemeSelector/BoardThemeSelector";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
 import InstallAppButton from "../InstallAppButton/InstallAppButton";
 import { AutoRoll } from "../autoRoll/AutoRoll";
+import { CHECKER_STYLES, isCheckerStyle, type CheckerStyle } from "../Board/materials/checkerStyles";
 
 interface GameSettingsPanelProps {
   state: GameState;
   onLeave?: (outcome?: "won" | "lost") => void;
   boardTheme?: BoardTheme;
   onBoardThemeChange?: (theme: BoardTheme) => void;
+  checkerStyle?: CheckerStyle;
+  onCheckerStyleChange?: (style: CheckerStyle) => void;
   soundEnabled?: boolean;
   onSoundEnabledChange?: (enabled: boolean) => void;
   bracketUrl?: string;
@@ -23,7 +26,7 @@ const buttonClass = "flex min-h-11 w-full items-center justify-center gap-2 roun
 const actionButtonClass = "flex min-h-12 w-full items-center justify-center rounded-[10px] border px-3 py-2 text-[clamp(13px,1.05cqw,17px)] font-semibold leading-snug focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:min-h-11 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:px-2 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:py-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:text-xs";
 type GameAction = "giveUp" | "leave";
 
-function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, soundEnabled,
+function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, checkerStyle, onCheckerStyleChange, soundEnabled,
   onSoundEnabledChange, bracketUrl, autoRoll, onAutoRollChange }: GameSettingsPanelProps) {
   const { t, direction, locale, toggleLocale } = useI18n();
   const { giveUp } = useGame();
@@ -80,6 +83,30 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, sou
       {boardTheme && onBoardThemeChange && (
         <div>
           <BoardThemeSelector value={boardTheme} onChange={onBoardThemeChange} compact />
+        </div>
+      )}
+      {checkerStyle && onCheckerStyleChange && (
+        <div>
+          <label className="grid gap-1.5 text-start text-[clamp(13px,1.05cqw,16px)] font-normal leading-tight text-white/90 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:gap-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:text-xs">
+            <span>{t("game.checkerStyle")}</span>
+            <span className="relative block">
+              <select
+                value={checkerStyle}
+                dir={direction}
+                data-testid="checker-style-select"
+                onChange={(event) => {
+                  const value = event.target.value;
+                  if (isCheckerStyle(value)) onCheckerStyleChange(value);
+                }}
+                className="min-h-[clamp(44px,5.4cqh,53px)] w-full appearance-none rounded-[10px] border border-white/15 bg-[#101515] py-2 ps-3 pe-9 text-start font-normal text-white/90 hover:border-amber-200/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:min-h-11 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:py-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:ps-2"
+              >
+                {CHECKER_STYLES.map((style) => (
+                  <option key={style} value={style}>{t(`game.checkerStyles.${style}`)}</option>
+                ))}
+              </select>
+              <svg className="pointer-events-none absolute top-1/2 end-3 size-5 -translate-y-1/2 text-[#ebc879]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
+            </span>
+          </label>
         </div>
       )}
       {(onSoundEnabledChange || onAutoRollChange) && (

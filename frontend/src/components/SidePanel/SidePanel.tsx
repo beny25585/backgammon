@@ -1,4 +1,4 @@
-import { memo, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import PlayerRow from "../PlayerRow";
 import Clock from "../Clock";
@@ -7,6 +7,7 @@ import { activePlayerOf, type TimeControl } from "../../lib/clock";
 import { useI18n } from "../../i18n/I18nProvider";
 import { useRoomPlayerDetails } from "../../hooks/useRoomPlayerDetails";
 import GameInfoCard from "./GameInfoCard";
+import PlayerReactionPicker from "../PlayerReactions/PlayerReactionPicker";
 
 interface SidePanelProps {
   state: GameState;
@@ -19,9 +20,17 @@ interface SidePanelProps {
 
 function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl, settingsToggle }: SidePanelProps) {
   const { t } = useI18n();
-  const { whiteName, blackName, matchScore, targetPoints, roomId } = useGame();
+  const { whiteName, blackName, matchScore, targetPoints, roomId,
+    supportsPlayerReactions = false, playerReactionsEnabled = false, playerReactions,
+    sendReaction, reactionCooldownUntil = 0, reactionError = null } = useGame();
+  const scope = `${roomId}:${playerColor}`;
+  const [muteState, setMuteState] = useState<{ scope: string; muted: boolean; ignoredId?: string }>({ scope, muted: false });
+  const muted = muteState.scope === scope && muteState.muted;
   const details = useRoomPlayerDetails(roomId);
   const opponentColor = playerColor === "white" ? "black" : "white";
+  const opponentReaction = playerReactions?.[opponentColor];
+  const visibleOpponentReaction = muted || (muteState.scope === scope && muteState.ignoredId === opponentReaction?.id)
+    ? undefined : opponentReaction;
   const opponentName = playerColor === "white" ? blackName : whiteName;
   const selfName = playerColor === "white" ? whiteName : blackName;
   const opponentLabel = opponentName || t(playerColor === "white" ? "common.blackPlayer" : "common.whitePlayer");
@@ -33,6 +42,7 @@ function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl, sett
       <div className="col-start-1 row-start-1 min-w-0" data-testid="player-details-column">
         <PlayerRow color={opponentColor} state={state} label={opponentLabel}
           active={activeColor === opponentColor} self={false}
+          showReactionSlot={supportsPlayerReactions} reaction={visibleOpponentReaction}
           score={matchScore?.[opponentColor] ?? 0} details={details.players?.[opponentColor]} />
       </div>
         <div className={`col-start-1 row-start-3 min-w-0 self-center py-2 [@container_game-layout_(height<500px)]:py-0 ${timeControl?.delay ? "[@container_game-layout_(height<500px)]:mb-7" : ""}`}>
@@ -49,7 +59,17 @@ function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl, sett
       <div className="col-start-1 row-start-4 min-w-0">
         <PlayerRow color={playerColor} state={state} label={selfLabel}
           active={activeColor === playerColor} self
+          showReactionSlot={supportsPlayerReactions} reaction={playerReactions?.[playerColor]}
           score={matchScore?.[playerColor] ?? 0} details={details.players?.[playerColor]} />
+        {supportsPlayerReactions && sendReaction && <PlayerReactionPicker
+          key={scope}
+          enabled={playerReactionsEnabled}
+          cooldownUntil={reactionCooldownUntil}
+          error={reactionError}
+          muted={muted}
+          onToggleMuted={() => setMuteState({ scope, muted: !muted, ignoredId: opponentReaction?.id })}
+          onSend={sendReaction}
+        />}
       </div>
       <Clock clock={clock} activeColor={activeColor} myColor={playerColor}
         myLabel={selfName || t("common.you")} oppLabel={opponentName || t("common.opponent")}

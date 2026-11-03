@@ -18,6 +18,19 @@ export default function GameSettingsDrawer({ children, settings }: {
   }, [open]);
   const label = t(open ? "game.closeSettings" : "game.openSettings");
 
+  const close = useCallback((animate = false, restoreFocus = true) => {
+    // Move focus before React hides the subtree or applies inert.
+    if (restoreFocus) {
+      toggleRef.current?.focus({ preventScroll: true });
+    } else {
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && drawerRef.current?.contains(focused)) {
+        focused.blur();
+      }
+    }
+    setDrawer({ open: false, animate });
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     function dismissOutside(event: PointerEvent) {
@@ -25,19 +38,15 @@ export default function GameSettingsDrawer({ children, settings }: {
       if (!(target instanceof Node) || drawerRef.current?.contains(target) ||
         toggleRef.current?.contains(target)) return;
       // Let the clicked control receive focus and its normal pointer action.
-      setDrawer({ open: false, animate: true });
+      close(true, false);
     }
     document.addEventListener("pointerdown", dismissOutside, true);
     return () => document.removeEventListener("pointerdown", dismissOutside, true);
-  }, [open]);
+  }, [open, close]);
 
   function toggle(event: MouseEvent<HTMLButtonElement>) {
-    setDrawer({ open: !open, animate: event.detail > 0 });
-  }
-
-  function close(animate = false) {
-    setDrawer({ open: false, animate });
-    toggleRef.current?.focus();
+    if (open) close(event.detail > 0);
+    else setDrawer({ open: true, animate: event.detail > 0 });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {

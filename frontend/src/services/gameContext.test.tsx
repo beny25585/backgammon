@@ -191,6 +191,61 @@ async function mountProbe(
   return component;
 }
 
+test("tournament startup needs authoritative confirmation beyond two connected seats", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white" gameType="tournament">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, rollingState());
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "player_joined", payload: { playerColor: "black" } });
+    ws.emit({ type: "room_status", payload: {
+      connected: 2, connectedColors: ["white", "black"], status: "waiting",
+    } });
+    ws.emit({ type: "entry_challenge", payload: {
+      challenge: "fresh-start", expiresAt: Date.now() + 5000,
+    } });
+  });
+  await component.getByTestId("roll").click();
+  let sent = await sentMessages(page);
+  expect(sent.filter((message) => message.type === "entry_ready")).toEqual([
+    { type: "entry_ready", payload: { challenge: "fresh-start" } },
+  ]);
+  expect(sent.filter((message) => message.type === "state_update")).toEqual([]);
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "room_started", payload: {} });
+  });
+  await component.getByTestId("roll").click();
+  sent = await sentMessages(page);
+  expect(sent.filter((message) => message.type === "state_update")).toEqual([
+    { type: "state_update", payload: { action: "roll" } },
+  ]);
+});
+
+test("authoritative playing status permits reentry to an already started tournament", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <GameProvider roomId="test-room" playerColor="white" gameType="tournament">
+      <GameProbe from={23} to={19} />
+    </GameProvider>,
+  );
+  await emitInitialState(page, rollingState());
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "room_status", payload: {
+      connected: 2, connectedColors: ["white", "black"], status: "playing",
+    } });
+  });
+  await component.getByTestId("roll").click();
+  expect((await sentMessages(page)).filter((message) => message.type === "state_update")).toEqual([
+    { type: "state_update", payload: { action: "roll" } },
+  ]);
+});
+
 test("initial snapshot scales the online preset and keeps the authoritative bank", async ({
   mount,
   page,

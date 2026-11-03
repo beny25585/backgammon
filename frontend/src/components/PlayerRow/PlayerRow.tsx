@@ -3,6 +3,8 @@ import { useI18n } from "../../i18n/I18nProvider";
 import type { PlayerDetails } from "../../types/playerDetails";
 import PlayerMetrics from "./PlayerMetrics";
 import PlayerScore from "./PlayerScore";
+import PlayerReactionBubble from "../PlayerReactions/PlayerReactionBubble";
+import type { PlayerReaction } from "../../lib/playerReactions";
 
 interface PlayerRowProps {
   color: Color;
@@ -13,6 +15,8 @@ interface PlayerRowProps {
   score?: number;
   details?: PlayerDetails | null;
   showScore?: boolean;
+  showReactionSlot?: boolean;
+  reaction?: PlayerReaction;
 }
 
 export default function PlayerRow({
@@ -24,6 +28,8 @@ export default function PlayerRow({
   score,
   details,
   showScore = true,
+  showReactionSlot = false,
+  reaction,
 }: PlayerRowProps) {
   const { t } = useI18n();
   const initials = label.trim().slice(0, 2).toUpperCase();
@@ -67,6 +73,7 @@ export default function PlayerRow({
           </span>
         )}
       </div>
+      {showReactionSlot && <PlayerReactionBubble reaction={reaction} />}
       <span className="sr-only">
         {t("common.off", { count: state.home[color] })} ·{" "}
         {t("common.bar", { count: state.bar[color] })}

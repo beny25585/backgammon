@@ -1,6 +1,7 @@
 import type { GameState, Color } from "./game";
 import type { Source, Target } from "../lib/backgammon/engine";
 import type { TimeControl } from "../lib/clock";
+import type { PlayerReaction, PlayerReactionId, ReactionError } from "../lib/playerReactions";
 
 export interface OpeningRollResult {
   myDie: number | null;
@@ -88,6 +89,12 @@ export interface GameContextType {
   /** Changes for every initial server snapshot, including rapid reconnects. */
   connectionEpoch?: number;
   opponentConnected: boolean;
+  supportsPlayerReactions?: boolean;
+  playerReactionsEnabled?: boolean;
+  playerReactions?: Partial<Record<Color, PlayerReaction>>;
+  sendReaction?: (id: PlayerReactionId) => boolean;
+  reactionCooldownUntil?: number;
+  reactionError?: ReactionError | null;
   autoConfirmPending?: boolean;
   hasPendingMoves?: () => boolean;
   rematchState?: { status: string; reason?: string } | null;

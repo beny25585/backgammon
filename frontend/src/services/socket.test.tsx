@@ -8,7 +8,7 @@ class FakeWebSocket {
   onopen: (() => void) | null = null;
   onclose: ((event: { code: number; reason: string; wasClean: boolean }) => void) | null = null;
   onerror: (() => void) | null = null;
-  onmessage = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
   constructor(readonly url: string) { FakeWebSocket.instances.push(this); }
   open() { this.readyState = 1; this.onopen?.(); }
   close() { this.fail(1000); }
@@ -60,4 +60,17 @@ test("reports whether an intent was actually sent", async () => {
   expect(service.send("state_update", { action: "move" })).toBe(false);
   await connect("first");
   expect(service.send("state_update", { action: "move" })).toBe(true);
+});
+
+test("messages from a replaced socket cannot reach a new room's handlers", async () => {
+  const first = await connect("first");
+  const oldMessage = first.onmessage!;
+  const oldClose = first.onclose!;
+  await connect("second");
+  const received: unknown[] = [];
+  service.on("entry_challenge", (message) => received.push(message));
+  oldMessage({ data: JSON.stringify({ type: "entry_challenge", payload: {} }) });
+  oldClose({ code: 1006, reason: "", wasClean: false });
+  expect(received).toEqual([]);
+  expect(service.isConnected()).toBe(true);
 });

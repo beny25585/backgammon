@@ -1,0 +1,139 @@
+import { test, expect } from "@playwright/experimental-ct-react";
+import { PlayerReactionPickerHarness } from "./PlayerReactions.story";
+import PlayerReactionBubble from "./PlayerReactionBubble";
+import type { PlayerReaction } from "../../lib/playerReactions";
+
+test.beforeEach(async ({ page }) => {
+  await page.evaluate(() => {
+    localStorage.setItem("backgammon-game-locale", "en");
+    document.documentElement.lang = "en";
+    document.documentElement.dir = "ltr";
+  });
+});
+
+test("keyboard opening puts focus inside the picker and Escape restores its trigger", async ({ mount, page }) => {
+  const component = await mount(<PlayerReactionPickerHarness />);
+  const trigger = component.getByRole("button", { name: "Send a quick reaction" });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  const dialog = page.getByRole("dialog", { name: "Quick reactions" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close reactions" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+});
+
+test("sending closes the picker and blocks another selection until cooldown ends", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2026-11-02T10:00:00Z") });
+  const component = await mount(<PlayerReactionPickerHarness />);
+  const trigger = component.getByRole("button", { name: "Send a quick reaction" });
+  await trigger.click();
+  const dialog = page.getByRole("dialog", { name: "Quick reactions" });
+  await dialog.getByRole("button", { name: "Good luck", exact: true }).click();
+  await expect(component.getByTestId("sent-reaction")).toHaveText("good_luck");
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+  await trigger.click();
+  await expect(dialog.getByRole("button", { name: "Thanks", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("button", { name: "Applause", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("status")).toHaveText("Wait a moment before sending again");
+  await page.clock.runFor(3001);
+  await expect(dialog.getByRole("button", { name: "Thanks", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Applause", exact: true })).toBeEnabled();
+});
+
+test("muting stays available during cooldown and announces its pressed state", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2026-11-02T10:00:00Z") });
+  const component = await mount(<PlayerReactionPickerHarness />);
+  await component.getByRole("button", { name: "Send a quick reaction" }).click();
+  const dialog = page.getByRole("dialog", { name: "Quick reactions" });
+  await dialog.getByRole("button", { name: "Thanks", exact: true }).click();
+  await component.getByRole("button", { name: "Send a quick reaction" }).click();
+  await expect(dialog.getByRole("button", { name: "Thanks", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Mute opponent reactions", exact: true }).click();
+  const unmute = dialog.getByRole("button", { name: "Unmute opponent reactions", exact: true });
+  await expect(unmute).toHaveAttribute("aria-pressed", "true");
+  await unmute.click();
+  await expect(dialog.getByRole("button", { name: "Mute opponent reactions", exact: true })).toHaveAttribute("aria-pressed", "false");
+});
+
+test("Hebrew labels and direction are applied to the complete picker", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.setItem("backgammon-game-locale", "he"));
+  const component = await mount(<PlayerReactionPickerHarness />);
+  await component.getByRole("button", { name: "שליחת תגובה מהירה" }).click();
+  const dialog = page.getByRole("dialog", { name: "תגובות מהירות" });
+  await expect(dialog).toHaveAttribute("dir", "rtl");
+  await expect(dialog.getByRole("button", { name: "בהצלחה", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "מחיאות כפיים", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "השתקת תגובות היריב", exact: true })).toBeVisible();
+});
+
+test("losing availability closes an open picker and disables sending", async ({ mount, page }) => {
+  const component = await mount(<PlayerReactionPickerHarness />);
+  await component.getByRole("button", { name: "Send a quick reaction" }).click();
+  await expect(page.getByRole("dialog", { name: "Quick reactions" })).toBeVisible();
+  await component.update(<PlayerReactionPickerHarness enabled={false} />);
+  await expect(page.getByRole("dialog", { name: "Quick reactions" })).not.toBeVisible();
+  await expect(component.getByRole("button", { name: "Send a quick reaction" })).toBeDisabled();
+});
+
+test("a failed send keeps the picker open with its error and permits retry", async ({ mount, page }) => {
+  const component = await mount(<PlayerReactionPickerHarness sendSucceeds={false} />);
+  await component.getByRole("button", { name: "Send a quick reaction" }).click();
+  const dialog = page.getByRole("dialog", { name: "Quick reactions" });
+  await dialog.getByRole("button", { name: "Thanks", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("status")).toHaveText("Reactions are temporarily unavailable");
+  await expect(component.getByTestId("sent-reaction")).toHaveText("none");
+  await expect(dialog.getByRole("button", { name: "Thanks", exact: true })).toBeEnabled();
+});
+
+test("a delayed server error exposes a retry trigger without changing its height", async ({ mount, page }) => {
+  const component = await mount(<PlayerReactionPickerHarness />);
+  const trigger = component.getByRole("button", { name: "Send a quick reaction" });
+  const initialBox = await trigger.boundingBox();
+  await trigger.click();
+  await page.getByRole("dialog", { name: "Quick reactions" }).getByRole("button", { name: "Thanks", exact: true }).click();
+  await component.update(<PlayerReactionPickerHarness serverError="unavailable" />);
+  const retry = component.getByRole("button", { name: "Try sending a reaction again" });
+  await expect(retry).toHaveText("Try again");
+  await expect(component.getByRole("status").filter({ hasText: "Reactions are temporarily unavailable" })).toHaveText("Reactions are temporarily unavailable");
+  expect((await retry.boundingBox())?.height).toBe(initialBox?.height);
+  await retry.click();
+  await expect(page.getByRole("dialog", { name: "Quick reactions" })).toBeVisible();
+});
+
+test("bubble arrival and removal preserve its slot height and surrounding content position", async ({ mount }) => {
+  const reaction: PlayerReaction = {
+    id: "bubble-1", roomId: "room-a", color: "black", reactionId: "nice_move", expiresAt: Date.now() + 4000,
+  };
+  const component = await mount(<div><PlayerReactionBubble /><p data-testid="following-content">Score and clock</p></div>);
+  const slot = component.getByTestId("player-reaction-slot");
+  const content = component.getByTestId("following-content");
+  const initialSlot = await slot.boundingBox();
+  const initialContent = await content.boundingBox();
+  expect(initialSlot?.height).toBeGreaterThan(0);
+
+  await component.update(<div><PlayerReactionBubble reaction={reaction} /><p data-testid="following-content">Score and clock</p></div>);
+  await expect(component.getByTestId("player-reaction-black")).toHaveText("Nice move");
+  expect((await slot.boundingBox())?.height).toBe(initialSlot?.height);
+  expect((await content.boundingBox())?.y).toBe(initialContent?.y);
+  await component.update(<div><PlayerReactionBubble /><p data-testid="following-content">Score and clock</p></div>);
+  await expect(component.getByTestId("player-reaction-black")).toHaveCount(0);
+  expect((await slot.boundingBox())?.height).toBe(initialSlot?.height);
+  expect((await content.boundingBox())?.y).toBe(initialContent?.y);
+});
+
+test("a reduced-motion bubble uses a stable vertical position and accessible emoji label", async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const component = await mount(<PlayerReactionBubble reaction={{
+    id: "bubble-emoji", roomId: "room-a", color: "white", reactionId: "clap", expiresAt: Date.now() + 4000,
+  }} />);
+  const bubble = component.getByTestId("player-reaction-white");
+  await expect(bubble).toHaveText("👏");
+  await expect(component.getByRole("status")).toHaveText("Applause");
+  const slotBox = await component.getByTestId("player-reaction-slot").boundingBox();
+  const bubbleBox = await bubble.boundingBox();
+  expect(bubbleBox?.y).toBe(slotBox?.y);
+});

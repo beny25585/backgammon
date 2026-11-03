@@ -211,8 +211,8 @@ def enter_link(request):
                    missing_colors=missing_colors, missing_seats=missing_seats)
     if started:
         _entry_log(request, 'game_started', ticket=ticket, room=room, color=seated.color)
-        # The room starts when the second seat is filled, not when that player's socket opens,
-        # which is what wakes the first player out of the waiting room.
+        # Direct-play rooms still start when the second seat is filled.
+        # Tournament rooms start after both game sockets confirm a fresh round.
         channel_layer = get_channel_layer()
         if channel_layer:
             async_to_sync(channel_layer.group_send)(
@@ -406,6 +406,9 @@ def _sync_waiting_room_from_ticket(room, ticket):
 def _start_if_full(room):
     """Flip a full room to `playing`. Returns whether this call was the one that started it."""
     if room.status != 'waiting' or room.players.count() < 2:
+        return False
+    if TournamentLink.objects.filter(room_id=room.pk, tournament_id__gt=0).exists():
+        # Tournament seats reserve admission; visible game sockets confirm start.
         return False
     room.status = 'playing'
     room.save(update_fields=['status', 'updated_at'])

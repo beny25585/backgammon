@@ -25,7 +25,7 @@ from .server_actions import (
 from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
                        mark_disconnected, mark_heartbeat, needs_admin_adjudication,
                        both_players_connected, connected_colors,
-                       STALE_SECONDS)
+                       STALE_SECONDS, confirm_tournament_entry, cancel_tournament_entry)
 from .link.rematch import RematchServiceError, send_direct_play_rematch_action
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
@@ -33,6 +33,9 @@ from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
 from .game_service import RoomCancellationError, cancel_waiting_room
 
 from .inactivity import ensure_inactivity_check, refresh_after_action
+from .reactions import (
+    REACTION_DURATION_MS, ReactionError, create_player_reaction,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -392,6 +395,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             'payload': state_data,
             'playerColor': self.player_color,
             'initial': True,
+            'supportsPlayerReactions': not self.is_ai,
             'players': players,
             'timeControl': room.time_control,
             'targetPoints': room.target_points,
@@ -565,15 +569,25 @@ class GameConsumer(AsyncWebsocketConsumer):
         await asyncio.sleep(40)
         await database_sync_to_async(check_room_presence)(self.room_id)
 
-    @serialized_room_operation
     async def receive(self, text_data):
+        try:
+            data = json.loads(text_data)
+        except (TypeError, ValueError):
+            return await self._receive_gameplay(text_data)
+        if isinstance(data, dict) and data.get('type') == 'player_reaction':
+            # A Redis interruption must not hold the room's gameplay lock.
+            return await self._handle_player_reaction(data.get('payload', {}))
+        return await self._receive_gameplay(text_data, data=data)
+
+    @serialized_room_operation
+    async def _receive_gameplay(self, text_data, *, data=None):
         receive_started = time_module.perf_counter()
 
         receive_epoch_ms = int(time_module.time() * 1000)
         receive_context_ms = 0
         receive_dispatch_ms = 0
         try:
-            data = json.loads(text_data)
+            data = json.loads(text_data) if data is None else data
             message_type = data.get('type')
             payload = data.get('payload', {})
 
@@ -596,7 +610,15 @@ class GameConsumer(AsyncWebsocketConsumer):
                 }))
                 return
 
-            if message_type == 'state_update':
+            if message_type == 'entry_ready':
+                challenge = payload.get('challenge') if isinstance(payload, dict) else None
+                if await database_sync_to_async(confirm_tournament_entry)(
+                    self.room_id, self.channel_name, challenge,
+                ):
+                    await self._broadcast_room_status()
+            elif message_type == 'entry_not_ready':
+                await database_sync_to_async(cancel_tournament_entry)(self.room_id, self.channel_name)
+            elif message_type == 'state_update':
                 dispatch_started = time_module.perf_counter()
                 await self._handle_intent(data, context=(room, game_state))
                 receive_dispatch_ms = int(
@@ -666,6 +688,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if not room:
             logger.warning(f"WS intent for missing room: {self.room_id}")
             return await self._send_error('Room not found')
+        if room.status == 'waiting':
+            return await self._send_error('entry_waiting_for_players')
 
         payload = data.get('payload') if isinstance(
             data.get('payload'), dict) else {}
@@ -1804,6 +1828,45 @@ class GameConsumer(AsyncWebsocketConsumer):
             stored, winner, stored['winType'], 'time', force_close=True
         )
 
+    async def _handle_player_reaction(self, payload):
+        try:
+            reaction = await create_player_reaction(
+                self.room_id, self.user_id, self.player_color, payload,
+            )
+            # A distinct group event keeps reactions outside the spectator
+            # allowlist, game history, state updates and reconnect snapshots.
+            await self.channel_layer.group_send(self.room_group_name, {
+                'type': 'player_reaction', 'payload': reaction,
+            })
+        except ReactionError as exc:
+            error = {'reason': exc.reason, 'roomId': str(self.room_id)}
+            if exc.retry_after_ms is not None:
+                error['retryAfterMs'] = exc.retry_after_ms
+            await self.send(json.dumps({
+                'type': 'player_reaction_error', 'payload': error,
+            }))
+        except Exception:
+            logger.exception('Player reaction unavailable room=%s', self.room_id)
+            await self.send(json.dumps({
+                'type': 'player_reaction_error',
+                'payload': {'reason': 'unavailable', 'roomId': str(self.room_id)},
+            }))
+
+    async def player_reaction(self, event):
+        payload = event['payload']
+        if payload.get('roomId') != str(self.room_id):
+            return
+        remaining_ms = min(
+            REACTION_DURATION_MS,
+            payload['expiresAt'] - int(time_module.time() * 1000),
+        )
+        if remaining_ms <= 0:
+            return
+        await self.send(json.dumps({
+            'type': 'player_reaction',
+            'payload': {**payload, 'remainingMs': remaining_ms},
+        }))
+
     async def _send_error(self, message, action=None):
         response = {
             'type': 'error',
@@ -1819,12 +1882,14 @@ class GameConsumer(AsyncWebsocketConsumer):
         colors = list(_connected_user_colors.get(
             self.room_group_name, {}).values())
         count = len(connected)
+        room = await get_room(self.room_id)
         await self.channel_layer.group_send(
             self.room_group_name,
             {
                 'type': 'room_status',
                 'connected': count,
                 'connectedColors': colors,
+                'status': room.status if room else None,
             }
         )
 
@@ -1883,8 +1948,12 @@ class GameConsumer(AsyncWebsocketConsumer):
             'payload': {
                 'connected': event.get('connected'),
                 'connectedColors': event.get('connectedColors', []),
+                'status': event.get('status'),
             }
         }))
 
     async def room_started(self, event):
         await self.send(json.dumps({'type': 'room_started', 'payload': {}}))
+
+    async def entry_challenge(self, event):
+        await self.send(json.dumps({'type': 'entry_challenge', 'payload': event['payload']}))

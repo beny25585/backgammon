@@ -27,7 +27,7 @@ function measureBoard(root: HTMLDivElement): BoardSkinLayout | null {
 
 export default function PixiBoardSkin({ rootRef }: { rootRef: RefObject<HTMLDivElement | null> }) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const { enabled, theme, ready, publish } = useBoardMaterials();
+  const { enabled, theme, checkerStyle, ready, publish } = useBoardMaterials();
 
   useEffect(() => {
     const root = rootRef.current;
@@ -61,12 +61,12 @@ export default function PixiBoardSkin({ rootRef }: { rootRef: RefObject<HTMLDivE
 
     void import("./boardSkinRenderer").then((module) => {
       if (!active) return null;
-      return module.createBoardSkinRenderer(boardMaterialThemes[theme], controller.signal);
+      return module.createBoardSkinRenderer(boardMaterialThemes[theme], controller.signal, checkerStyle);
     }).then((created) => {
       if (!created) return;
       if (!active) { created.destroy(); return; }
       renderer = created;
-      materialImages = { theme, checkerImages: created.checkerImages, diceImages: created.diceImages };
+      materialImages = { theme, checkerStyle, checkerImages: created.checkerImages, diceImages: created.diceImages };
       host.appendChild(created.canvas);
       observer = new ResizeObserver(schedule);
       observer.observe(root);
@@ -88,8 +88,8 @@ export default function PixiBoardSkin({ rootRef }: { rootRef: RefObject<HTMLDivE
       renderer?.destroy();
       publish(null);
     };
-  }, [enabled, theme, publish, rootRef]);
+  }, [enabled, theme, checkerStyle, publish, rootRef]);
 
-  return enabled ? <div ref={hostRef} aria-hidden="true" data-testid="pixi-board-skin" data-theme={theme} data-ready={String(ready)}
+  return enabled ? <div ref={hostRef} aria-hidden="true" data-testid="pixi-board-skin" data-theme={theme} data-checker-style={checkerStyle} data-ready={String(ready)}
     className={`pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-[inherit] [&>canvas]:block [&>canvas]:size-full ${ready ? "opacity-100" : "opacity-0"}`} /> : null;
 }

@@ -10,19 +10,22 @@ import charcoalLeather from "../../assets/6b-charcoal-leather.png";
 import BoardMaterialProvider from "../Board/materials/BoardMaterialProvider";
 import { boardMaterialThemes } from "../Board/materials/boardMaterialThemes";
 import GameSettingsDrawer from "../SidePanel/GameSettingsDrawer";
+import { DEFAULT_CHECKER_STYLE, type CheckerStyle } from "../Board/materials/checkerStyles";
 
 export default function GameFrame({
   children,
   theme = DEFAULT_BOARD_THEME,
+  checkerStyle = DEFAULT_CHECKER_STYLE,
   settings,
 }: {
   children: ReactNode | ((settingsToggle: ReactNode) => ReactNode);
   theme?: BoardTheme;
+  checkerStyle?: CheckerStyle;
   settings?: ReactNode;
 }) {
   // Fill the available width and cap the height to the available space.
   return (
-    <BoardMaterialProvider enabled theme={theme}>
+    <BoardMaterialProvider enabled theme={theme} checkerStyle={checkerStyle}>
     <div className="@container/game-layout grid size-full min-h-0 min-w-0 place-items-center [container-type:size]">
       <div
         className={`${styles.gameFrame} ${boardThemeClasses[theme]} grid h-[min(100cqh,calc(100cqw/1.6))] w-full min-w-0 grid-cols-[var(--player-rail-width)_minmax(0,1fr)] grid-rows-[0px_minmax(0,1fr)_0px] gap-x-0 bg-[#090b0b] text-[#efe4ca] [--player-rail-width:clamp(88px,12cqw,192px)] [font-family:'6B_Heebo',Arial,sans-serif] selection:bg-[#c8a66a] selection:text-[#17130c]`}

@@ -1,9 +1,15 @@
 import { test, expect } from "@playwright/experimental-ct-react";
 import { barStackMetrics, barStackOffset, pointStackMetrics, pointStackOffset } from "./checkerStackGeometry";
 
-test("dense stacks keep wide round checkers inside the point by overlapping", () => {
+test("dense stacks fit four full checkers and overlap the fifth inside the point", () => {
   const layout = pointStackMetrics(60, 150, 3, 3, 2);
-  expect(layout.diameter).toBe(57);
+  expect(layout.diameter).toBe(32);
+  const fullSlots = Array.from({ length: 4 }, (_, index) => pointStackOffset(layout, 4, index, true));
+  for (let index = 1; index < fullSlots.length; index++) {
+    expect(fullSlots[index] - fullSlots[index - 1]).toBeGreaterThanOrEqual(layout.diameter + layout.gap);
+  }
+  expect(fullSlots[0]).toBeGreaterThanOrEqual(3);
+  expect(fullSlots[3] + layout.diameter).toBeLessThanOrEqual(150 - 3 - 8);
   const slots = Array.from({ length: 5 }, (_, index) => pointStackOffset(layout, 5, index, true));
   expect(slots[1] - slots[0]).toBeLessThan(layout.diameter);
   expect(slots[0]).toBeGreaterThanOrEqual(3);
@@ -12,6 +18,7 @@ test("dense stacks keep wide round checkers inside the point by overlapping", ()
 
 test("sparse stacks keep their normal separation when full circles fit", () => {
   const layout = pointStackMetrics(40, 200, 8, 8, 2);
+  expect(layout.diameter).toBe(38);
   const first = pointStackOffset(layout, 2, 0, true);
   const second = pointStackOffset(layout, 2, 1, true);
   expect(second - first - layout.diameter).toBe(2);
@@ -35,9 +42,9 @@ test("large counts use five visible slots without overflowing the point", () => 
   expect(pointStackOffset(layout, 15, 14, true)).toBe(pointStackOffset(layout, 5, 4, true));
 });
 
-test("extremely short points cap one circle to the available height", () => {
+test("extremely short points cap the diameter so four circles fit", () => {
   const layout = pointStackMetrics(100, 40, 3, 3, 2);
-  expect(layout.diameter).toBe(26);
+  expect(layout.diameter).toBe(5);
   for (let index = 0; index < 5; index++) {
     expect(pointStackOffset(layout, 5, index, true) + layout.diameter).toBeLessThanOrEqual(40 - 3 - 8);
   }

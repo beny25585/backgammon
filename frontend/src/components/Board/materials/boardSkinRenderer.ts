@@ -1,5 +1,6 @@
 import {
   Application,
+  Color,
   Container,
   FillGradient,
   Graphics,
@@ -11,13 +12,22 @@ import {
   VERSION,
   type FillInput,
 } from "pixi.js";
-import checkerAtlasUrl from "../../../assets/6b-checker-sprite-atlas.png";
+import polishedCheckerAtlasUrl from "../../../assets/6b-checker-polished-atlas.png";
+import matteCheckerAtlasUrl from "../../../assets/6b-checker-matte-atlas.png";
+import marbleCheckerAtlasUrl from "../../../assets/6b-checker-marble-atlas.png";
 import inlayAtlasUrl from "../../../assets/6b-board-inlay-materials.png";
 import leatherUrl from "../../../assets/6b-charcoal-leather.png";
 import diceBodyAtlasUrl from "../../../assets/6b-dice-body-atlas.png";
 import { createDiceMaterialImages, type DiceMaterialImages } from "./diceMaterialRenderer";
 import { boardMaterialThemes, type BoardMaterialTheme, type MaterialColorRamp } from "./boardMaterialThemes";
 import { createMaterialColorFilter } from "./materialColorFilter";
+import { DEFAULT_CHECKER_STYLE, type CheckerStyle } from "./checkerStyles";
+
+const checkerAtlasUrls: Record<CheckerStyle, string> = {
+  polished: polishedCheckerAtlasUrl,
+  matte: matteCheckerAtlasUrl,
+  marble: marbleCheckerAtlasUrl,
+};
 
 export interface SkinRect {
   x: number;
@@ -83,6 +93,33 @@ const CHECKER_FRAMES = {
   black: { x: 954, y: 67, width: 748, height: 748 },
 } as const;
 
+/** Bake the selected pigment without tinting away the atlas's shadows and reflections. */
+function recolorCheckerMaterial(canvas: HTMLCanvasElement, ramp: MaterialColorRamp | undefined,
+  color: keyof typeof CHECKER_FRAMES) {
+  if (!ramp) return;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Checker material canvas unavailable");
+  const image = context.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = image.data;
+  const dark = new Color(ramp.dark).toRgbArray();
+  const light = new Color(ramp.light).toRgbArray();
+  const pigmentMix = color === "white" ? 0.78 : 0.55;
+  const pigment = dark.map((channel, index) => channel + (light[index] - channel) * pigmentMix);
+  // The ivory and charcoal source faces have different base luminance in this atlas.
+  const sourceBody = color === "white" ? 0.88 : 0.18;
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    if (pixels[offset + 3] === 0) continue;
+    const luminance = (pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722) / 255;
+    const reflection = Math.max(0, Math.min(1, (luminance - sourceBody) / (1 - sourceBody)));
+    const diffuse = Math.min(1, luminance / sourceBody) * (1 - reflection);
+    for (let channel = 0; channel < 3; channel += 1) {
+      pixels[offset + channel] = Math.round(255 * (pigment[channel] * diffuse + 0.98 * reflection));
+    }
+    // ImageData is straight RGBA; leave every alpha byte unchanged.
+  }
+  context.putImageData(image, 0, 0);
+}
+
 function inset(rect: SkinRect, amount: number): SkinRect {
   const depth = Math.min(amount, rect.width / 2, rect.height / 2);
   return { x: rect.x + depth, y: rect.y + depth,
@@ -95,7 +132,8 @@ function validRect(rect: SkinRect): boolean {
 }
 
 /** One owned renderer draws both the reusable checker materials and the board skin. */
-export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardMaterialThemes.charcoalGold, signal?: AbortSignal): Promise<BoardSkinRenderer> {
+export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardMaterialThemes.charcoalGold, signal?: AbortSignal,
+  checkerStyle: CheckerStyle = DEFAULT_CHECKER_STYLE): Promise<BoardSkinRenderer> {
   const canvas = document.createElement("canvas");
   canvas.setAttribute("aria-hidden", "true");
   canvas.classList.add("pointer-events-none");
@@ -178,8 +216,6 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
     const sprite = new Sprite({ texture, anchor: 0.5, x: 256, y: 256, eventMode: "none" });
     sprite.setSize(512, 512);
     const ramp = color === "white" ? theme.checkerLight : theme.checkerDark;
-    const filter = ramp ? createMaterialColorFilter(ramp) : null;
-    if (filter) sprite.filters = [filter];
     const mask = new Graphics().circle(256, 256, 256).fill(0xffffff);
     mask.context.batchMode = "batch";
     mask.eventMode = "none";
@@ -192,14 +228,13 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
       const extracted = app.renderer.extract.canvas({ target: group,
         frame: new Rectangle(0, 0, 512, 512), resolution: 1,
         clearColor: [0, 0, 0, 0], antialias: true }) as HTMLCanvasElement;
+      recolorCheckerMaterial(extracted, ramp, color);
       proof.checkerMaterials += 1;
       return extracted.toDataURL("image/png");
     } finally {
       app.stage.removeChild(group);
       sprite.mask = null;
       group.removeChildren();
-      sprite.filters = [];
-      filter?.destroy();
       sprite.destroy();
       mask.destroy();
       group.destroy();
@@ -232,7 +267,7 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
     app.stage.interactiveChildren = false;
     proof.renderer = app.renderer.name;
     const loads = await Promise.allSettled(
-      [checkerAtlasUrl, inlayAtlasUrl, leatherUrl, diceBodyAtlasUrl].map(loadOwnedTexture),
+      [checkerAtlasUrls[checkerStyle], inlayAtlasUrl, leatherUrl, diceBodyAtlasUrl].map(loadOwnedTexture),
     );
     const failure = loads.slice(0, 3).find((result) => result.status === "rejected");
     if (failure?.status === "rejected") throw failure.reason;
@@ -283,10 +318,13 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
         ? [[0, "#010303"], [0.48, "#050807"], [1, "#55594d"]]
         : [[0, shade(base, -0.65)], [0.48, shade(base, -0.4)], [1, shade(base, 0.1)]]));
       const floor = inset(rect, wall);
-      rounded(g, floor, 3, isCharcoal ? dark ? 0x070b0c : 0x111617 : base);
+      rounded(g, floor, 3, linear(floor,
+        [[0, shade(base, 0.065)], [0.4, base], [1, shade(base, -0.16)]]));
+      // The texture is a fine material hint under the lacquer, not raised leather grain.
       rounded(g, floor, 3, { ...leatherPattern,
-        color: isCharcoal ? dark ? 0x303638 : 0x444b4d : base, alpha: isCharcoal ? 0.85 : theme.lightSurface ? 0.24 : 0.4 });
-      rounded(g, floor, 3, linear(floor, [[0, "#00000055"], [0.2, "#00000000"], [1, "#ffffff05"]]));
+        color: base, alpha: dark ? 0.045 : 0.025 });
+      rounded(g, floor, 3, linear(floor,
+        [[0, "#ffffff0c"], [0.28, "#ffffff00"], [1, "#00000018"]]));
       const shadow = Math.min(10, rect.width / 6, rect.height / 6);
       g.rect(floor.x, floor.y, floor.width, shadow).fill(linear({ ...floor, height: shadow },
         [[0, "#000000b3"], [1, "#00000000"]], "vertical"));
@@ -322,9 +360,15 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
           isCharcoal ? [[0, "#4a4e48"], [0.12, "#1c2121"], [0.7, "#151a1b"], [1, "#050809"]]
             : [[0, shade(theme.rim, 0.24)], [0.12, theme.rim], [0.7, shade(theme.rim, -0.08)], [1, shade(theme.rim, -0.6)]]));
         const rim = inset(outer, bevel);
-        rounded(g, rim, 6, isCharcoal ? 0x171c1d : theme.rim);
-        rounded(g, rim, 6, { ...leatherPattern, color: isCharcoal ? 0x555c5d : theme.rim, alpha: isCharcoal ? 0.9 : 0.4 });
-        rounded(g, rim, 6, linear(outer, [[0, "#ffffff12"], [0.3, "#ffffff00"], [1, "#00000047"]]));
+        rounded(g, rim, 6, linear(rim,
+          [[0, shade(theme.rim, 0.08)], [0.38, theme.rim], [1, shade(theme.rim, -0.22)]]));
+        rounded(g, rim, 6, { ...leatherPattern, color: theme.rim, alpha: 0.04 });
+        rounded(g, rim, 6, linear(outer,
+          [[0, "#ffffff24"], [0.16, "#ffffff08"], [0.48, "#ffffff00"], [1, "#00000035"]]));
+        g.moveTo(rim.x + 6, rim.y + 0.6).lineTo(rim.x + rim.width - 6, rim.y + 0.6)
+          .stroke({ width: 0.8, color: 0xfff4d9, alpha: 0.28 });
+        g.moveTo(rim.x + 0.6, rim.y + 6).lineTo(rim.x + 0.6, rim.y + rim.height - 6)
+          .stroke({ width: 0.7, color: 0xffffff, alpha: 0.14 });
 
         recessed(g, layout.field, Math.min(5, bevel));
         for (const point of layout.points) {
@@ -338,21 +382,26 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
               : [[0, "#cbb080"], [0.55, "#bc9a60"], [1, "#a07d43"]]
             : [[0, endpoints[0]], [0.55, endpoints[0]], [1, endpoints[1]]];
           const material = point.light ? ivoryPattern : goldPattern;
-          // Both rows share a fine material grid and the same light direction.
+          // Smooth inlays retain only a trace of the supplied material at small sizes.
           g.poly(vertices, true).fill(linear(point, colors, "horizontal"));
           g.poly(vertices, true).fill({ ...material,
             matrix: material.matrix.clone().scale(0.46, 0.46),
-            color: isCharcoal ? 0xffffff : endpoints[0], alpha: isCharcoal ? point.light ? 0.38 : 0.44 : 0.22 });
-          g.poly(vertices, true).stroke({ width: 0.8, alignment: 1, color: 0x070a09, alpha: 0.72, join: "miter" });
+            color: isCharcoal ? 0xffffff : endpoints[0], alpha: point.light ? 0.065 : 0.08 });
+          g.poly(vertices, true).stroke({ width: 0.9, alignment: 1, color: 0x070a09, alpha: 0.8, join: "miter" });
           g.moveTo(point.x + 0.5, baseY).lineTo(tipX, tipY)
-            .stroke({ width: 0.55, color: 0xfff3ce, alpha: 0.17 });
+            .stroke({ width: 0.65, color: 0xfff3ce, alpha: 0.34 });
           g.moveTo(tipX, tipY).lineTo(point.x + point.width - 0.5, baseY)
-            .stroke({ width: 0.85, color: 0x080a08, alpha: 0.72 });
+            .stroke({ width: 0.9, color: 0x080a08, alpha: 0.8 });
           const baseEdgeY = baseY + (point.top ? 0.75 : -0.75);
           g.moveTo(point.x + 1, baseEdgeY).lineTo(point.x + point.width - 1, baseEdgeY)
             .stroke({ width: 0.7, color: point.top ? 0xfff2ce : 0x080a08,
               alpha: point.top ? 0.14 : 0.55 });
         }
+
+        // One light direction across the field and inlays reads as a sealed, solid surface.
+        const fieldFace = inset(layout.field, Math.min(5, bevel));
+        rounded(g, fieldFace, 3, linear(fieldFace,
+          [[0, "#ffffff14"], [0.24, "#ffffff04"], [0.58, "#ffffff00"], [1, "#0000000d"]]));
 
         const bar = layout.bar;
         rounded(g, bar, 3, 0x020505);
@@ -364,9 +413,9 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
           isCharcoal ? [[0, "#232c2c"], [0.55, "#1b2424"], [1, "#121a1b"]]
             : [[0, shade(theme.bar, 0.07)], [0.55, theme.bar], [1, shade(theme.bar, -0.18)]], "horizontal"));
         rounded(g, barFace, 2, { ...leatherPattern,
-          matrix: leatherPattern.matrix.clone().scale(0.6, 0.6), color: isCharcoal ? 0x565f60 : theme.bar, alpha: isCharcoal ? 0.38 : 0.25 });
+          matrix: leatherPattern.matrix.clone().scale(0.6, 0.6), color: theme.bar, alpha: 0.035 });
         rounded(g, barFace, 2, linear(barFace,
-          [[0, "#ffffff08"], [0.45, "#ffffff00"], [1, "#00000024"]], "horizontal"));
+          [[0, "#ffffff1b"], [0.18, "#ffffff06"], [0.55, "#ffffff00"], [1, "#00000024"]], "horizontal"));
         g.moveTo(bar.x + 2, bar.y + 1.5).lineTo(bar.x + bar.width - 2, bar.y + 1.5)
           .stroke({ width: 0.8, color: 0xdce0d2, alpha: 0.2 });
         g.rect(bar.x + bar.width - 2, bar.y + 2, 1.5, bar.height - 4)

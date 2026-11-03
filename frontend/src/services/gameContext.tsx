@@ -29,11 +29,14 @@ import {
   type Target,
 } from "../lib/backgammon/engine";
 import { getSocketService } from "./socket";
+import { bindTournamentEntryPresence } from "./tournamentEntryPresence";
 import { getAccessToken } from "./auth";
 import { clientLogger } from "./logger";
 import { clearRoom } from "./roomStorage";
 import { useNoMovesNotice } from "../hooks/useNoMovesNotice";
+import { usePlayerReactions } from "../hooks/usePlayerReactions";
 import { parseTimeControl, type TimeControl } from "../lib/clock";
+import { useI18n } from "../i18n/I18nProvider";
 
 export const GameContext = createContext<GameContextType | undefined>(
   undefined,
@@ -106,11 +109,15 @@ export function GameProvider({
   serverUrl,
   onRoomCancelled,
 }: GameProviderProps) {
+  const { t } = useI18n();
+  const connectionErrorText = t("waiting.connectFailed");
+  const connectionErrorTextRef = useRef(connectionErrorText);
   const onRoomCancelledRef = useRef(onRoomCancelled);
 
   useLayoutEffect(() => {
     onRoomCancelledRef.current = onRoomCancelled;
-  }, [onRoomCancelled]);
+    connectionErrorTextRef.current = connectionErrorText;
+  }, [onRoomCancelled, connectionErrorText]);
 
   const [state, setState] = useState<GameState | null>(null);
   const [playerColor, setPlayerColor] = useState<Color>(initialColor);
@@ -129,6 +136,9 @@ export function GameProvider({
   const [reconnected, setReconnected] = useState(false);
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const [opponentConnected, setOpponentConnected] = useState(true);
+  const [reactionsRoom, setReactionsRoom] = useState<string | null>(null);
+  const [entryStartedRoom, setEntryStartedRoom] = useState<string | null>(null);
+  const entryStartedRoomRef = useRef<string | null>(null);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
   const [targetPoints, setTargetPoints] = useState<number | null>(null);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
@@ -165,6 +175,18 @@ export function GameProvider({
   }, [state, gameType]);
 
   const socket = getSocketService(serverUrl);
+  const supportsPlayerReactions = reactionsRoom === roomId;
+  const playerReactionsEnabled = supportsPlayerReactions && !isLoading && opponentConnected &&
+    Boolean(state && state.phase !== "game_over") && !gameResult &&
+    (gameType !== "tournament" || entryStartedRoom === roomId);
+  const {
+    reactions: playerReactions, sendReaction, reactionCooldownUntil, reactionError,
+    receiveReaction, receiveReactionError, resetReactions,
+  } = usePlayerReactions({ roomId, playerColor, socket, enabled: playerReactionsEnabled });
+  const reactionHandlers = useRef({ receiveReaction, receiveReactionError });
+  useLayoutEffect(() => {
+    reactionHandlers.current = { receiveReaction, receiveReactionError };
+  }, [receiveReaction, receiveReactionError]);
   const lastVersionRef = useRef(0);
   const stateRef = useRef(state);
   const authoritativeStateRef = useRef<GameState | null>(null);
@@ -191,11 +213,12 @@ export function GameProvider({
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
       if (gameOverRef.current) return false;
+      if (gameTypeRef.current === "tournament" && entryStartedRoomRef.current !== roomId) return false;
       const sent = socket.send("state_update", payload);
       if (!sent) setError("Connection lost. Please wait for reconnection.");
       return sent;
     },
-    [socket],
+    [socket, roomId],
   );
 
   const fetchFinalizedResult = useCallback(
@@ -294,6 +317,15 @@ export function GameProvider({
     const token = getAccessToken();
 
     let hasReceivedState = false;
+    const entryPresence = initialGameType === "tournament" && token
+      ? bindTournamentEntryPresence(socket, roomId, token, (err) => {
+          setError(err instanceof Error ? err.message : connectionErrorTextRef.current);
+          setIsLoading(false);
+        }, () => {
+          entryStartedRoomRef.current = roomId;
+          setEntryStartedRoom(roomId);
+        })
+      : null;
 
     const connectAndSetup = async () => {
       try {
@@ -335,6 +367,8 @@ export function GameProvider({
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
+            resetReactions();
+            setReactionsRoom(msg.supportsPlayerReactions === true ? roomId : null);
             setConnectionEpoch((epoch) => epoch + 1);
             autoConfirmArmedRef.current = false;
             endTurnInFlightRef.current = false;
@@ -582,6 +616,7 @@ export function GameProvider({
         });
 
         socket.on("player_disconnected", (_message) => {
+          resetReactions();
           const payload = (_message as Record<string, unknown>).payload as
             | { playerColor?: Color }
             | undefined;
@@ -657,6 +692,7 @@ export function GameProvider({
           // the player's turn to roll. Once terminal, surface rejections
           // instead of leaving zero feedback on a stale view.
           if (msg === "Cannot roll now" && !gameOverRef.current) return;
+          if (msg === "entry_waiting_for_players") return;
           if (msg === "Unknown action: reorder_dice") return;
           setError(msg);
           setAiRetrying(false);
@@ -664,6 +700,7 @@ export function GameProvider({
         });
 
         socket.on("game_ended", (message) => {
+          resetReactions();
           const payload = (message as Record<string, unknown>).payload as {
             winner?: Color;
             loser?: Color;
@@ -880,6 +917,14 @@ export function GameProvider({
           });
         });
 
+        socket.on("player_reaction", (message) => reactionHandlers.current.receiveReaction(message));
+        socket.on("player_reaction_error", (message) => reactionHandlers.current.receiveReactionError(message));
+        socket.on("connection_closed", () => {
+          resetReactions();
+          setReactionsRoom(null);
+        });
+
+        if (entryPresence && !entryPresence.canConnect()) return;
         await socket.connect(roomId, token);
         setIsLoading(false);
       } catch (err) {
@@ -897,9 +942,10 @@ export function GameProvider({
     connectAndSetup();
 
     return () => {
+      entryPresence?.dispose();
       socket.removeAllListeners();
     };
-  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves, captureFollowingRoll]);
+  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves, captureFollowingRoll, initialGameType, resetReactions]);
 
   // Tick down the server-authoritative next-game countdown shown in the result
   // overlay. The server owns the actual timer; this is display-only.
@@ -1234,7 +1280,13 @@ export function GameProvider({
         cancelRematch,
         reconnected,
         connectionEpoch,
-        opponentConnected,
+        opponentConnected: opponentConnected && (gameType !== "tournament" || entryStartedRoom === roomId),
+        supportsPlayerReactions,
+        playerReactionsEnabled,
+        playerReactions,
+        sendReaction,
+        reactionCooldownUntil,
+        reactionError,
         timeControl,
         targetPoints,
         clock: state?.clock ?? null,

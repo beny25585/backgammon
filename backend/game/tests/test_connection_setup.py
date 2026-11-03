@@ -98,6 +98,18 @@ class ConnectionSnapshotTests(TestCase):
 
 
 class ConnectionDispatchTests(SimpleTestCase):
+    async def test_waiting_game_cannot_fetch_or_roll_opening_dice(self):
+        consumer = GameConsumer()
+        consumer.room_id = str(uuid.uuid4())
+        consumer._send_error = AsyncMock()
+        room = SimpleNamespace(status='waiting')
+        with patch('game.consumers.get_game_state', AsyncMock()) as state, \
+                patch('game.consumers.fetch_opening_dice', AsyncMock()) as dice:
+            await consumer._handle_intent({'action': 'roll'}, context=(room, None))
+        state.assert_not_awaited()
+        dice.assert_not_awaited()
+        consumer._send_error.assert_awaited_once_with('entry_waiting_for_players')
+
     def consumer(self):
         consumer = GameConsumer()
         room_id = str(uuid.uuid4())

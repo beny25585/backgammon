@@ -123,16 +123,18 @@ export class GameSocketService {
         const wsUrl = token
           ? `${this.url}/ws/game/${roomId}/?token=${token}`
           : `${this.url}/ws/game/${roomId}/`;
-        this.ws = new WebSocket(wsUrl);
+        const current = new WebSocket(wsUrl);
+        this.ws = current;
 
-        this.ws.onopen = () => {
-          if (this.ws?.readyState !== WebSocket.OPEN) return;
+        current.onopen = () => {
+          if (this.ws !== current || current.readyState !== WebSocket.OPEN) return;
           clientLogger.info("WebSocket connected", { roomId });
           this.reconnectAttempts = 0;
           resolve();
         };
 
-        this.ws.onmessage = (event) => {
+        current.onmessage = (event) => {
+          if (this.ws !== current) return;
           const rawReceivedAtPerf = performance.now();
           const rawReceivedAtEpoch = Date.now();
 
@@ -223,11 +225,14 @@ export class GameSocketService {
           }
         };
 
-        this.ws.onerror = () => {
+        current.onerror = () => {
+          if (this.ws !== current) return;
           clientLogger.error("WebSocket connection failed", { roomId });
         };
 
-        this.ws.onclose = (event: CloseEvent) => {
+        current.onclose = (event: CloseEvent) => {
+          if (this.ws !== current) return;
+          this.emit("connection_closed", { roomId });
           if (this.intentionalClose || event.code === 1000) {
             if (!this.intentionalClose) {
               clientLogger.info("WebSocket disconnected", { roomId });

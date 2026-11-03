@@ -34,6 +34,8 @@ class PracticeGameConsumer(GameConsumer):
             data = json.loads(text_data)
         except (ValueError, TypeError):
             return await self._send_error('Invalid message')
+        if isinstance(data, dict) and data.get('type') == 'player_reaction':
+            return await super().receive(text_data)
         if not isinstance(data, dict) or data.get('type') not in ('state_update', 'give_up', 'leave', 'ai_retry'):
             return await self._send_error('Action unavailable in practice')
         lease = await database_sync_to_async(ai.claim)(self.room_id)

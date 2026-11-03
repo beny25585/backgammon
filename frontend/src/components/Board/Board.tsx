@@ -59,6 +59,7 @@ interface BoardProps {
   onUndo?: () => void;
   onConfirm?: () => void;
   onRoll?: () => void;
+  autoRollCountdown?: number | null;
   onOfferDouble?: () => void;
   autoMove?: { id: number; fromPositionKey: string; move: Move } | null;
   inputDisabled?: boolean;
@@ -163,6 +164,7 @@ export function Board({
   onUndo,
   onConfirm,
   onRoll,
+  autoRollCountdown,
   onOfferDouble,
   autoMove,
   inputDisabled = false,
@@ -1004,6 +1006,7 @@ export function Board({
               onUndo={handleUndo}
               onConfirm={onConfirm}
               onRoll={onRoll}
+              autoRollCountdown={autoRollCountdown}
               onDouble={onOfferDouble}
               turnNotice={turnNotice}
               noticeSide={noticeSide}

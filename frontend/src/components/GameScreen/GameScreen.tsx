@@ -10,7 +10,7 @@ import SamsungDarkModeHelp from "../SamsungDarkModeHelp/SamsungDarkModeHelp";
 import { DiceRow } from "../Dice";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color, GameState } from "../../lib/backgammon/engine";
-import { isBarEntryFullyBlocked } from "../../lib/backgammon/engine";
+import { canOfferDouble, isBarEntryFullyBlocked } from "../../lib/backgammon/engine";
 import {
   DEFAULT_BOARD_THEME,
   isBoardTheme,
@@ -19,12 +19,23 @@ import {
 import { boardThemeClasses } from "../BoardThemeSelector/boardThemeClasses";
 import { useGameSounds } from "../../hooks/useGameSounds";
 import { useAutoRoll } from "../../hooks/useAutoRoll";
+import { useStoredPreference } from "../../hooks/useStoredPreference";
+import { useTurnRollActions } from "../../hooks/useTurnRollActions";
+import {
+  DEFAULT_CHECKER_STYLE,
+  isCheckerStyle,
+  type CheckerStyle,
+} from "../Board/materials/checkerStyles";
 
 const BOARD_THEME_STORAGE_KEY = "6b-board-theme";
+const CHECKER_STYLE_STORAGE_KEY = "6b-checker-style";
 
-function initialBoardTheme(): BoardTheme {
-  const saved = window.localStorage.getItem(BOARD_THEME_STORAGE_KEY);
+function parseBoardTheme(saved: string | null): BoardTheme {
   return isBoardTheme(saved) ? saved : DEFAULT_BOARD_THEME;
+}
+
+function parseCheckerStyle(saved: string | null): CheckerStyle {
+  return isCheckerStyle(saved) ? saved : DEFAULT_CHECKER_STYLE;
 }
 
 import type { GameType } from "../../types/context";
@@ -119,7 +130,6 @@ export default function GameScreen({
     playerColor, matchScore, isLoading, reconnected, connectionEpoch,
   });
   const [autoRoll, setAutoRoll] = useAutoRoll();
-  const requestedRollRef = useRef<string | null>(null);
   const handleUndo = useCallback(() => {
     playActionSound("undo");
     undoMove();
@@ -173,7 +183,12 @@ export default function GameScreen({
     }
   }, [gameResult, onLeave, playerColor, handleHome, leaveGame]);
 
-  const [boardTheme, setBoardTheme] = useState<BoardTheme>(initialBoardTheme);
+  const [boardTheme, setBoardTheme] = useStoredPreference(
+    BOARD_THEME_STORAGE_KEY, DEFAULT_BOARD_THEME, parseBoardTheme,
+  );
+  const [checkerStyle, setCheckerStyle] = useStoredPreference(
+    CHECKER_STYLE_STORAGE_KEY, DEFAULT_CHECKER_STYLE, parseCheckerStyle,
+  );
   const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(
     null,
   );
@@ -183,10 +198,6 @@ export default function GameScreen({
     state?.phase === "rolling" ||
     state?.phase === "moving" ||
     state?.phase === "doubling_offered";
-
-  useEffect(() => {
-    window.localStorage.setItem(BOARD_THEME_STORAGE_KEY, boardTheme);
-  }, [boardTheme]);
 
   // The server decides the forfeit. This countdown only makes its 40-second
   // reconnect grace period visible to the player who remains in the room.
@@ -293,22 +304,16 @@ export default function GameScreen({
     !opponentConnected || Boolean(gameResult);
   const blockedOnBar = Boolean(state && isBarEntryFullyBlocked(state, playerColor));
 
-  useEffect(() => {
-    // Keep an in-flight request guarded when StrictMode replays the effects.
-    if (!regularRollKey || error) requestedRollRef.current = null;
-  }, [regularRollKey, error]);
-
-  const handleRoll = useCallback(() => {
-    if (!regularRollKey || rollPaused || requestedRollRef.current === regularRollKey) return;
-    requestedRollRef.current = regularRollKey;
-    rollDice();
-  }, [regularRollKey, rollPaused, rollDice]);
-
-  useEffect(() => {
-    // Resolve a fully closed entry without dice, even with Auto Roll off.
-    if ((!autoRoll && !blockedOnBar) || !regularRollKey || rollPaused || error) return;
-    handleRoll();
-  }, [autoRoll, blockedOnBar, regularRollKey, rollPaused, error, handleRoll]);
+  const { handleRoll, handleOfferDouble, countdownSeconds } = useTurnRollActions({
+    turnKey: regularRollKey,
+    autoRoll,
+    canDouble: Boolean(state && canOfferDouble(state, playerColor, { targetPoints, matchScore })),
+    blockedOnBar,
+    paused: rollPaused,
+    hasError: Boolean(error),
+    rollDice,
+    offerDouble,
+  });
 
   if (showCloseExisting && !gameResult?.matchOver) {
     return (
@@ -530,12 +535,15 @@ export default function GameScreen({
             autoConfirmPending={autoConfirmPending}
             hasPendingMoves={hasPendingMoves}
             endTurn={handleConfirm}
-            offerDouble={offerDouble}
+            offerDouble={handleOfferDouble}
             boardTheme={boardTheme}
             onBoardThemeChange={setBoardTheme}
+            checkerStyle={checkerStyle}
+            onCheckerStyleChange={setCheckerStyle}
             soundEnabled={soundEnabled}
             onSoundEnabledChange={setSoundEnabled}
             autoRoll={autoRoll}
+            autoRollCountdown={countdownSeconds}
             onAutoRollChange={setAutoRoll}
             needsToRoll={needsToRoll}
             onRoll={handleRoll}

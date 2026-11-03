@@ -126,6 +126,22 @@ for (const vp of VIEWPORTS) {
     await expect(settings).toBeHidden();
     await expect(toggle).toBeFocused();
     expect(await board.boundingBox()).toEqual(before);
+
+    await toggle.click();
+    const language = settings.getByRole("combobox", { name: "Language" });
+    await language.focus();
+    await language.evaluate((element) => {
+      element.addEventListener("blur", () => {
+        element.setAttribute("data-drawer-hidden-on-blur",
+          element.closest("[aria-hidden]")?.getAttribute("aria-hidden") ?? "missing");
+      }, { once: true });
+    });
+    await component.getByTestId("player-name-black").click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(language).toHaveAttribute("data-drawer-hidden-on-blur", "false");
+    await expect(settings).toBeHidden();
+    await expect(settings.locator("..")).toHaveAttribute("inert", "");
+    expect(await board.boundingBox()).toEqual(before);
   });
 
 }

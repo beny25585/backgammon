@@ -120,6 +120,16 @@ class LinkTestBase(TestCase):
     def enter(self, token):
         return self.client.get(ENTER_URL, {"ticket": token})
 
+    def confirm_game_sockets(self, room):
+        from game.presence import confirm_tournament_entry, mark_connected
+        mark_connected(room.pk, 'white-test', 'white', now=100)
+        mark_connected(room.pk, 'black-test', 'black', now=101)
+        room.refresh_from_db()
+        challenge = room.state['presence']['entryChallenge']
+        self.assertFalse(confirm_tournament_entry(room.pk, 'white-test', challenge, now=102))
+        self.assertTrue(confirm_tournament_entry(room.pk, 'black-test', challenge, now=103))
+        room.refresh_from_db()
+
     def assertNothingRedeemed(self):
         self.assertEqual(RedeemedTicket.objects.count(), 0)
         self.assertEqual(TournamentLink.objects.count(), 0)
@@ -311,11 +321,11 @@ class EnterLinkTests(LinkTestBase):
             dict(room.players.values_list("player__nickname", "color")),
             {"alice": "white", "bob": "black"})
 
-        # The room starts when the second seat is filled, not when that player opens a socket.
+        # Reserving both tournament seats does not prove either app is still open.
         room.refresh_from_db()
-        self.assertEqual(room.status, "playing")
+        self.assertEqual(room.status, "waiting")
 
-    def test_the_second_seat_wakes_the_first_player(self):
+    def test_second_tournament_seat_waits_for_game_socket_confirmation(self):
         self.enter(make_ticket(sub=str(uuid.uuid4()), seat="p1"))
         with patch("game.link.views.get_channel_layer") as get_layer:
             get_layer.return_value.group_send = AsyncMock()
@@ -323,9 +333,20 @@ class EnterLinkTests(LinkTestBase):
 
         room = TournamentLink.objects.get().room
         group_send = get_layer.return_value.group_send
-        group_send.assert_called_once()
-        self.assertEqual(group_send.call_args[0][0], f"game_{room.id}")
-        self.assertEqual(group_send.call_args[0][1], {"type": "room_started"})
+        group_send.assert_not_called()
+        self.assertEqual(room.status, 'waiting')
+        self.assertIsNone(TournamentLink.objects.get().status_started_at)
+
+    def test_second_direct_play_seat_still_wakes_the_first_player(self):
+        self.enter(make_ticket(sub=str(uuid.uuid4()), seat='p1', trn=0, fix=-482))
+        with patch('game.link.views.get_channel_layer') as get_layer:
+            get_layer.return_value.group_send = AsyncMock()
+            self.enter(make_ticket(sub=str(uuid.uuid4()), seat='p2', trn=0, fix=-482))
+        room = TournamentLink.objects.get().room
+        self.assertEqual(room.status, 'playing')
+        get_layer.return_value.group_send.assert_called_once_with(
+            f'game_{room.id}', {'type': 'room_started'},
+        )
 
     def test_the_first_seat_alone_does_not_start_the_room(self):
         with patch("game.link.views.get_channel_layer") as get_layer:
@@ -967,6 +988,7 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
 
         link = TournamentLink.objects.select_related("room").get()
         room = link.room
+        self.confirm_game_sockets(room)
         state = BackgammonEngine.get_initial_state()
         state.update({"winner": "white", "winType": "single", "cube": 1})
 
@@ -996,6 +1018,7 @@ class LinkedGameFlowPayloadTests(LinkTestBase):
 
         link = TournamentLink.objects.select_related("room").get()
         room = link.room
+        self.confirm_game_sockets(room)
         state = BackgammonEngine.get_initial_state()
         state.update({"winner": "white", "winType": "single", "cube": 1})
 
