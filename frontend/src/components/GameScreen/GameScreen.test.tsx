@@ -314,7 +314,7 @@ for (const playerColor of ["white", "black"] as const) {
     await component.update(screen(playerColor));
     await page.clock.runFor(0);
     await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-    await page.clock.runFor(4000);
+    await page.clock.fastForward(4000);
     await component.update(screen(opponent));
     await expect(component.getByTestId("auto-roll-countdown")).toHaveCount(0);
     await page.clock.fastForward(10000);
@@ -322,10 +322,10 @@ for (const playerColor of ["white", "black"] as const) {
     await component.update(screen(playerColor));
     await page.clock.runFor(0);
     await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-    await page.clock.runFor(4000);
+    await page.clock.fastForward(4000);
     await component.update(screen(playerColor));
     await expect(component.getByTestId("auto-roll-countdown")).toContainText("6s");
-    await page.clock.runFor(5999);
+    await page.clock.fastForward(5999);
     expect(rolls).toBe(0);
     await page.clock.runFor(1);
     await expect.poll(() => rolls).toBe(1);
@@ -336,7 +336,7 @@ for (const playerColor of ["white", "black"] as const) {
     await component.update(screen(playerColor));
     await page.clock.runFor(0);
     await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-    await page.clock.runFor(9999);
+    await page.clock.fastForward(9999);
     expect(rolls).toBe(1);
     await page.clock.runFor(1);
     await expect.poll(() => rolls).toBe(2);
@@ -362,16 +362,16 @@ test("turning auto roll off cancels the pending doubling window", async ({ mount
   );
   await page.clock.runFor(0);
   await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-  await page.clock.runFor(9000);
+  await page.clock.fastForward(9000);
   await component.getByTestId("game-settings-toggle").press("Enter");
   await component.getByTestId("auto-roll-toggle").click();
   await expect(component.getByTestId("auto-roll-countdown")).toHaveCount(0);
-  await page.clock.runFor(10000);
+  await page.clock.fastForward(10000);
   expect(rolls).toBe(0);
   await component.getByTestId("auto-roll-toggle").click();
   await page.clock.runFor(0);
   await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-  await page.clock.runFor(9999);
+  await page.clock.fastForward(9999);
   expect(rolls).toBe(0);
   await page.clock.runFor(1);
   await expect.poll(() => rolls).toBe(1);
@@ -395,8 +395,8 @@ test("club preferences update an open game and stopping auto roll leaves doublin
   );
   await page.clock.runFor(0);
   await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-  await expect(component.getByTestId("board-inner")).toHaveCSS("background-color", "rgb(118, 81, 58)");
-  await page.clock.runFor(9000);
+  await expect(component.getByTestId("board-frame")).toHaveAttribute("data-board-theme", "classicBrown");
+  await page.clock.fastForward(9000);
 
   // Other tabs change the same origin's storage before the browser notifies us.
   await page.evaluate(() => {
@@ -406,12 +406,12 @@ test("club preferences update an open game and stopping auto roll leaves doublin
     window.dispatchEvent(new StorageEvent("storage", { key: "6b-board-theme" }));
   });
   await expect(component.getByTestId("auto-roll-countdown")).toHaveCount(0);
-  await expect(component.getByTestId("board-inner")).toHaveCSS("background-color", "rgb(237, 232, 215)");
-  await page.clock.runFor(10000);
+  await expect(component.getByTestId("board-frame")).toHaveAttribute("data-board-theme", "classicLight");
+  await page.clock.fastForward(10000);
   expect(rolls).toBe(0);
   await component.getByRole("button", { name: "Offer double to opponent", exact: true }).click();
   await expect.poll(() => doubles).toBe(1);
-  await page.clock.runFor(10000);
+  await page.clock.fastForward(10000);
   expect(rolls).toBe(0);
 });
 
@@ -430,14 +430,14 @@ test("offering a double cancels auto roll before the server acknowledges it", as
   const component = await mount(screen());
   await page.clock.runFor(0);
   await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-  await page.clock.runFor(9999);
+  await page.clock.fastForward(9999);
   await component.getByRole("button", { name: "Offer double to opponent", exact: true }).click();
   await expect.poll(() => doubles).toBe(1);
   await expect(component.getByTestId("auto-roll-countdown")).toHaveCount(0);
   await component.update(screen());
   await component.getByRole("button", { name: "Offer double to opponent", exact: true }).click();
   await component.getByTitle("Tap to roll").click();
-  await page.clock.runFor(20001);
+  await page.clock.fastForward(20001);
   expect(rolls).toBe(0);
   expect(doubles).toBe(1);
   await component.update(
