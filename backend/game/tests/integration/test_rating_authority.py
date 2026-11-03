@@ -31,7 +31,7 @@ class LinkedResultAuthorityTests(SimpleTestCase):
         consumer = GameConsumer()
         consumer.room_id = 'room'
         consumer._send_error = AsyncMock()
-        with patch('game.consumers.get_room', AsyncMock(return_value=object())), patch(
+        with patch('game.consumers.get_room', AsyncMock(return_value=SimpleNamespace(status='playing'))), patch(
             'game.consumers.get_game_state', AsyncMock()) as read:
             async_to_sync(consumer._handle_intent)({'payload': {
                 'state': {'phase': 'game_over', 'winner': 'white'}, 'action': 'move'}})

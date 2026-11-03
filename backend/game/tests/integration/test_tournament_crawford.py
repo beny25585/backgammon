@@ -2,7 +2,7 @@
 import uuid
 
 from asgiref.sync import async_to_sync
-from django.test import TestCase
+from django.test import TransactionTestCase
 
 from game.consumers import GameConsumer
 from game.engine import BackgammonEngine
@@ -13,7 +13,7 @@ from game.models import GameState
 
 
 @link_settings
-class TournamentCrawfordTests(TestCase):
+class TournamentCrawfordTests(TransactionTestCase):
     def redeem(self, **claims):
         claims.setdefault('tp', 9)
         response = self.client.get(ENTER_URL, {'ticket': make_ticket(**claims)})

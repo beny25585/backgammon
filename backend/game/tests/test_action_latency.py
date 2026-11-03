@@ -56,7 +56,7 @@ class IntentContextTests(SimpleTestCase):
         self.consumer.room_id = str(uuid.uuid4())
         self.consumer.player_color = 'white'
         self.consumer.send = AsyncMock()
-        self.room = SimpleNamespace(id=self.consumer.room_id)
+        self.room = SimpleNamespace(id=self.consumer.room_id, status='playing')
         state = BackgammonEngine.get_initial_state()
         state.update(phase='moving', turn='white', dice=[3, 5], remaining=[3, 5])
         self.state = SimpleNamespace(state_data=state)

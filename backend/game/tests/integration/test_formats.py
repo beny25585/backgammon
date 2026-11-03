@@ -95,7 +95,7 @@ class FormatEngineTests(SimpleTestCase):
     def test_double_uses_room_score_instead_of_client_supplied_match_context(self):
         state = self.state(tp=3)
         state.update(phase='rolling', turn='white', cube=2)
-        room = SimpleNamespace(target_points=3, white_score=1, black_score=0)
+        room = SimpleNamespace(status='playing', target_points=3, white_score=1, black_score=0)
         consumer = GameConsumer()
         consumer.room_id = 'room'
         consumer.player_color = 'white'
