@@ -3,8 +3,6 @@ import { useI18n } from "../../i18n/I18nProvider";
 import type { PlayerDetails } from "../../types/playerDetails";
 import PlayerMetrics from "./PlayerMetrics";
 import PlayerScore from "./PlayerScore";
-import PlayerReactionBubble from "../PlayerReactions/PlayerReactionBubble";
-import type { PlayerReaction } from "../../lib/playerReactions";
 
 interface PlayerRowProps {
   color: Color;
@@ -15,8 +13,6 @@ interface PlayerRowProps {
   score?: number;
   details?: PlayerDetails | null;
   showScore?: boolean;
-  showReactionSlot?: boolean;
-  reaction?: PlayerReaction;
 }
 
 export default function PlayerRow({
@@ -28,15 +24,13 @@ export default function PlayerRow({
   score,
   details,
   showScore = true,
-  showReactionSlot = false,
-  reaction,
 }: PlayerRowProps) {
   const { t } = useI18n();
   const initials = label.trim().slice(0, 2).toUpperCase();
 
   return (
     <div
-      className="flex w-full min-w-0 flex-col items-center gap-1.5 py-1 text-center text-[#f7f1e7] data-[active=true]:text-[#e6c478] @min-[1200px]/game-layout:py-0 [@container_game-layout_(height<500px)]:grid [@container_game-layout_(height<500px)]:grid-cols-[minmax(0,1fr)_28px] [@container_game-layout_(height<500px)]:gap-0.5 [@container_game-layout_(height<500px)]:py-0.5"
+      className="flex w-full min-w-0 flex-col items-center gap-1.5 py-1 text-center text-[#f7f1e7] data-[active=true]:text-[#e6c478] @min-[1200px]/game-layout:py-0 [@container_game-frame_(height<700px)]:grid [@container_game-frame_(height<700px)]:grid-cols-[minmax(0,1fr)_28px] [@container_game-frame_(height<700px)]:gap-0.5 [@container_game-frame_(height<700px)]:py-0"
       data-player={self ? "self" : "opponent"}
       data-active={active}
       role="group"
@@ -45,7 +39,7 @@ export default function PlayerRow({
       <div className="relative flex w-full min-w-0 flex-col items-center gap-1.5 @min-[1200px]/game-layout:items-start">
         <div className="flex w-full min-w-0 flex-col-reverse items-center gap-1.5 @min-[1200px]/game-layout:w-[100px]">
           <span
-            className="block w-full truncate text-[clamp(11px,10cqw,17px)] font-bold leading-tight [@container_game-layout_(height<500px)]:text-[11px]"
+            className="block w-full truncate text-[clamp(11px,10cqw,17px)] font-bold leading-tight [@container_game-frame_(height<700px)]:text-[11px]"
             data-testid={`player-name-${color}`}
             title={label}
           >
@@ -54,7 +48,7 @@ export default function PlayerRow({
           <span
             aria-hidden="true"
             data-active={active}
-            className="relative grid size-[clamp(30px,min(56cqw,10cqh),96px)] shrink-0 place-items-center rounded-full border border-[#bfa16b]/75 bg-linear-to-br from-[#252a2b] to-[#111516] text-[clamp(14px,16cqw,28px)] font-bold text-[#f1ebdf] data-[active=true]:border-[3px] data-[active=true]:border-[#e6c478] data-[active=true]:text-[#e6c478] [@container_game-layout_(height<500px)]:hidden"
+            className="relative grid size-[clamp(30px,min(56cqw,10cqh),96px)] shrink-0 place-items-center rounded-full border border-[#bfa16b]/75 bg-linear-to-br from-[#252a2b] to-[#111516] text-[clamp(14px,16cqw,28px)] font-bold text-[#f1ebdf] data-[active=true]:border-[3px] data-[active=true]:border-[#e6c478] data-[active=true]:text-[#e6c478] [@container_game-frame_(height<700px)]:hidden"
           >
             {initials}
             <span
@@ -63,17 +57,16 @@ export default function PlayerRow({
           </span>
         </div>
         {details && <div className="w-full @min-[1200px]/game-layout:w-[100px]"><PlayerMetrics details={details} color={color} /></div>}
-        <span aria-hidden="true" className={`absolute right-0 top-6 hidden size-11 rounded-full border-2 border-[#c8a66a] shadow-[0_2px_5px_#00000066,inset_0_1px_2px_#ffffff33] @min-[1200px]/game-layout:block [@container_game-layout_(height<500px)]:hidden ${color === "white" ? "bg-radial-[at_35%_25%] from-[#fff9e6] to-[#c6ab7d]" : "bg-radial-[at_35%_25%] from-[#303638] to-[#030506]"}`} />
+        <span aria-hidden="true" className={`absolute right-0 top-6 hidden size-11 rounded-full border-2 border-[#c8a66a] shadow-[0_2px_5px_#00000066,inset_0_1px_2px_#ffffff33] @min-[1200px]/game-layout:block [@container_game-frame_(height<700px)]:hidden ${color === "white" ? "bg-radial-[at_35%_25%] from-[#fff9e6] to-[#c6ab7d]" : "bg-radial-[at_35%_25%] from-[#303638] to-[#030506]"}`} />
       </div>
       <div className={showScore ? "flex w-full flex-col items-center gap-1.5 @min-[1200px]/game-layout:w-[100px] @min-[1200px]/game-layout:self-start" : "sr-only"}>
         {showScore && <PlayerScore color={color} label={label} score={score ?? 0} />}
         {active && (
-          <span className="w-full max-w-28 rounded-lg bg-linear-to-b from-[#f0d18a] to-[#d1a74e] px-2 py-1 text-[clamp(11px,7cqw,12px)] font-bold leading-tight text-[#201809] [@container_game-layout_(height<500px)]:sr-only">
+          <span className="w-full max-w-28 rounded-lg bg-linear-to-b from-[#f0d18a] to-[#d1a74e] px-2 py-1 text-[clamp(11px,7cqw,12px)] font-bold leading-tight text-[#201809] [@container_game-frame_(height<700px)]:sr-only">
             {self ? t("common.yourTurn") : t("common.theirTurn")}
           </span>
         )}
       </div>
-      {showReactionSlot && <PlayerReactionBubble reaction={reaction} />}
       <span className="sr-only">
         {t("common.off", { count: state.home[color] })} ·{" "}
         {t("common.bar", { count: state.bar[color] })}

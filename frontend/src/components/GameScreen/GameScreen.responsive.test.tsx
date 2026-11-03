@@ -7,6 +7,9 @@ import { assertNoHorizontalOverflow } from "../../test-utils/viewportChecks";
 import type { GameState } from "@/lib/backgammon/engine";
 import type { BoardTheme } from "../BoardThemeSelector/boardThemes";
 import appStyles from "../../App.module.css";
+import type { GameContextType } from "../../types/context";
+import type { TimeControl } from "../../lib/clock";
+import type { Locale } from "../../i18n/messages";
 
 const VIEWPORTS = [
   { name: "mobile-portrait", width: 375, height: 812 },
@@ -45,20 +48,30 @@ function movingState(overrides: Partial<GameState> = {}): GameState {
   };
 }
 
-async function mountBoard(mount: ComponentFixtures["mount"], state: GameState, playerColor: "white" | "black" = "white") {
+async function mountBoard(mount: ComponentFixtures["mount"], state: GameState, playerColor: "white" | "black" = "white", options: {
+  context?: Partial<GameContextType>;
+  clock?: Record<"white" | "black", number>;
+  timeControl?: TimeControl;
+  turnStartedAt?: number;
+  locale?: Locale;
+} = {}) {
   return mount(
     <div className={appStyles.gameContent}>
       <div className={styles.container}>
-        <MockGameWrapper playerColor={playerColor} state={state}>
+        <MockGameWrapper playerColor={playerColor} state={state} context={options.context}>
           <GameBoard
             state={state}
             playerColor={playerColor}
             makeMove={() => {}}
             onLeave={() => {}}
+            clock={options.clock}
+            timeControl={options.timeControl}
+            turnStartedAt={options.turnStartedAt}
           />
         </MockGameWrapper>
       </div>
     </div>,
+    { hooksConfig: { locale: options.locale } },
   );
 }
 
@@ -173,6 +186,60 @@ for (const vp of PANEL_IN_VIEW) {
       `panel bottom should stay within the viewport (${vp.name}, panel bottom ${Math.round(box!.y + box!.height)} vs viewport ${vh})`,
     ).toBeLessThanOrEqual(vh + 1);
   });
+}
+
+for (const viewport of [{ width: 768, height: 600 }, { width: 474, height: 330 }, { width: 1024, height: 768 }]) {
+  for (const locale of ["en", "he"] as const) {
+    test(`compact rail fits the actual frame with reactions, delay and Crawford (${viewport.width}x${viewport.height}, ${locale})`, async ({ mount, page }) => {
+      await page.setViewportSize(viewport);
+      const component = await mountBoard(mount, movingState({
+        gameFormat: "match", crawfordGame: true, doublingEnabled: false,
+      }), "white", {
+        locale,
+        clock: { white: 120_000, black: 120_000 },
+        timeControl: { base: 120_000, delay: 12_000 },
+        turnStartedAt: Date.now(),
+        context: {
+          targetPoints: 9,
+          matchScore: { white: 8, black: 6 },
+          whiteName: "LocalPlayerWithALongName",
+          blackName: "OpponentWithALongName",
+          supportsPlayerReactions: true,
+          playerReactionsEnabled: true,
+          sendReaction: () => true,
+        },
+      });
+      const rail = component.getByTestId("side-panel");
+      const frameBox = await component.getByTestId("board-frame").boundingBox();
+      const railBox = await rail.boundingBox();
+      expect(frameBox).not.toBeNull();
+      expect(railBox).not.toBeNull();
+      expect(frameBox!.height).toBeLessThan(700);
+      const avatars = rail.locator('[data-player] span[aria-hidden="true"][data-active]');
+      await expect(avatars).toHaveCount(2);
+      await expect(avatars.nth(0)).toBeHidden();
+      await expect(avatars.nth(1)).toBeHidden();
+
+      const keyElements = [
+        ...["player-name-white", "player-name-black", "player-score-white", "player-score-black",
+          "clock-my", "clock-opp", "clock-delay", "game-settings-toggle", "match-target", "match-doubling-rule"]
+          .map(id => rail.getByTestId(id)),
+        rail.getByRole("button", { name: locale === "he" ? "שליחת תגובה מהירה" : "Send a quick reaction", exact: true }),
+      ];
+      for (const element of keyElements) {
+        await expect(element).toBeVisible();
+        const box = await element.boundingBox();
+        expect(box).not.toBeNull();
+        for (const bounds of [railBox!, frameBox!]) {
+          expect(box!.x).toBeGreaterThanOrEqual(bounds.x - 1);
+          expect(box!.y).toBeGreaterThanOrEqual(bounds.y - 1);
+          expect(box!.x + box!.width).toBeLessThanOrEqual(bounds.x + bounds.width + 1);
+          expect(box!.y + box!.height).toBeLessThanOrEqual(bounds.y + bounds.height + 1);
+        }
+      }
+      expect(await rail.evaluate(element => element.scrollHeight - element.clientHeight)).toBeLessThanOrEqual(1);
+    });
+  }
 }
 
 test("landscape iPhone safe areas keep the clock and board out of the notch", async ({

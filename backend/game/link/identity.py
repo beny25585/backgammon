@@ -22,20 +22,29 @@ USERNAME_PREFIX = 't_'
 
 def resolve_user(issuer, external_id, display_name=''):
     """
-    Return the local user behind `(issuer, external_id)`, creating it on first sight.
+    Resolve the linked user and save a supplied display name only when it changes.
 
     The created account has an unusable password: it can only ever be entered through a ticket,
     never through the login form.
     """
-    identity = LinkedIdentity.objects.filter(issuer=issuer, external_id=external_id).first()
+    nickname = (display_name or '')[:30]
+    identity = (
+        LinkedIdentity.objects.select_related('user__player')
+        .filter(issuer=issuer, external_id=external_id).first()
+    )
     if identity is not None:
-        return identity.user
+        user = identity.user
+        player = user.player
+        if nickname and player.nickname != nickname:
+            player.nickname = nickname
+            player.save(update_fields=['nickname'])
+        return user
 
     user = User.objects.create_user(username=_available_username(external_id))
     user.set_unusable_password()
     user.save(update_fields=['password'])
 
-    Player.objects.get_or_create(user=user, defaults={'nickname': (display_name or '')[:30]})
+    Player.objects.get_or_create(user=user, defaults={'nickname': nickname})
     LinkedIdentity.objects.create(issuer=issuer, external_id=external_id, user=user)
 
     logger.info(f"link identity created: issuer={issuer} user={user.username} id={user.id}")

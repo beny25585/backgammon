@@ -583,11 +583,47 @@ class IdentityTests(TestCase):
         external_id = str(uuid.uuid4())
 
         first = resolve_user("tournaments", external_id, "alice")
-        second = resolve_user("tournaments", external_id, "renamed")
+        with self.assertNumQueries(2):
+            second = resolve_user("tournaments", external_id, "renamed")
+            self.assertEqual(second.player.nickname, "renamed")
 
         self.assertEqual(first.pk, second.pk)
+        self.assertEqual(first.username, second.username)
+        self.assertEqual(first.player.pk, second.player.pk)
+        self.assertEqual(Player.objects.get(user=second).nickname, "renamed")
         self.assertEqual(LinkedIdentity.objects.count(), 1)
         self.assertEqual(User.objects.count(), 1)
+
+    def test_an_unchanged_display_name_does_not_write(self):
+        external_id = str(uuid.uuid4())
+        user = resolve_user("tournaments", external_id, "alice")
+
+        with self.assertNumQueries(1):
+            resolved = resolve_user("tournaments", external_id, "alice")
+            self.assertEqual(resolved.player.nickname, "alice")
+        self.assertEqual(resolved.pk, user.pk)
+
+    def test_an_updated_long_name_is_compared_after_truncation(self):
+        external_id = str(uuid.uuid4())
+        resolve_user("tournaments", external_id, "alice")
+
+        with self.assertNumQueries(2):
+            resolved = resolve_user("tournaments", external_id, "x" * 100)
+            self.assertEqual(resolved.player.nickname, "x" * 30)
+        self.assertEqual(Player.objects.get(user=resolved).nickname, "x" * 30)
+
+        with self.assertNumQueries(1):
+            resolved = resolve_user("tournaments", external_id, "x" * 30 + "y" * 70)
+            self.assertEqual(resolved.player.nickname, "x" * 30)
+
+    def test_an_absent_display_name_does_not_clear_the_saved_name(self):
+        external_id = str(uuid.uuid4())
+        resolve_user("tournaments", external_id, "alice")
+
+        for display_name in ("", None):
+            with self.subTest(display_name=display_name), self.assertNumQueries(1):
+                resolved = resolve_user("tournaments", external_id, display_name)
+                self.assertEqual(resolved.player.nickname, "alice")
 
     def test_two_issuers_sharing_an_external_id_stay_separate(self):
         external_id = str(uuid.uuid4())

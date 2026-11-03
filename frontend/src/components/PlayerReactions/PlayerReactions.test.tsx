@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/experimental-ct-react";
-import { PlayerReactionPickerHarness } from "./PlayerReactions.story";
+import { BoardReactionsHarness, PlayerReactionPickerHarness } from "./PlayerReactions.story";
 import PlayerReactionBubble from "./PlayerReactionBubble";
 import type { PlayerReaction } from "../../lib/playerReactions";
 
@@ -136,4 +136,46 @@ test("a reduced-motion bubble uses a stable vertical position and accessible emo
   const slotBox = await component.boundingBox();
   const bubbleBox = await bubble.boundingBox();
   expect(bubbleBox?.y).toBe(slotBox?.y);
+});
+
+for (const rotated of [false, true]) {
+  test(`board reactions stay inside their sender's half and clear gameplay (${rotated ? "rotated" : "landscape"})`, async ({ mount, page }) => {
+    await page.setViewportSize({ width: 900, height: 800 });
+    const component = await mount(<BoardReactionsHarness rotated={rotated} />);
+    await expect(component.getByTestId("player-reaction-white")).toBeVisible();
+    await expect(component.getByTestId("player-reaction-black")).toBeVisible();
+    const obstacles = await component.locator('[data-checker], [data-testid="dice-overlay"], button').all();
+
+    for (const [color, side] of [["white", "right"], ["black", "left"]] as const) {
+      const bubble = await component.locator(`[data-board-reaction="${color}"]`).boundingBox();
+      const half = await component.getByTestId(`board-half-${side}`).boundingBox();
+      expect(bubble).not.toBeNull();
+      expect(half).not.toBeNull();
+      expect(bubble!.x).toBeGreaterThanOrEqual(half!.x);
+      expect(bubble!.y).toBeGreaterThanOrEqual(half!.y);
+      expect(bubble!.x + bubble!.width).toBeLessThanOrEqual(half!.x + half!.width);
+      expect(bubble!.y + bubble!.height).toBeLessThanOrEqual(half!.y + half!.height);
+
+      for (const obstacle of obstacles) {
+        const occupied = await obstacle.boundingBox();
+        expect(occupied).not.toBeNull();
+        const intersects = bubble!.x < occupied!.x + occupied!.width && bubble!.x + bubble!.width > occupied!.x
+          && bubble!.y < occupied!.y + occupied!.height && bubble!.y + bubble!.height > occupied!.y;
+        expect(intersects).toBe(false);
+      }
+    }
+  });
+}
+
+test("board reactions yield to newly occupied space and return only when space is free", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 900, height: 800 });
+  const component = await mount(<BoardReactionsHarness />);
+  await expect(component.getByTestId("player-reaction-white")).toBeVisible();
+  await expect(component.getByTestId("player-reaction-black")).toBeVisible();
+  await component.update(<BoardReactionsHarness crowded />);
+  await expect(component.getByTestId("player-reaction-white")).not.toBeVisible();
+  await expect(component.getByTestId("player-reaction-black")).not.toBeVisible();
+  await component.update(<BoardReactionsHarness />);
+  await expect(component.getByTestId("player-reaction-white")).toBeVisible();
+  await expect(component.getByTestId("player-reaction-black")).toBeVisible();
 });

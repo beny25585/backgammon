@@ -33,7 +33,7 @@ test("does not request or display PR during gameplay", async ({ mount, page }) =
   expect(requests).toBe(0);
 });
 
-test("loads rating and balance once and displays money limits for both seats", async ({ mount, page }) => {
+test("loads accounts once in the menu while money limits remain in the rail", async ({ mount, page }) => {
   await page.clock.install();
   let requests = 0;
   await page.route("**/api/rooms/*/player-details/", async (route) => {
@@ -45,46 +45,77 @@ test("loads rating and balance once and displays money limits for both seats", a
   });
   const component = await mount(
     <MockGameWrapper playerColor="black" context={{ roomId: "11111111-1111-1111-1111-111111111111" }}>
-      <SidePanel state={makeState({ gameFormat: "money", stake: "100.00", lossLimit: "1600.00" })} playerColor="black" />
+      <div>
+        <SidePanel state={makeState({ gameFormat: "money", stake: "100.00", lossLimit: "1600.00" })} playerColor="black" />
+        <GameSettingsPanel state={makeState({ gameFormat: "money", stake: "100.00", lossLimit: "1600.00" })} />
+      </div>
     </MockGameWrapper>,
   );
-  await expect(component.locator('[data-player="self"]').getByTestId("player-rating-black")).toHaveText("1063");
-  await expect(component.locator('[data-player="opponent"]').getByTestId("player-rating-white")).toHaveText("1562");
+  const accounts = component.getByTestId("game-player-accounts");
+  await expect(accounts.locator('[data-player="self"]').getByTestId("player-rating-black")).toHaveText("1063");
+  await expect(accounts.locator('[data-player="opponent"]').getByTestId("player-rating-white")).toHaveText("1562");
+  await expect(component.getByTestId("side-panel").getByTestId("player-rating-black")).toHaveCount(0);
+  await expect(component.getByTestId("side-panel").getByTestId("player-balance-white")).toHaveCount(0);
   await expect(component.getByTestId("player-balance-white")).toHaveText("65.8K");
   await expect(component.getByTestId("player-balance-black")).toHaveText("3.77K");
   await expect(component.getByTestId("game-stakes")).toContainText("Stake100");
   await expect(component.getByTestId("game-stakes")).toContainText("Limit1.6K");
   await component.update(
     <MockGameWrapper playerColor="black" context={{ roomId: "11111111-1111-1111-1111-111111111111" }}>
-      <SidePanel state={makeState({ gameFormat: "money", stake: "100.00", lossLimit: "1600.00", remaining: [2], version: 2 })} playerColor="black" />
+      <div>
+        <SidePanel state={makeState({ gameFormat: "money", stake: "100.00", lossLimit: "1600.00", remaining: [2], version: 2 })} playerColor="black" />
+        <GameSettingsPanel state={makeState({ gameFormat: "money", stake: "100.00", lossLimit: "1600.00", remaining: [2], version: 2 })} />
+      </div>
     </MockGameWrapper>,
   );
   await page.clock.runFor(10_000);
   expect(requests).toBe(1);
 });
 
-test("shows the points target and rules without inventing accounts in a local match", async ({ mount }) => {
+test("keeps the target in the rail and moves ordinary rules and progress to the menu", async ({ mount }) => {
   const component = await mount(
-    <MockGameWrapper context={{ targetPoints: 7 }}><SidePanel state={makeState({ gameFormat: "match", doublingEnabled: true })} playerColor="white" /></MockGameWrapper>,
+    <MockGameWrapper context={{ targetPoints: 7 }}>
+      <div>
+        <SidePanel state={makeState({ gameFormat: "match", doublingEnabled: true })} playerColor="white" />
+        <GameSettingsPanel state={makeState({ gameFormat: "match", doublingEnabled: true })} />
+      </div>
+    </MockGameWrapper>,
   );
-  await expect(component.getByTestId("game-info-card")).toBeVisible();
-  await expect(component.getByTestId("match-target")).toHaveText("7 points");
-  await expect(component.getByTestId("match-doubling-rule")).toHaveText("Doubling on");
+  const rail = component.getByTestId("side-panel");
+  const menu = component.getByTestId("game-settings-panel");
+  await expect(rail.getByTestId("game-info-card")).toBeVisible();
+  await expect(rail.getByTestId("match-target")).toHaveText("7 points");
+  await expect(rail.getByTestId("match-doubling-rule")).toHaveCount(0);
+  await expect(rail.getByRole("progressbar")).toHaveCount(0);
+  await expect(menu.getByTestId("match-doubling-rule")).toHaveText("Doubling on");
+  await expect(menu.getByRole("progressbar")).toHaveAttribute("aria-valuemax", "7");
   await expect(component.getByTestId("game-stakes")).toHaveCount(0);
   await expect(component.getByTestId("player-rating-white")).toHaveCount(0);
   await expect(component.getByTestId("player-balance-white")).toHaveCount(0);
 });
 
-test("points rules respect disabled doubling and the Crawford game", async ({ mount }) => {
+test("ordinary rules stay in the menu while Crawford remains visible in the rail", async ({ mount }) => {
   const component = await mount(
-    <MockGameWrapper context={{ targetPoints: 5 }}><SidePanel state={makeState({ doublingEnabled: false })} playerColor="white" /></MockGameWrapper>,
+    <MockGameWrapper context={{ targetPoints: 5 }}>
+      <div>
+        <SidePanel state={makeState({ doublingEnabled: false })} playerColor="white" />
+        <GameSettingsPanel state={makeState({ doublingEnabled: false })} />
+      </div>
+    </MockGameWrapper>,
   );
   await expect(component.getByTestId("match-target")).toHaveText("5 points");
-  await expect(component.getByTestId("match-doubling-rule")).toHaveText("No doubling");
+  await expect(component.getByTestId("side-panel").getByTestId("match-doubling-rule")).toHaveCount(0);
+  await expect(component.getByTestId("game-settings-panel").getByTestId("match-doubling-rule")).toHaveText("No doubling");
   await component.update(
-    <MockGameWrapper context={{ targetPoints: 5 }}><SidePanel state={makeState({ doublingEnabled: true, crawfordGame: true })} playerColor="white" /></MockGameWrapper>,
+    <MockGameWrapper context={{ targetPoints: 5 }}>
+      <div>
+        <SidePanel state={makeState({ doublingEnabled: true, crawfordGame: true })} playerColor="white" />
+        <GameSettingsPanel state={makeState({ doublingEnabled: true, crawfordGame: true })} />
+      </div>
+    </MockGameWrapper>,
   );
-  await expect(component.getByTestId("match-doubling-rule")).toHaveText("Crawford · No doubling");
+  await expect(component.getByTestId("side-panel").getByTestId("match-doubling-rule")).toHaveText("Crawford");
+  await expect(component.getByTestId("side-panel").getByTestId("match-doubling-rule")).toHaveAttribute("aria-label", "Crawford · No doubling");
 });
 
 test("failed account reads can be retried without showing zero balances", async ({ mount, page }) => {
@@ -97,7 +128,7 @@ test("failed account reads can be retried without showing zero balances", async 
   });
   const component = await mount(
     <MockGameWrapper context={{ roomId: "11111111-1111-1111-1111-111111111111" }}>
-      <SidePanel state={makeState()} playerColor="white" />
+      <GameSettingsPanel state={makeState()} />
     </MockGameWrapper>,
   );
   await expect(component.getByRole("button", { name: "Retry rating and balance" })).toBeVisible();

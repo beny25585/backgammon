@@ -25,6 +25,9 @@ import GameFrame from "./GameFrame";
 import type { CheckerStyle } from "../Board/materials/checkerStyles";
 import { useFollowingRoll } from "../../hooks/useFollowingRoll";
 import { useForcedMoveNotice } from "../../hooks/useForcedMoveNotice";
+import { usePlayerReactionControls } from "../../hooks/usePlayerReactionControls";
+import PlayerReactionPicker from "../PlayerReactions/PlayerReactionPicker";
+import BoardPlayerReactions from "../PlayerReactions/BoardPlayerReactions";
 
 interface GameBoardProps {
   state: GameState;
@@ -97,6 +100,7 @@ export default function GameBoard({
   autoRollCountdown,
   onAutoRollChange,
 }: GameBoardProps) {
+  const reactions = usePlayerReactionControls(playerColor);
   const [selection, setSelection] = useState<{
     from: Source | null;
     version: number;
@@ -403,7 +407,8 @@ export default function GameBoard({
     }>
       {(settingsToggle) => <>
       <SidePanel key={`${noticeScope}:${playerColor}`} state={state} playerColor={playerColor} clock={clock}
-        turnStartedAt={turnStartedAt} timeControl={timeControl} settingsToggle={settingsToggle} />
+        turnStartedAt={turnStartedAt} timeControl={timeControl} settingsToggle={settingsToggle}
+        reactionPicker={reactions.pickerProps ? <PlayerReactionPicker key={reactions.scope} {...reactions.pickerProps} /> : null} />
       <div className={`${styles.boardArea} col-start-2 row-start-2`}>
         <Board
           state={state}
@@ -428,6 +433,7 @@ export default function GameBoard({
           hasPendingMoves={hasPendingMoves}
           overlay={
             <>
+              <BoardPlayerReactions reactions={reactions.reactions} names={reactions.names} playerColor={playerColor} />
               {!noMovesMessage && liveDice && (
                 <BoardHalfOverlay side={state.turn === playerColor ? "right" : "left"}>
                   {liveDice}

@@ -82,8 +82,8 @@ export default function Clock({
 
   const rail = layout === "rail";
   const stacked = layout === "stacked";
-  const sideClass = `flex min-h-[clamp(28px,5.1cqh,50px)] min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 tabular-nums [@container_game-layout_(height<500px)]:min-h-7 [@container_game-layout_(height<500px)]:py-1 ${stacked ? "[@container_game-layout_(height<500px)]:flex-row [@container_game-layout_(height<500px)]:justify-between [@container_game-layout_(height<500px)]:px-2" : ""}`;
-  const timeClass = `text-[clamp(15px,18cqw,28px)] font-bold leading-none tracking-tight [@container_game-layout_(height<500px)]:text-base ${stacked ? "shrink-0" : ""}`;
+  const sideClass = `flex min-h-[clamp(28px,5.1cqh,50px)] min-w-0 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 tabular-nums [@container_game-frame_(height<700px)]:min-h-7 [@container_game-frame_(height<700px)]:py-1 ${stacked ? "[@container_game-frame_(height<700px)]:flex-row [@container_game-frame_(height<700px)]:justify-between [@container_game-frame_(height<700px)]:px-2" : ""}`;
+  const timeClass = `text-[clamp(15px,18cqw,28px)] font-bold leading-none tracking-tight [@container_game-frame_(height<700px)]:text-base ${stacked ? "shrink-0" : ""}`;
   const activeClass = "border-2 border-emerald-300 bg-[#10291e] text-emerald-200";
   const idleClass = "border-[#c8a85f] bg-[#211b10] text-[#ffe29a]";
   const lowClass = "low border-red-400/80 bg-[#301517] text-red-300";
@@ -97,7 +97,7 @@ export default function Clock({
         <span className={timeClass} dir="ltr">{formatClock(oppValue)}</span>
       </div>
       {showDelay && (
-        <div className={`flex min-w-0 items-center justify-center gap-2 text-[#c8bda8] ${rail ? "col-start-1 row-start-3 self-end border-t border-white/10 py-2" : stacked ? "px-1 py-0.5" : "flex-col px-1"}`} data-testid="clock-delay">
+        <div className={`flex min-w-0 items-center justify-center gap-2 text-[#c8bda8] ${rail ? "col-start-1 row-start-3 self-end border-t border-white/10 py-2 [@container_game-frame_(height<700px)]:py-0" : stacked ? "px-1 py-0.5" : "flex-col px-1"}`} data-testid="clock-delay">
           <span className="text-[clamp(9px,5cqw,12px)]">{t("common.delay")}</span>
           <span className="text-sm font-semibold tabular-nums text-[#f0ce85]" dir="ltr">{formatSeconds(delayMsLeft)}</span>
         </div>
