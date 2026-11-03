@@ -133,7 +133,7 @@ test("a reduced-motion bubble uses a stable vertical position and accessible emo
   const bubble = component.getByTestId("player-reaction-white");
   await expect(bubble).toHaveText("👏");
   await expect(component.getByRole("status")).toHaveText("Applause");
-  const slotBox = await component.getByTestId("player-reaction-slot").boundingBox();
+  const slotBox = await component.boundingBox();
   const bubbleBox = await bubble.boundingBox();
   expect(bubbleBox?.y).toBe(slotBox?.y);
 });

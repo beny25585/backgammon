@@ -128,7 +128,7 @@ for (const vp of VIEWPORTS) {
     expect(await board.boundingBox()).toEqual(before);
 
     await toggle.click();
-    const language = settings.getByRole("combobox", { name: "Language" });
+    const language = settings.getByRole("combobox", { name: "Language", includeHidden: true });
     await language.focus();
     await language.evaluate((element) => {
       element.addEventListener("blur", () => {
@@ -242,14 +242,10 @@ test("mobile browser slightly insets the whole game", async ({ mount, page }) =>
   expect(gameFrame!.y + gameFrame!.height).toBeLessThanOrEqual(viewport.height - 5);
 });
 
-for (const [theme, expectedAccent] of [
-  ["redGreen", "rgb(143, 38, 51)"],
-  ["blueIvory", "rgb(36, 72, 255)"],
-  ["ivoryGold", "rgb(199, 149, 53)"],
-  ["classicBrown", "rgb(214, 174, 99)"],
-  ["classicLight", "rgb(214, 174, 99)"],
-] as const satisfies ReadonlyArray<readonly [BoardTheme, string]>) {
-  test(`game controls use the ${theme} accent`, async ({ mount, page }) => {
+for (const theme of [
+  "redGreen", "blueIvory", "ivoryGold", "classicBrown", "classicLight",
+] as const satisfies ReadonlyArray<BoardTheme>) {
+  test(`game controls keep a golden roll and red forfeit in the ${theme} theme`, async ({ mount, page }) => {
     await page.setViewportSize({ width: 474, height: 330 });
     const state = movingState({ phase: "rolling", dice: [], remaining: [] });
     const component = await mount(
@@ -282,12 +278,14 @@ for (const [theme, expectedAccent] of [
       probe.remove();
       return color;
     });
-    const rollColor = await component
+    const rollBackground = await component
       .getByTitle("Tap to roll")
       .locator("[data-button-surface]")
-      .evaluate((element) => getComputedStyle(element).backgroundColor);
+      .evaluate((element) => getComputedStyle(element).backgroundImage);
     expect(leaveColor).toBe(dangerColor);
-    expect(rollColor).toBe(expectedAccent);
+    expect(rollBackground).toContain("linear-gradient(");
+    expect(rollBackground).toContain("rgb(244, 213, 141)");
+    expect(rollBackground).toContain("rgb(211, 166, 77)");
   });
 }
 

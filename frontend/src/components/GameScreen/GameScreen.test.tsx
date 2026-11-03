@@ -317,7 +317,7 @@ for (const playerColor of ["white", "black"] as const) {
     await page.clock.runFor(4000);
     await component.update(screen(opponent));
     await expect(component.getByTestId("auto-roll-countdown")).toHaveCount(0);
-    await page.clock.runFor(10000);
+    await page.clock.fastForward(10000);
     expect(rolls).toBe(0);
     await component.update(screen(playerColor));
     await page.clock.runFor(0);
@@ -344,7 +344,7 @@ for (const playerColor of ["white", "black"] as const) {
     await component.getByTestId("auto-roll-toggle").click();
     await component.update(screen(opponent));
     await component.update(screen(playerColor));
-    await page.clock.runFor(10000);
+    await page.clock.fastForward(10000);
     expect(rolls).toBe(2);
   });
 }
