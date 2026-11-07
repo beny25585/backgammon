@@ -19,5 +19,9 @@ export function GameBuildUpdateHarness({
 
   useGameBuildUpdate(pathname, currentVersion, recordReload);
 
-  return <output data-testid="build-reloads">{reloads}</output>;
+  return (
+    <div>
+      <output data-testid="build-reloads">{reloads}</output>
+    </div>
+  );
 }
