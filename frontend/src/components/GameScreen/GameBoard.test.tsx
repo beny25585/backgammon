@@ -680,13 +680,24 @@ for (const width of [375, 1280]) {
       const state = movingState({ points, dice: [4, 3], remaining: [4, 3] });
       const component = await mountBoard(mount, { state, playerColor: "white" });
 
+      // Record the landed position in the page before the acknowledgement timeout clears it.
+      const landingSample = await component.getByTestId("board-wrapper").evaluateHandle(board => {
+        const sample: { bounds: { x: number; y: number } | null } = { bounds: null };
+        const observer = new MutationObserver(() => {
+          const flyer = board.querySelector('[data-testid="flying-checker"]');
+          if (!flyer || getComputedStyle(flyer).transform !== "none") return;
+          const { x, y, width, height } = flyer.getBoundingClientRect();
+          if (!width || !height) return;
+          sample.bounds = { x, y };
+          observer.disconnect();
+        });
+        observer.observe(board, { childList: true, subtree: true });
+        return sample;
+      });
       await component.locator('[data-point-idx="23"]').dispatchEvent("click");
-      // The landed flyer stays in place until the board receives the move.
-      const flyer = component.getByTestId("flying-checker");
-      await expect(flyer).toBeVisible();
-      await expect(flyer).toHaveCSS("transform", "none");
-      const landing = await flyer.boundingBox();
-      expect(landing).not.toBeNull();
+      await expect.poll(() => landingSample.evaluate(sample => sample.bounds)).not.toBeNull();
+      const landing = await landingSample.evaluate(sample => sample.bounds);
+      await landingSample.dispose();
 
       const appliedState = applyMove(state, { from: 23, to: 19, die: 4 }, "white");
       await component.update(
@@ -695,7 +706,7 @@ for (const width of [375, 1280]) {
         </MockGameWrapper>,
       );
       await expect(component.getByTestId("die").first().locator("span")).toHaveCount(3);
-      await expect(flyer).toHaveCount(0);
+      await expect(component.getByTestId("flying-checker")).toHaveCount(0);
       const checker = await component.locator('[data-point-idx="19"] [data-checker]').last().boundingBox();
       expect(checker).not.toBeNull();
       expect(Math.abs(landing!.x - checker!.x), "horizontal jump on landing").toBeLessThan(1);
