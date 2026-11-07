@@ -296,7 +296,10 @@ services:
       context: ..
       dockerfile: docker/frontend.Dockerfile
       target: production
-      args: {APP_DIR: backgammon-tournaments, VITE_GAME_URL: /6b/backgammon/}
+      args:
+        APP_DIR: backgammon-tournaments
+        VITE_GAME_URL: /6b/backgammon/
+        VITE_BACKGAMMON_BUILD_VERSION: ${IMAGE_TAG:?Set IMAGE_TAG}
     ports: ["127.0.0.1:${TOURNAMENTS_FRONTEND_PORT:-18106}:80"]
     volumes: [tournaments_static:/srv/tournaments-static:ro, tournaments_media:/srv/media:ro]
   admin-frontend:
