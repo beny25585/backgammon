@@ -139,7 +139,11 @@ test("final game shows base GameResult", async ({ mount }) => {
     >
       <GameScreen />
     </GameContext.Provider>,
+    { hooksConfig: { locale: "en" } },
   );
-  await expect(component.getByText("Match Result")).toBeVisible();
-  await expect(component.getByText("Alice")).toBeVisible();
+  const result = component.getByRole("dialog", { name: "Match Result", exact: true });
+  await expect(result).toBeVisible();
+  await expect(
+    result.getByRole("group", { name: "Winner", exact: true }).getByText("Alice", { exact: true }),
+  ).toBeVisible();
 });

@@ -598,15 +598,16 @@ for (const [reason, pausedContext] of [
     const component = await mount(screen(false));
     await page.clock.runFor(0);
     await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-    await page.clock.runFor(9000);
+    // The countdown reads a deadline, so replaying every frame is unnecessary.
+    await page.clock.fastForward(9000);
     await component.update(screen(true));
     await expect(component.getByTestId("auto-roll-countdown")).toHaveCount(0);
-    await page.clock.runFor(10000);
+    await page.clock.fastForward(10000);
     expect(rolls).toBe(0);
     await component.update(screen(false));
     await page.clock.runFor(0);
     await expect(component.getByTestId("auto-roll-countdown")).toContainText("10s");
-    await page.clock.runFor(9999);
+    await page.clock.fastForward(9999);
     expect(rolls).toBe(0);
     await page.clock.runFor(1);
     await expect.poll(() => rolls).toBe(1);
