@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { motion } from "motion/react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { motion, useReducedMotion } from "motion/react";
 
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color } from "../../lib/backgammon/engine";
@@ -103,8 +103,43 @@ export interface BaseGameResultProps {
   children?: ReactNode;
 }
 
-function initialFor(name: string): string {
-  return name.trim().charAt(0).toUpperCase() || "?";
+const RESULT_EASE: [number, number, number, number] = [0.23, 1, 0.32, 1];
+
+interface ResultPlayerProps {
+  color: Color;
+  name: string;
+  role: string;
+  winner: boolean;
+}
+
+function ResultChecker({ color }: { color: Color }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={styles.checker + " " + (color === "white" ? styles.checkerWhite : styles.checkerBlack)}
+    />
+  );
+}
+
+function ResultPlayer({ color, name, role, winner }: ResultPlayerProps) {
+  return (
+    <div className={styles.resultPlayer} role="group" aria-label={role}>
+      <ResultChecker color={color} />
+      <bdi className={styles.playerName} title={name}>{name}</bdi>
+      {winner && (
+        <motion.span
+          aria-hidden="true"
+          data-result-winner
+          className="shrink-0 rounded-full border border-[#d3a766] px-[clamp(4px,1.5cqw,16px)] py-[clamp(2px,0.55cqw,5px)] text-[clamp(9px,1.94cqw,19px)] leading-none font-bold text-[#efc781] shadow-[inset_0_0_0_1px_#eaca8e38,0_2px_3px_#0008]"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.15, delay: 0.08, ease: RESULT_EASE }}
+        >
+          {role}
+        </motion.span>
+      )}
+    </div>
+  );
 }
 
 function otherColor(color: Color): Color {
@@ -116,7 +151,7 @@ function otherColor(color: Color): Color {
  *
  * Responsibilities:
  * - Winner / loser presentation
- * - Player avatars
+ * - Player color markers
  * - Player names
  * - Final score
  * - Winner highlight
@@ -161,6 +196,11 @@ export default function GameResult({
   variant = "private",
 }: BaseGameResultProps) {
   const { t, direction } = useI18n();
+  const reduceMotion = useReducedMotion();
+  const resultCard = useRef<HTMLElement>(null);
+  useEffect(() => {
+    resultCard.current?.focus({ preventScroll: true });
+  }, []);
   const winTypeLabel = (() => {
     switch (winType) {
       case "single":
@@ -221,237 +261,90 @@ export default function GameResult({
   const leftIsWinner = winner === leftColor;
   const rightIsWinner = winner === rightColor;
 
-  /**
-   * LEFT = current player
-   * RIGHT = opponent
-   *
-   * Do not position players based on winner / loser.
-   * Otherwise the UI changes sides depending on the result.
-   */
-
   return (
     <motion.div
-      className={styles.backdrop}
+      className={styles.backdrop + " bg-[#100d09]/65"}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
       transition={{
-        duration: 0.22,
-        ease: "easeOut",
+        duration: reduceMotion ? 0.14 : 0.25,
+        ease: RESULT_EASE,
       }}
     >
       <motion.main
-        className={styles.card}
+        ref={resultCard}
+        className={styles.card + " rounded-[clamp(12px,2.5vw,22px)] border-[1.5px] border-transparent text-[#f3e6ce] [background:radial-gradient(ellipse_at_28%_4%,#252523,#191918_90%)_padding-box,linear-gradient(138deg,#efd19d,#ac8550_27%,#76582f_59%,#d0a56d)_border-box] shadow-[0_20px_60px_#0009,inset_0_1px_1px_#fff0ca1f,inset_0_0_0_1px_#f2cb8e1c] focus:outline-none"}
         data-testid="game-result-card"
         data-result-variant={variant}
-        initial={{
-          opacity: 0,
-          scale: 0.98,
-          y: 16,
-        }}
-        animate={{
-          opacity: 1,
-          scale: 1,
-          y: 0,
-        }}
-        exit={{
-          opacity: 0,
-          scale: 0.98,
-          y: 10,
-        }}
-        transition={{
-          type: "spring",
-          stiffness: 260,
-          damping: 24,
-        }}
+        dir="ltr"
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        initial={reduceMotion ? false : { transform: "scale(0.96)" }}
+        animate={{ transform: "scale(1)" }}
+        transition={{ duration: 0.25, ease: RESULT_EASE }}
         aria-labelledby="game-result-title"
       >
-        {/* CLOSE */}
         <button
           type="button"
-          className={styles.closeButton}
-          aria-label={closeLabel ?? t("common.backHome")}
+          className={styles.closeButton + " grid cursor-pointer appearance-none place-items-center rounded-lg border-0 bg-transparent text-[#f3e6ce] hover:bg-white/8 focus-visible:outline-2 focus-visible:outline-[#e7bd72] focus-visible:outline-offset-2 motion-safe:transition-transform motion-safe:duration-150 motion-safe:active:scale-[0.97]"}
+          aria-label={closeLabel ?? t("game.closeResult")}
           onClick={onClose}
         >
-          <span aria-hidden="true">×</span>
+          <svg className="size-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" aria-hidden="true">
+            <path d="m4 4 16 16m0-16L4 20" />
+          </svg>
         </button>
 
-        {/* HERO */}
-        <div className={styles.resultHero} dir="ltr">
-          {/* LEFT PLAYER */}
-          <section
-            dir={direction}
-            className={[
-              styles.playerCard,
-              leftIsWinner ? styles.playerWinner : styles.playerLoser,
-            ].join(" ")}
-            aria-label={leftIsWinner ? t("game.winner") : t("game.loser")}
-          >
-            <span className={styles.playerRole}>
-              {leftIsWinner ? (
-                <>
-                  {t("game.winner")}
-
-                  <span aria-hidden="true"> 👑</span>
-                </>
-              ) : (
-                t("game.loser")
-              )}
-            </span>
-
-            <span
-              className={[
-                styles.playerAvatarWrap,
-                leftIsWinner ? styles.winnerHighlight : "",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  styles.playerAvatar,
-                  leftIsWinner ? styles.playerAvatarWinner : "",
-                ].join(" ")}
-              >
-                {initialFor(leftName)}
-              </span>
-            </span>
-
-            <span className={styles.playerName}>
-              <span
-                className={[
-                  styles.dot,
-                  leftColor === "white"
-                    ? styles.checkerWhite
-                    : styles.checkerBlack,
-                  leftIsWinner ? styles.dotWinner : "",
-                ].join(" ")}
-                aria-hidden="true"
-              />
-
-              <span className={styles.playerNameText}>{leftName}</span>
-            </span>
-          </section>
-
-          {/* CENTER */}
-          <section dir={direction} className={styles.scoreColumn}>
-            <p id="game-result-title" className={styles.resultTitle}>
-              {title ?? t("game.matchResult")}
-            </p>
-
-            <div
-              className={styles.scoreRow}
-              aria-label={t("match.score")}
-              dir="ltr"
-            >
-              <span
-                className={[
-                  styles.scoreBox,
-                  leftIsWinner ? styles.scoreBoxWinner : "",
-                ].join(" ")}
-                data-testid="score-left"
-              >
-                {leftScore}
-              </span>
-
-              <span className={styles.scoreSeparator} aria-hidden="true">
-                –
-              </span>
-
-              <span
-                className={[
-                  styles.scoreBox,
-                  rightIsWinner ? styles.scoreBoxWinner : "",
-                ].join(" ")}
-                data-testid="score-right"
-              >
-                {rightScore}
-              </span>
-            </div>
-
-            {winTypeLabel && (
-              <span className={styles.subtitle}>{winTypeLabel}</span>
-            )}
-
-            {reasonLabel && (
-              <span className={styles.subtitle}>{reasonLabel}</span>
-            )}
-
-            {/* Example: Analysis settings / Free Member */}
-            {heroMeta && <div className={styles.heroMeta}>{heroMeta}</div>}
-
-            {/*
-             * Canonical white / black scores.
-             * Kept for tests and compatibility.
-             */}
-            <span className={styles.hiddenScoreRows} aria-hidden="true">
-              <span data-testid="score-white">{whiteScore}</span>
-
-              <span data-testid="score-black">{blackScore}</span>
-            </span>
-          </section>
-
-          {/* RIGHT PLAYER */}
-          <section
-            dir={direction}
-            className={[
-              styles.playerCard,
-              rightIsWinner ? styles.playerWinner : styles.playerLoser,
-            ].join(" ")}
-            aria-label={rightIsWinner ? t("game.winner") : t("game.loser")}
-          >
-            <span className={styles.playerRole}>
-              {rightIsWinner ? (
-                <>
-                  {t("game.winner")}
-
-                  <span aria-hidden="true"> 👑</span>
-                </>
-              ) : (
-                t("game.loser")
-              )}
-            </span>
-
-            <span
-              className={[
-                styles.playerAvatarWrap,
-                rightIsWinner ? styles.winnerHighlight : "",
-              ].join(" ")}
-            >
-              <span
-                className={[
-                  styles.playerAvatar,
-                  rightIsWinner ? styles.playerAvatarWinner : "",
-                ].join(" ")}
-              >
-                {initialFor(rightName)}
-              </span>
-            </span>
-
-            <span className={styles.playerName}>
-              <span
-                className={[
-                  styles.dot,
-                  rightColor === "white"
-                    ? styles.checkerWhite
-                    : styles.checkerBlack,
-                  rightIsWinner ? styles.dotWinner : "",
-                ].join(" ")}
-                aria-hidden="true"
-              />
-
-              <span className={styles.playerNameText}>{rightName}</span>
-            </span>
-          </section>
+        <div className={styles.resultHero} dir={direction}>
+          <h2 id="game-result-title" className={styles.resultTitle}>
+            {title ?? t("game.matchResult")}
+          </h2>
+          <div className={styles.scoreRow} role="group" aria-label={t("match.score")} dir="ltr">
+            <span data-testid="score-left">{leftScore}</span>
+            <span aria-hidden="true">–</span>
+            <span data-testid="score-right">{rightScore}</span>
+          </div>
+          {reasonLabel && <p className={styles.subtitle}>{reasonLabel}</p>}
+          {winTypeLabel && (!reasonLabel || winType !== "single") && <p className={styles.subtitle}>{winTypeLabel}</p>}
+          {heroMeta}
+          <div className={styles.resultPlayers} dir="ltr">
+            <ResultPlayer
+              color={leftColor}
+              name={leftName}
+              role={t(leftIsWinner ? "game.winner" : "game.loser")}
+              winner={leftIsWinner}
+            />
+            <ResultPlayer
+              color={rightColor}
+              name={rightName}
+              role={t(rightIsWinner ? "game.winner" : "game.loser")}
+              winner={rightIsWinner}
+            />
+          </div>
+          <span className="sr-only" aria-hidden="true">
+            <span data-testid="score-white">{whiteScore}</span>
+            <span data-testid="score-black">{blackScore}</span>
+          </span>
         </div>
 
-        {/* MODE-SPECIFIC RESULT DATA */}
         {children && (
           <section className={styles.resultTable} dir="ltr">
+            <div className={styles.tablePlayers} aria-hidden="true">
+              <span className={styles.playerValue}>
+                <ResultChecker color={leftColor} />
+                <bdi className={styles.playerName}>{leftName}</bdi>
+              </span>
+              <span className={styles.opponentValue}>
+                <ResultChecker color={rightColor} />
+                <bdi className={styles.playerName}>{rightName}</bdi>
+              </span>
+            </div>
             {children}
           </section>
         )}
 
-        {/* MODE-SPECIFIC ACTIONS */}
-        {actions && <div className={styles.resultActions}>{actions}</div>}
+        {actions && <div className={styles.resultActions} dir={direction}>{actions}</div>}
       </motion.main>
     </motion.div>
   );

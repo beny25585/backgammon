@@ -7,6 +7,8 @@ import {
 import styles from "./GameScreen.module.css";
 import "../../styles/game-font.css";
 import charcoalLeather from "../../assets/6b-charcoal-leather.png";
+import mahogany from "../../assets/6b-material-mahogany.png";
+import brownGoldMaterials from "../../assets/6b-brown-gold-materials.jpg";
 import BoardMaterialProvider from "../Board/materials/BoardMaterialProvider";
 import { boardMaterialThemes } from "../Board/materials/boardMaterialThemes";
 import GameSettingsDrawer from "../SidePanel/GameSettingsDrawer";
@@ -17,11 +19,13 @@ export default function GameFrame({
   theme = DEFAULT_BOARD_THEME,
   checkerStyle = DEFAULT_CHECKER_STYLE,
   settings,
+  settingsDisabled = false,
 }: {
   children: ReactNode | ((settingsToggle: ReactNode) => ReactNode);
   theme?: BoardTheme;
   checkerStyle?: CheckerStyle;
   settings?: ReactNode;
+  settingsDisabled?: boolean;
 }) {
   // Fill the available width and cap the height to the available space.
   return (
@@ -32,12 +36,14 @@ export default function GameFrame({
         data-testid="board-frame"
         data-board-theme={theme}
         style={{ "--board-leather-image": `url("${charcoalLeather}")`,
+          "--board-wood-image": theme === "brownGold" ? `url("${mahogany}")` : undefined,
+          "--board-club-material-image": theme === "brownGold" ? `url("${brownGoldMaterials}")` : undefined,
           "--board-number-color": boardMaterialThemes[theme].numberText,
           "--board-cube-material-text": boardMaterialThemes[theme].cubeText,
         } as CSSProperties}
       >
         {settings ? (
-          <GameSettingsDrawer settings={settings}>
+          <GameSettingsDrawer settings={settings} disabled={settingsDisabled}>
             {(toggle) => typeof children === "function" ? children(toggle) : children}
           </GameSettingsDrawer>
         ) : typeof children === "function" ? children(null) : children}

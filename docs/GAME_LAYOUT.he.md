@@ -1,5 +1,65 @@
 # פריסת משחק ותפריט הגדרות
 
+## 07.11.2026 — זריקת פתיחה, גימור הלוח ופרטי השחקנים
+
+- בפתיחה כל קובייה נזרקת בחצי של השחקן שלה עם הגעת הערך. הזוכה מתחיל עם שתי התוצאות שכבר הוגרלו והן מופיעות בחצי שלו. בשוויון ממשיכים לניסיון פתיחה נוסף לפי מנגנון המשחק. הצטרפות לתמונת מצב קיימת מציגה את הערכים הקיימים מיד.
+- גם זריקה חדשה שנחסמה מקבלת את תנועת הנחיתה וההחלקה, כשיש מסלול פנוי. קוביות מתוך הודעה ישנה, מעבר תור בלי הטלה, מסלול צפוף והעדפה להפחתת תנועה מקבלים תצוגה קבועה.
+- כשנחיתת האבן התוקפת מוצגת, האבן שנאכלה נשארת בנקודת הפגיעה עד הנחיתה ואז נעה לבר. בסדרת עדכונים שמגיעה יחד אפשר להציג אכילות שניתנות לזיהוי מהלוח, וההשהיה תלויה בתנועת תוקפת שהלוח יכול לשייך לאכילה. קוביית ההכפלה משנה פאה ובעלות עם מצב המשחק המאשר, בעוד ההצעה מציגה בנפרד את הערך המוצע.
+- משטחי המשחק והבר בכל שבע הערכות קיבלו גרעין עור מחומר משותף בגוני הערכה. בחום־זהב המשטח והבר כהים וניטרליים יותר, עם צל לאורך הבר. בפס שמתחת לאבן שאפשר לשחק הוגברו העובי והניגודיות. יישור השם, האווטאר, הניקוד וסימון התור הותאם לעמודת השחקנים. בפריסה קצרה סימון התור נכנס מתחת לשם לצד הניקוד.
+- עיצוב השעונים והתנהגותם נשמרו.
+
+לאחר צילום נוסף, רקע עמודת השחקנים, האווטארים, הניקוד וכפתורי התפריט והתגובות חוברו לצבעי הערכה. צבע סימון האבן ליד האווטאר מגיע מצבעי האבנים של הערכה. בדפדפן המקומי נבדקו מעבר מחום־זהב לפחם־זהב ולכחול־שנהב, תצוגה בגודל 844×390 ושמירת צבע השעון במעבר. TypeScript ו־ESLint ממוקד עברו. בדיקת הרגרסיה נוספה וממתינה להרצה.
+
+TypeScript עבר. ESLint ממוקד הסתיים ללא שגיאות ועם שלוש אזהרות קיימות ב־GameBoard. בתצוגת דפדפן מקומית עם נתוני דוגמה נבדקו שבע הערכות עם WebGL, הסימון והתצוגה ברוחב 844 ובגובה 390, זריקת פתיחה ושוויון, החלפת צד במשחק מקומי, תוצאות הפתיחה בתחילת המהלך, זריקה בתור חסום, הפחתת תנועה, סדר האכילה והמעבר מ־64 ל־2 לאחר קבלת הכפלה. הרצת בדיקות הרגרסיה, build, משחק חי וטלפון פיזי נשארו לאימות המשתמש.
+
+מתוך `Backgammon Game/frontend`
+
+```powershell
+pnpm test src/components/GameScreen/GameScreen.test.tsx src/components/GameScreen/GameBoard.test.tsx src/components/Board/Board.drag.test.tsx src/components/PlayerRow/PlayerRow.test.tsx
+pnpm build
+```
+
+## 07.11.2026 — לוח חום־זהב, תנועה ומסך תוצאה
+
+המשתמש אישר את השינויים מההדגמה לפי רכיב וביקש לשמור את שעוני השחקנים כפי שהיו. צילום התוצאה שסיפק קובע את הפריסה במסך רוחבי. הניקוד, השחקנים והפעולות בצד שמאל, וטבלת הנתונים והקישור לניתוח בצד ימין.
+
+- ערכת **חום וזהב** משתמשת בעץ כהה, עור שחור ומשולשים בגוני פליז ושנהב. היא ברירת המחדל כשאין ערכה תקפה שמורה. בחירות קיימות נשמרות והערכה ניתנת לבחירה במשחק ובהעדפות המועדון.
+- גלגול רגיל חדש משתמש בערכים שהתקבלו ממצב המשחק. הקוביות נזרקות בחצי של השחקן, נוחתות בשטח פנוי, נעצרות ומחליקות יחד למיקומים הקיימים עם אותה פאה גלויה. בחלל צפוף, בהפחתת תנועה או כשהתור מתקדם בזמן הזריקה, עוברים לתצוגה הקבועה.
+- בחירה, יעד חוקי, תנועה, אכילה לבר, הוצאה, מוני צעדים והכפלה מקבלים משוב לפי מצב המשחק. כפתורי התור נשארים בחצאים הקיימים. בקבלת הכפלה מוצג הערך הבא ונשלחת תגובה אחת.
+- עמודת השחקנים, התפריט, בורר התגובות והודעות החיבור עודכנו. הניקוד וסימון התור מתעדכנים בנפרד מהשעונים. השעונים משתמשים באותו רכיב, באותן שורות ובאותם סגנונות והתנהגות.
+- מסך התוצאה שומר את הלוח הסופי כרקע לא אינטראקטיבי. הניקוד מופיע מיד, עם סיבת הסיום, סימון מנצח ופעולות לפי סוג המשחק. הנתונים הקיימים נכנסים לטבלה כשמגיעים, ורק שורות דירוג ומטבעות שיש להן נתון מוצגות.
+
+בעקבות השוואה לשני צילומי הייחוס שהמשתמש סיפק, עור הלוח הוכהה, גרעין העור והקווים האלכסוניים עודנו ושפת הפליז והצללים הותאמו למסגרת ולמגשים. במסך התוצאה הוגדלו הכותרת, הניקוד והכפתורים, ורווחי הטבלה הותאמו לפריסה הרוחבית. כשהתוצאה עולה, חלונות ההגדרות והעזרה נסגרים והמיקוד עובר לתוצאה.
+
+בסבב דיוק נוסף, חוד המשולש המצויר הוארך בתצוגה רחבה תוך שמירה על אזורי הלחיצה, סיבי העץ פונים לאורך המסגרת ונוסף מרקם ייעודי לעור, לפליז ולשנהב. במסך התוצאה הודגש היחס בין הכותרת לניקוד, הותאמו הגימור של האבנים והכפתורים והמרווח לפני משך המשחק, ונשמר דיוק הנתונים. [נכס החומרים](../frontend/src/assets/6b-brown-gold-materials.jpg)
+
+<details>
+<summary>יצירת דוגמיות החומרים</summary>
+
+האטלס נוצר ב־ImageGen המובנה עם צילום הלוח הריק כייחוס, והומר ל־JPEG בגודל 1536×512. שלושת הטורים נשמרים בסדר עור, פליז ושנהב.
+
+```text
+Use case: generate reference-derived game materials for texture mapping. Image 1 is the exact material color and finish reference. Create a NEW seamless-leaning texture atlas with THREE equal-width vertical columns side by side, filling the entire canvas, with straight divisions precisely at 33.333% and 66.667%. Aim for a 3:1 horizontal image, edge to edge. LEFT THIRD: flat very dark warm-black fine-grained pebbled leather like the dark field in Image 1. Smooth low-contrast very fine irregular micrograin, evenly lit, much darker than brown, no parallel streaks, smooth black material, black-brown RGB around 27,22,16, no hard lumps. MIDDLE THIRD: antique warm brass with finely irregular brushed satin micrograin as on the golden triangles, fine subtle multidirectional strokes, richly amber gold mid-tone around RGB 195,133,59, no large gloss gradients. RIGHT THIRD: warm ivory with smooth tactile micrograin, pale cream color as on the ivory triangles, subdued fine texture around RGB 239,212,160. Every column is a full rectangular top-down flat material swatch with even neutral illumination. All material details small and organic. Rendering shader will provide the directional highlight, so avoid broad baked shadows and highlights. Absolutely no letters, numbers, icons, objects, scene, board or triangle shapes, text labels, holes, decorative frames, borders, gaps, watermark, or cutout background. The atlas is sampled independently in each third, so material detail must continue to the canvas edges.
+```
+
+</details>
+
+TypeScript של המשחק, המועדון ובדיקות המועדון עבר. ESLint ממוקד עבר עם שלוש אזהרות קיימות ב־GameBoard. תצוגת דפדפן מקומית עם נתוני דוגמה בדקה את מצב הגלגול, הכפלה ותוצאה בעברית ובאנגלית, לרבות חלון קצר לרוחב והפחתת תנועה. הרצת הבדיקות, build, משחק חי וטלפון פיזי נשארים לאימות המשתמש.
+
+מתוך `Backgammon Game/frontend`:
+
+```powershell
+pnpm test src/components/GameScreen/GameBoard.test.tsx src/components/GameScreen/GameScreen.test.tsx src/components/GameScreen/GameScreen.responsive.test.tsx src/components/Dice/Dice.test.tsx src/components/animations/RollingDie/RollingDie.test.tsx src/components/Board/Board.drag.test.tsx src/components/Board/Board.responsive.test.tsx src/components/GameResult/GameResult.test.tsx src/components/GameResult/ResultSummary.test.tsx src/components/SidePanel/SidePanel.test.tsx src/components/PlayerReactions/PlayerReactions.test.tsx
+pnpm build
+```
+
+מתוך `backgammon-tournaments`:
+
+```powershell
+pnpm exec vitest run src/composables/__tests__/useGamePreferences.test.ts
+pnpm build
+```
+
 ## עדכון נוסף 02.11.2026 — מיקוד לפני הסתרת ההגדרות
 
 המשתמש דיווח על אזהרת Chromium של `aria-hidden` כאשר בורר סוג האבן עדיין ממוקד בזמן סגירת המגירה. מסלול הלחיצה החיצונית רץ ב־`pointerdown` בשלב capture וסגר את המגירה לפני העברת המיקוד הרגילה של הדפדפן; הגדרת `inert` דרך callback ref התרחשה מאוחר יותר מהשינוי במאפייני React. [משמעות aria-hidden](https://w3c.github.io/aria/#aria-hidden), [תת־עץ inert](https://html.spec.whatwg.org/multipage/interaction.html#inert).

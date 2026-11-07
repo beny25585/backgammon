@@ -69,9 +69,9 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, che
   }
 
   return (
-    <aside className="flex h-full min-h-0 min-w-0 flex-col gap-[clamp(8px,2cqh,20px)] overflow-y-auto overscroll-contain bg-[#0b0f0f] px-3 pb-5 text-white [scrollbar-color:#a98a51_#0b0f0f] [scrollbar-width:thin] [&>div]:shrink-0 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:gap-1.5 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:px-2 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:pb-3"
+    <aside className="flex h-full min-h-0 min-w-0 flex-col gap-[clamp(8px,2cqh,20px)] overflow-y-auto overscroll-contain bg-[#1b1511] px-3 pb-5 text-[#f7f1e7] [scrollbar-color:#a98a51_#1b1511] [scrollbar-width:thin] [&>div]:shrink-0 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:gap-1.5 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:px-2 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:pb-3"
       aria-label={t("game.matchControl")} data-testid="game-settings-panel" dir={direction}>
-      <h2 className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center bg-[#0b0f0f] py-3 pe-12 text-start text-[clamp(16px,1.6cqw,23px)] leading-tight font-bold text-[#ebc879] [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:min-h-12 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:py-2 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:text-sm">{t("game.settingsTitle")}</h2>
+      <h2 className="sticky top-0 z-10 flex min-h-14 shrink-0 items-center bg-[#1b1511] py-3 pe-12 text-start text-[clamp(16px,1.6cqw,23px)] leading-tight font-bold text-[#ebc879] [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:min-h-12 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:py-2 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:text-sm">{t("game.settingsTitle")}</h2>
       <GamePlayerAccounts />
       <GameInfoCard state={state} targetPoints={targetPoints} mode="details"
         leadingScore={Math.max(matchScore?.white ?? 0, matchScore?.black ?? 0)} />
@@ -103,7 +103,7 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, che
                   const value = event.target.value;
                   if (isCheckerStyle(value)) onCheckerStyleChange(value);
                 }}
-                className="min-h-[clamp(44px,5.4cqh,53px)] w-full appearance-none rounded-[10px] border border-white/15 bg-[#101515] py-2 ps-3 pe-9 text-start font-normal text-white/90 hover:border-amber-200/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:min-h-11 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:py-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:ps-2"
+                className="min-h-[clamp(44px,5.4cqh,53px)] w-full appearance-none rounded-[10px] border border-[#e3bd7b]/25 bg-[#241b14] py-2 ps-3 pe-9 text-start font-normal text-white/90 hover:border-amber-200/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:min-h-11 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:py-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:ps-2"
               >
                 {CHECKER_STYLES.map((style) => (
                   <option key={style} value={style}>{t(`game.checkerStyles.${style}`)}</option>
@@ -120,7 +120,7 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, che
             <label className="flex min-h-11 cursor-pointer items-center justify-between gap-2 rounded-lg px-1 text-left text-[clamp(13px,1.1cqw,18px)] leading-snug text-white/90 hover:bg-white/[0.035] [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:gap-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-frame_(height<500px)]:text-xs" dir="ltr">
               <span dir={direction}>{t("game.soundEffects")}</span>
               <input type="checkbox" checked={soundEnabled ?? true} onChange={(event) => onSoundEnabledChange(event.target.checked)} className="peer sr-only" />
-              <span aria-hidden="true" className="relative h-6 w-10 shrink-0 rounded-full border border-white/15 bg-[#292d2d] after:absolute after:start-1 after:top-1 after:size-3.5 after:rounded-full after:bg-white/60 peer-checked:border-[#e7c273] peer-checked:bg-[#b18a3f] peer-checked:after:start-[1.125rem] peer-checked:after:bg-[#fff9e7] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-amber-300" />
+              <span aria-hidden="true" className="relative h-6 w-10 shrink-0 rounded-full border border-white/15 bg-[#322820] after:absolute after:left-1 after:top-1 after:size-3.5 after:rounded-full after:bg-white/60 motion-safe:after:transition-[translate] motion-safe:after:duration-[140ms] motion-safe:after:ease-out peer-checked:border-[#e7c273] peer-checked:bg-[#b18a3f] peer-checked:after:translate-x-3.5 peer-checked:after:bg-[#fff9e7] peer-focus-visible:outline-2 peer-focus-visible:outline-offset-4 peer-focus-visible:outline-amber-300" />
             </label>
           )}
           {onAutoRollChange && <AutoRoll autoRoll={autoRoll ?? false} onChange={onAutoRollChange} presentation="switch" />}

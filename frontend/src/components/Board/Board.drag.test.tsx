@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/experimental-ct-react";
 import type { Locator } from "@playwright/test";
 import GameBoard from "../GameScreen/GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
-import { newGame, type GameState, type Source, type Target } from "@/lib/backgammon/engine";
+import { applyMove, newGame, type GameState, type Source, type Target } from "@/lib/backgammon/engine";
 import styles from "../GameScreen/GameScreen.module.css";
 import appStyles from "../../App.module.css";
 
@@ -220,4 +220,63 @@ test("a new game position cancels an in-progress drag", async ({ mount, page }) 
   await expect(component.getByTestId("dragging-checker")).toHaveCount(0);
   await page.mouse.up();
   expect(moves).toHaveLength(0);
+});
+
+test("a captured checker waits for the attacker and an echo does not restart its flight", async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const state = position();
+  state.points[19] = -1;
+  const next = applyMove(state, { from: 23, to: 19, die: 4 }, "white");
+  const render = (current: GameState) => (
+    <div className={styles.container}><MockGameWrapper state={current}>
+      <GameBoard state={current} playerColor="white" makeMove={() => {}} />
+    </MockGameWrapper></div>
+  );
+  const component = await mount(render(state));
+  await expect(component.getByTestId("board-inner-frame")).toBeVisible();
+  await component.update(render(next));
+  const capture = component.getByTestId("captured-checker-flight");
+  await expect(capture.locator('[data-checker-color="black"]')).toBeVisible();
+  await expect(capture).toHaveAttribute("data-capture-phase", "waiting");
+  await expect(component.getByTestId("flying-checker").locator('[data-checker-color="white"]')).toBeVisible();
+  await expect(component.getByTestId("bar-checkers-black").locator("[data-checker]")).toHaveCount(0);
+  await page.clock.runFor(245);
+  await expect(capture).toHaveAttribute("data-capture-phase", "flying");
+  await component.update(render({ ...next, version: 11 }));
+  await expect(capture).toHaveCount(1);
+  await expect(capture).toHaveAttribute("data-capture-phase", "flying");
+  await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+  await component.update(render(state));
+  await expect(capture).toHaveCount(0);
+  await expect(component.locator('[data-point-idx="19"] [data-checker-color="black"]')).toBeVisible();
+});
+
+test("batched hits leave the old bar stack intact and hold the last victim for its attacker", async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.clock.install();
+  await page.clock.pauseAt(new Date());
+  const state = position();
+  state.points[19] = -1;
+  state.points[9] = -1;
+  state.bar.black = 3;
+  const first = applyMove(state, { from: 23, to: 19, die: 4 }, "white");
+  const next = applyMove(first, { from: 12, to: 9, die: 3 }, "white");
+  const render = (current: GameState) => (
+    <div className={styles.container}><MockGameWrapper state={current}>
+      <GameBoard state={current} playerColor="white" makeMove={() => {}} />
+    </MockGameWrapper></div>
+  );
+  const component = await mount(render(state));
+  await expect(component.getByTestId("board-inner-frame")).toBeVisible();
+  await component.update(render(next));
+  await expect(component.locator('[data-capture-phase="flying"]')).toHaveCount(1);
+  await expect(component.locator('[data-capture-phase="waiting"]')).toHaveCount(1);
+  const bar = component.getByTestId("bar-checkers-black");
+  await expect(bar.locator("[data-checker]")).toHaveCount(3);
+  await expect(bar.getByText("5", { exact: true })).toHaveCount(0);
+  await page.clock.runFor(480);
+  await expect(component.getByTestId("captured-checker-flight")).toHaveCount(0);
+  await expect(bar.getByText("5", { exact: true })).toBeVisible();
 });

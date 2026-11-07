@@ -41,6 +41,18 @@ const classicMaterials = {
 // Palette values mirror GameScreen.module.css and BoardThemeSelector/boardThemeClasses.ts.
 // The charcoal atlas is already finished artwork; its optional recolor ramps stay absent.
 export const boardMaterialThemes: Record<BoardTheme, BoardMaterialTheme> = {
+  brownGold: {
+    id: "brownGold",
+    rim: "#2b1d13", field: "#181510", bar: "#201c16", tray: "#0e0b08", trim: "#d3a15b",
+    pointLight: ["#f6d9a8", "#c9955a"], pointDark: ["#edb96b", "#a4622b"],
+    checkerLight: { dark: "#d7ad76", light: "#fff0cb" },
+    checkerDark: { dark: "#21150f", light: "#5e3d28" },
+    diceLight: { dark: "#d4b181", light: "#fff0cd" },
+    diceDark: { dark: "#271a13", light: "#67472f" },
+    cube: { dark: "#a8763e", light: "#f2d8a2" },
+    pipDark: "#2b1b10", pipLight: "#fff4d9", cubeText: "#472811", numberText: "#f2d7a4",
+    lightSurface: false,
+  },
   charcoalGold: {
     id: "charcoalGold",
     rim: "#1a1e1b", field: "#101415", bar: "#202622", tray: "#0d1112", trim: "#d6ae63",

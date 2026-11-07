@@ -2,6 +2,7 @@ import { useI18n } from "../../i18n/I18nProvider";
 import { BOARD_THEMES, type BoardTheme } from "./boardThemes";
 
 const themeSwatches: Record<BoardTheme, string> = {
+  brownGold: "[&>span:nth-child(1)]:bg-[#ce994c] [&>span:nth-child(2)]:bg-[#251810] [&>span:nth-child(3)]:bg-[#efd3a0]",
   charcoalGold: "[&>span:nth-child(1)]:bg-[#bf984e] [&>span:nth-child(2)]:bg-[#151919] [&>span:nth-child(3)]:bg-[#f0e2bd]",
   redGreen: "[&>span:nth-child(1)]:bg-[#6f1722] [&>span:nth-child(2)]:bg-[#0f584b] [&>span:nth-child(3)]:bg-[#e2c27e]",
   blueIvory: "[&>span:nth-child(1)]:bg-[#0b406e] [&>span:nth-child(2)]:bg-[#f5ead0] [&>span:nth-child(3)]:bg-[#c9a65b]",
@@ -11,6 +12,7 @@ const themeSwatches: Record<BoardTheme, string> = {
 };
 
 const themeLabelKeys: Record<BoardTheme, string> = {
+  brownGold: "game.boardThemeBrownGold",
   charcoalGold: "game.boardThemeCharcoalGold",
   redGreen: "game.boardThemeRedGreen",
   blueIvory: "game.boardThemeBlueIvory",
@@ -20,6 +22,7 @@ const themeLabelKeys: Record<BoardTheme, string> = {
 };
 
 const themeDescriptionKeys: Record<BoardTheme, string> = {
+  brownGold: "game.boardThemeBrownGoldText",
   charcoalGold: "game.boardThemeCharcoalGoldText",
   redGreen: "game.boardThemeRedGreenText",
   blueIvory: "game.boardThemeBlueIvoryText",
@@ -45,7 +48,7 @@ export default function BoardThemeSelector({
     return (
       <label className="relative grid min-h-[clamp(64px,9.6cqh,95px)] min-w-0 gap-[clamp(4px,0.8cqh,8px)] rounded-[10px] border border-white/15 bg-[#101515] px-3 py-[clamp(6px,1.2cqh,12px)] text-left text-[clamp(13px,1.05cqw,16px)] font-normal leading-tight text-white/90 hover:border-amber-200/35 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-amber-300 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:min-h-14 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:gap-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:px-2 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:py-1 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:text-xs" dir="ltr">
         <span dir={direction}>{t("game.boardTheme")}</span>
-        <span aria-hidden="true" className={`grid h-[clamp(24px,4cqh,40px)] w-[clamp(48px,5cqw,80px)] grid-cols-3 overflow-hidden rounded border border-amber-200/65 bg-[#151919] [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:h-5 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:w-10 ${themeSwatches[value]}`}>
+        <span aria-hidden="true" className={`grid h-[clamp(24px,4cqh,40px)] w-[clamp(48px,5cqw,80px)] grid-cols-3 overflow-hidden rounded border border-amber-200/65 bg-[#151919] [&>span]:transition-colors [&>span]:duration-150 motion-reduce:[&>span]:transition-none [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:h-5 [@media(hover:none)_and_(pointer:coarse)]:[@container_game-layout_(height<500px)]:w-10 ${themeSwatches[value]}`}>
           <span className="[clip-path:polygon(0_0,100%_0,50%_100%)]" />
           <span className="rotate-180 [clip-path:polygon(0_0,100%_0,50%_100%)]" />
           <span className="[clip-path:polygon(0_0,100%_0,50%_100%)]" />

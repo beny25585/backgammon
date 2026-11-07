@@ -12,6 +12,7 @@ interface PointCellProps {
   selected: boolean;
   isLegalTarget: boolean;
   isLegalFrom: boolean;
+  playerColor?: "white" | "black" | null;
   hideTopChecker?: boolean;
   checkerLayout?: PointStackMetrics | null;
   onClick: (index: number) => void;
@@ -25,6 +26,7 @@ function PointCell({
   selected,
   isLegalTarget,
   isLegalFrom,
+  playerColor,
   hideTopChecker,
   checkerLayout,
   onClick,
@@ -44,6 +46,8 @@ function PointCell({
   const displayedCount = Math.min(count, POINT_CHECKER_LIMIT);
 
   const renderCount = hideTopChecker ? Math.max(displayedCount - 1, 0) : displayedCount;
+  const targetStackCount = color === playerColor ? count : 0;
+  const targetSlot = Math.min(targetStackCount, POINT_CHECKER_LIMIT - 1);
 
   return (
     <button
@@ -55,6 +59,8 @@ function PointCell({
       data-point-idx={index}
       data-point-top={top ? "true" : "false"}
       data-point-light={isLight ? "true" : "false"}
+      data-legal-from={isLegalFrom}
+      data-legal-target={isLegalTarget}
     >
       <div
         aria-hidden="true"
@@ -72,17 +78,22 @@ function PointCell({
 
       <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-2 rounded-sm group-focus-visible:ring-2 group-focus-visible:ring-inset group-focus-visible:ring-amber-200" />
 
-      {(selected || isLegalTarget || isLegalFrom) && (
-        <div
-          className={`${styles.highlight} ${isLegalTarget ? styles.pulse : ""}`}
-          style={{
-
-            background: isLegalTarget
-              ? "radial-gradient(circle at 50% 50%, rgba(229, 180, 77, 0.66), transparent 68%)"
-              : selected
-                ? "radial-gradient(circle at 50% 50%, rgba(227, 190, 97, 0.5), transparent 70%)"
-                : "radial-gradient(circle at 50% 50%, rgba(229, 180, 77, 0.3), transparent 70%)",
-          }}
+      {isLegalFrom && !selected && (
+        <span
+          aria-hidden="true"
+          data-legal-source-marker
+          className={`pointer-events-none absolute inset-x-[14%] z-2 h-[clamp(3px,0.52cqw,5px)] rounded-full bg-amber-100 shadow-[0_0_0_1px_#332216,0_1px_3px_#000b] ${top ? "top-0" : "bottom-0"}`}
+        />
+      )}
+      {isLegalTarget && (
+        <span
+          aria-hidden="true"
+          className={`pointer-events-none absolute left-1/2 z-4 -translate-x-1/2 rounded-full border-2 border-amber-100/90 bg-amber-200/15 shadow-[0_0_0_1px_#21160de0] motion-safe:transition-opacity motion-safe:duration-[120ms] motion-safe:starting:opacity-0 ${checkerLayout ? "" : `size-[min(var(--checker),90%)] ${top ? "top-2" : "bottom-2"}`}`}
+          style={checkerLayout ? {
+            width: checkerLayout.diameter,
+            height: checkerLayout.diameter,
+            top: pointStackOffset(checkerLayout, targetStackCount + 1, targetSlot, Boolean(top)),
+          } : undefined}
         />
       )}
 
@@ -106,6 +117,7 @@ function PointCell({
             <Checker
               color={color!}
               size={checkerLayout?.diameter}
+              selected={selected && !hideTopChecker && i === renderCount - 1}
               label={i === POINT_CHECKER_LIMIT - 1 && count > POINT_CHECKER_LIMIT ? String(count) : undefined}
             />
           </div>

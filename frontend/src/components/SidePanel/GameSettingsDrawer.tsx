@@ -3,15 +3,19 @@ import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 import { useI18n } from "../../i18n/I18nProvider";
 
 /** Nonmodal: the players and uncovered board remain usable while settings are open. */
-export default function GameSettingsDrawer({ children, settings }: {
+export default function GameSettingsDrawer({ children, settings, disabled = false }: {
   children: (toggle: ReactNode) => ReactNode;
   settings: ReactNode;
+  disabled?: boolean;
 }) {
   const { t, direction } = useI18n();
   const panelId = useId();
   const toggleRef = useRef<HTMLButtonElement>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
-  const [{ open, animate }, setDrawer] = useState({ open: false, animate: false });
+  const [drawer, setDrawer] = useState({ open: false, animate: false });
+  if (disabled && drawer.open) setDrawer({ open: false, animate: false });
+  const open = !disabled && drawer.open;
+  const animate = !disabled && drawer.animate;
   const panelRef = useCallback((element: HTMLDivElement | null) => {
     drawerRef.current = element;
     if (element) element.inert = !open;
@@ -63,12 +67,13 @@ export default function GameSettingsDrawer({ children, settings }: {
       {children(<button
         ref={toggleRef}
         type="button"
+        disabled={disabled}
         aria-label={label}
         title={label}
         aria-expanded={open}
         aria-controls={panelId}
         data-testid="game-settings-toggle"
-        className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-amber-200/25 bg-[#171b19] px-1 text-[11px] font-semibold text-[#ebc879] hover:border-amber-200/60 hover:bg-[#252a24] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
+        className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-amber-200/25 bg-[var(--ui-secondary-bg,#251d16)] px-1 text-[11px] font-semibold text-[#f0ce8c] hover:border-amber-200/60 hover:bg-[color-mix(in_srgb,var(--ui-secondary-bg,#251d16),white_8%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
         dir={direction}
         onClick={toggle}
         onKeyDown={(event) => {
@@ -89,7 +94,7 @@ export default function GameSettingsDrawer({ children, settings }: {
         aria-hidden={!open}
         dir={direction}
         onKeyDown={handleKeyDown}
-        className={`relative z-50 col-start-2 row-start-2 h-full min-h-0 w-[clamp(200px,22cqw,280px)] max-w-full overflow-hidden border-r border-amber-200/20 bg-[#0b0f0f] shadow-[12px_0_28px_#0008] ${animate ? "transition-[transform,opacity,visibility] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none" : ""} ${open ? "visible translate-x-0 opacity-100" : "pointer-events-none invisible -translate-x-4 opacity-0"}`}
+        className={`relative z-50 col-start-2 row-start-2 h-full min-h-0 w-[clamp(200px,22cqw,280px)] max-w-full overflow-hidden border-r border-amber-200/25 bg-[#1b1511] shadow-[12px_0_28px_#0008] ${animate ? "transition-[translate,opacity,visibility] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] motion-reduce:transition-none" : ""} ${open ? "visible translate-x-0 opacity-100" : "pointer-events-none invisible -translate-x-4 opacity-0"}`}
       >
         <button
           type="button"
@@ -103,7 +108,7 @@ export default function GameSettingsDrawer({ children, settings }: {
             <path d="m6 6 12 12M6 18 18 6" />
           </svg>
         </button>
-        {settings}
+        {disabled ? null : settings}
       </div>
     </>
   );

@@ -28,7 +28,7 @@ function SidePanel({ state, playerColor, clock, turnStartedAt, timeControl, sett
   const activeColor = activePlayerOf(state);
 
   return (
-    <div className="col-start-1 row-start-2 grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(min-content,1fr)_auto_auto] gap-1.5 overflow-y-auto overscroll-contain border-r border-[#c8a66a]/30 bg-linear-to-br from-[#111516] to-[#080c0d] px-[clamp(5px,1.7cqw,27px)] pt-[clamp(8px,2.5cqh,24px)] pb-[clamp(6px,4cqh,40px)] [container-type:inline-size] [scrollbar-color:#8d754a_#0c1011] [scrollbar-width:thin] [@container_game-frame_(height<700px)]:gap-px [@container_game-frame_(height<700px)]:px-1 [@container_game-frame_(height<700px)]:pt-1 [@container_game-frame_(height<700px)]:pb-1" data-testid="side-panel">
+    <div className="col-start-1 row-start-2 grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(min-content,1fr)_auto_auto] gap-1.5 overflow-y-auto overscroll-contain border-r border-[#c8a66a]/30 [background:var(--lux-panel-bg,linear-gradient(145deg,#251d17,#100d0b))] px-[clamp(5px,1.7cqw,27px)] pt-[clamp(8px,2.5cqh,24px)] pb-[clamp(6px,4cqh,40px)] [container-type:inline-size] [scrollbar-color:#8d754a_transparent] [scrollbar-width:thin] [@container_game-frame_(height<700px)]:gap-px [@container_game-frame_(height<700px)]:px-1 [@container_game-frame_(height<700px)]:pt-1 [@container_game-frame_(height<700px)]:pb-1" data-testid="side-panel">
       <div className="col-start-1 row-start-1 min-w-0" data-testid="player-details-column">
         <PlayerRow color={opponentColor} state={state} label={opponentLabel}
           active={activeColor === opponentColor} self={false}

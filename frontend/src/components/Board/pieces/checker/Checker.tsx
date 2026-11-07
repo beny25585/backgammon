@@ -5,9 +5,10 @@ interface CheckerProps {
   color: "white" | "black";
   label?: string;
   size?: number;
+  selected?: boolean;
 }
 
-function Checker({ color, label, size }: CheckerProps) {
+function Checker({ color, label, size, selected = false }: CheckerProps) {
   const { checkerImages, checkerStyle } = useBoardMaterials();
   const source = checkerImages?.[color];
   const [loadedURL, setLoadedURL] = useState<string | null>(null);
@@ -30,7 +31,7 @@ function Checker({ color, label, size }: CheckerProps) {
       data-pixi-material={color}
       data-checker-style={checkerStyle}
       style={size == null ? undefined : { "--checker": `${size}px`, "--checker-height-limit": `${size}px` } as CSSProperties}
-      className={`relative isolate flex size-[min(var(--checker),var(--checker-height-limit,100vmax))] shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-extrabold shadow-[0_1px_1px_#000000e6,1px_2px_2px_#000000a6,2px_4px_5px_#00000059] after:pointer-events-none after:absolute after:inset-0 after:z-1 after:rounded-full after:content-[''] ${surfaceSheen} ${rimAppearance} ${color === "white" ? "text-[#2b2118]" : "text-[#f7f1e7]"} ${
+      className={`relative isolate flex size-[min(var(--checker),var(--checker-height-limit,100vmax))] shrink-0 items-center justify-center overflow-hidden rounded-full text-xs font-extrabold shadow-[0_1px_1px_#000000e6,1px_2px_2px_#000000a6,2px_4px_5px_#00000059] motion-safe:transition-[translate] motion-safe:duration-[120ms] after:pointer-events-none after:absolute after:inset-0 after:z-1 after:rounded-full after:content-[''] ${selected ? "outline-2 outline-offset-1 outline-amber-100 motion-safe:-translate-y-0.5" : ""} ${surfaceSheen} ${rimAppearance} ${color === "white" ? "text-[#2b2118]" : "text-[#f7f1e7]"} ${
         decoded
           ? "border-0 bg-transparent"
           : `border before:pointer-events-none before:absolute before:inset-[3%] before:rounded-full before:content-[''] ${nativeAppearance}`

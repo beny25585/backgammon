@@ -27,19 +27,21 @@ export default function PlayerRow({
 }: PlayerRowProps) {
   const { t } = useI18n();
   const initials = label.trim().slice(0, 2).toUpperCase();
+  const turnLabel = active ? t(self ? "common.yourTurn" : "common.theirTurn") : null;
 
   return (
     <div
-      className="flex w-full min-w-0 flex-col items-center gap-1.5 py-1 text-center text-[#f7f1e7] data-[active=true]:text-[#e6c478] @min-[1200px]/game-layout:py-0 [@container_game-frame_(height<700px)]:grid [@container_game-frame_(height<700px)]:grid-cols-[minmax(0,1fr)_28px] [@container_game-frame_(height<700px)]:gap-0.5 [@container_game-frame_(height<700px)]:py-0"
+      className={`group/player relative isolate grid w-full min-w-0 items-center justify-items-center gap-1.5 py-1 text-center text-[#f7f1e7] data-[active=true]:text-[#f0ce8c] @min-[1200px]/game-layout:py-0 [@container_game-frame_(height<700px)]:gap-x-1.5 [@container_game-frame_(height<700px)]:gap-y-0 [@container_game-frame_(height<700px)]:py-0 ${showScore ? "[@container_game-frame_(height<700px)]:grid-cols-[minmax(0,1fr)_28px]" : ""}`}
       data-player={self ? "self" : "opponent"}
       data-active={active}
       role="group"
       aria-label={t(self ? "common.you" : "common.opponent")}
     >
-      <div className="relative flex w-full min-w-0 flex-col items-center gap-1.5 @min-[1200px]/game-layout:items-start">
-        <div className="flex w-full min-w-0 flex-col-reverse items-center gap-1.5 @min-[1200px]/game-layout:w-[100px]">
+      <span aria-hidden="true" className="pointer-events-none absolute inset-y-[16%] start-0 w-0.5 rounded-full bg-[#e4b96d] opacity-0 motion-safe:transition-opacity motion-safe:duration-[120ms] motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)] group-data-[active=true]/player:opacity-100" />
+      <div className={`relative flex w-full min-w-0 flex-col items-center gap-1.5 [@container_game-frame_(height<700px)]:col-start-1 ${turnLabel && showScore ? "[@container_game-frame_(height<700px)]:row-start-1" : "[@container_game-frame_(height<700px)]:[grid-row:1/span_2]"}`}>
+        <div className="flex w-full min-w-0 flex-col-reverse items-center gap-1.5">
           <span
-            className="block w-full truncate text-[clamp(11px,10cqw,17px)] font-bold leading-tight [@container_game-frame_(height<700px)]:text-[11px]"
+            className="block w-full truncate text-[clamp(11px,10cqw,17px)] font-bold leading-tight [@container_game-frame_(height<700px)]:px-0.5 [@container_game-frame_(height<700px)]:text-[11px]"
             data-testid={`player-name-${color}`}
             title={label}
           >
@@ -48,25 +50,28 @@ export default function PlayerRow({
           <span
             aria-hidden="true"
             data-active={active}
-            className="relative grid size-[clamp(30px,min(56cqw,10cqh),96px)] shrink-0 place-items-center rounded-full border border-[#bfa16b]/75 bg-linear-to-br from-[#252a2b] to-[#111516] text-[clamp(14px,16cqw,28px)] font-bold text-[#f1ebdf] data-[active=true]:border-[3px] data-[active=true]:border-[#e6c478] data-[active=true]:text-[#e6c478] [@container_game-frame_(height<700px)]:hidden"
+            className="relative grid size-[clamp(30px,min(56cqw,10cqh),96px)] shrink-0 place-items-center rounded-full border border-[#bfa16b]/55 [background:radial-gradient(ellipse_at_36%_24%,#ffffff16,transparent_70%),var(--ui-secondary-bg,#241b14)] text-[clamp(14px,16cqw,28px)] font-bold text-[#f1ebdf] shadow-[inset_0_1px_0_#ffe2b024,0_2px_5px_#0006] data-[active=true]:border-[#d6b279]/80 [@container_game-frame_(height<700px)]:hidden"
           >
             {initials}
             <span
-              className={`absolute bottom-0 right-0 size-[clamp(10px,9cqw,19px)] rounded-full border border-[#c8a66a] shadow-sm ${color === "white" ? "bg-linear-to-br from-[#fff8e5] to-[#c2a576]" : "bg-linear-to-br from-[#34393b] to-[#030506]"}`}
+              className={`absolute right-[3%] bottom-[3%] size-[clamp(10px,9cqw,19px)] rounded-full border border-[#c8a66a] ring-2 ring-[color:var(--ui-secondary-bg,#201710)] shadow-sm ${color === "white" ? "bg-linear-to-br from-[var(--lux-checker-light-hi,#fff8e5)] to-[var(--lux-checker-light-low,#c2a576)]" : "bg-linear-to-br from-[var(--lux-checker-dark-hi,#533b2a)] to-[var(--lux-checker-dark-low,#140e0b)]"}`}
             />
           </span>
         </div>
-        {details && <div className="w-full @min-[1200px]/game-layout:w-[100px]"><PlayerMetrics details={details} color={color} /></div>}
-        <span aria-hidden="true" className={`absolute right-0 top-6 hidden size-11 rounded-full border-2 border-[#c8a66a] shadow-[0_2px_5px_#00000066,inset_0_1px_2px_#ffffff33] @min-[1200px]/game-layout:block [@container_game-frame_(height<700px)]:hidden ${color === "white" ? "bg-radial-[at_35%_25%] from-[#fff9e6] to-[#c6ab7d]" : "bg-radial-[at_35%_25%] from-[#303638] to-[#030506]"}`} />
+        {details && <div className="w-full"><PlayerMetrics details={details} color={color} /></div>}
       </div>
-      <div className={showScore ? "flex w-full flex-col items-center gap-1.5 @min-[1200px]/game-layout:w-[100px] @min-[1200px]/game-layout:self-start" : "sr-only"}>
-        {showScore && <PlayerScore color={color} label={label} score={score ?? 0} />}
-        {active && (
-          <span className="w-full max-w-28 rounded-lg bg-linear-to-b from-[#f0d18a] to-[#d1a74e] px-2 py-1 text-[clamp(11px,7cqw,12px)] font-bold leading-tight text-[#201809] [@container_game-frame_(height<700px)]:sr-only">
-            {self ? t("common.yourTurn") : t("common.theirTurn")}
-          </span>
-        )}
-      </div>
+      {showScore && (
+        <div className="grid w-full min-w-0 place-items-center [@container_game-frame_(height<700px)]:col-start-2 [@container_game-frame_(height<700px)]:[grid-row:1/span_2]">
+          <PlayerScore color={color} label={label} score={score ?? 0} />
+        </div>
+      )}
+      {turnLabel && (
+        <span className={showScore
+          ? "w-fit max-w-full truncate rounded-full border border-[#d3ad70]/35 bg-[#d3ad70]/14 px-2 py-[3px] text-[clamp(11px,7cqw,12px)] font-bold leading-tight text-[#f2d096] [@container_game-frame_(height<700px)]:col-start-1 [@container_game-frame_(height<700px)]:row-start-2 [@container_game-frame_(height<700px)]:border-0 [@container_game-frame_(height<700px)]:bg-transparent [@container_game-frame_(height<700px)]:p-0 [@container_game-frame_(height<700px)]:text-[9px]"
+          : "sr-only"} title={turnLabel}>
+          {turnLabel}
+        </span>
+      )}
       <span className="sr-only">
         {t("common.off", { count: state.home[color] })} ·{" "}
         {t("common.bar", { count: state.bar[color] })}

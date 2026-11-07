@@ -115,7 +115,7 @@ export default function PrivateGameResult({
       onClick={onRematch}
       className={styles.rematchButton}
     >
-      ↻ {t("game.rematch")}
+      {t("game.rematch")}
     </button>
   );
   return (

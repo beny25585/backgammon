@@ -1,5 +1,6 @@
 import {
   Application,
+  CanvasSource,
   Color,
   Container,
   FillGradient,
@@ -17,6 +18,8 @@ import matteCheckerAtlasUrl from "../../../assets/6b-checker-matte-atlas.png";
 import marbleCheckerAtlasUrl from "../../../assets/6b-checker-marble-atlas.png";
 import inlayAtlasUrl from "../../../assets/6b-board-inlay-materials.png";
 import leatherUrl from "../../../assets/6b-charcoal-leather.png";
+import woodUrl from "../../../assets/6b-material-mahogany.png";
+import brownGoldMaterialsUrl from "../../../assets/6b-brown-gold-materials.jpg";
 import diceBodyAtlasUrl from "../../../assets/6b-dice-body-atlas.png";
 import { createDiceMaterialImages, type DiceMaterialImages } from "./diceMaterialRenderer";
 import { boardMaterialThemes, type BoardMaterialTheme, type MaterialColorRamp } from "./boardMaterialThemes";
@@ -175,12 +178,17 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
   }
   signal?.addEventListener("abort", abort, { once: true });
 
-  async function loadOwnedTexture(url: string): Promise<Texture> {
+  async function loadImage(url: string): Promise<HTMLImageElement> {
     const image = new Image();
     image.decoding = "async";
     image.src = url;
     await image.decode();
     if (destroyed || signal?.aborted) throw new DOMException("Board material creation cancelled", "AbortError");
+    return image;
+  }
+
+  async function loadOwnedTexture(url: string): Promise<Texture> {
+    const image = await loadImage(url);
     const texture = new Texture({ source: new ImageSource({ resource: image,
       scaleMode: "linear", autoGenerateMipmaps: true }) });
     ownedTextures.push(texture);
@@ -207,6 +215,66 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
       sprite.destroy();
       source.destroy(false);
     }
+  }
+
+  function createAtlasTile(image: HTMLImageElement, column: number, leather?: { base: string; mean: number }): Texture {
+    // Opaque CPU crops keep border pixels filled at every mip level.
+    const size = 512;
+    const sourceSize = image.naturalHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d", { alpha: false });
+    if (!context) throw new Error("Club board material canvas unavailable");
+    const bleed = 3;
+    const span = sourceSize - 2 * bleed;
+    context.drawImage(image, column * sourceSize + bleed, bleed, span, span, 0, 0, size, size);
+    if (leather) {
+      // Borrow the relief from the atlas, using each theme's own pigment.
+      const pixels = context.getImageData(0, 0, size, size);
+      const [red, green, blue] = new Color(leather.base).toRgbArray();
+      const contrast = theme.lightSurface ? 1.45 : 2.15;
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const luminance = 0.2126 * pixels.data[i] + 0.7152 * pixels.data[i + 1] + 0.0722 * pixels.data[i + 2];
+        const relief = (luminance - leather.mean) * contrast;
+        pixels.data[i] = red * 255 + relief;
+        pixels.data[i + 1] = green * 255 + relief;
+        pixels.data[i + 2] = blue * 255 + relief;
+      }
+      context.putImageData(pixels, 0, 0);
+    }
+    const texture = new Texture({ source: new CanvasSource({
+      resource: canvas, scaleMode: "linear", autoGenerateMipmaps: true,
+    }) });
+    ownedTextures.push(texture);
+    return texture;
+  }
+
+  async function loadMaterialTiles(isBrownGold: boolean) {
+    const atlas = await loadImage(brownGoldMaterialsUrl).then(image => {
+      if (image.naturalWidth !== 3 * image.naturalHeight) throw new Error("Club board atlas must contain three square tiles");
+      return image;
+    }).catch((error: unknown) => {
+      if (destroyed || signal?.aborted) throw error;
+      console.warn("Club board materials unavailable; using shared board materials", error);
+      return null;
+    });
+    const leather = atlas ?? await loadImage(leatherUrl);
+    // The two source swatches have different measured luminance midpoints.
+    const mean = atlas ? 25 : 92;
+    const fieldTile = createAtlasTile(leather, 0, { base: theme.field, mean });
+    const barTile = createAtlasTile(leather, 0, { base: theme.bar, mean });
+    if (isBrownGold && atlas) return {
+      dedicated: true, fieldTile, barTile, goldTile: createAtlasTile(atlas, 1), ivoryTile: createAtlasTile(atlas, 2),
+    };
+
+    const inlay = await loadOwnedTexture(inlayAtlasUrl);
+    const ramp = theme.id === "charcoalGold" || isBrownGold ? undefined : { dark: "#777777", light: "#ffffff" };
+    return {
+      dedicated: false, fieldTile, barTile,
+      goldTile: tileFromFrame(inlay, { x: 0, y: 0, width: 887, height: 887 }, ramp),
+      ivoryTile: tileFromFrame(inlay, { x: 887, y: 0, width: 887, height: 887 }, ramp),
+    };
   }
 
   function extractChecker(atlas: Texture, color: keyof typeof CHECKER_FRAMES): string {
@@ -266,19 +334,19 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
     app.stage.eventMode = "none";
     app.stage.interactiveChildren = false;
     proof.renderer = app.renderer.name;
-    const loads = await Promise.allSettled(
-      [checkerAtlasUrls[checkerStyle], inlayAtlasUrl, leatherUrl, diceBodyAtlasUrl].map(loadOwnedTexture),
-    );
-    const failure = loads.slice(0, 3).find((result) => result.status === "rejected");
-    if (failure?.status === "rejected") throw failure.reason;
-    const textures = loads.slice(0, 3).map((result) => {
-      if (result.status !== "fulfilled") throw new Error("Board material could not be loaded");
-      return result.value;
-    });
-    const [checkerAtlas, inlayAtlas, leather] = textures;
+    const isBrownGold = theme.id === "brownGold";
+    const [checker, surfaces, diceBody, wood] = await Promise.allSettled([
+      loadOwnedTexture(checkerAtlasUrls[checkerStyle]),
+      loadMaterialTiles(isBrownGold),
+      loadOwnedTexture(diceBodyAtlasUrl),
+      isBrownGold ? loadOwnedTexture(woodUrl) : Promise.resolve(null),
+    ]);
+    if (destroyed || signal?.aborted) throw new DOMException("Board material creation cancelled", "AbortError");
+    if (checker.status === "rejected") throw checker.reason;
+    if (surfaces.status === "rejected") throw surfaces.reason;
+    const checkerAtlas = checker.value;
     const checkerImages = { white: extractChecker(checkerAtlas, "white"),
       black: extractChecker(checkerAtlas, "black") };
-    const diceBody = loads[3];
     let diceImages: DiceMaterialImages | null = null;
     if (diceBody.status === "fulfilled") {
       try {
@@ -291,45 +359,98 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
       }
     }
     const isCharcoal = theme.id === "charcoalGold";
-    const neutralMaterial = isCharcoal ? undefined : { dark: "#777777", light: "#ffffff" };
-    const goldTile = tileFromFrame(inlayAtlas, { x: 0, y: 0, width: 887, height: 887 }, neutralMaterial);
-    const ivoryTile = tileFromFrame(inlayAtlas, { x: 887, y: 0, width: 887, height: 887 }, neutralMaterial);
-    const leatherTile = tileFromFrame(leather, { x: 0, y: 0, width: leather.width, height: leather.height }, neutralMaterial);
+    const { dedicated, fieldTile, barTile, goldTile, ivoryTile } = surfaces.value;
+    const woodTexture = wood?.status === "fulfilled" ? wood.value : null;
 
-    function pattern(texture: Texture, tileSize: number) {
-      // These tiles were already uploaded by generateTexture with clamp sampling.
+    function pattern(texture: Texture, tileSize: number, mirror = dedicated) {
+      // Generated textures may have already been uploaded with clamp sampling.
       // Changing addressMode alone does not invalidate Pixi's cached GPU sampler.
-      texture.source.style.addressMode = "repeat";
+      texture.source.style.addressMode = mirror ? "mirror-repeat" : "repeat";
       texture.source.style.update();
       return { texture, matrix: new Matrix().scale(tileSize / 512, tileSize / 512),
         textureSpace: "global" as const };
     }
-    const leatherPattern = pattern(leatherTile, 360);
-    const goldPattern = pattern(goldTile, 280);
-    const ivoryPattern = pattern(ivoryTile, 280);
+    const leatherPattern = pattern(fieldTile, 432, true);
+    const barPattern = pattern(barTile, 365, true);
+    const goldPattern = pattern(goldTile, dedicated ? 260 : 280);
+    const ivoryPattern = pattern(ivoryTile, dedicated ? 235 : 280);
+
+    function brassEdge(g: Graphics, rect: SkinRect, radius: number, width: number) {
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const corner = Math.min(radius, rect.width / 2, rect.height / 2);
+      g.roundRect(rect.x, rect.y, rect.width, rect.height, corner)
+        .stroke({ width: width + 1.4, alignment: 1, color: 0x5a3719 });
+      g.roundRect(rect.x, rect.y, rect.width, rect.height, corner)
+        .stroke({ width, alignment: 1, fill: linear(rect,
+          [[0, "#ffe6ae"], [0.23, "#e2b36c"], [0.57, "#b78545"], [0.82, "#cd9b57"], [1, "#f3c479"]]) });
+    }
+
+    function drawWoodFrame(g: Graphics, rim: SkinRect, field: SkinRect, texture: Texture) {
+      const x = rim.x + 2;
+      const y = rim.y + 2;
+      const right = rim.x + rim.width - 2;
+      const bottom = rim.y + rim.height - 2;
+      const innerX = Math.max(x, field.x);
+      const innerY = Math.max(y, field.y);
+      const innerRight = Math.min(right, field.x + field.width);
+      const innerBottom = Math.min(bottom, field.y + field.height);
+      const rails = [
+        { vertices: [x, y, right, y, innerRight, innerY, innerX, innerY], span: innerY - y, vertical: false, slice: 0.11 },
+        { vertices: [innerX, innerBottom, innerRight, innerBottom, right, bottom, x, bottom], span: bottom - innerBottom, vertical: false, slice: 0.68 },
+        { vertices: [x, y, innerX, innerY, innerX, innerBottom, x, bottom], span: innerX - x, vertical: true, slice: 0.38 },
+        { vertices: [innerRight, innerY, right, y, right, bottom, innerRight, innerBottom], span: right - innerRight, vertical: true, slice: 0.53 },
+      ];
+      // Sample each rail once along its length. The grain changes direction only at the mitres.
+      for (const { vertices, span, vertical, slice } of rails) {
+        if (span <= 0) continue;
+        const sampling = vertical ? new Matrix(0, 0.19, 1, 0, 0, slice) : new Matrix(1, 0, 0, 0.19, 0, slice);
+        g.poly(vertices, true).fill({ texture, textureSpace: "local", matrix: sampling.invert(),
+          color: 0xe5cdb0, alpha: 0.59 });
+      }
+    }
+
+    function satinSheen(top: boolean) {
+      const center = { x: 0.28, y: top ? 0.23 : 0.65 };
+      const gradient = new FillGradient({
+        type: "radial", textureSpace: "local", center, outerCenter: center,
+        outerRadius: 0.76, scale: 0.44, rotation: 0.67, textureSize: 128,
+        colorStops: [
+          { offset: 0, color: "#fff0bd54" },
+          { offset: 0.38, color: "#fff0bd29" },
+          { offset: 0.72, color: "#fff0bd0b" },
+          { offset: 1, color: "#fff0bd00" },
+        ],
+      });
+      gradients.push(gradient);
+      return gradient;
+    }
 
     function recessed(g: Graphics, rect: SkinRect, depth: number, dark = false) {
       const wall = Math.min(depth, rect.width / 7, rect.height / 7);
       const base = dark ? theme.tray : theme.field;
-      rounded(g, rect, 6, linear(rect, isCharcoal
+      const corner = isBrownGold && dark ? Math.max(5, Math.min(11, rect.width / 7)) : 6;
+      rounded(g, rect, corner, linear(rect, isCharcoal
         ? [[0, "#b2a78480"], [0.4, "#262922"], [1, "#060807"]]
-        : [[0, shade(theme.trim, 0.15)], [0.4, shade(base, -0.35)], [1, shade(base, -0.7)]]));
-      rounded(g, inset(rect, 1), 5, linear(rect, isCharcoal
+        : isBrownGold ? [[0, "#25180e"], [0.38, "#100c08"], [1, "#060504"]]
+          : [[0, shade(theme.trim, 0.15)], [0.4, shade(base, -0.35)], [1, shade(base, -0.7)]]));
+      rounded(g, inset(rect, 1), corner - 1, linear(rect, isCharcoal
         ? [[0, "#010303"], [0.48, "#050807"], [1, "#55594d"]]
         : [[0, shade(base, -0.65)], [0.48, shade(base, -0.4)], [1, shade(base, 0.1)]]));
       const floor = inset(rect, wall);
-      rounded(g, floor, 3, linear(floor,
+      const floorCorner = isBrownGold ? Math.max(3, corner - wall) : 3;
+      rounded(g, floor, floorCorner, linear(floor,
         [[0, shade(base, 0.065)], [0.4, base], [1, shade(base, -0.16)]]));
-      // The texture is a fine material hint under the lacquer, not raised leather grain.
-      rounded(g, floor, 3, { ...leatherPattern,
-        color: base, alpha: dark ? 0.045 : 0.025 });
-      rounded(g, floor, 3, linear(floor,
-        [[0, "#ffffff0c"], [0.28, "#ffffff00"], [1, "#00000018"]]));
+      rounded(g, floor, floorCorner, { ...leatherPattern,
+        alpha: dark ? 0.24 : 0.91 });
+      rounded(g, floor, floorCorner, linear(floor, isBrownGold
+        ? [[0, "#e9e1ce04"], [0.44, "#00000000"], [1, "#00000025"]]
+        : [[0, "#ffffff0c"], [0.28, "#ffffff00"], [1, "#00000018"]]));
       const shadow = Math.min(10, rect.width / 6, rect.height / 6);
       g.rect(floor.x, floor.y, floor.width, shadow).fill(linear({ ...floor, height: shadow },
         [[0, "#000000b3"], [1, "#00000000"]], "vertical"));
       g.rect(floor.x, floor.y, shadow, floor.height).fill(linear({ ...floor, width: shadow },
         [[0, "#00000080"], [1, "#00000000"]], "horizontal"));
+      if (isBrownGold && dark) brassEdge(g, inset(rect, 1), corner - 1, 1.1);
     }
 
     function render(layout: BoardSkinLayout) {
@@ -340,7 +461,7 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
         || !layout.points.every(validRect) || !layout.trays.every(validRect)) return;
       try {
         clearDrawing();
-        const resolution = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+        const resolution = Math.max(isBrownGold ? 1.5 : 1, Math.min(2, window.devicePixelRatio || 1));
         app.renderer.resize(layout.width, layout.height, resolution);
         const g = new Graphics();
         // WebGL batching also keeps short-lived gradient sources out of Pixi's
@@ -351,57 +472,86 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
         app.stage.addChild(g);
         const outer = { x: 0, y: 0, width: layout.width, height: layout.height };
         const bevel = Math.max(1, Math.min(6, layout.width / 160));
+        const corner = isBrownGold ? Math.max(10, Math.min(17, layout.width / 95)) : 10;
 
-        rounded(g, inset(outer, 0.5), 11, 0x040708);
-        rounded(g, inset(outer, 1.2), 10, linear(outer,
+        rounded(g, inset(outer, 0.5), corner + 1, 0x040708);
+        rounded(g, inset(outer, 1.2), corner, linear(outer,
           isCharcoal ? [[0, "#d4bd83"], [0.18, "#685d40"], [0.55, "#332e22"], [1, "#8d774b"]]
             : [[0, shade(theme.trim, 0.25)], [0.18, theme.trim], [0.55, shade(theme.trim, -0.65)], [1, shade(theme.trim, -0.2)]]));
-        rounded(g, inset(outer, 2.2), 9, linear(outer,
+        rounded(g, inset(outer, 2.2), corner - 1, linear(outer,
           isCharcoal ? [[0, "#4a4e48"], [0.12, "#1c2121"], [0.7, "#151a1b"], [1, "#050809"]]
             : [[0, shade(theme.rim, 0.24)], [0.12, theme.rim], [0.7, shade(theme.rim, -0.08)], [1, shade(theme.rim, -0.6)]]));
         const rim = inset(outer, bevel);
-        rounded(g, rim, 6, linear(rim,
+        rounded(g, rim, corner - 4, linear(rim,
           [[0, shade(theme.rim, 0.08)], [0.38, theme.rim], [1, shade(theme.rim, -0.22)]]));
-        rounded(g, rim, 6, { ...leatherPattern, color: theme.rim, alpha: 0.04 });
-        rounded(g, rim, 6, linear(outer,
-          [[0, "#ffffff24"], [0.16, "#ffffff08"], [0.48, "#ffffff00"], [1, "#00000035"]]));
-        g.moveTo(rim.x + 6, rim.y + 0.6).lineTo(rim.x + rim.width - 6, rim.y + 0.6)
-          .stroke({ width: 0.8, color: 0xfff4d9, alpha: 0.28 });
-        g.moveTo(rim.x + 0.6, rim.y + 6).lineTo(rim.x + 0.6, rim.y + rim.height - 6)
-          .stroke({ width: 0.7, color: 0xffffff, alpha: 0.14 });
+        if (woodTexture) drawWoodFrame(g, rim, layout.field, woodTexture);
+        rounded(g, rim, corner - 4, linear(outer, isBrownGold
+          ? [[0, "#ffe0b51c"], [0.16, "#ffe0b509"], [0.48, "#ffe0b500"], [1, "#00000038"]]
+          : [[0, "#ffffff24"], [0.16, "#ffffff08"], [0.48, "#ffffff00"], [1, "#00000035"]]));
+        if (isBrownGold) brassEdge(g, inset(outer, 1.6), corner, 1.6);
+        else {
+          g.moveTo(rim.x + 6, rim.y + 0.6).lineTo(rim.x + rim.width - 6, rim.y + 0.6)
+            .stroke({ width: 0.8, color: 0xfff4d9, alpha: 0.28 });
+          g.moveTo(rim.x + 0.6, rim.y + 6).lineTo(rim.x + 0.6, rim.y + rim.height - 6)
+            .stroke({ width: 0.7, color: 0xffffff, alpha: 0.14 });
+        }
 
         recessed(g, layout.field, Math.min(5, bevel));
+        const topPoint = layout.points.find(point => point.top);
+        const bottomPoint = layout.points.find(point => !point.top);
+        // Extend the painted tips only on wide boards, leaving a center lane and the DOM point boxes alone.
+        const tipExtension = isBrownGold && topPoint && bottomPoint
+          ? Math.max(0, Math.min(40, (bottomPoint.y - topPoint.y - topPoint.height - 36) / 2))
+          : 0;
+        const topSheen = isBrownGold ? satinSheen(true) : null;
+        const bottomSheen = isBrownGold ? satinSheen(false) : null;
         for (const point of layout.points) {
           const baseY = point.top ? point.y : point.y + point.height;
           const tipX = point.x + point.width / 2;
-          const tipY = point.top ? point.y + point.height : point.y;
+          const tipY = point.top ? point.y + point.height + tipExtension : point.y - tipExtension;
           const vertices = [point.x, baseY, point.x + point.width, baseY, tipX, tipY];
           const endpoints = point.light ? theme.pointLight : theme.pointDark;
           const colors: readonly ColorStop[] = isCharcoal
             ? point.light ? [[0, "#f7ead0"], [0.55, "#edddbc"], [1, "#d8c09a"]]
               : [[0, "#cbb080"], [0.55, "#bc9a60"], [1, "#a07d43"]]
-            : [[0, endpoints[0]], [0.55, endpoints[0]], [1, endpoints[1]]];
+            : isBrownGold
+              ? [[0, shade(endpoints[0], 0.16)], [0.26, endpoints[0]], [0.75, endpoints[1]], [1, shade(endpoints[1], -0.08)]]
+              : [[0, endpoints[0]], [0.55, endpoints[0]], [1, endpoints[1]]];
           const material = point.light ? ivoryPattern : goldPattern;
-          // Smooth inlays retain only a trace of the supplied material at small sizes.
-          g.poly(vertices, true).fill(linear(point, colors, "horizontal"));
+          const satinLight = { ...point, y: Math.min(baseY, tipY), width: point.width * 1.75, height: Math.abs(baseY - tipY) };
+          g.poly(vertices, true).fill(isBrownGold ? linear(satinLight, colors) : linear(point, colors, "horizontal"));
           g.poly(vertices, true).fill({ ...material,
-            matrix: material.matrix.clone().scale(0.46, 0.46),
-            color: isCharcoal ? 0xffffff : endpoints[0], alpha: point.light ? 0.065 : 0.08 });
-          g.poly(vertices, true).stroke({ width: 0.9, alignment: 1, color: 0x070a09, alpha: 0.8, join: "miter" });
+            matrix: dedicated ? material.matrix : material.matrix.clone().scale(0.46, 0.46),
+            color: isCharcoal || isBrownGold ? 0xffffff : endpoints[0],
+            alpha: dedicated ? (point.light ? 0.54 : 0.62) : isBrownGold ? (point.light ? 0.14 : 0.19) : (point.light ? 0.065 : 0.08) });
+          const sheen = point.top ? topSheen : bottomSheen;
+          if (sheen) {
+            g.poly(vertices, true).fill(sheen);
+            const depth = Math.min(23, point.height * 0.095);
+            const edge = { ...point, y: point.top ? baseY : baseY - depth, height: depth };
+            g.poly(vertices, true).fill(linear(edge, point.top
+              ? [[0, "#190d08b0"], [0.21, "#190d086e"], [0.56, "#190d0828"], [1, "#190d0800"]]
+              : [[0, "#190d0800"], [0.48, "#190d0817"], [0.82, "#190d0838"], [1, "#190d0873"]], "vertical"));
+          }
+          g.poly(vertices, true).stroke({ width: isBrownGold ? 0.7 : 0.9, alignment: 1, color: 0x070a09,
+            alpha: isBrownGold ? 0.5 : 0.8, join: "miter" });
           g.moveTo(point.x + 0.5, baseY).lineTo(tipX, tipY)
-            .stroke({ width: 0.65, color: 0xfff3ce, alpha: 0.34 });
+            .stroke({ width: isBrownGold ? 0.82 : 0.65, color: 0xfff3ce, alpha: isBrownGold ? 0.59 : 0.34 });
           g.moveTo(tipX, tipY).lineTo(point.x + point.width - 0.5, baseY)
-            .stroke({ width: 0.9, color: 0x080a08, alpha: 0.8 });
+            .stroke({ width: isBrownGold ? 0.7 : 0.9, color: 0x080a08, alpha: isBrownGold ? 0.54 : 0.8 });
           const baseEdgeY = baseY + (point.top ? 0.75 : -0.75);
-          g.moveTo(point.x + 1, baseEdgeY).lineTo(point.x + point.width - 1, baseEdgeY)
-            .stroke({ width: 0.7, color: point.top ? 0xfff2ce : 0x080a08,
-              alpha: point.top ? 0.14 : 0.55 });
+          if (!isBrownGold) {
+            g.moveTo(point.x + 1, baseEdgeY).lineTo(point.x + point.width - 1, baseEdgeY)
+              .stroke({ width: 0.7, color: point.top ? 0xfff2ce : 0x080a08,
+                alpha: point.top ? 0.14 : 0.55 });
+          }
         }
 
         // One light direction across the field and inlays reads as a sealed, solid surface.
         const fieldFace = inset(layout.field, Math.min(5, bevel));
-        rounded(g, fieldFace, 3, linear(fieldFace,
-          [[0, "#ffffff14"], [0.24, "#ffffff04"], [0.58, "#ffffff00"], [1, "#0000000d"]]));
+        rounded(g, fieldFace, 3, linear(fieldFace, isBrownGold
+          ? [[0, "#eee9d505"], [0.36, "#eee9d500"], [0.62, "#00000000"], [1, "#00000012"]]
+          : [[0, "#ffffff14"], [0.24, "#ffffff04"], [0.58, "#ffffff00"], [1, "#0000000d"]]));
 
         const bar = layout.bar;
         rounded(g, bar, 3, 0x020505);
@@ -412,10 +562,10 @@ export async function createBoardSkinRenderer(theme: BoardMaterialTheme = boardM
         rounded(g, barFace, 2, linear(barFace,
           isCharcoal ? [[0, "#232c2c"], [0.55, "#1b2424"], [1, "#121a1b"]]
             : [[0, shade(theme.bar, 0.07)], [0.55, theme.bar], [1, shade(theme.bar, -0.18)]], "horizontal"));
-        rounded(g, barFace, 2, { ...leatherPattern,
-          matrix: leatherPattern.matrix.clone().scale(0.6, 0.6), color: theme.bar, alpha: 0.035 });
-        rounded(g, barFace, 2, linear(barFace,
-          [[0, "#ffffff1b"], [0.18, "#ffffff06"], [0.55, "#ffffff00"], [1, "#00000024"]], "horizontal"));
+        rounded(g, barFace, 2, { ...barPattern, alpha: 0.93 });
+        rounded(g, barFace, 2, linear(barFace, isBrownGold
+          ? [[0, "#a394791c"], [0.27, "#a394790b"], [0.52, "#00000009"], [1, "#00000099"]]
+          : [[0, "#ffffff1b"], [0.18, "#ffffff08"], [0.55, "#ffffff00"], [1, "#00000042"]], "horizontal"));
         g.moveTo(bar.x + 2, bar.y + 1.5).lineTo(bar.x + bar.width - 2, bar.y + 1.5)
           .stroke({ width: 0.8, color: 0xdce0d2, alpha: 0.2 });
         g.rect(bar.x + bar.width - 2, bar.y + 2, 1.5, bar.height - 4)

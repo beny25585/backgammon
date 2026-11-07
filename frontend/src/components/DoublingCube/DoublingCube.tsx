@@ -19,9 +19,10 @@ interface DoublingCubeProps {
   value: number;
   owner: Color | "center";
   showOwner?: boolean;
+  offered?: boolean;
 }
 
-export default function DoublingCube({ value, owner, showOwner = true }: DoublingCubeProps) {
+export default function DoublingCube({ value, owner, showOwner = true, offered = false }: DoublingCubeProps) {
   const { t } = useI18n();
   const game = useOptionalGame();
   const { diceImages } = useBoardMaterials();
@@ -44,7 +45,8 @@ export default function DoublingCube({ value, owner, showOwner = true }: Doublin
   const colorClass = CUBE_COLOR_CLASSES[displayValue] ?? "text-[var(--ui-cube-text,#d4941a)]";
 
   return (
-    <div className="pointer-events-none flex flex-col items-center gap-[3px]">
+    <div className="pointer-events-none relative flex flex-col items-center gap-[3px]">
+      {offered && <span aria-hidden="true" className="absolute top-0 left-1/2 size-[var(--board-cube-size,clamp(32px,13cqw,48px))] -translate-x-1/2 rounded-md outline-2 outline-offset-2 outline-amber-100/85 motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-0" />}
       <div
         className={`relative isolate flex size-[var(--board-cube-size,clamp(32px,13cqw,48px))] select-none items-center justify-center overflow-hidden rounded-md border-2 text-[length:var(--board-cube-font,18px)] leading-none font-extrabold tabular-nums ${decoded
           ? "border-transparent bg-transparent text-[var(--board-cube-material-text,#694c25)] shadow-[0_2px_3px_#00000059] [text-shadow:0_1px_0_#fff5dd80,0_-1px_1px_#5c402866]"

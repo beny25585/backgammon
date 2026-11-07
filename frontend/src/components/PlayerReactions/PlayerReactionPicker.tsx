@@ -39,6 +39,22 @@ export default function PlayerReactionPicker({ enabled, cooldownUntil, error, mu
     triggerRef.current?.focus({ preventScroll: true });
   }
 
+  function openPicker(event: MouseEvent<HTMLButtonElement>) {
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.open) return;
+    dialog.showModal();
+    setOpen(true);
+    if (event.detail === 0) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    dialog.animate(
+      reduced ? [{ opacity: 0 }, { opacity: 1 }] : [
+        { opacity: 0, transform: "scale(0.97)" },
+        { opacity: 1, transform: "none" },
+      ],
+      { duration: reduced ? 100 : 180, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+    );
+  }
+
   function dismissBackdrop(event: MouseEvent<HTMLDialogElement>) {
     if (event.target !== event.currentTarget) return;
     const rect = event.currentTarget.getBoundingClientRect();
@@ -56,8 +72,8 @@ export default function PlayerReactionPicker({ enabled, cooldownUntil, error, mu
         aria-controls={panelId}
         aria-expanded={open}
         disabled={!enabled}
-        onClick={() => { dialogRef.current?.showModal(); setOpen(true); }}
-        className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-amber-200/25 bg-[#171b19] px-1 text-[11px] font-semibold text-[#ebc879] hover:border-amber-200/60 hover:bg-[#252a24] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
+        onClick={openPicker}
+        className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-amber-200/25 bg-[var(--ui-secondary-bg,#251d16)] px-1 text-[11px] font-semibold text-[#f0ce8c] hover:border-amber-200/60 hover:bg-[color-mix(in_srgb,var(--ui-secondary-bg,#251d16),white_8%)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
       >
         <svg aria-hidden="true" className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z" /><path d="M7 11h.01M12 11h.01M17 11h.01" /></svg>
         <span>{t(sendFailed ? "reactions.retry" : "reactions.button")}</span>
@@ -70,7 +86,7 @@ export default function PlayerReactionPicker({ enabled, cooldownUntil, error, mu
         dir={direction}
         onClose={() => setOpen(false)}
         onClick={dismissBackdrop}
-        className="fixed inset-0 m-auto max-h-[calc(100dvh-24px)] w-[min(320px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#c8a66a]/50 bg-[#101514] p-3 text-[#f7f1e7] shadow-2xl backdrop:bg-black/40"
+        className="fixed inset-0 m-auto max-h-[calc(100dvh-24px)] w-[min(320px,calc(100vw-24px))] overflow-y-auto overscroll-contain rounded-2xl border border-[#c8a66a]/50 bg-[#201914] p-3 text-[#f7f1e7] shadow-[0_12px_30px_#0009,inset_0_1px_0_#ffe1aa1a] backdrop:bg-black/40"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 id={titleId} className="text-sm font-bold text-[#ebc879]">{t("reactions.title")}</h2>
@@ -78,14 +94,14 @@ export default function PlayerReactionPicker({ enabled, cooldownUntil, error, mu
         </div>
         <div className="grid grid-cols-2 gap-2">
           {PLAYER_REACTIONS.filter((item) => !item.emoji).map((item) => (
-            <button key={item.id} type="button" disabled={!enabled || coolingDown} onClick={() => { if (onSend(item.id)) close(); }} className="min-h-11 rounded-lg border border-amber-200/20 bg-[#20251f] px-2 py-2 text-sm font-semibold text-[#f0d18a] hover:border-amber-200/60 hover:bg-[#30362a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
+            <button key={item.id} type="button" disabled={!enabled || coolingDown} onClick={() => { if (onSend(item.id)) close(); }} className="min-h-11 rounded-lg border border-amber-200/20 bg-[#30241a] px-2 py-2 text-sm font-semibold text-[#f0d18a] hover:border-amber-200/60 hover:bg-[#3d2d20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
               {t(`reactions.items.${item.id}`)}
             </button>
           ))}
         </div>
         <div className="mt-3 grid grid-cols-3 gap-1 min-[360px]:grid-cols-6">
           {PLAYER_REACTIONS.filter((item) => item.emoji).map((item) => (
-            <button key={item.id} type="button" aria-label={t(`reactions.items.${item.id}`)} title={t(`reactions.items.${item.id}`)} disabled={!enabled || coolingDown} onClick={() => { if (onSend(item.id)) close(); }} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-amber-200/20 bg-[#20251f] text-2xl hover:border-amber-200/60 hover:bg-[#30362a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
+            <button key={item.id} type="button" aria-label={t(`reactions.items.${item.id}`)} title={t(`reactions.items.${item.id}`)} disabled={!enabled || coolingDown} onClick={() => { if (onSend(item.id)) close(); }} className="flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-amber-200/20 bg-[#30241a] text-2xl hover:border-amber-200/60 hover:bg-[#3d2d20] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300 disabled:cursor-not-allowed disabled:opacity-40">
               <span aria-hidden="true">{item.emoji}</span>
             </button>
           ))}

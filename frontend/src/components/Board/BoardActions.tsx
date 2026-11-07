@@ -7,6 +7,7 @@ import BoardHalfOverlay, { type BoardSide } from "./BoardHalfOverlay";
 import GuidanceBanner from "../GuidanceBanner";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
 import IllustratedTurnNotice, { type IllustratedNoticeAsset } from "../TurnNotice/IllustratedTurnNotice";
+import { useBoardMaterials } from "./materials/boardMaterialContext";
 
 const barBlockedAsset: IllustratedNoticeAsset = {
   id: "bar-blocked",
@@ -61,6 +62,7 @@ interface Props {
 
 export default function BoardActions({ noticeSide = "left", doublingEnabled = true, ...props }: Props) {
   const { t, locale, direction } = useI18n();
+  const { theme } = useBoardMaterials();
   const noticeAsset = props.turnNotice ? illustratedNoticeAssets[props.turnNotice.textKey] ?? null : null;
   const illustratedNotice = noticeAsset !== null;
   const isForcedNotice = props.turnNotice?.variant === "forced";
@@ -82,11 +84,11 @@ export default function BoardActions({ noticeSide = "left", doublingEnabled = tr
     content: <div className="relative flex w-full min-w-0 flex-col items-center" dir={direction}>
       <BoardActionButton variant="primary" onClick={props.onRoll}
         title={t("common.tapToRoll")} aria-label={t("common.tapToRoll")}
-        className="[--board-primary-surface:linear-gradient(180deg,#f4d58d,#d3a64d)] [--ui-on-accent:#241b0b] [--ui-accent-border:#efce84cc] [--ui-accent-hover:#ffe6ad] [&_[data-button-surface]]:rounded-lg [&_[data-button-surface]]:shadow-[0_3px_8px_#00000066,inset_0_1px_0_#fff8df80] enabled:hover:brightness-105">
+        className={theme === "brownGold" ? "" : "[--board-primary-surface:linear-gradient(180deg,#f4d58d,#d3a64d)] [--ui-on-accent:#241b0b] [--ui-accent-border:#efce84cc] [--ui-accent-hover:#ffe6ad] [&_[data-button-surface]]:rounded-lg"}>
         {t("game.rollNow")}
       </BoardActionButton>
       {props.autoRollCountdown != null && (
-        <span className="pointer-events-none absolute top-[calc(100%_+_4px)] left-1/2 -translate-x-1/2 rounded-md border border-[#d3b16d]/30 bg-[#101515]/95 px-2 py-1 text-[clamp(10px,1.4cqw,11px)] leading-none text-[#d9cba9] shadow-[0_2px_5px_#00000040]"
+        <span className="pointer-events-none absolute top-[calc(100%_+_4px)] left-1/2 -translate-x-1/2 rounded-md border border-[var(--ui-secondary-border,#d3b16d4d)] bg-[var(--ui-secondary-bg,#101515)] px-2 py-1 text-[clamp(10px,1.4cqw,11px)] leading-none text-[#ead6b7] shadow-[0_2px_5px_#00000040] motion-safe:transition-opacity motion-safe:duration-150 motion-safe:starting:opacity-50"
           data-testid="auto-roll-countdown">
           <span className="sr-only">{t("game.autoRollCountdown", { seconds: props.autoRollCountdown })}</span>
           <span aria-hidden="true" className="inline-flex items-center gap-1 whitespace-nowrap">
@@ -95,7 +97,7 @@ export default function BoardActions({ noticeSide = "left", doublingEnabled = tr
               <path d="M12 7.5V12l3 1.75" />
             </svg>
             <span className="font-medium">{t("game.autoRollShort")}</span>
-            <bdi className="min-w-6 text-start font-bold tabular-nums text-[#f0ce85]" dir="ltr">{t("game.autoRollSeconds", { seconds: props.autoRollCountdown })}</bdi>
+            <bdi className="min-w-[3ch] text-start font-bold tabular-nums text-[#f0ce85]" dir="ltr">{t("game.autoRollSeconds", { seconds: props.autoRollCountdown })}</bdi>
           </span>
         </span>
       )}

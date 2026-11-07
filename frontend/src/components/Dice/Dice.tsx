@@ -2,6 +2,8 @@ import { motion, useReducedMotion } from "motion/react";
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Color } from "@/lib/backgammon/engine";
 import RollingDie from "@animations/RollingDie/RollingDie";
+import { BOARD_DICE_THROW_MS, type BoardDiceThrow } from "@animations/RollingDie/boardDiceFlight";
+import type { BoardSide } from "../Board/BoardHalfOverlay";
 import { pipPositions } from "../animations/RollingDie/pipPositions";
 import { useI18n } from "../../i18n/I18nProvider";
 import styles from "./Dice.module.css";
@@ -12,11 +14,19 @@ export function Die({
   used,
   dark,
   usedOpacity = 0.65,
+  boardThrow,
+  interruptThrow = false,
+  revealAfterThrow = false,
+  settled = false,
 }: {
   value: number;
   used?: boolean;
   dark?: boolean;
   usedOpacity?: number;
+  boardThrow?: BoardDiceThrow;
+  interruptThrow?: boolean;
+  revealAfterThrow?: boolean;
+  settled?: boolean;
 }) {
   const { t } = useI18n();
   const reduced = useReducedMotion();
@@ -24,19 +34,29 @@ export function Die({
   const source = diceImages?.[dark ? "dark" : "light"][value];
   const [loadedSource, setLoadedSource] = useState<string | null>(null);
   const materialReady = Boolean(source && loadedSource === source);
-  const [landingValue, setLandingValue] = useState<number | null>(() => used ? null : value);
+  const [landingValue, setLandingValue] = useState<number | null>(() => used || settled || revealAfterThrow ? null : value);
+  const [startedOnBoard] = useState(Boolean(boardThrow));
+  const [awaitingDouble, setAwaitingDouble] = useState(revealAfterThrow);
   const finishLanding = useCallback(() => setLandingValue(null), []);
   // A reorder or spent die stays immediately readable and never starts a new roll.
-  const interrupted = Boolean(used || reduced || landingValue !== value);
+  const interrupted = Boolean(used || reduced || settled || interruptThrow || (startedOnBoard && !boardThrow) || landingValue !== value);
   if (landingValue !== null && interrupted) setLandingValue(null);
+  if (awaitingDouble && (used || reduced || interruptThrow || !revealAfterThrow)) setAwaitingDouble(false);
+  useEffect(() => {
+    if (!awaitingDouble) return;
+    const timer = window.setTimeout(() => setAwaitingDouble(false), BOARD_DICE_THROW_MS);
+    return () => window.clearTimeout(timer);
+  }, [awaitingDouble]);
   const showLanding = landingValue !== null && !interrupted;
+  const throwInProgress = Boolean(showLanding && boardThrow);
+  const useNativeFace = !materialReady && !throwInProgress;
   return (
     <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ transform: "rotate(1deg)", opacity: used ? usedOpacity : 1 }}
+      initial={boardThrow || settled ? false : { opacity: 0 }}
+      animate={{ transform: boardThrow ? "none" : "rotate(1deg)", opacity: awaitingDouble ? 0 : used ? usedOpacity : 1 }}
       transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
-      className={`relative size-[var(--die-size,clamp(2rem,10vw,3rem))] shrink-0 rounded-[var(--die-radius,5px)] ${materialReady ? "" :
-        "border shadow-[0_6px_14px_#02051261,inset_0_1px_1px_#ffffff38,inset_0_-3px_5px_#00000047]"} ${materialReady ? "" : dark
+      className={`relative size-[var(--die-size,clamp(2rem,10vw,3rem))] shrink-0 rounded-[var(--die-radius,5px)] ${useNativeFace ?
+        "border shadow-[0_6px_14px_#02051261,inset_0_1px_1px_#ffffff38,inset_0_-3px_5px_#00000047]" : ""} ${!useNativeFace ? "" : dark
         ? "border-[#e6edeb7a] text-[#ffffff] [background:linear-gradient(145deg,color-mix(in_srgb,var(--lux-die-dark-hi,#34393b),#ffffff_8%),color-mix(in_srgb,var(--lux-die-dark-low,#101415),#ffffff_12%))]"
         : "border-[#e5b44d8c] text-[var(--lux-die-pip-dark,#19130d)] [background:radial-gradient(circle_at_28%_22%,#ffffff94,transparent_28%),linear-gradient(145deg,var(--lux-checker-light-hi,#fff8e7),var(--lux-checker-light-low,#ddc391))]"}`}
       data-testid="die"
@@ -65,7 +85,7 @@ export function Die({
         />
       ))}
       {showLanding && <div className="pointer-events-none absolute inset-0">
-        <RollingDie rolling count={1} dark={dark} landOn={[value]} spins
+        <RollingDie rolling count={1} dark={dark} landOn={[value]} spins boardThrow={boardThrow}
           size="var(--die-size,clamp(2rem,10vw,3rem))" onRollComplete={finishLanding} />
       </div>}
     </motion.div>
@@ -82,6 +102,9 @@ export function DiceRow({
   forceActive,
   onReorder,
   usedOpacity,
+  throwSide,
+  interruptThrow,
+  settled,
 }: {
   dice: number[];
   remaining: number[];
@@ -93,6 +116,9 @@ export function DiceRow({
   forceActive?: boolean;
   onReorder?: () => void;
   usedOpacity?: number;
+  throwSide?: BoardSide;
+  interruptThrow?: boolean;
+  settled?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -123,7 +149,9 @@ export function DiceRow({
   const activeCount = forceActive ? displayed.length : remaining.length;
   const content = displayed.map((d, i) => {
     const used = !forceActive && i >= activeCount;
-    return <Die key={i} value={d} used={used} usedOpacity={usedOpacity} dark={color === "black"} />;
+    return <Die key={i} value={d} used={used} usedOpacity={usedOpacity} dark={color === "black"}
+      boardThrow={throwSide && i < 2 ? { side: throwSide, index: i } : undefined}
+      interruptThrow={interruptThrow} revealAfterThrow={Boolean(throwSide && i >= 2)} settled={settled} />;
   });
   if (onReorder) {
     return (

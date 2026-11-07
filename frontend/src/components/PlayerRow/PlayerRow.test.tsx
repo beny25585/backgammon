@@ -57,3 +57,37 @@ test("shows the turn badge for the active player", async ({ mount }) => {
   );
   await expect(row.getByText("Your Turn")).toBeVisible();
 });
+
+test("centers the player details on a wide rail and fits the turn label on a short rail", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const state = makeGameState({ turn: "white" });
+  const renderRail = (height: number, width: number) => (
+    <div style={{ width: 1280, height, containerType: "size", containerName: "game-layout game-frame" }}>
+      <div style={{ width, containerType: "inline-size" }}>
+        <PlayerRow color="white" state={state} label="LocalPlayerWithALongName" active self score={8} />
+      </div>
+    </div>
+  );
+  const component = await mount(renderRail(800, 160));
+  const player = component.getByRole("group", { name: "You" });
+  const name = player.getByTestId("player-name-white");
+  const score = player.getByTestId("player-score-white");
+  const turn = player.getByText("Your turn");
+  const wideBox = await player.boundingBox();
+  expect(wideBox).not.toBeNull();
+  const center = wideBox!.x + wideBox!.width / 2;
+  for (const item of [name, score, turn, player.locator('span[aria-hidden="true"][data-active]')]) {
+    const box = await item.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x + box!.width / 2).toBeCloseTo(center, 0);
+  }
+
+  await component.update(renderRail(330, 88));
+  await expect(turn).toBeVisible();
+  await expect(score).toBeVisible();
+  const compactBox = await player.boundingBox();
+  const scoreBox = await score.boundingBox();
+  expect(compactBox).not.toBeNull();
+  expect(scoreBox).not.toBeNull();
+  expect(compactBox!.height).toBeCloseTo(scoreBox!.height, 0);
+});

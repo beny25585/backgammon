@@ -1,6 +1,9 @@
 import { boardRect, boardPoint } from "./boardCoordinates";
 import { bearOffSlot } from "./bearOffSlot";
+import { captureTransition } from "./captureTransition";
+import { useReducedMotion } from "motion/react";
 import {
+  BAR_CHECKER_LIMIT,
   barStackMetrics,
   barStackOffset,
   pointStackMetrics,
@@ -63,6 +66,7 @@ interface BoardProps {
   onOfferDouble?: () => void;
   autoMove?: { id: number; fromPositionKey: string; move: Move } | null;
   inputDisabled?: boolean;
+  captureScope?: string;
   hasPendingMoves?: () => boolean;
   turnNotice?: GuidanceMessage | null;
   noticeSide?: BoardSide;
@@ -71,6 +75,19 @@ interface BoardProps {
   overlay?: ReactNode;
   onAutoPointSequenceChange?: (active: boolean) => void;
   onControlsTargetChange?: (target: HTMLDivElement | null) => void;
+}
+
+interface CheckerSlot {
+  x: number;
+  y: number;
+  size: number;
+}
+
+interface CapturedChecker {
+  id: number;
+  from: CheckerSlot;
+  to: CheckerSlot;
+  waitingFor: number | null;
 }
 
 function measurePointStack(point: HTMLElement): PointStackMetrics {
@@ -168,6 +185,7 @@ export function Board({
   onOfferDouble,
   autoMove,
   inputDisabled = false,
+  captureScope,
   hasPendingMoves,
   turnNotice,
   noticeSide,
@@ -226,6 +244,19 @@ export function Board({
     };
   }, []);
   const flightIdRef = useRef(0);
+  const reduceMotion = useReducedMotion() === true;
+  const previousCapturePosition = useRef({ state, myColor, scope: captureScope });
+  const capturedAttackState = useRef<GameState | null>(null);
+  const [captureFlight, setCaptureFlight] = useState<{
+    color: Color;
+    turn: Color;
+    phase: GameState["phase"];
+    perspective: Color | null;
+    scope: string | undefined;
+    count: number;
+    moveCount: number;
+    pieces: CapturedChecker[];
+  } | null>(null);
   const [flyChecker, setFlyChecker] = useState<{
     id: number;
     fromX: number;
@@ -240,6 +271,7 @@ export function Board({
     to: Source | Target;
     undo?: boolean;
     external?: boolean;
+    visualOnly?: boolean;
     committed: boolean;
   } | null>(null);
 
@@ -281,7 +313,7 @@ export function Board({
   // Once the move is reflected on the board (including optimistic online
   // updates), further input is safe. The visual animation must not swallow it.
   const baseInteractionBlocked = Boolean(
-    inputDisabled || (flyChecker && (flyChecker.external || !flyMoveApplied)),
+    inputDisabled || (flyChecker && !flyChecker.visualOnly && (flyChecker.external || !flyMoveApplied)),
   );
   const interactionBlocked = baseInteractionBlocked || autoPointSequenceActive;
 
@@ -352,6 +384,22 @@ export function Board({
     },
     [checkerLayout],
   );
+
+  const activeCapture = !reduceMotion && captureFlight &&
+    captureFlight.scope === captureScope &&
+    captureFlight.perspective === myColor &&
+    captureFlight.turn === state.turn &&
+    captureFlight.phase === state.phase &&
+    captureFlight.count === state.bar[captureFlight.color] &&
+    captureFlight.moveCount <= (state.lastMove?.length ?? 0)
+    ? captureFlight : null;
+  const capturePieces = activeCapture?.pieces.filter(
+    piece => piece.waitingFor === null || piece.waitingFor === flyChecker?.id,
+  ) ?? [];
+  if (captureFlight && capturePieces.length !== captureFlight.pieces.length) {
+    setCaptureFlight(activeCapture && capturePieces.length ? { ...activeCapture, pieces: capturePieces } : null);
+  }
+  if (flyChecker?.visualOnly && !activeCapture) setFlyChecker(null);
 
   const triggerFly = useCallback(
     (
@@ -505,7 +553,7 @@ export function Board({
   });
   const displayedTargets = drag ? dragTargets : legalTargets;
 
-  const animateExternalMove = useCallback(
+  const makeExternalFlight = useCallback(
     (from: Source | Target, to: Target, mover: Color) => {
       const board = boardRef.current;
       if (!board) return;
@@ -541,7 +589,7 @@ export function Board({
       const targetSlot = computeSlot(toEl, toCount, toStackIndex, isToTop, mover, bRect);
       const sourceSlot = computeSlot(fromEl, fromCount + 1, fromStackIndex, isFromTop, mover, bRect);
 
-      setFlyChecker({
+      return {
         id: ++flightIdRef.current,
         fromX: sourceSlot.x,
         fromY: sourceSlot.y,
@@ -555,10 +603,72 @@ export function Board({
         to,
         external: true,
         committed: false,
-      });
+      };
     },
     [state, displayTopPoints, computeSlot, bottomBearOffColor],
   );
+
+  useLayoutEffect(() => {
+    const previous = previousCapturePosition.current;
+    previousCapturePosition.current = { state, myColor, scope: captureScope };
+    if (previous.scope !== captureScope) {
+      // A fresh snapshot is already on the board, including its move history.
+      knownLastMoveRef.current = state.lastMove ?? [];
+      humanMoveRef.current = null;
+      capturedAttackState.current = null;
+      return;
+    }
+    if (reduceMotion || previous.myColor !== myColor) return;
+    const capture = captureTransition(previous.state, state);
+    if (!capture) return;
+
+    const board = boardRef.current;
+    const bar = board?.querySelector<HTMLElement>(`[data-point-idx="${BAR}"]`);
+    if (!board || !bar) return;
+    const bounds = boardRect(wrapperRef.current ?? board);
+    const { mover, victim, targets, attackingMove } = capture;
+    const matchingFlight = attackingMove && flyChecker && !flyChecker.undo &&
+      flyChecker.from === attackingMove.from && flyChecker.to === attackingMove.to && flyChecker.color === mover
+      ? flyChecker : null;
+    const replacement = !matchingFlight && attackingMove
+      ? makeExternalFlight(attackingMove.from, attackingMove.to, mover)
+      : null;
+    const attacker = matchingFlight ?? replacement;
+    const waitingFor = attacker && !attacker.committed && attacker.size && attacker.toSize ? attacker.id : null;
+    const count = state.bar[victim];
+    const earlierCount = previous.state.bar[victim];
+    const firstArrivalCount = count - (waitingFor === null ? 0 : 1);
+    const pieces: CapturedChecker[] = [];
+    for (const [index, target] of targets.entries()) {
+      const point = board.querySelector<HTMLElement>(`[data-point-idx="${target}"]`);
+      if (!point) return;
+      const waitsForAttacker = target === attackingMove?.to && waitingFor !== null;
+      const arrivalCount = waitsForAttacker ? count : firstArrivalCount;
+      const from = computeSlot(point, 1, 0, displayTopPoints.includes(target), victim, bounds);
+      const to = computeSlot(bar, arrivalCount, Math.min(earlierCount + index, BAR_CHECKER_LIMIT - 1), false, victim, bounds);
+      if (!from.size || !to.size) return;
+      pieces.push({ id: ++flightIdRef.current, from, to, waitingFor: waitsForAttacker ? waitingFor : null });
+    }
+
+    if (attacker) {
+      capturedAttackState.current = state;
+      if (humanMoveRef.current?.from === attacker.from && humanMoveRef.current?.to === attacker.to) {
+        humanMoveRef.current = null;
+      }
+    }
+    if (replacement && waitingFor !== null) setFlyChecker({ ...replacement, visualOnly: true });
+    // Reserve the bar slots and keep each victim at its point before the same paint.
+    setCaptureFlight({
+      color: victim,
+      turn: state.turn,
+      phase: state.phase,
+      perspective: myColor,
+      scope: captureScope,
+      count,
+      moveCount: state.lastMove?.length ?? 0,
+      pieces,
+    });
+  }, [state, myColor, captureScope, flyChecker, reduceMotion, makeExternalFlight, computeSlot, displayTopPoints]);
 
   useEffect(() => {
     const lm = state.lastMove;
@@ -579,11 +689,12 @@ export function Board({
       humanMoveRef.current.to === last.to;
     knownLastMoveRef.current = lm;
     humanMoveRef.current = null;
-    if (isHuman) return;
+    if (isHuman || capturedAttackState.current === state) return;
     // Replace a superseded flight instead of dropping the new server update.
     const mover: Color = myColor === null ? state.turn : myColor === "black" ? "white" : "black";
-    animateExternalMove(last.from, last.to, mover);
-  }, [state.lastMove, state.turn, flyChecker, myColor, animateExternalMove]);
+    const flight = makeExternalFlight(last.from, last.to, mover);
+    if (flight) setFlyChecker(flight);
+  }, [state, myColor, makeExternalFlight]);
 
   useEffect(() => {
     if (autoPointRunRef.current) return;
@@ -616,7 +727,7 @@ export function Board({
     }
     const existing = forcedExecRef.current;
     if (existing && existing.id === autoMove.id) return;
-    if (flyChecker) return;
+    if (flyChecker && !flyChecker.visualOnly) return;
     forcedExecRef.current = { id: autoMove.id, posKey: currentKey, from: autoMove.move.from, to: autoMove.move.to };
     triggerFly(autoMove.move.from, autoMove.move.to, undefined, { origin: "forced" });
   }, [autoMove, autoPointSequenceActive, flyChecker, state, myColor, inputDisabled, triggerFly, pointerDown, hasPointerInteraction]);
@@ -631,6 +742,7 @@ export function Board({
       }
     }
     if (baseInteractionBlocked) return;
+    setCaptureFlight(null);
     const board = boardRef.current;
     const last = lastMoveLast;
     if (!board || !last) {
@@ -720,7 +832,7 @@ export function Board({
       clearAutoPointSequence(true);
       return;
     }
-    if (flyChecker) return;
+    if (flyChecker && !flyChecker.visualOnly) return;
     if (run.remaining.length === 0) {
       clearAutoPointSequence(true);
       return;
@@ -857,7 +969,9 @@ export function Board({
       className={`${styles.wrapper} [--checker:var(--board-checker-size,6.7cqw)] [--bar-w:var(--board-bar-width,7cqw)] [--bearoff-w:clamp(48px,6cqw,56px)] [background:var(--lux-board-area-bg,var(--lux-rail-bg))]`}
       dir="ltr"
       data-testid="board-wrapper"
-      style={{ "--board-leather-image": `url("${charcoalLeather}")` } as React.CSSProperties}
+      style={{
+        "--board-leather-image": `url("${charcoalLeather}")`,
+      } as React.CSSProperties}
     >
       <div
         ref={boardRef}
@@ -873,7 +987,7 @@ export function Board({
         <span aria-hidden="true" data-board-depth="outer-wall" className="pointer-events-none absolute inset-0 translate-y-[5px] rounded-[11px] bg-[#060909] shadow-[2px_7px_7px_#000000b3,5px_13px_16px_#00000066] @max-[620px]/game-layout:translate-y-0.5 @max-[620px]/game-layout:rounded-md" />
         <span aria-hidden="true" data-board-depth="outer-bevel" className="pointer-events-none absolute inset-0 rounded-[10px] border border-[var(--lux-case-border,#a4824680)] [background:linear-gradient(135deg,#d2c39880,#4e51483d_3px,#070b09_7px,#171d17_98%,#050806)] shadow-[inset_1px_1px_0_#ffffff2e,inset_-2px_-3px_1px_#000000cc] @max-[620px]/game-layout:rounded-md" />
         <span aria-hidden="true" data-board-depth="rim-face" className="pointer-events-none absolute inset-[4px] rounded-[7px] [background:var(--lux-rail-bg)] shadow-[inset_1px_1px_2px_#ffffff1a,inset_-1px_-2px_2px_#00000099] @max-[620px]/game-layout:inset-0.5 @max-[620px]/game-layout:rounded" />
-        <span aria-hidden="true" className="pointer-events-none absolute inset-[5px] rounded-[inherit] opacity-[var(--lux-board-texture-opacity,0)] mix-blend-soft-light [background-image:var(--lux-board-texture,none)] bg-size-[480px_480px]" />
+        <span aria-hidden="true" className="pointer-events-none absolute inset-[5px] rounded-[inherit] opacity-[var(--lux-board-texture-opacity,0)] mix-blend-soft-light [background:var(--lux-board-texture-layer,var(--lux-board-texture,none)_0_0/480px_480px)]" />
         <span
           aria-hidden="true"
           className="pointer-events-none absolute inset-[4px] z-3 rounded-[7px] border border-t-white/12 border-l-white/10 border-r-black/60 border-b-black/80 @max-[620px]/game-layout:inset-0.5 @max-[620px]/game-layout:rounded"
@@ -882,7 +996,7 @@ export function Board({
         <div className={`${styles.inner} ${materials.ready ? "[--lux-field-bg:transparent] [--lux-field-sheen:none] [--lux-row-bg:none]" : ""} ${materials.ready && materials.theme !== "charcoalGold" ? "[--lux-center-belt:transparent]" : ""}`} data-testid="board-inner">
           {!materials.ready && <>
           <span aria-hidden="true" data-board-depth="inner-wall" className="pointer-events-none absolute -inset-[4px] z-3 rounded-[5px] border-[4px] border-t-[#050807] border-l-[#070b09] border-r-[#3d4435] border-b-[#464a3c] shadow-[0_1px_0_#c6bd9b52,0_-1px_0_#000000cc] @max-[620px]/game-layout:-inset-0.5 @max-[620px]/game-layout:border-2" />
-          <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] opacity-[var(--lux-board-texture-opacity,0)] mix-blend-soft-light [background-image:var(--lux-board-texture,none)] bg-size-[480px_480px]" />
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 rounded-[inherit] opacity-[var(--lux-board-texture-opacity,0)] mix-blend-soft-light [background:var(--lux-board-texture-layer,var(--lux-board-texture,none)_0_0/480px_480px)]" />
           <span aria-hidden="true" data-board-depth="recess-contact" className="pointer-events-none absolute inset-0 z-3 rounded-[inherit] shadow-[inset_3px_4px_7px_#000000a6,inset_-1px_-2px_2px_#ffffff0a]" />
           </>}
           <div className="relative z-1 col-start-1 row-start-1 grid min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-[var(--board-center-gap,clamp(6px,0.72cqw,11px))]" data-testid="board-half-left">
@@ -898,6 +1012,7 @@ export function Board({
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
+                  playerColor={myColor}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
@@ -915,6 +1030,7 @@ export function Board({
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
+                  playerColor={myColor}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
@@ -936,12 +1052,14 @@ export function Board({
                 ? flyChecker.color
                 : null
             }
+            pendingCaptures={activeCapture ? { color: activeCapture.color, count: capturePieces.length } : undefined}
             checkerLayout={checkerLayout.bar}
             doublingCube={doublingEnabled ? (
               <DoublingCube
-                value={state.phase === "doubling_offered" ? state.cube * 2 : state.cube}
+                value={state.cube}
                 owner={state.cubeOwner}
                 showOwner={false}
+                offered={state.phase === "doubling_offered"}
               />
             ) : null}
             cubePosition={cubePosition}
@@ -960,6 +1078,7 @@ export function Board({
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
+                  playerColor={myColor}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
@@ -976,6 +1095,7 @@ export function Board({
                   selected={(drag?.from ?? selected) === idx}
                   isLegalTarget={displayedTargets.includes(idx)}
                   isLegalFrom={legalFromPoints.includes(idx)}
+                  playerColor={myColor}
                   onClick={handlePointClick}
                   hideTopChecker={hideTopCheckerAt(idx)}
                 />
@@ -988,6 +1108,7 @@ export function Board({
             state={state}
             myColor={myColor}
             isLegalTarget={!interactionBlocked && (drag ? displayedTargets.includes(OFF) : bearOffMove !== null)}
+            landingColor={flyChecker?.to === OFF && !flyChecker.committed && (flyChecker.external || flyMoveApplied) ? flyChecker.color : undefined}
             onClick={() => {
               if (interactionBlocked || !bearOffMove) return;
               triggerFly(bearOffMove.from, OFF, undefined, { die: bearOffMove.die });
@@ -1034,6 +1155,23 @@ export function Board({
           <Checker color={drag.color} size={drag.size} />
         </div>
       )}
+      {activeCapture && capturePieces.map(piece => (
+        <FlyingChecker
+          key={piece.id}
+          from={piece.from}
+          to={piece.waitingFor === null ? piece.to : piece.from}
+          color={activeCapture.color}
+          size={piece.from.size}
+          toSize={piece.waitingFor === null ? piece.to.size : piece.from.size}
+          committed={piece.waitingFor !== null}
+          captured
+          onComplete={() => setCaptureFlight(current => {
+            if (!current?.pieces.some(candidate => candidate.id === piece.id)) return current;
+            const pieces = current.pieces.filter(candidate => candidate.id !== piece.id);
+            return pieces.length ? { ...current, pieces } : null;
+          })}
+        />
+      ))}
       {flyChecker && (
         <FlyingChecker
           key={flyChecker.id}
@@ -1044,6 +1182,9 @@ export function Board({
           toSize={flyChecker.toSize}
           committed={flyChecker.committed}
           onComplete={() => {
+            setCaptureFlight(current => current?.pieces.some(piece => piece.waitingFor === flyChecker.id)
+              ? { ...current, pieces: current.pieces.map(piece => piece.waitingFor === flyChecker.id ? { ...piece, waitingFor: null } : piece) }
+              : current);
             setFlyChecker((current) => {
               if (current?.id !== flyChecker.id) return current;
               return current.external || flyMoveApplied

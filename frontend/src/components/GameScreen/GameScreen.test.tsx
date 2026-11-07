@@ -6,8 +6,33 @@ import { makeGameState } from "../../test-utils/gameState";
 import { ErrorCardHarness } from "../../test-utils/probes";
 import { DEFAULT_BOARD_THEME } from "../BoardThemeSelector/boardThemes";
 
-test("charcoal and gold is the default board theme", () => {
-  expect(DEFAULT_BOARD_THEME).toBe("charcoalGold");
+test("brown and gold is the default board theme", () => {
+  expect(DEFAULT_BOARD_THEME).toBe("brownGold");
+});
+
+test("changing the board theme recolors the player rail and preserves the clock", async ({ mount, page }) => {
+  await page.evaluate(() => localStorage.setItem("6b-board-theme", "brownGold"));
+  const component = await mount(
+    <MockGameWrapper playerColor="white" state={makeGameState({ phase: "rolling", turn: "white" })}>
+      <GameScreen />
+    </MockGameWrapper>,
+  );
+  const rail = component.getByTestId("side-panel");
+  const score = rail.getByTestId("player-score-white");
+  const clock = rail.getByTestId("clock-my");
+  const toggle = component.getByTestId("game-settings-toggle");
+  await expect(score).toHaveCSS("background-color", "rgb(43, 33, 24)");
+  const initialRail = await rail.evaluate(element => getComputedStyle(element).backgroundImage);
+  const clockBackground = await clock.evaluate(element => getComputedStyle(element).backgroundColor);
+
+  await toggle.press("Enter");
+  await component.getByRole("combobox", { name: "Board style" }).selectOption("charcoalGold");
+
+  await expect(component.getByTestId("board-frame")).toHaveAttribute("data-board-theme", "charcoalGold");
+  await expect(rail).not.toHaveCSS("background-image", initialRail);
+  await expect(score).toHaveCSS("background-color", "rgb(23, 27, 28)");
+  await expect(toggle).toHaveCSS("background-color", "rgb(23, 27, 28)");
+  await expect(clock).toHaveCSS("background-color", clockBackground);
 });
 
 for (const [theme, label, fieldColor] of [
@@ -62,12 +87,13 @@ test("game sounds can be muted and the preference survives reopening", async ({ 
 });
 
 for (const [theme, expectedAccent] of [
+  ["brownGold", "#dfaf63"],
   ["charcoalGold", "#d6ae63"],
   ["blueIvory", "#2448ff"],
 ] as const) {
   test(`opening result shows both dice and uses the ${theme} theme`, async ({ mount, page }) => {
     await page.evaluate((selectedTheme) => {
-      if (selectedTheme === "charcoalGold") localStorage.removeItem("6b-board-theme");
+      if (selectedTheme === "brownGold") localStorage.removeItem("6b-board-theme");
       else localStorage.setItem("6b-board-theme", selectedTheme);
     }, theme);
     const component = await mount(
@@ -78,27 +104,78 @@ for (const [theme, expectedAccent] of [
           turn: "white",
           openingRoll: { white: 5, black: 3 },
         })}
-        context={{
-          openingRollResult: { myDie: 5, opponentDie: 3, winner: "white" },
-        }}
       >
         <GameScreen />
       </MockGameWrapper>,
     );
     await expect(component.getByTestId("guidance-banner")).toHaveCount(0);
-    await expect(component.getByTestId("opening-result-overlay")).toBeVisible();
-    await expect(
-      component.getByTestId("opening-result-overlay").getByText("Opponent"),
-    ).toBeVisible();
-    await expect(
-      component.getByTestId("opening-result-overlay").locator("[data-testid='die']"),
-    ).toHaveCount(2);
+    await expect(component.getByTestId("opening-result-overlay")).toHaveText("You go first!");
+    const openingDice = component.locator('[data-roll-kind="opening"]');
+    await expect(openingDice.locator('[data-testid="die"]')).toHaveCount(2);
+    await expect(openingDice.locator('[data-dice-throw-active="true"]')).toHaveCount(0);
+    await expect(openingDice.and(component.locator('[data-roll-owner="self"]')).getByTestId("die")).toHaveAttribute("data-die-value", "5");
+    await expect(openingDice.and(component.locator('[data-roll-owner="opponent"]')).getByTestId("die")).toHaveAttribute("data-die-value", "3");
     const accent = await component
       .getByTestId("opening-result-overlay")
       .evaluate((element) => getComputedStyle(element).getPropertyValue("--ui-accent").trim());
     expect(accent).toBe(expectedAccent);
   });
 }
+
+test("each opening die arrives on its half and the first move reuses the deciding pair", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const waiting = makeGameState({ phase: "opening_roll", turn: "white", points: new Array(24).fill(0) });
+  const render = (state: typeof waiting) => (
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameScreen />
+    </MockGameWrapper>
+  );
+  const board = await mount(render(waiting));
+  await board.update(render({ ...waiting, turn: "black", openingRoll: { white: 5, black: null } }));
+  const white = board.locator('[data-overlay-side="right"] [data-roll-kind="opening"]');
+  const black = board.locator('[data-overlay-side="left"] [data-roll-kind="opening"]');
+  await expect(white.locator('[data-dice-throw-active="true"]')).toHaveCount(1);
+  await expect(black).toHaveCount(0);
+  await white.evaluate(node => node.setAttribute("data-first-observed", "true"));
+
+  const decided = {
+    ...waiting, phase: "opening_result" as const, openingRoll: { white: 5, black: 3 },
+    dice: [5, 3], remaining: [5, 3],
+  };
+  await board.update(render(decided));
+  await expect(white).toHaveAttribute("data-first-observed", "true");
+  await expect(black.locator('[data-dice-throw-active="true"]')).toHaveCount(1);
+  await board.update(render({ ...decided, phase: "moving" }));
+  await expect(board.locator('[data-roll-kind="opening"]')).toHaveCount(0);
+  const playable = board.locator('[data-overlay-side="right"] [data-roll-kind="live"]').getByTestId("die");
+  await expect(playable).toHaveCount(2);
+  await expect(playable.first()).toHaveAttribute("data-die-value", "5");
+  await expect(playable.nth(1)).toHaveAttribute("data-die-value", "3");
+  await expect(board.getByTestId("rolling-die")).toHaveCount(0);
+});
+
+test("an observed opening tie clears for the next attempt even if a face repeats", async ({ mount, page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const waiting = makeGameState({ phase: "opening_roll", turn: "white" });
+  const render = (state: typeof waiting) => (
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameScreen />
+    </MockGameWrapper>
+  );
+  const board = await mount(render(waiting));
+  const first = { ...waiting, turn: "black" as const, openingRoll: { white: 4, black: null } };
+  await board.update(render(first));
+  await board.update(render({ ...waiting, message: "Tie - roll again" }));
+  await expect(board.getByTestId("opening-tie-status")).toBeVisible();
+  const dice = board.locator('[data-roll-kind="opening"]').getByTestId("die");
+  await expect(dice).toHaveCount(2);
+  await expect(dice.first()).toHaveAttribute("data-die-value", "4");
+  await expect(dice.nth(1)).toHaveAttribute("data-die-value", "4");
+  await board.update(render(first));
+  await expect(board.getByTestId("opening-tie-status")).toHaveCount(0);
+  await expect(dice).toHaveCount(1);
+});
 
 test("opening roll starts automatically without showing a roll action", async ({
   mount,

@@ -135,7 +135,7 @@ export default function QuickGameResult({
               onClick={onRematch}
               className={styles.rematchButton}
             >
-              ↻ {t("game.rematch")}
+              {t("game.rematch")}
             </button>
 
             <button

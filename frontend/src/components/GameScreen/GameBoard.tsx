@@ -7,6 +7,8 @@ import GuidanceBanner from "../GuidanceBanner";
 import BoardHalfOverlay from "../Board/BoardHalfOverlay";
 import type { GuidanceMessage } from "../GuidanceBanner/GuidanceBanner";
 import DiceOverlay from "./DiceOverlay";
+import OpeningDice from "./OpeningDice";
+import { useBlockedDiceFlight } from "./useBlockedDiceFlight";
 import {
   allLegalMoves,
   BAR,
@@ -28,9 +30,11 @@ import { useForcedMoveNotice } from "../../hooks/useForcedMoveNotice";
 import { usePlayerReactionControls } from "../../hooks/usePlayerReactionControls";
 import PlayerReactionPicker from "../PlayerReactions/PlayerReactionPicker";
 import BoardPlayerReactions from "../PlayerReactions/BoardPlayerReactions";
+import { useGame } from "../../services/gameContext";
 
 interface GameBoardProps {
   state: GameState;
+  readOnly?: boolean;
   noticeScope?: string;
   match?: MatchContext;
   playerColor: Color;
@@ -59,6 +63,7 @@ interface GameBoardProps {
   autoRoll?: boolean;
   autoRollCountdown?: number | null;
   onAutoRollChange?: (enabled: boolean) => void;
+  recoveringOpening?: boolean;
 }
 
 function getGameplayKey(s: GameState): string {
@@ -69,8 +74,17 @@ const FORCED_MOVE_DELAY_MS = 200;
 // Visual lifetime only; automatic moves and turn transitions keep their own timers.
 const TURN_NOTICE_DURATION_MS = 3000;
 
+interface DicePlayback {
+  scope: string;
+  phase: GameState["phase"];
+  turn: Color;
+  recoveringOpening: boolean;
+  roll: { kind: "live" | "following"; dice: string } | null;
+}
+
 export default function GameBoard({
   state,
+  readOnly = false,
   noticeScope = "local",
   match,
   playerColor,
@@ -99,8 +113,10 @@ export default function GameBoard({
   autoRoll,
   autoRollCountdown,
   onAutoRollChange,
+  recoveringOpening = false,
 }: GameBoardProps) {
   const reactions = usePlayerReactionControls(playerColor);
+  const { connectionEpoch, isLoading } = useGame();
   const [selection, setSelection] = useState<{
     from: Source | null;
     version: number;
@@ -127,7 +143,7 @@ export default function GameBoard({
   const [hiddenTurnNotice, setHiddenTurnNotice] =
     useState<GuidanceMessage | null>(null);
 
-  const isMyTurn = state.turn === playerColor && state.phase === "moving";
+  const isMyTurn = !readOnly && state.turn === playerColor && state.phase === "moving";
   const selectedBoardTheme = boardTheme ?? DEFAULT_BOARD_THEME;
   const stateVersion = state.version ?? 0;
   const hasPlayedMoveThisTurn =
@@ -324,6 +340,37 @@ export default function GameBoard({
   }, [turnNotice]);
 
   const followingRoll = useFollowingRoll(state, noMovesMessage);
+  const gameAnimationScope = `${noticeScope}:${connectionEpoch ?? 0}:${match?.matchScore?.white ?? 0}:${match?.matchScore?.black ?? 0}`;
+  const sharedDiceScope = `${gameAnimationScope}:${isLoading}`;
+  const openingDiceScope = noticeScope === "local" ? sharedDiceScope : `${sharedDiceScope}:${playerColor}`;
+  const diceScope = `${sharedDiceScope}:${playerColor}`;
+  const diceValues = state.dice.join(",");
+  const [dicePlayback, setDicePlayback] = useState<DicePlayback>(() => ({
+    scope: diceScope, phase: state.phase, turn: state.turn, recoveringOpening, roll: null,
+  }));
+  if (dicePlayback.scope !== diceScope || dicePlayback.phase !== state.phase ||
+    dicePlayback.turn !== state.turn || dicePlayback.recoveringOpening !== recoveringOpening) {
+    // Resumes and snapshots are already on the table. Only a confirmed new roll travels.
+    const rolledFromPrompt = dicePlayback.turn === state.turn && dicePlayback.phase === "rolling";
+    const passedAndRolled = dicePlayback.turn !== state.turn && dicePlayback.phase === "moving" && !hasPlayedMoveThisTurn;
+    const freshRoll = dicePlayback.scope === diceScope && !isLoading && !dicePlayback.recoveringOpening &&
+      (rolledFromPrompt || passedAndRolled) &&
+      state.phase === "moving" && state.dice.length === 2;
+    setDicePlayback({
+      scope: diceScope, phase: state.phase, turn: state.turn, recoveringOpening,
+      roll: freshRoll ? { kind: noMovesMessage ? "following" : "live", dice: diceValues } : null,
+    });
+  }
+  const boardThrow = dicePlayback.roll;
+  const originalDiceCount = state.dice[0] === state.dice[1] ? 4 : state.dice.length;
+  const interruptThrow = Boolean(boardThrow && (
+    readOnly || autoPointSequenceActive || autoConfirmPending ||
+    boardThrow.dice !== diceValues || state.remaining.length !== originalDiceCount
+  ));
+  if (interruptThrow) {
+    // A replaced dice button must not replay a roll that already started.
+    setDicePlayback(previous => ({ ...previous, roll: null }));
+  }
   const turnComplete = isMyTurn && state.remaining.length === 0;
   const completedRoll = state.phase === "moving" && state.dice.length > 0 && state.remaining.length === 0 &&
     hasPlayedMoveThisTurn && !noMovesMessage;
@@ -333,25 +380,33 @@ export default function GameBoard({
   const liveDice = liveRoll ? (
     <DiceOverlay dice={state.dice} remaining={state.remaining} color={state.turn}
       playerColor={playerColor} usedOpacity={completedRoll ? 0.65 : undefined}
+      throwOnBoard={boardThrow?.kind === "live"} settled={boardThrow?.kind !== "live"} interruptThrow={interruptThrow}
       onReorder={state.turn === playerColor && !completedRoll ? onReorder : undefined} />
   ) : null;
   const ownFollowingRollActive = followingRoll?.color === playerColor && isMyTurn && state.remaining.length > 0;
+  const followingFlight = boardThrow?.kind === "following" && followingRoll?.color === state.turn;
   const followingDice = followingRoll && !(turnComplete && followingRoll.color === playerColor) ? (
     <DiceOverlay kind="following" dice={followingRoll.dice} color={followingRoll.color} playerColor={playerColor}
       remaining={ownFollowingRollActive ? state.remaining : followingRoll.dice}
       forceActive={!ownFollowingRollActive}
+      throwOnBoard={followingFlight} settled={!followingFlight}
+      interruptThrow={interruptThrow}
       onReorder={ownFollowingRollActive ? onReorder : undefined} />
   ) : null;
   // Roll snapshots keep their roller's side across turn changes. Completing our
   // own turn replaces any own snapshot with confirmation in the same position.
   const blockedSide = noMovesMessage?.color === playerColor ? "right" : "left";
   const followingSide = blockedSide === "right" ? "left" : "right";
+  const blockedFlight = useBlockedDiceFlight(openingDiceScope, state, noMovesMessage) && !readOnly;
+  const blockedLanding = blockedFlight && visibleTurnNotice?.variant === "no-moves";
   const rollDetails = noMovesMessage ? {
     [blockedSide]: turnComplete && noMovesMessage.color === playerColor ? null : (
       <>
         {noMovesMessage.dice.length > 0 && (
           <DiceOverlay kind="blocked" dice={noMovesMessage.dice} remaining={noMovesMessage.remaining}
-            color={noMovesMessage.color} playerColor={playerColor} forceActive />
+            color={noMovesMessage.color} playerColor={playerColor} forceActive
+            throwOnBoard={blockedLanding} settled={!blockedLanding}
+            awaitingThrow={blockedFlight && noMovesMessage.noticeVisible === false} />
         )}
         {liveDice}
       </>
@@ -398,7 +453,7 @@ export default function GameBoard({
   }
 
   return (
-    <GameFrame theme={selectedBoardTheme} checkerStyle={checkerStyle} settings={
+    <GameFrame theme={selectedBoardTheme} checkerStyle={checkerStyle} settingsDisabled={readOnly} settings={
       <GameSettingsPanel state={state} onLeave={onLeave} boardTheme={boardTheme}
         onBoardThemeChange={onBoardThemeChange} soundEnabled={soundEnabled}
         checkerStyle={checkerStyle} onCheckerStyleChange={onCheckerStyleChange}
@@ -408,7 +463,9 @@ export default function GameBoard({
       {(settingsToggle) => <>
       <SidePanel key={`${noticeScope}:${playerColor}`} state={state} playerColor={playerColor} clock={clock}
         turnStartedAt={turnStartedAt} timeControl={timeControl} settingsToggle={settingsToggle}
-        reactionPicker={reactions.pickerProps ? <PlayerReactionPicker key={reactions.scope} {...reactions.pickerProps} /> : null} />
+        reactionPicker={reactions.pickerProps ? readOnly ? (
+          <div aria-hidden="true" className="min-h-11" />
+        ) : <PlayerReactionPicker key={reactions.scope} {...reactions.pickerProps} /> : null} />
       <div className={`${styles.boardArea} col-start-2 row-start-2`}>
         <Board
           state={state}
@@ -429,11 +486,13 @@ export default function GameBoard({
           noticeSide={noMovesMessage ? blockedSide : "right"}
           rollDetails={rollDetails}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
-          inputDisabled={autoConfirmPending}
+          inputDisabled={autoConfirmPending || readOnly}
+          captureScope={gameAnimationScope}
           hasPendingMoves={hasPendingMoves}
           overlay={
             <>
-              <BoardPlayerReactions reactions={reactions.reactions} names={reactions.names} playerColor={playerColor} />
+              {!readOnly && <BoardPlayerReactions reactions={reactions.reactions} names={reactions.names} playerColor={playerColor} />}
+              <OpeningDice state={state} playerColor={playerColor} scope={openingDiceScope} readOnly={readOnly} />
               {!noMovesMessage && liveDice && (
                 <BoardHalfOverlay side={state.turn === playerColor ? "right" : "left"}>
                   {liveDice}

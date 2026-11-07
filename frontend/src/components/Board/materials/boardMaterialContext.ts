@@ -1,6 +1,6 @@
 import { createContext, useContext } from "react";
 import type { DiceMaterialImages } from "./diceMaterialRenderer";
-import type { BoardTheme } from "../../BoardThemeSelector/boardThemes";
+import { DEFAULT_BOARD_THEME, type BoardTheme } from "../../BoardThemeSelector/boardThemes";
 import { DEFAULT_CHECKER_STYLE, type CheckerStyle } from "./checkerStyles";
 
 export type CheckerMaterialImages = Record<"white" | "black", string>;
@@ -23,7 +23,7 @@ interface BoardMaterialContextValue {
 }
 
 export const BoardMaterialContext = createContext<BoardMaterialContextValue>({
-  theme: "charcoalGold",
+  theme: DEFAULT_BOARD_THEME,
   checkerStyle: DEFAULT_CHECKER_STYLE,
   enabled: false,
   ready: false,

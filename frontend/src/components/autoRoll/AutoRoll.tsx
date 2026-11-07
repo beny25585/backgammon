@@ -25,7 +25,7 @@ export function AutoRoll({
         dir="ltr"
       >
         <span dir={direction}>{t("common.autoRoll")}</span>
-        <span aria-hidden="true" className="relative h-6 w-10 shrink-0 rounded-full border border-white/15 bg-[#292d2d] after:absolute after:start-1 after:top-1 after:size-3.5 after:rounded-full after:bg-white/60 group-aria-pressed:border-[#e7c273] group-aria-pressed:bg-[#b18a3f] group-aria-pressed:after:start-[1.125rem] group-aria-pressed:after:bg-[#fff9e7]" />
+        <span aria-hidden="true" className="relative h-6 w-10 shrink-0 rounded-full border border-white/15 bg-[#322820] after:absolute after:left-1 after:top-1 after:size-3.5 after:rounded-full after:bg-white/60 motion-safe:after:transition-[translate] motion-safe:after:duration-[140ms] motion-safe:after:ease-out group-aria-pressed:border-[#e7c273] group-aria-pressed:bg-[#b18a3f] group-aria-pressed:after:translate-x-3.5 group-aria-pressed:after:bg-[#fff9e7]" />
       </button>
     );
   }

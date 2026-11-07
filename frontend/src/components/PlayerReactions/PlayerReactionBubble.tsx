@@ -24,7 +24,7 @@ export default function PlayerReactionBubble({ reaction, sender }: { reaction?: 
             animate={{ opacity: 1, transform: "none" }}
             exit={{ opacity: 0, transform: reduceMotion ? "none" : "translateY(4px)" }}
             transition={{ duration: reduceMotion ? 0.12 : 0.18, ease: [0.23, 1, 0.32, 1] }}
-            className="relative flex min-h-12 max-w-40 flex-col items-center justify-center gap-0.5 rounded-2xl border border-[#e6c478]/45 bg-linear-to-b from-[#242b26] to-[#121a17] px-3 py-1 text-center font-semibold text-[#ffe5a8] shadow-[0_5px_16px_#00000060,inset_0_1px_0_#fff2c411] after:absolute after:-bottom-1 after:start-5 after:size-2 after:rotate-45 after:border-r after:border-b after:border-[#e6c478]/45 after:bg-[#121a17]"
+            className="relative flex min-h-12 max-w-40 flex-col items-center justify-center gap-0.5 rounded-2xl border border-[#e6c478]/45 bg-linear-to-b from-[#30241a] to-[#211812] px-3 py-1 text-center font-semibold text-[#ffe5a8] shadow-[0_5px_16px_#00000060,inset_0_1px_0_#fff2c411] after:absolute after:-bottom-1 after:start-5 after:size-2 after:rotate-45 after:border-r after:border-b after:border-[#e6c478]/45 after:bg-[#211812]"
           >
             {sender && <bdi className="block max-w-full truncate text-[10px] font-medium leading-3 text-[#d7cdb8]">{sender}</bdi>}
             <span className={item.emoji ? "text-[28px] leading-8" : "text-[13px] leading-5"}>

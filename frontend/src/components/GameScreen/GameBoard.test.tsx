@@ -2,7 +2,7 @@ import { test, expect, type ComponentFixtures } from "@playwright/experimental-c
 import type { ComponentProps } from "react";
 import GameBoard from "./GameBoard";
 import { MockGameWrapper } from "../../test-utils/wrappers";
-import { allLegalMoves, applyMove, BAR, newGame, OFF } from "@/lib/backgammon/engine";
+import { allLegalMoves, applyMove, BAR, newGame, OFF, respondDouble } from "@/lib/backgammon/engine";
 import type { GameState, Color, Source, Target } from "@/lib/backgammon/engine";
 import type { NoMovesMessage } from "../../types/context";
 import { Board } from "../Board/Board";
@@ -78,6 +78,68 @@ for (const viewport of [{ width: 1280, height: 800 }, { width: 844, height: 390 
     }
   }
 }
+
+test("a fresh roll settles off-slot before sliding, and reordering interrupts the throw", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const rolled = movingState({ dice: [6, 3], remaining: [6, 3] });
+  const waiting = { ...rolled, phase: "rolling" as const, dice: [], remaining: [] };
+  const render = (state: GameState) => (
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameBoard state={state} playerColor="white" makeMove={() => {}} />
+    </MockGameWrapper>
+  );
+
+  const board = await mount(render(waiting));
+  await board.update(render(rolled));
+  const flying = board.locator('[data-dice-throw-active="true"]');
+  await expect(flying).toHaveCount(2);
+  const flight = await flying.evaluateAll(elements => elements.map(element => {
+    const motion = element.getAnimations()[0]?.effect as KeyframeEffect | undefined;
+    const cube = element.querySelector('[data-testid="rolling-die"]');
+    const rotation = cube?.getAnimations()[0]?.effect as KeyframeEffect | undefined;
+    return {
+      travel: motion?.getKeyframes().map(frame => frame.transform),
+      spin: rotation?.getKeyframes().map(frame => frame.transform),
+      value: cube?.getAttribute("data-land-on"),
+    };
+  }));
+  for (const [i, die] of flight.entries()) {
+    expect(die.value).toBe(String(rolled.dice[i]));
+    expect(die.travel?.[0]).not.toBe(die.travel?.[5]);
+    expect(die.travel?.[5]).toBe(die.travel?.[6]);
+    expect(die.travel?.[6]).not.toBe(die.travel?.[7]);
+    expect(die.spin?.[2]).toBe(die.spin?.[3]);
+  }
+
+  await board.update(render({ ...rolled, remaining: [3, 6] }));
+  await expect(flying).toHaveCount(0);
+  await expect(board.getByTestId("die").first()).toHaveAttribute("data-die-value", "3");
+});
+
+test("only a newly observed blocked roll throws at its notice position", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const before = movingState({ phase: "rolling", dice: [], remaining: [], points: new Array(24).fill(0) });
+  const after = { ...before, turn: "black" as const };
+  const notice = { id: "blocked-1", color: "white" as const, dice: [6, 3], remaining: [6, 3] };
+  const render = (state: GameState, message?: NoMovesMessage) => (
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameBoard state={state} playerColor="white" makeMove={() => {}} noMovesMessage={message} />
+    </MockGameWrapper>
+  );
+  const board = await mount(render(before));
+  await board.update(render(after, { ...notice, noticeVisible: false }));
+  const dice = board.locator('[data-roll-kind="blocked"]');
+  await expect(dice.locator('[data-dice-throw-active="true"]')).toHaveCount(0);
+  await board.update(render(after, { ...notice, noticeVisible: true }));
+  const atNotice = board.getByTestId("turn-notice-details").locator('[data-roll-kind="blocked"]');
+  await expect(atNotice.locator('[data-dice-throw-active="true"]')).toHaveCount(2);
+  await board.unmount();
+  const snapshot = await mount(render(after, { ...notice, noticeVisible: true }));
+  await expect(snapshot.locator('[data-roll-kind="blocked"]').getByTestId("die")).toHaveCount(2);
+  await expect(snapshot.locator('[data-dice-throw-active="true"]')).toHaveCount(0);
+});
 
 async function mountBoard(mount: ComponentFixtures["mount"], props: MountProps) {
   const { state, playerColor, makeMove, undoMove, endTurn, offerDouble, needsToRoll, onRoll, respondToDouble, noMovesMessage } = props;
@@ -1188,25 +1250,47 @@ test("board point order is mirrored for the black player", async ({ mount }) => 
   ]);
 });
 
-test("banner shows Accept/Decline when opponent offers a double", async ({ mount }) => {
+test("a pending double proposes the next value without changing the accepted cube", async ({ mount }) => {
   let accepted: boolean | null = null;
   const state = movingState({
     phase: "doubling_offered",
-    turn: "white",
+    turn: "black",
+    dice: [],
+    remaining: [],
     doubleOfferedBy: "black",
     cube: 2,
-    cubeOwner: "white",
+    cubeOwner: "black",
   });
-  const component = await mountBoard(mount, {
-    state,
-    playerColor: "white",
-    respondToDouble: (a) => (accepted = a),
-  });
+  const render = (current: GameState) => (
+    <MockGameWrapper playerColor="white" state={current}>
+      <GameBoard
+        state={current}
+        playerColor="white"
+        makeMove={() => {}}
+        respondToDouble={(value) => { accepted = value; }}
+      />
+    </MockGameWrapper>
+  );
+  const component = await mount(render(state));
 
   await expect(component.getByTestId("guidance-banner")).toHaveAttribute("data-variant", "double");
-  await expect(component.getByTestId("doubling-cube")).toHaveText("4");
+  await expect(component.getByTestId("doubling-offer-summary")).toContainText("Cube value if accepted: 4");
+  await expect(component.getByTestId("double-decline")).toBeVisible();
+  const cube = component.getByTestId("doubling-cube");
+  const cubeSlot = component.getByTestId("bar-doubling-cube");
+  await expect(cube).toHaveText("2");
+  await expect(cubeSlot).toHaveAttribute("data-cube-position", "top");
+
   await component.getByTestId("double-accept").click();
   await expect.poll(() => accepted).toBe(true);
+  await expect(cube).toHaveText("2");
+  await expect(cubeSlot).toHaveAttribute("data-cube-position", "top");
+
+  await component.update(render(respondDouble(state, true)));
+  await expect(component.getByTestId("doubling-offer-summary")).toHaveCount(0);
+  await expect(cube).toHaveAttribute("data-cube-owner", "white");
+  await expect(cube).toHaveText("4");
+  await expect(cubeSlot).toHaveAttribute("data-cube-position", "bottom");
 });
 
 test("settings start closed and can be opened and dismissed without hiding the dice", async ({ mount, page }) => {

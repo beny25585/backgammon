@@ -12,7 +12,12 @@ interface Options {
 }
 
 const CLEARANCE = 8;
-const MOVING_CHECKER = '[data-testid="dragging-checker"], [data-testid="flying-checker"]';
+const MOVING_PIECE = [
+  '[data-testid="dragging-checker"]',
+  '[data-testid="flying-checker"]',
+  '[data-testid="captured-checker-flight"]',
+  '[data-dice-throw-active="true"]',
+].join(", ");
 const REACTION = '[data-board-reaction], [data-testid="player-reaction-white"], [data-testid="player-reaction-black"]';
 const OBSTACLES = [
   "[data-checker]",
@@ -22,6 +27,7 @@ const OBSTACLES = [
   '[data-testid="point-number"]',
   '[data-testid="auto-roll-countdown"]',
   '[data-testid="turn-notice-details"]',
+  '[data-testid="doubling-offer-summary"]',
   '[data-testid="guidance-banner"]:not([role="dialog"])',
   "button:not([data-point-idx])",
   REACTION,
@@ -107,7 +113,7 @@ export function useBoardReactionPosition({ containerRef, bubbleRef, side, active
       const right = Math.min(layer.offsetWidth, halfRect.left + halfRect.width) - CLEARANCE;
       const bottom = Math.min(layer.offsetHeight, halfRect.top + halfRect.height) - CLEARANCE;
       if (width > right - left || height > bottom - top
-        || Array.from(root.querySelectorAll<HTMLElement>(MOVING_CHECKER)).some(isDisplayed)) {
+        || Array.from(root.querySelectorAll<HTMLElement>(MOVING_PIECE)).some(isDisplayed)) {
         update(null);
         return;
       }
@@ -174,8 +180,9 @@ export function useBoardReactionPosition({ containerRef, bubbleRef, side, active
       if (records.some(record => {
         const element = record.target instanceof HTMLElement ? record.target : record.target.parentElement;
         if (!element || bubble.contains(element)) return false;
-        // Their transforms cannot create a safe location while a checker is moving.
-        return record.type !== "attributes" || !element.closest(MOVING_CHECKER);
+        // Recheck at the start and end of a throw, without tracking every transform frame.
+        return record.type !== "attributes" || record.attributeName === "data-dice-throw-active"
+          || !element.closest(MOVING_PIECE);
       })) schedule();
     });
     mutationObserver.observe(board, {
@@ -183,7 +190,7 @@ export function useBoardReactionPosition({ containerRef, bubbleRef, side, active
       childList: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["class", "style", "hidden", "data-testid"],
+      attributeFilter: ["class", "style", "hidden", "data-testid", "data-dice-throw-active"],
     });
     window.addEventListener("resize", schedule);
     measure();

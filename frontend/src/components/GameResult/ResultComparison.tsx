@@ -15,21 +15,37 @@ interface MetricRowProps {
   leftClassName?: string;
   rightClassName?: string;
   loading?: boolean;
+  analysisReady?: boolean;
 }
 
-export function ResultMetricRow({ left, label, right, leftClassName, rightClassName, loading = false }: MetricRowProps) {
+export function ResultMetricRow({
+  left,
+  label,
+  right,
+  leftClassName,
+  rightClassName,
+  loading = false,
+  analysisReady = false,
+}: MetricRowProps) {
   const placeholder = (
     <span
       aria-hidden="true"
       data-testid="result-metric-loading"
-      className="inline-block h-[0.85em] w-[clamp(42px,8cqw,72px)] rounded-full bg-gradient-to-r from-white/5 via-amber-300/20 to-white/5 motion-safe:animate-pulse"
+      className="inline-block h-[0.8em] w-[min(65%,56px)] rounded-full bg-[#ddc8a2]/20"
     />
   );
+  const valueStyle = analysisReady
+    ? " motion-safe:starting:opacity-0 motion-safe:transition-opacity motion-safe:duration-150 motion-safe:ease-[cubic-bezier(0.23,1,0.32,1)]"
+    : "";
   return (
     <div className={styles.resultRow} aria-busy={loading}>
-      <span className={`${styles.playerValue} ${leftClassName ?? ""}`}>{loading ? placeholder : left}</span>
-      <span className={styles.metricLabel}>{label}</span>
-      <span className={`${styles.opponentValue} ${rightClassName ?? ""}`}>{loading ? placeholder : right}</span>
+      <span key={analysisReady ? "left-ready" : "left"} className={`${styles.playerValue} ${leftClassName ?? ""}${valueStyle}`}>
+        {loading ? placeholder : left}
+      </span>
+      <span className={styles.metricLabel} dir="auto">{label}</span>
+      <span key={analysisReady ? "right-ready" : "right"} className={`${styles.opponentValue} ${rightClassName ?? ""}${valueStyle}`}>
+        {loading ? placeholder : right}
+      </span>
     </div>
   );
 }
@@ -37,12 +53,16 @@ export function ResultMetricRow({ left, label, right, leftClassName, rightClassN
 interface MatchDetailRowProps {
   label: string;
   value: React.ReactNode;
+  separator?: string;
 }
 
-export function MatchDetailRow({ label, value }: MatchDetailRowProps) {
+export function MatchDetailRow({ label, value, separator = ":" }: MatchDetailRowProps) {
   return (
     <div className={styles.resultRowCentered}>
-      <span className={styles.resultCenteredValue}>{label}: {value}</span>
+      <span className={styles.resultCenteredValue} dir="ltr">
+        <span dir="auto">{label}{separator}</span>{" "}
+        <span dir="auto">{value}</span>
+      </span>
     </div>
   );
 }

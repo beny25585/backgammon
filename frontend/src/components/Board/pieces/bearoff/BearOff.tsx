@@ -1,11 +1,13 @@
 import type { GameState, Color } from "@/lib/backgammon/engine";
 import { useI18n } from "../../../../i18n/I18nProvider";
 import { useBoardMaterials } from "../../materials/boardMaterialContext";
+import BoardCount from "../BoardCount";
 
 interface BearOffProps {
   state: GameState;
   myColor: Color | null;
   isLegalTarget: boolean;
+  landingColor?: Color;
   onClick: () => void;
   onControlsTargetChange?: (target: HTMLDivElement | null) => void;
 }
@@ -27,7 +29,7 @@ function TrayRecess({ bottom }: { bottom: boolean }) {
         data-bearoff-layer="floor"
         className="pointer-events-none absolute inset-[6px] overflow-hidden rounded-[3px] border border-black/60 [background:var(--lux-bearoff-bg,var(--lux-rail-bg,#171b19))] shadow-[inset_3px_5px_8px_#000000e6,inset_-1px_-1px_2px_#ffffff0d]"
       >
-        <span className="pointer-events-none absolute inset-0 opacity-[var(--lux-board-texture-opacity,0.5)] mix-blend-soft-light [background-image:var(--lux-board-texture,none)] bg-size-[160px_160px]" />
+        <span className="pointer-events-none absolute inset-0 opacity-[var(--lux-board-texture-opacity,0.5)] mix-blend-soft-light [background:var(--lux-board-texture-layer,var(--lux-board-texture,none)_0_0/160px_160px)]" />
         <span className="pointer-events-none absolute inset-0 bg-linear-to-br from-black/45 via-black/15 to-black/30" />
       </span>
     </span>
@@ -42,6 +44,7 @@ function BearOffTray({
   label,
   actionLabel,
   onClick,
+  landing,
 }: {
   color: Color;
   count: number;
@@ -50,6 +53,7 @@ function BearOffTray({
   label: string;
   actionLabel: string;
   onClick: () => void;
+  landing: boolean;
 }) {
   return (
     <button
@@ -71,7 +75,7 @@ function BearOffTray({
         className="relative z-10 -mx-[3px] grid h-[clamp(18px,4cqh,30px)] w-[calc(100%_+_6px)] shrink-0 place-items-center overflow-hidden rounded-[4px] border border-[var(--lux-rail-border,var(--ui-accent-border,#d6ae6380))] [background:var(--lux-rail-bg,#171b19)] text-[clamp(11px,2.5cqh,17px)] leading-none font-bold text-[var(--board-bearoff-count-text,var(--lux-checker-light-hi,#fff2d2))] tabular-nums shadow-[inset_1px_1px_0_#ffffff35,inset_-2px_-2px_1px_#000000b3,0_1px_0_#ffffff12]"
       >
         <span className="pointer-events-none absolute inset-[2px] rounded-[2px] border border-black/75 bg-black/70 shadow-[inset_1px_2px_3px_#000000e6,inset_-1px_-1px_0_#ffffff0d]" />
-        <span className="relative">{count}</span>
+        <BoardCount count={landing ? Math.max(0, count - 1) : count} className="relative" />
       </span>
       <span
         aria-hidden="true"
@@ -82,7 +86,7 @@ function BearOffTray({
           <span
             key={index}
             data-borne-off-checker={color}
-            className={`min-h-0 max-h-[var(--bearoff-piece-max)] w-full flex-1 rounded-[3px] shadow-[inset_0_1px_1px_#ffffff45,inset_0_-1px_1px_#00000040] ${color === "white" ? "bg-linear-to-b from-[var(--lux-checker-light-mid,#fff4d4)] to-[var(--lux-checker-light-low,#c7a874)]" : "bg-linear-to-b from-[var(--lux-checker-dark-mid,#a5383f)] to-[var(--lux-checker-dark-deep,#4a0c13)]"}`}
+            className={`min-h-0 max-h-[var(--bearoff-piece-max)] w-full flex-1 rounded-[3px] shadow-[inset_0_1px_1px_#ffffff45,inset_0_-1px_1px_#00000040] ${landing && index === count - 1 ? "opacity-0" : ""} ${color === "white" ? "bg-linear-to-b from-[var(--lux-checker-light-mid,#fff4d4)] to-[var(--lux-checker-light-low,#c7a874)]" : "bg-linear-to-b from-[var(--lux-checker-dark-mid,#a5383f)] to-[var(--lux-checker-dark-deep,#4a0c13)]"}`}
           />
         ))}
       </span>
@@ -90,7 +94,7 @@ function BearOffTray({
   );
 }
 
-export default function BearOff({ state, myColor, isLegalTarget, onClick, onControlsTargetChange }: BearOffProps) {
+export default function BearOff({ state, myColor, isLegalTarget, landingColor, onClick, onControlsTargetChange }: BearOffProps) {
   const { t } = useI18n();
   const { ready: materialReady } = useBoardMaterials();
   const bottomBearOffColor: Color = myColor ?? "white";
@@ -117,6 +121,7 @@ export default function BearOff({ state, myColor, isLegalTarget, onClick, onCont
           })}
           actionLabel={t("game.bearOffAction")}
           onClick={onClick}
+          landing={landingColor === topBearOffColor}
         />
         <div
           ref={onControlsTargetChange}
@@ -134,6 +139,7 @@ export default function BearOff({ state, myColor, isLegalTarget, onClick, onCont
           })}
           actionLabel={t("game.bearOffAction")}
           onClick={onClick}
+          landing={landingColor === bottomBearOffColor}
         />
     </div>
   );

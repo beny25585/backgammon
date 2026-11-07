@@ -2,12 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import styles from "./GameScreen.module.css";
 import { useGame } from "../../services/gameContext";
 import GameBoard from "./GameBoard";
+import ConnectionStatus from "./ConnectionStatus";
 import InactivityBanner from "../InactivityBanner";
 import TournamentGameResult from "../GameResult/TournamentGameResult";
 import QuickGameResult from "../GameResult/QuickGameResult";
 import PrivateGameResult from "../GameResult/PrivateGameResult";
 import SamsungDarkModeHelp from "../SamsungDarkModeHelp/SamsungDarkModeHelp";
-import { DiceRow } from "../Dice";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color, GameState } from "../../lib/backgammon/engine";
 import { canOfferDouble, isBarEntryFullyBlocked } from "../../lib/backgammon/engine";
@@ -114,7 +114,6 @@ export default function GameScreen({
     targetPoints,
     whiteName,
     blackName,
-    openingRollResult,
     noMovesMessage,
     handleHome,
     leaveGame,
@@ -126,6 +125,10 @@ export default function GameScreen({
     cancelRematch,
     gameType: contextGameType,
   } = useGame();
+  const matchFinished = gameResult?.matchOver === true;
+  const setBoardSurface = useCallback((element: HTMLDivElement | null) => {
+    if (element) element.inert = matchFinished;
+  }, [matchFinished]);
   const { soundEnabled, setSoundEnabled, playActionSound } = useGameSounds(state, roomId, {
     playerColor, matchScore, isLoading, reconnected, connectionEpoch,
   });
@@ -290,7 +293,6 @@ export default function GameScreen({
     }
   }, [rematchReady]);
 
-  const isOpeningResult = state?.phase === "opening_result";
   const needsToRoll =
     !gameResult &&
     state?.phase === "rolling" &&
@@ -371,8 +373,8 @@ export default function GameScreen({
 
   return (
     <div className={`${styles.container} ${boardThemeClasses[boardTheme]} bg-[#050c0e]`}>
-      <SamsungDarkModeHelp />
-      {error && (
+      {!matchFinished && <SamsungDarkModeHelp />}
+      {!matchFinished && error && (
         <div className={styles.errorCard} data-testid="error-card" role="alert">
           <span>
             {aiFailed
@@ -494,97 +496,59 @@ export default function GameScreen({
         })()}
 
       {/* Non-final game wins auto-continue; no overlay */}
-      {!gameResult?.matchOver && (
+      {!matchFinished && (
         <>
-          {reconnected && (
-            <div className={styles.reconnected} role="status">
-              {t("game.reconnected")}
-            </div>
-          )}
+          {reconnected && <ConnectionStatus connected text={t("game.reconnected")} />}
           {!opponentConnected &&
             !reconnected &&
-            !gameResult?.matchOver &&
             !gameHasStarted && (
-              <div className={styles.disconnected} role="status">
-                {t("game.opponentNotConnected")}
-              </div>
+              <ConnectionStatus connected={false} text={t("game.opponentNotConnected")} />
             )}
           {!opponentConnected &&
             !reconnected &&
             gameHasStarted &&
-            disconnectCountdown !== null &&
-            !gameResult?.matchOver && (
-              <div className={styles.disconnected} role="status">
-                {t("game.opponentDisconnected", {
-                  seconds: disconnectCountdown,
-                })}
-              </div>
+            disconnectCountdown !== null && (
+              <ConnectionStatus connected={false} text={t("game.opponentDisconnected", { seconds: disconnectCountdown })} />
             )}
-          {!gameResult?.matchOver && (
-            <InactivityBanner state={state} playerColor={playerColor} />
-          )}
-
-          <GameBoard
-            state={state}
-            noticeScope={roomId ?? "local"}
-            match={{ targetPoints, matchScore }}
-            playerColor={playerColor}
-            makeMove={makeMove}
-            reorderDice={reorderDice}
-            undoMove={handleUndo}
-            autoConfirmPending={autoConfirmPending}
-            hasPendingMoves={hasPendingMoves}
-            endTurn={handleConfirm}
-            offerDouble={handleOfferDouble}
-            boardTheme={boardTheme}
-            onBoardThemeChange={setBoardTheme}
-            checkerStyle={checkerStyle}
-            onCheckerStyleChange={setCheckerStyle}
-            soundEnabled={soundEnabled}
-            onSoundEnabledChange={setSoundEnabled}
-            autoRoll={autoRoll}
-            autoRollCountdown={countdownSeconds}
-            onAutoRollChange={setAutoRoll}
-            needsToRoll={needsToRoll}
-            onRoll={handleRoll}
-            respondToDouble={respondToDouble}
-            onLeave={requestLeave}
-            clock={clock}
-            turnStartedAt={turnStartedAt}
-            timeControl={timeControl}
-            noMovesMessage={noMovesMessage}
-            bracketUrl={bracketUrl}
-          />
+          <InactivityBanner state={state} playerColor={playerColor} />
         </>
       )}
+      <div className="contents" ref={setBoardSurface}>
+        <GameBoard
+          state={state}
+          readOnly={matchFinished}
+          recoveringOpening={interruptedOpeningMove}
+          noticeScope={roomId ?? "local"}
+          match={{ targetPoints, matchScore }}
+          playerColor={playerColor}
+          makeMove={makeMove}
+          reorderDice={reorderDice}
+          undoMove={handleUndo}
+          autoConfirmPending={autoConfirmPending}
+          hasPendingMoves={hasPendingMoves}
+          endTurn={handleConfirm}
+          offerDouble={handleOfferDouble}
+          boardTheme={boardTheme}
+          onBoardThemeChange={setBoardTheme}
+          checkerStyle={checkerStyle}
+          onCheckerStyleChange={setCheckerStyle}
+          soundEnabled={soundEnabled}
+          onSoundEnabledChange={setSoundEnabled}
+          autoRoll={autoRoll}
+          autoRollCountdown={countdownSeconds}
+          onAutoRollChange={setAutoRoll}
+          needsToRoll={needsToRoll}
+          onRoll={handleRoll}
+          respondToDouble={respondToDouble}
+          onLeave={requestLeave}
+          clock={clock}
+          turnStartedAt={turnStartedAt}
+          timeControl={timeControl}
+          noMovesMessage={matchFinished ? null : noMovesMessage}
+          bracketUrl={bracketUrl}
+        />
+      </div>
 
-      {isOpeningResult && openingRollResult && (
-        <div className={styles.overlayDim}>
-          <div
-            className={styles.overlayCard}
-            data-testid="opening-result-overlay"
-          >
-            <div style={{ marginBottom: "0.75rem" }}>
-              <DiceRow
-                dice={[]}
-                remaining={[]}
-                color={playerColor}
-                showLabels
-                myRoll={openingRollResult.myDie}
-                opponentRoll={openingRollResult.opponentDie}
-                winner={openingRollResult.winner}
-              />
-            </div>
-            {openingRollResult.winner === playerColor && (
-              <div className={styles.winnerText}>{t("game.youFirst")}</div>
-            )}
-            {openingRollResult.winner &&
-              openingRollResult.winner !== playerColor && (
-                <div className={styles.subText}>{t("game.opponentFirst")}</div>
-              )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

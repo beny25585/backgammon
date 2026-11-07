@@ -67,7 +67,8 @@ export default function ResultSummary(props: Props) {
   }>({ roomId, analysis: null, unavailable: false });
   const analysis = summary.roomId === roomId ? summary.analysis : null;
   const unavailable = !roomId || (summary.roomId === roomId && summary.unavailable);
-  const loading = Boolean(roomId) && !unavailable && analysis?.status !== "completed";
+  const analysisReady = analysis?.status === "completed";
+  const loading = Boolean(roomId) && !unavailable && !analysisReady;
   const base = new URL(
     import.meta.env.VITE_TOURNAMENTS_URL || "/6b/tournaments/",
     window.location.origin,
@@ -141,7 +142,7 @@ export default function ResultSummary(props: Props) {
     };
   }, [roomId, apiOrigin]);
 
-  const players = analysis?.status === "completed" ? analysis.players : [];
+  const players = analysisReady ? analysis.players : [];
   const self = players.find((p) => p.color === (props.playerColor ?? "white"));
   const opponent = players.find(
     (p) => p.color !== (props.playerColor ?? "white"),
@@ -157,58 +158,59 @@ export default function ResultSummary(props: Props) {
     seconds == null
       ? "—"
       : `${Math.floor(seconds / 3600) ? `${Math.floor(seconds / 3600)}:` : ""}${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  const hasRating = [
+    props.ratingBefore, props.ratingAfter, props.ratingChange,
+    props.opponentRatingBefore, props.opponentRatingAfter, props.opponentRatingChange,
+  ].some(value => value != null);
+  const hasCoins = props.coinsDelta != null || props.opponentCoinsDelta != null;
 
   return (
     <>
       <ResultMetricRow
+        label={t("game.matchPr")}
+        loading={loading}
+        analysisReady={analysisReady}
+        left={analysisReady && self?.pr == null ? t("game.noScoredDecisions") : metric(self?.pr, 2)}
+        right={analysisReady && opponent?.pr == null ? t("game.noScoredDecisions") : metric(opponent?.pr, 2)}
+      />
+      <ResultMetricRow
         label={t("game.gameRating")}
         loading={loading}
+        analysisReady={analysisReady}
         left={metric(self?.game_rating, 0)}
         right={metric(opponent?.game_rating, 0)}
       />
       <ResultMetricRow
-        label={t("game.matchPr")}
-        loading={loading}
-        left={self?.pr == null ? t(unavailable ? "game.analysisUnavailable" : "game.noScoredDecisions") : metric(self.pr, 2)}
-        right={opponent?.pr == null ? t(unavailable ? "game.analysisUnavailable" : "game.noScoredDecisions") : metric(opponent.pr, 2)}
-      />
-      <ResultMetricRow
-        label={t("game.rating")}
-        left={rating(props.ratingBefore, props.ratingAfter, props.ratingChange)}
-        right={rating(
-          props.opponentRatingBefore,
-          props.opponentRatingAfter,
-          props.opponentRatingChange,
-        )}
-      />
-      <ResultMetricRow
-        label={t("game.coins")}
-        left={
-          <bdi>{props.coinsDelta == null ? "—" : signed(props.coinsDelta)}</bdi>
-        }
-        right={
-          <bdi>
-            {props.opponentCoinsDelta == null
-              ? "—"
-              : signed(props.opponentCoinsDelta)}
-          </bdi>
-        }
-      />
-      <ResultMetricRow
         label={t("game.luck")}
         loading={loading}
+        analysisReady={analysisReady}
         left={<bdi>{metric(self?.luck, 3)}</bdi>}
         right={<bdi>{metric(opponent?.luck, 3)}</bdi>}
       />
-      <div dir={direction}>
+      {hasRating && (
+        <ResultMetricRow
+          label={t("game.rating")}
+          left={rating(props.ratingBefore, props.ratingAfter, props.ratingChange)}
+          right={rating(props.opponentRatingBefore, props.opponentRatingAfter, props.opponentRatingChange)}
+        />
+      )}
+      {hasCoins && (
+        <ResultMetricRow
+          label={t("game.coins")}
+          left={<bdi>{props.coinsDelta == null ? "—" : signed(props.coinsDelta)}</bdi>}
+          right={<bdi>{props.opponentCoinsDelta == null ? "—" : signed(props.opponentCoinsDelta)}</bdi>}
+        />
+      )}
+      <div className={styles.durationGroup} dir={direction}>
         <MatchDetailRow
           label={t("game.gameDuration")}
           value={<bdi dir="ltr">{time}</bdi>}
+          separator=""
         />
       </div>
 
-      <p className={styles.summaryNote} dir={direction} role="status">
-        {analysis?.status === "completed"
+      <p className={analysisReady ? "sr-only" : styles.summaryNote} dir={direction} role="status">
+        {analysisReady
           ? t("game.lowerPrExplanation")
           : !roomId || unavailable
             ? t("game.analysisUnavailable")
@@ -216,7 +218,7 @@ export default function ResultSummary(props: Props) {
       </p>
       {roomId && (
         <a
-          className={`${styles.secondaryAction} ${styles.analysisLink}`}
+          className={styles.analysisLink + " underline"}
           href={base.href}
           dir={direction}
         >
