@@ -3,11 +3,13 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher/LanguageSwitcher
 import { useI18n } from "./i18n/I18nProvider";
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
+import { useGameBuildUpdate } from "./hooks/useGameBuildUpdate";
 import styles from "./App.module.css";
 
 export default function App() {
   const { direction } = useI18n();
   const location = useLocation();
+  useGameBuildUpdate(location.pathname);
   const isGameRoute =
     location.pathname === "/local" || location.pathname.startsWith("/game/") || location.pathname.startsWith("/watch/");
 

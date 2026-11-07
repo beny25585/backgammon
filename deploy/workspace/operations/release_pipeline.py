@@ -793,6 +793,8 @@ def image_builds(workspace, manifest, runner, sudo=False, kinds=None):
             if 'frontend' in kind:
                 command += ['--target', 'production', '--build-arg', 'VITE_SERVER_URL=/backgammon',
                     '--build-arg', 'VITE_TOURNAMENTS_URL=' + ORIGIN + '/6b/tournaments/', '--build-arg', 'VITE_GAME_URL=/6b/backgammon/']
+            if kind == 'game-frontend':
+                command += ['--build-arg', 'VITE_BACKGAMMON_BUILD_VERSION=' + tag]
             runner.run('build-' + kind, [*command, workspace])
             item = json.loads(capture([*docker, 'image', 'inspect', image]))[0]
             labels = item['Config'].get('Labels') or {}

@@ -14,7 +14,11 @@ async function bootstrap() {
       isGameWorker(registration.installing?.scriptURL)
     ).map(registration => registration.unregister()));
     const names = await caches.keys();
-    await Promise.all(names.filter(name => name.startsWith("backgammon-app-")).map(name => caches.delete(name)));
+    await Promise.all(names.filter(name =>
+      name.startsWith("backgammon-app-") ||
+      name.startsWith("backgammon-shell-") ||
+      name === "backgammon-assets-v1"
+    ).map(name => caches.delete(name)));
   }
   if (reloadRequired) {
     // Keep the handoff fragment and saved game URL intact.
@@ -28,7 +32,10 @@ async function bootstrap() {
       const worker = registration.active || registration.waiting || registration.installing;
       return worker && new URL(worker.scriptURL).pathname === "/backgammon/sw.js";
     }).map((registration) => registration.unregister()));
-    navigator.serviceWorker.register(workerPath, { scope: import.meta.env.BASE_URL });
+    navigator.serviceWorker.register(workerPath, {
+      scope: import.meta.env.BASE_URL,
+      updateViaCache: "none",
+    });
   }
 }
 

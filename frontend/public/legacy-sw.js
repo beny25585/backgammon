@@ -6,10 +6,8 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    const names = await caches.keys();
-    await Promise.all(names
-      .filter((name) => name.startsWith("backgammon-app-") && name !== "backgammon-app-v5")
-      .map((name) => caches.delete(name)));
+    // Caches are shared by all worker scopes on this origin. Leave them for
+    // the current game worker and for older game tabs still using hashed assets.
     await self.clients.claim();
     await self.registration.unregister();
   })());
