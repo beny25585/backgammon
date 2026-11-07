@@ -9,6 +9,7 @@ randomness, so a broken dice service is always visible.
 """
 
 import logging
+from uuid import uuid4
 
 import httpx
 from decouple import config
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 DICE_SERVICE_URL = config('DICE_SERVICE_URL', default='http://127.0.0.1:4000')
 DICE_TIMEOUT_SECONDS = 2.0
+DICE_REQUEST_ID_HEADER = 'x-dice-request-id'
 
 
 class DiceServiceError(Exception):
@@ -33,9 +35,16 @@ async def fetch_dice(dice_type: str) -> tuple[int, int]:
         raise ValueError(f"Unknown dice type: {dice_type}")
 
     url = f"{DICE_SERVICE_URL}/roll"
+    request_id = uuid4().hex
     try:
-        async with httpx.AsyncClient(timeout=DICE_TIMEOUT_SECONDS) as client:
-            response = await client.get(url, params={"type": dice_type})
+        async with httpx.AsyncClient(
+            timeout=DICE_TIMEOUT_SECONDS, trust_env=False, follow_redirects=False,
+        ) as client:
+            response = await client.get(
+                url,
+                params={"type": dice_type},
+                headers={"Cache-Control": "no-cache", DICE_REQUEST_ID_HEADER: request_id},
+            )
     except httpx.HTTPError as exc:
         logger.error("Dice service request failed: %s", exc)
         raise DiceServiceError(f"Dice service unreachable: {exc}") from exc
@@ -51,15 +60,17 @@ async def fetch_dice(dice_type: str) -> tuple[int, int]:
             f"Dice service returned status {response.status_code}"
         )
 
+    if response.headers.get(DICE_REQUEST_ID_HEADER) != request_id:
+        logger.error("Dice service response did not match the request for type=%s", dice_type)
+        raise DiceServiceError("Dice service response did not match the request")
+
     try:
-        data = response.json()
-        dice = data["dice"]
-        a, b = int(dice[0]), int(dice[1])
-        if not (1 <= a <= 6 and 1 <= b <= 6):
-            raise ValueError("dice out of range")
+        a, b = response.json()["dice"]
+        if type(a) is not int or type(b) is not int or not (1 <= a <= 6 and 1 <= b <= 6):
+            raise ValueError("expected two integer dice values between 1 and 6")
         if dice_type == "opening" and a == b:
             raise ValueError("opening roll returned doubles")
-    except (KeyError, TypeError, ValueError, IndexError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         logger.error("Bad dice response body=%s", response.text)
         raise DiceServiceError(f"Bad dice service response: {exc}") from exc
 

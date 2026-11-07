@@ -18,6 +18,8 @@ defmodule DiceService.Router do
 
   require Logger
 
+  @roll_request_id_header "x-dice-request-id"
+
   plug(:match)
   plug(:dispatch)
 
@@ -62,6 +64,17 @@ defmodule DiceService.Router do
       end
 
     [a, b] = DiceService.roll(type)
+
+    conn = put_resp_header(conn, "cache-control", "no-store")
+
+    conn =
+      with [request_id] <- get_req_header(conn, @roll_request_id_header),
+           true <- request_id =~ ~r/\A[0-9a-fA-F]{32}\z/ do
+        put_resp_header(conn, @roll_request_id_header, request_id)
+      else
+        _ -> conn
+      end
+
     send_resp(conn, 200, Jason.encode!(%{"dice" => [a, b]}))
   end
 

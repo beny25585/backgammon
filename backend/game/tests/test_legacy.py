@@ -2264,17 +2264,25 @@ class CreateRoomTests(TestCase):
 class DiceClientTests(TransactionTestCase):
     """Step 2: HTTP client for the Elixir dice service — hits the real API."""
 
-    def _serve(self, body, status=200):
+    def _serve(self, body, status=200, *, replay=False):
         """Start a real HTTP server returning `body`; return its URL."""
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         import threading
 
+        request_ids = []
+
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 raw = body.encode()
+                request_id = self.headers.get("X-Dice-Request-Id")
+                if replay:
+                    request_ids.append(request_id)
+                    request_id = request_ids[0]
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(raw)))
+                if request_id is not None:
+                    self.send_header("X-Dice-Request-Id", request_id)
                 self.end_headers()
                 self.wfile.write(raw)
 
@@ -2302,6 +2310,17 @@ class DiceClientTests(TransactionTestCase):
         a, b = await fetch_turn_dice()
         self.assertTrue(1 <= a <= 6 and 1 <= b <= 6)
 
+    async def test_identical_pairs_from_fresh_responses_are_allowed(self):
+        with patch("game.dice.DICE_SERVICE_URL", self._serve('{"dice":[4,2]}')):
+            self.assertEqual(await fetch_turn_dice(), (4, 2))
+            self.assertEqual(await fetch_turn_dice(), (4, 2))
+
+    async def test_rejects_response_replayed_from_previous_roll(self):
+        with patch("game.dice.DICE_SERVICE_URL", self._serve('{"dice":[4,2]}', replay=True)):
+            self.assertEqual(await fetch_turn_dice(), (4, 2))
+            with self.assertRaisesRegex(DiceServiceError, "response did not match"):
+                await fetch_turn_dice()
+
     async def test_fetch_dice_rejects_unknown_type(self):
         with self.assertRaises(ValueError):
             await fetch_dice("weird")
@@ -2323,6 +2342,11 @@ class DiceClientTests(TransactionTestCase):
 
     async def test_fetch_dice_raises_on_out_of_range(self):
         with patch("game.dice.DICE_SERVICE_URL", self._serve('{"dice":[0,7]}')):
+            with self.assertRaises(DiceServiceError):
+                await fetch_dice("normal")
+
+    async def test_fetch_dice_rejects_fractional_values(self):
+        with patch("game.dice.DICE_SERVICE_URL", self._serve('{"dice":[4.5,2]}')):
             with self.assertRaises(DiceServiceError):
                 await fetch_dice("normal")
 

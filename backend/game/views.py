@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.views.decorators.cache import never_cache
 
 from .link.models import TournamentLink as LinkModel
 from .dice import fetch_dice, fetch_opening_dice,  DiceServiceError
@@ -444,6 +445,7 @@ def player_stats(request):
     })
 
 
+@never_cache
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def dice_roll(request):

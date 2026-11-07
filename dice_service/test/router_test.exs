@@ -15,18 +15,43 @@ defmodule DiceService.RouterTest do
     conn = conn(:get, "/roll") |> Router.call([])
 
     assert conn.status == 200
+    assert Plug.Conn.get_resp_header(conn, "cache-control") == ["no-store"]
+    assert Plug.Conn.get_resp_header(conn, "x-dice-request-id") == []
     assert %{"dice" => [a, b]} = Jason.decode!(conn.resp_body)
     assert a in 1..6
     assert b in 1..6
   end
 
   test "GET /roll?type=normal returns valid dice" do
-    conn = conn(:get, "/roll?type=normal") |> Router.call([])
+    request_id = String.duplicate("a", 32)
+
+    conn =
+      conn(:get, "/roll?type=normal")
+      |> Plug.Conn.put_req_header("x-dice-request-id", request_id)
+      |> Router.call([])
 
     assert conn.status == 200
+    assert Plug.Conn.get_resp_header(conn, "cache-control") == ["no-store"]
+    assert Plug.Conn.get_resp_header(conn, "x-dice-request-id") == [request_id]
     assert %{"dice" => [a, b]} = Jason.decode!(conn.resp_body)
     assert a in 1..6
     assert b in 1..6
+  end
+
+  test "GET /roll ignores malformed and repeated request IDs" do
+    request_id = String.duplicate("a", 32)
+
+    for ids <- [[String.duplicate("g", 32)], [request_id, request_id]] do
+      headers = Enum.map(ids, &{"x-dice-request-id", &1})
+
+      conn =
+        conn(:get, "/roll")
+        |> Plug.Conn.prepend_req_headers(headers)
+        |> Router.call([])
+
+      assert conn.status == 200
+      assert Plug.Conn.get_resp_header(conn, "x-dice-request-id") == []
+    end
   end
 
   test "GET /roll?type=opening never returns doubles" do

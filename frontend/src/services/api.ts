@@ -74,7 +74,7 @@ export async function getRoomPlayerDetails(roomId: string, signal: AbortSignal):
 }
 
 export async function fetchDice(type: "opening" | "normal"): Promise<[number, number]> {
-  const data = await apiFetch(`/api/dice/roll/?type=${type}`);
+  const data = await apiFetch(`/api/dice/roll/?type=${type}`, { cache: "no-store" });
   const dice = data.dice as number[];
   return [dice[0], dice[1]];
 }
