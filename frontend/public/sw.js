@@ -1,15 +1,19 @@
 const CACHE_NAME = "backgammon-app-v5";
+const APP_ENTRY = "/6b/backgammon/";
 const APP_SHELL = [
-  "/6b/backgammon/",
+  APP_ENTRY,
   "/6b/backgammon/pwa-icon-192.png",
   "/6b/backgammon/pwa-icon-512.png",
 ];
+const FINGERPRINTED_ASSET = /^\/6b\/backgammon\/assets\/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$/;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL))
+      .then((cache) =>
+        cache.addAll(APP_SHELL.map((path) => new Request(path, { cache: "no-cache" }))),
+      )
       .then(() => self.skipWaiting()),
   );
 });
@@ -46,9 +50,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (request.mode === "navigate") {
+  const isNavigation = request.mode === "navigate";
+  const isAsset = url.pathname.startsWith("/6b/backgammon/assets/");
+  if (!isNavigation && !isAsset && !APP_SHELL.includes(url.pathname)) return;
+
+  // Revalidate HTML and fixed-name assets. Keep their cached copies for offline use.
+  if (isNavigation || !FINGERPRINTED_ASSET.test(url.pathname)) {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: "no-cache" })
         .then((response) => {
           if (response.ok) {
             const copy = response.clone();
@@ -59,11 +68,11 @@ self.addEventListener("fetch", (event) => {
           return response;
         })
         .catch(async () => {
-          const cached =
-            (await caches.match(request)) ||
-            (await caches.match("/6b/backgammon/"));
+          const cached = await caches.match(request);
+          if (cached) return cached;
+          if (!isNavigation) return Response.error();
           return (
-            cached ||
+            (await caches.match(APP_ENTRY)) ||
             new Response("The app is unavailable while offline.", {
               status: 503,
               headers: { "Content-Type": "text/plain; charset=utf-8" },
@@ -74,13 +83,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Only fingerprinted build assets and app icons are safe for cache-first.
-  if (!url.pathname.startsWith("/6b/backgammon/assets/") &&
-      !APP_SHELL.includes(url.pathname)) return;
+  // Vite changes the URL when the content of a fingerprinted asset changes.
   event.respondWith(
     caches.match(request).then((cached) => {
-      if (cached) return cached;
-      return fetch(request).then((response) => {
+      // Older deployments could cache the SPA fallback under a missing asset URL.
+      const isStaleFallback =
+        cached?.headers.get("Content-Type")?.startsWith("text/html") &&
+        !/\.html?$/i.test(url.pathname);
+      if (cached && !isStaleFallback) return cached;
+
+      return fetch(request, isStaleFallback ? { cache: "reload" } : undefined).then((response) => {
         if (response.ok) {
           const copy = response.clone();
           event.waitUntil(
