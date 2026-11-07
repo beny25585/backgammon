@@ -77,7 +77,7 @@ function RollingCube({ index, target, rolling, dark, variant, valueColor, spins,
     const animations = animateBoardDiceFlight(slot, cube, shadow,
       { side: throwSide, index: throwIndex }, DEPTH_OFFSET, final.rotateX, final.rotateY);
     if (!animations) {
-      // A crowded or narrow field can show the real result in its ordinary slot.
+      // A board without measurable geometry still shows the authoritative face.
       finish();
       return;
     }

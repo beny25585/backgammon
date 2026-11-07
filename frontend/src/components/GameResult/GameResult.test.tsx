@@ -1,5 +1,25 @@
 import { test, expect } from "@playwright/experimental-ct-react";
+import PrivateGameResult from "./PrivateGameResult";
 import TournamentGameResult from "./TournamentGameResult";
+
+test("landscape phone leaves space around the result and keeps full-size touch targets", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const component = await mount(
+    <PrivateGameResult winner="black" playerColor="white" whiteScore={4} blackScore={1}
+      whiteName="beny" blackName="Open Sage" showRematch={false} onPracticeAgain={() => {}}
+      onClose={() => {}} onRematch={() => {}} />,
+    { hooksConfig: { locale: "he" } },
+  );
+  const card = component.getByRole("dialog");
+  await expect(card).toBeVisible();
+  const box = await card.evaluate(element => ({ width: element.clientWidth, height: element.clientHeight }));
+  expect(box.width).toBeLessThanOrEqual(760);
+  expect(box.height).toBeLessThan(358);
+  for (const button of await card.getByRole("button").all()) {
+    expect(await button.evaluate(element => element.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+  }
+});
 
 test("tournament result keeps self on the left when self is black", async ({
   mount,

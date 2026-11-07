@@ -117,6 +117,42 @@ test("a fresh roll settles off-slot before sliding, and reordering interrupts th
   await expect(board.getByTestId("die").first()).toHaveAttribute("data-die-value", "3");
 });
 
+test("both dice still travel, land and slide when the playing half has no clear path", async ({ mount, page }) => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  const rolled = movingState({ dice: [6, 3], remaining: [6, 3] });
+  const waiting = { ...rolled, phase: "rolling" as const, dice: [], remaining: [] };
+  const render = (state: GameState) => (
+    <MockGameWrapper playerColor="white" state={state}>
+      <GameBoard state={state} playerColor="white" makeMove={() => {}} />
+    </MockGameWrapper>
+  );
+  const board = await mount(render(waiting));
+  await board.getByTestId("board-half-right").evaluate(half => {
+    const occupied = document.createElement("span");
+    occupied.dataset.checkerSlot = "occupied";
+    occupied.style.cssText = "position:absolute;inset:0;pointer-events:none";
+    half.appendChild(occupied);
+  });
+  await board.update(render(rolled));
+  const dice = board.getByTestId("dice-overlay");
+  const flying = dice.locator('[data-dice-throw-active="true"]');
+  await expect(flying).toHaveCount(2);
+  const paths = await flying.evaluateAll(elements => elements.map(element => {
+    const effect = element.getAnimations()[0]?.effect as KeyframeEffect | undefined;
+    return effect?.getKeyframes().map(frame => frame.transform);
+  }));
+  for (const path of paths) {
+    expect(path).toHaveLength(8);
+    expect(path?.[0]).not.toBe(path?.[5]);
+    expect(path?.[5]).toBe(path?.[6]);
+    expect(path?.[6]).not.toBe(path?.[7]);
+  }
+  await expect(flying).toHaveCount(0);
+  await expect(dice.getByTestId("die").first()).toHaveAttribute("data-die-value", "6");
+  await expect(dice.getByTestId("die").last()).toHaveAttribute("data-die-value", "3");
+});
+
 test("only a newly observed blocked roll throws at its notice position", async ({ mount, page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.emulateMedia({ reducedMotion: "no-preference" });

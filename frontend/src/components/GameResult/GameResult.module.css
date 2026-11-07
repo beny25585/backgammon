@@ -21,14 +21,16 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
+  container: result-viewport / size;
   width: var(--app-width, 100dvw);
   height: var(--app-height, 100dvh);
   display: grid;
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   place-items: center;
-  padding: max(8px, env(safe-area-inset-top))
-    max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom))
-    max(8px, env(safe-area-inset-left));
+  padding: max(8px, var(--game-safe-top, env(safe-area-inset-top)))
+    max(8px, var(--game-safe-right, env(safe-area-inset-right)))
+    max(8px, var(--game-safe-bottom, env(safe-area-inset-bottom)))
+    max(8px, var(--game-safe-left, env(safe-area-inset-left)));
 }
 
 .card {
@@ -40,8 +42,8 @@
   display: grid;
   grid-template-areas: "hero" "table" "actions";
   grid-template-rows: auto minmax(0, 1fr) auto;
-  gap: clamp(10px, 1.8vw, 22px);
-  padding: clamp(14px, 2.5vw, 32px);
+  gap: var(--result-card-gap, clamp(10px, 1.8vw, 22px));
+  padding: var(--result-card-padding, clamp(14px, 2.5vw, 32px));
 }
 
 .closeButton {
@@ -56,17 +58,19 @@
 .resultHero {
   grid-area: hero;
   min-width: 0;
+  min-height: 0;
   display: grid;
   justify-items: center;
   align-content: center;
-  gap: clamp(3px, 0.85cqw, 10px);
+  gap: clamp(3px, calc(0.85 * var(--result-unit, 1cqw)), 10px);
+  overflow-y: var(--result-hero-overflow, visible);
   text-align: center;
 }
 
 .resultTitle {
   padding-inline: 14px;
   font-family: "Assistant Result", var(--font-body);
-  font-size: clamp(21px, 4.6cqw, 46px);
+  font-size: clamp(21px, calc(4.6 * var(--result-unit, 1cqw)), 46px);
   line-height: 1.02;
   font-weight: 800;
   text-wrap: balance;
@@ -78,7 +82,7 @@
   align-items: baseline;
   gap: clamp(7px, 2cqw, 18px);
   font-family: "Assistant Result", var(--font-body);
-  font-size: clamp(44px, 12.8cqw, 116px);
+  font-size: clamp(44px, calc(12.8 * var(--result-unit, 1cqw)), 116px);
   font-weight: 800;
   line-height: 0.94;
   font-variant-numeric: tabular-nums;
@@ -95,7 +99,7 @@
 
 .subtitle {
   color: #dcc9a9;
-  font-size: clamp(12px, 2.65cqw, 23px);
+  font-size: clamp(12px, calc(2.65 * var(--result-unit, 1cqw)), 23px);
   line-height: 1.2;
   text-wrap: balance;
 }
@@ -105,7 +109,15 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: clamp(6px, 1.55cqw, 16px);
-  margin-top: clamp(3px, 1.8cqw, 18px);
+  margin-top: clamp(3px, calc(1.8 * var(--result-unit, 1cqw)), 18px);
+}
+
+.resultPlayers:has(> :first-child > [data-result-winner]) {
+  grid-template-columns: minmax(0, var(--result-winner-share, 1fr)) minmax(0, 1fr);
+}
+
+.resultPlayers:has(> :last-child > [data-result-winner]) {
+  grid-template-columns: minmax(0, 1fr) minmax(0, var(--result-winner-share, 1fr));
 }
 
 .resultPlayer {
@@ -127,13 +139,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: clamp(12px, 2.8cqw, 25px);
+  font-size: clamp(12px, calc(2.8 * var(--result-unit, 1cqw)), 25px);
   font-weight: 750;
 }
 
 .checker {
   position: relative;
-  width: clamp(18px, 5.55cqw, 53px);
+  width: clamp(18px, calc(5.55 * var(--result-unit, 1cqw)), 53px);
   flex: none;
   aspect-ratio: 1;
   border: 1px solid;
@@ -164,7 +176,7 @@
 
 .resultTable {
   --result-label-width: 1.12fr;
-  --result-row-padding: clamp(4px, 0.95cqw, 10px);
+  --result-row-padding: clamp(4px, calc(0.95 * var(--result-unit, 1cqw)), 10px);
   --result-duration-gap: 5px;
   grid-area: table;
   min-width: 0;
@@ -191,16 +203,16 @@
 }
 
 .tablePlayers .checker {
-  width: clamp(15px, 3.95cqw, 34px);
+  width: clamp(15px, calc(3.95 * var(--result-unit, 1cqw)), 34px);
 }
 
 .tablePlayers .playerName {
-  font-size: clamp(11px, 2.45cqw, 21px);
+  font-size: clamp(11px, calc(2.45 * var(--result-unit, 1cqw)), 21px);
 }
 
 .metricLabel {
   grid-area: 1 / 1;
-  font-size: clamp(10px, 2.3cqw, 20px);
+  font-size: clamp(10px, calc(2.3 * var(--result-unit, 1cqw)), 20px);
   color: #e2d1b4;
   text-align: left;
   overflow-wrap: anywhere;
@@ -210,7 +222,7 @@
 .opponentValue {
   min-width: 0;
   text-align: center;
-  font-size: clamp(11px, 2.65cqw, 26px);
+  font-size: clamp(11px, calc(2.65 * var(--result-unit, 1cqw)), 26px);
   font-weight: 400;
   line-height: 1.16;
   font-variant-numeric: tabular-nums;
@@ -253,7 +265,7 @@
   align-items: center;
   gap: clamp(3px, 0.7cqw, 8px);
   padding-block: var(--result-row-padding);
-  font-size: clamp(10px, 2.3cqw, 20px);
+  font-size: clamp(10px, calc(2.3 * var(--result-unit, 1cqw)), 20px);
   text-align: left;
   overflow-wrap: anywhere;
 }
@@ -266,11 +278,11 @@
 
 .durationGroup .resultCenteredValue {
   padding-block: calc(var(--result-row-padding) + 2px);
-  font-size: clamp(10px, 2.38cqw, 23px);
+  font-size: clamp(10px, calc(2.38 * var(--result-unit, 1cqw)), 23px);
 }
 
 .durationGroup .resultCenteredValue > :last-child {
-  font-size: clamp(11px, 2.65cqw, 26px);
+  font-size: clamp(11px, calc(2.65 * var(--result-unit, 1cqw)), 26px);
   font-weight: 400;
 }
 
@@ -279,6 +291,7 @@
   color: #c9b99e;
   font-size: clamp(9px, 1.38cqw, 13px);
   line-height: 1.2;
+  min-height: 1lh;
   text-align: center;
 }
 
@@ -290,7 +303,7 @@
   align-items: center;
   padding-inline: 6px;
   color: #f2d9b0;
-  font-size: clamp(13px, 2.7cqw, 23px);
+  font-size: clamp(13px, calc(2.7 * var(--result-unit, 1cqw)), 23px);
   text-underline-offset: 0.23em;
 }
 
@@ -325,7 +338,7 @@
   border: 1px solid #c7a16a;
   border-radius: clamp(8px, 1.5cqw, 15px);
   font-family: "Assistant Result", var(--font-body);
-  font-size: clamp(13px, 2.9cqw, 28px);
+  font-size: clamp(13px, calc(2.9 * var(--result-unit, 1cqw)), 28px);
   font-weight: 800;
   line-height: 1.15;
   text-align: center;
@@ -399,10 +412,10 @@
   color: #dcc9a9;
 }
 
-@media (orientation: landscape) and (min-width: 460px) {
+@container result-viewport (aspect-ratio > 1) and (min-width: 444px) {
   .card {
-    width: min(100%, 1020px);
-    min-height: min(430px, 100%);
+    width: min(100%, var(--result-max-width, 1020px));
+    min-height: var(--result-min-height, min(430px, 100%));
     grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto;
     grid-template-areas: "hero table" "actions table";
@@ -410,15 +423,15 @@
 
   .resultHero {
     align-content: start;
-    padding-block-start: clamp(8px, 3.4dvh, 25px);
+    padding-block-start: var(--result-section-inset, clamp(8px, 3.4dvh, 25px));
   }
 
   .resultTable {
     display: flex;
     flex-direction: column;
     border-inline-start: 1px solid #dcc29942;
-    padding-inline-start: clamp(8px, 3cqw, 28px);
-    padding-block: clamp(4px, 1.3cqw, 13px);
+    padding-inline-start: clamp(8px, calc(3 * var(--result-unit, 1cqw)), 28px);
+    padding-block: var(--result-section-inset, clamp(4px, 1.3cqw, 13px));
   }
 
   .resultTable > * {
@@ -430,40 +443,7 @@
   }
 }
 
-@media (orientation: landscape) and (max-height: 520px) and (min-width: 460px) {
-  .card {
-    width: min(100%, 1060px);
-    min-height: 100%;
-    padding: clamp(11px, 4.9dvh, 24px) clamp(10px, 2.6vw, 28px);
-    gap: clamp(5px, 2.2dvh, 17px) clamp(8px, 2.45vw, 26px);
-  }
-
-  .scoreRow {
-    font-size: clamp(42px, min(12.8cqw, 25.5dvh), 118px);
-  }
-
-  .resultTable {
-    --result-row-padding: clamp(3px, 1.45dvh, 7px);
-  }
-
-  .card:has(.resultActions > :nth-child(3)) .resultHero,
-  .resultHero:has(.subtitle + .subtitle) {
-    padding-block-start: clamp(4px, 1.8dvh, 8px);
-    gap: clamp(3px, 1.05dvh, 5px);
-  }
-
-  .card:has(.resultActions > :nth-child(3)) .scoreRow,
-  .resultHero:has(.subtitle + .subtitle) .scoreRow {
-    font-size: clamp(40px, min(12cqw, 19dvh), 90px);
-  }
-
-  .card:has(.resultActions > :nth-child(3)) .resultPlayers,
-  .resultHero:has(.subtitle + .subtitle) .resultPlayers {
-    margin-block-start: clamp(4px, 1.85dvh, 9px);
-  }
-}
-
-@media (orientation: landscape) and (min-height: 365px) and (min-width: 640px) {
+@container result-viewport (aspect-ratio > 1) and (min-height: 585px) and (min-width: 624px) {
   .resultActions:has(> :nth-child(2):last-child) > button {
     min-height: clamp(44px, 14dvh, 68px);
   }
@@ -477,55 +457,7 @@
   }
 }
 
-@media (orientation: landscape) and (min-height: 400px) and (max-height: 520px) and (min-width: 800px) {
-  .backdrop {
-    padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
-    padding-inline: max(12px, env(safe-area-inset-left)) max(12px, env(safe-area-inset-right));
-  }
-
-  .resultHero {
-    padding-block-start: clamp(9px, 2.65dvh, 15px);
-  }
-
-  .resultTitle,
-  .scoreRow,
-  .subtitle {
-    margin-left: clamp(10px, 2.4cqw, 25px);
-  }
-
-  .scoreRow {
-    gap: clamp(12px, 2.4cqw, 24px);
-    font-size: clamp(76px, min(13.1cqw, 27.7dvh), 132px);
-    line-height: 0.9;
-  }
-
-  .resultPlayers:has(> :first-child > [data-result-winner]) {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
-  }
-
-  .resultPlayers:has(> :last-child > [data-result-winner]) {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  }
-
-  .resultPlayer .playerName {
-    font-size: clamp(13px, 2.92cqw, 29px);
-  }
-
-  .resultActions {
-    width: auto;
-    margin-left: clamp(3px, 0.8cqw, 9px);
-  }
-
-  .resultTable:not(:has(> .resultRow:nth-child(5))) {
-    padding-block-start: clamp(12px, 5.7dvh, 29px);
-  }
-
-  .tablePlayers {
-    padding-block-end: calc(var(--result-row-padding) + 4px);
-  }
-}
-
-@media (orientation: portrait) {
+@container result-viewport (aspect-ratio <= 1) {
   .resultHero {
     padding-top: 8px;
   }
@@ -535,33 +467,6 @@
   }
 
   .scoreRow {
-    font-size: clamp(48px, 16cqw, 84px);
-  }
-}
-
-@media (orientation: landscape) and (max-height: 360px) {
-  .resultHero {
-    padding-block-start: clamp(4px, 2dvh, 8px);
-    gap: clamp(3px, 1.2dvh, 6px);
-  }
-
-  .resultTitle {
-    font-size: clamp(17px, min(3.9cqw, 8dvh), 32px);
-  }
-
-  .scoreRow {
-    font-size: clamp(38px, min(11.75cqw, 19dvh), 84px);
-  }
-
-  .subtitle {
-    font-size: clamp(10px, min(2.25cqw, 4.1dvh), 18px);
-  }
-
-  .resultPlayers {
-    margin-top: clamp(4px, 2dvh, 10px);
-  }
-
-  .resultPlayer .checker {
-    width: clamp(18px, min(4.85cqw, 10.5dvh), 42px);
+    font-size: clamp(48px, calc(16 * var(--result-unit, 1cqw)), 84px);
   }
 }

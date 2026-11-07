@@ -6,6 +6,18 @@ import type { Color } from "../../lib/backgammon/engine";
 
 import styles from "./GameResult.module.css";
 
+const compactCardClasses = [
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-max-width:min(96cqw,760px)]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-min-height:0px]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-card-padding:clamp(10px,3.75cqh,18px)]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-card-gap:8px_clamp(10px,2cqw,20px)]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-section-inset:4px]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-hero-overflow:auto]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-unit:0.78cqw]",
+  "[@container_result-viewport_(aspect-ratio>1)_and_(max-height:584px)]:[--result-winner-share:1.28fr]",
+  "[@container_result-viewport_(aspect-ratio<=1)_and_(max-width:464px)]:[--result-unit:0.9cqw]",
+].join(" ");
+
 export type GameResultVariant = "private" | "quick" | "tournament";
 
 export interface BaseGameResultProps {
@@ -130,7 +142,7 @@ function ResultPlayer({ color, name, role, winner }: ResultPlayerProps) {
         <motion.span
           aria-hidden="true"
           data-result-winner
-          className="shrink-0 rounded-full border border-[#d3a766] px-[clamp(4px,1.5cqw,16px)] py-[clamp(2px,0.55cqw,5px)] text-[clamp(9px,1.94cqw,19px)] leading-none font-bold text-[#efc781] shadow-[inset_0_0_0_1px_#eaca8e38,0_2px_3px_#0008]"
+          className="shrink-0 rounded-full border border-[#d3a766] px-[clamp(4px,calc(1.5*var(--result-unit,1cqw)),16px)] py-[clamp(2px,calc(0.55*var(--result-unit,1cqw)),5px)] text-[clamp(9px,calc(1.94*var(--result-unit,1cqw)),19px)] leading-none font-bold text-[#efc781] shadow-[inset_0_0_0_1px_#eaca8e38,0_2px_3px_#0008]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.15, delay: 0.08, ease: RESULT_EASE }}
@@ -273,7 +285,7 @@ export default function GameResult({
     >
       <motion.main
         ref={resultCard}
-        className={styles.card + " rounded-[clamp(12px,2.5vw,22px)] border-[1.5px] border-transparent text-[#f3e6ce] [background:radial-gradient(ellipse_at_28%_4%,#252523,#191918_90%)_padding-box,linear-gradient(138deg,#efd19d,#ac8550_27%,#76582f_59%,#d0a56d)_border-box] shadow-[0_20px_60px_#0009,inset_0_1px_1px_#fff0ca1f,inset_0_0_0_1px_#f2cb8e1c] focus:outline-none"}
+        className={`${styles.card} ${compactCardClasses} rounded-[clamp(12px,2.5vw,22px)] border-[1.5px] border-transparent text-[#f3e6ce] [background:radial-gradient(ellipse_at_28%_4%,#252523,#191918_90%)_padding-box,linear-gradient(138deg,#efd19d,#ac8550_27%,#76582f_59%,#d0a56d)_border-box] shadow-[0_20px_60px_#0009,inset_0_1px_1px_#fff0ca1f,inset_0_0_0_1px_#f2cb8e1c] focus:outline-none`}
         data-testid="game-result-card"
         data-result-variant={variant}
         dir="ltr"

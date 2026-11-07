@@ -12,6 +12,10 @@ const SLIDE_START_MS = 900;
 const SLIDE_EASING = "cubic-bezier(0.23, 1, 0.32, 1)";
 const FIELD_OBSTACLES = '[data-testid="turn-notice-details"], [data-testid="auto-roll-countdown"]';
 
+function fitOffset(offset: number, min: number, max: number) {
+  return min <= max ? Math.max(min, Math.min(offset, max)) : (min + max) / 2;
+}
+
 function getPath(slot: HTMLElement, { side, index }: BoardDiceThrow) {
   const board = slot.closest('[data-testid="board-wrapper"]');
   const half = board?.querySelector(`[data-testid="board-half-${side}"]`);
@@ -19,6 +23,7 @@ function getPath(slot: HTMLElement, { side, index }: BoardDiceThrow) {
 
   const field = boardRect(half);
   const slotRect = boardRect(slot);
+  if (!slot.offsetWidth || !slot.offsetHeight) return null;
   const scaleX = slotRect.width / slot.offsetWidth;
   const scaleY = slotRect.height / slot.offsetHeight;
   if (!scaleX || !scaleY || !field.width || !field.height) return null;
@@ -34,7 +39,8 @@ function getPath(slot: HTMLElement, { side, index }: BoardDiceThrow) {
     x: die.left + die.width / 2,
     y: die.top + die.height / 2,
   }));
-  const clearance = Math.max(slotRect.width, slotRect.height) * 0.59;
+  const dieSize = Math.max(slotRect.width, slotRect.height);
+  const clearance = dieSize * 0.59;
   const direction = side === "right" ? 1 : -1;
   const fieldEnd = field.left + field.width;
   const backwardRoom = Math.min(...positions.map(({ x }) => direction === 1 ? x - field.left : fieldEnd - x));
@@ -54,6 +60,13 @@ function getPath(slot: HTMLElement, { side, index }: BoardDiceThrow) {
       py + clearance <= obstacle.top || py - clearance >= obstacle.top + obstacle.height,
     );
 
+  const toSlotCoordinates = (startX: number, startY: number, endX: number, endY: number, lift: number) => ({
+    launchX: startX / scaleX,
+    launchY: startY / scaleY,
+    landingX: endX / scaleX,
+    landingY: endY / scaleY,
+    height: lift / scaleY,
+  });
   const preferredY = slotRect.height * 0.24;
   for (const distance of [0.24, 0.18, 0.12]) {
     const landingX = direction * Math.min(field.width * distance, forwardRoom - clearance);
@@ -67,15 +80,36 @@ function getPath(slot: HTMLElement, { side, index }: BoardDiceThrow) {
           [0, 0.25, 0.5, 0.75, 1].every(p => clear(x + landingX * p, y + dy * p));
       });
       if (!roomForDice) continue;
-      return {
-        launchX: launchX / scaleX,
-        landingX: landingX / scaleX,
-        landingY: (index === 0 ? -spread : spread) / scaleY,
-        height: Math.min(slotRect.height * (index === 0 ? 1.28 : 1.02), field.height * 0.115) / scaleY,
-      };
+      return toSlotCoordinates(launchX, 0, landingX, index === 0 ? -spread : spread,
+        Math.min(slotRect.height * (index === 0 ? 1.28 : 1.02), field.height * 0.115));
     }
   }
-  return null;
+  // Both dice share the short path's offsets so they keep their separation.
+  // When all paths are occupied, this visual layer can pass over pieces.
+  const left = Math.min(...positions.map(({ x }) => x));
+  const right = Math.max(...positions.map(({ x }) => x));
+  const top = Math.min(...positions.map(({ y }) => y));
+  const bottom = Math.max(...positions.map(({ y }) => y));
+  const fitX = (offset: number) => fitOffset(offset, field.left + clearance - left, fieldEnd - clearance - right);
+  const fitY = (offset: number) => fitOffset(offset, field.top + clearance - top, field.top + field.height - clearance - bottom);
+  let best = { startX: 0, startY: 0, endX: 0, endY: 0, cost: Infinity };
+  for (const [dx, dy] of [[direction, 0], [-direction, 0], [0, -1], [0, 1]]) {
+    const startX = fitX(-dx * dieSize * 0.78);
+    const startY = fitY(-dy * dieSize * 0.78);
+    const endX = fitX(dx * dieSize * 0.5);
+    const endY = fitY(dy * dieSize * 0.5);
+    const hasTravel = Math.hypot(endX - startX, endY - startY) >= dieSize * 0.38 &&
+      Math.hypot(endX, endY) >= dieSize * 0.18;
+    let cost = hasTravel ? 0 : positions.length * 5;
+    for (const { x, y } of positions) {
+      if (!clear(x + endX, y + endY)) cost += 3;
+      if (!clear(x + endX / 2, y + endY / 2)) cost += 1;
+    }
+    if (cost < best.cost) best = { startX, startY, endX, endY, cost };
+  }
+  const overhead = top + Math.min(best.startY, best.endY) - field.top - clearance;
+  const lift = Math.min(slotRect.height * 0.64, Math.max(slotRect.height * 0.14, overhead));
+  return toSlotCoordinates(best.startX, best.startY, best.endX, best.endY, lift);
 }
 
 export function animateBoardDiceFlight(
@@ -90,13 +124,13 @@ export function animateBoardDiceFlight(
   const path = getPath(slot, placement);
   if (!path) return null;
 
-  const { launchX, landingX, landingY, height } = path;
+  const { launchX, launchY, landingX, landingY, height } = path;
   const flight = 695;
   const duration = BOARD_DICE_THROW_MS;
   const impact = flight / duration;
   const glide = SLIDE_START_MS / duration;
   const position = (progress: number, lift = 0) =>
-    `translate(${launchX + (landingX - launchX) * progress}px,${landingY * progress - lift * height}px)`;
+    `translate(${launchX + (landingX - launchX) * progress}px,${launchY + (landingY - launchY) * progress - lift * height}px)`;
   const bounce = [
     { progress: 0, lift: 0.18, fraction: 0, shade: 0.45 },
     { progress: 0.35, lift: 1, fraction: 0.29, shade: 0.32 },

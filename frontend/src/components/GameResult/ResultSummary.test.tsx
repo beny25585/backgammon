@@ -151,6 +151,10 @@ test("pending analysis hides partial metrics until completed", async ({
   expect(await component.getByTestId("result-metric-loading").first().evaluate(
     (element) => getComputedStyle(element).animationName,
   )).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await expect.poll(() => component.getByTestId("result-metric-loading").first().evaluate(
+    (element) => getComputedStyle(element).animationName,
+  )).not.toBe("none");
   releaseResponse();
   await expect.poll(() => calls).toBe(1);
   await expect(

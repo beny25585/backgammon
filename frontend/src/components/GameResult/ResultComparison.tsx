@@ -31,7 +31,7 @@ export function ResultMetricRow({
     <span
       aria-hidden="true"
       data-testid="result-metric-loading"
-      className="inline-block h-[0.8em] w-[min(65%,56px)] rounded-full bg-[#ddc8a2]/20"
+      className="inline-block h-[0.8em] w-[min(65%,56px)] rounded-full bg-linear-to-r from-[#c09b63]/30 via-[#e5c896]/55 to-[#c09b63]/30 ring-1 ring-[#ddc8a2]/30 ring-inset motion-safe:animate-pulse"
     />
   );
   const valueStyle = analysisReady

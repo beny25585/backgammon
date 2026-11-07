@@ -209,9 +209,9 @@ export default function ResultSummary(props: Props) {
         />
       </div>
 
-      <p className={analysisReady ? "sr-only" : styles.summaryNote} dir={direction} role="status">
+      <p className={styles.summaryNote} dir={direction} role="status">
         {analysisReady
-          ? t("game.lowerPrExplanation")
+          ? <span className="sr-only">{t("game.lowerPrExplanation")}</span>
           : !roomId || unavailable
             ? t("game.analysisUnavailable")
             : t("game.analysisInProgress")}
