@@ -673,8 +673,6 @@ for (const width of [375, 1280]) {
     test(`flight lands exactly on the updated checker (${width}px, destination ${destinationCount})`, async ({ mount, page }) => {
       await page.setViewportSize({ width, height: 800 });
       await page.addStyleTag({ content: ":root { --checker: 30px; --bar-w: 30px; --bearoff-w: 40px; }" });
-      await page.clock.install();
-      await page.clock.pauseAt(new Date());
       const points = new Array(24).fill(0);
       points[23] = 2;
       points[12] = 2;
@@ -683,9 +681,11 @@ for (const width of [375, 1280]) {
       const component = await mountBoard(mount, { state, playerColor: "white" });
 
       await component.locator('[data-point-idx="23"]').dispatchEvent("click");
-      // Keep the server response pending until the animation has landed.
-      await page.clock.runFor(300);
-      const landing = await component.getByTestId("flying-checker").boundingBox();
+      // The landed flyer stays in place until the board receives the move.
+      const flyer = component.getByTestId("flying-checker");
+      await expect(flyer).toBeVisible();
+      await expect(flyer).toHaveCSS("transform", "none");
+      const landing = await flyer.boundingBox();
       expect(landing).not.toBeNull();
 
       const appliedState = applyMove(state, { from: 23, to: 19, die: 4 }, "white");
@@ -695,8 +695,7 @@ for (const width of [375, 1280]) {
         </MockGameWrapper>,
       );
       await expect(component.getByTestId("die").first().locator("span")).toHaveCount(3);
-      await page.clock.runFor(20);
-      await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+      await expect(flyer).toHaveCount(0);
       const checker = await component.locator('[data-point-idx="19"] [data-checker]').last().boundingBox();
       expect(checker).not.toBeNull();
       expect(Math.abs(landing!.x - checker!.x), "horizontal jump on landing").toBeLessThan(1);
@@ -742,7 +741,7 @@ test("no highlights and no moves when it is not the player's turn", async ({ mou
     makeMove: (from, to) => moveCalls.push([from, to]),
   });
 
-  await expect(component.locator('[class*="highlight"]')).toHaveCount(0);
+  await expect(component.locator("[data-legal-source-marker]")).toHaveCount(0);
 
   await component.locator('[data-point-idx="23"]').click();
   await component.locator('[data-point-idx="19"]').click();
@@ -751,14 +750,16 @@ test("no highlights and no moves when it is not the player's turn", async ({ mou
 });
 
 test("highlights appear for the active player's legal source points", async ({ mount }) => {
+  const state = simpleWhiteState();
+  state.points[12] = 1; // A second legal source keeps the forced-move timer inactive.
   const component = await mountBoard(mount, {
-    state: simpleWhiteState(),
+    state,
     playerColor: "white",
   });
 
-  await expect(
-    component.locator('[data-point-idx="23"] [class*="highlight"]'),
-  ).toHaveCount(1);
+  const marker = component.locator('[data-point-idx="23"] [data-legal-source-marker]');
+  await expect(marker).toHaveCount(1);
+  await expect(marker).toBeVisible();
 });
 
 test("clicking an illegal point does not call makeMove", async ({ mount }) => {

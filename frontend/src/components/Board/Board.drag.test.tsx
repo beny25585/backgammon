@@ -224,8 +224,6 @@ test("a new game position cancels an in-progress drag", async ({ mount, page }) 
 
 test("a captured checker waits for the attacker and an echo does not restart its flight", async ({ mount, page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.clock.install();
-  await page.clock.pauseAt(new Date());
   const state = position();
   state.points[19] = -1;
   const next = applyMove(state, { from: 23, to: 19, die: 4 }, "white");
@@ -236,20 +234,59 @@ test("a captured checker waits for the attacker and an echo does not restart its
   );
   const component = await mount(render(state));
   await expect(component.getByTestId("board-inner-frame")).toBeVisible();
-  await component.update(render(next));
+
+  // Motion drives these transforms on the browser's animation timeline, outside page.clock.
+  await page.evaluate(() => {
+    const animate = Element.prototype.animate;
+    Element.prototype.animate = function (keyframes, options) {
+      const animation = animate.call(this, keyframes, options);
+      if (this.matches('[data-testid="flying-checker"], [data-testid="captured-checker-flight"]')) {
+        // Wait for Motion to set the start time before pausing this flight.
+        queueMicrotask(() => {
+          animation.pause();
+          animation.currentTime = 0;
+        });
+      }
+      return animation;
+    };
+  });
+
+  async function pausedFlight(flyer: Locator) {
+    await expect.poll(() => flyer.evaluate(element => element.getAnimations()[0]?.playState)).toBe("paused");
+    return flyer.evaluateHandle(element => element.getAnimations()[0]);
+  }
+
   const capture = component.getByTestId("captured-checker-flight");
+  const attacker = component.getByTestId("flying-checker");
+  const bar = component.getByTestId("bar-checkers-black").locator("[data-checker]");
+  await component.update(render(next));
   await expect(capture.locator('[data-checker-color="black"]')).toBeVisible();
   await expect(capture).toHaveAttribute("data-capture-phase", "waiting");
-  await expect(component.getByTestId("flying-checker").locator('[data-checker-color="white"]')).toBeVisible();
-  await expect(component.getByTestId("bar-checkers-black").locator("[data-checker]")).toHaveCount(0);
-  await page.clock.runFor(245);
+  await expect(attacker.locator('[data-checker-color="white"]')).toBeVisible();
+  await expect(bar).toHaveCount(0);
+  await (await pausedFlight(attacker)).evaluate(animation => animation.finish());
   await expect(capture).toHaveAttribute("data-capture-phase", "flying");
+  const victimFlight = await pausedFlight(capture);
+  await expect(attacker).toHaveCount(0);
+  await expect(bar).toHaveCount(0);
+
   await component.update(render({ ...next, version: 11 }));
   await expect(capture).toHaveCount(1);
   await expect(capture).toHaveAttribute("data-capture-phase", "flying");
-  await expect(component.getByTestId("flying-checker")).toHaveCount(0);
+  expect(await capture.evaluate((element, animation) => element.getAnimations()[0] === animation, victimFlight)).toBe(true);
+  await expect(attacker).toHaveCount(0);
+  await victimFlight.evaluate(animation => animation.finish());
+  await expect(capture).toHaveCount(0);
+  await expect(bar).toHaveCount(1);
+
+  await component.update(render(state));
+  await component.update(render(next));
+  await (await pausedFlight(attacker)).evaluate(animation => animation.finish());
+  await expect(capture).toHaveAttribute("data-capture-phase", "flying");
+  await pausedFlight(capture);
   await component.update(render(state));
   await expect(capture).toHaveCount(0);
+  await expect(bar).toHaveCount(0);
   await expect(component.locator('[data-point-idx="19"] [data-checker-color="black"]')).toBeVisible();
 });
 

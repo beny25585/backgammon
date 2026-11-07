@@ -17,11 +17,14 @@ test("bar-to-point flights finish at the destination diameter and keep the check
     <FlyingChecker from={FROM} to={TO} color="white" size={24} toSize={56} onComplete={() => { completed = true; }} />,
   );
   await expect.poll(() => completed).toBe(true);
-  const flyer = component;
-  await expect(flyer).toHaveCSS("width", "56px");
-  await expect(flyer).toHaveCSS("height", "56px");
-  await expect(flyer.locator("[data-checker]")).toHaveCSS("width", "56px");
-  await expect(flyer.locator("[data-checker]")).toHaveCSS("height", "56px");
+  for (const element of [component, component.locator("[data-checker]")]) {
+    const { width, height } = await element.evaluate(node => {
+      const bounds = node.getBoundingClientRect();
+      return { width: bounds.width, height: bounds.height };
+    });
+    expect(width).toBeCloseTo(56, 1);
+    expect(height).toBeCloseTo(56, 1);
+  }
 });
 
 test("committed point-to-bar flights use the smaller destination diameter", async ({ mount }) => {
