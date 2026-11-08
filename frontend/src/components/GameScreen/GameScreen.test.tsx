@@ -156,6 +156,8 @@ test("each opening die arrives on its half and the first move reuses the decidin
 });
 
 test("an observed opening tie clears for the next attempt even if a face repeats", async ({ mount, page }) => {
+  await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-01-01T01:00:00Z"));
   await page.emulateMedia({ reducedMotion: "reduce" });
   const waiting = makeGameState({ phase: "opening_roll", turn: "white" });
   const render = (state: typeof waiting) => (
