@@ -1,4 +1,4 @@
-"""Read historical PR for a room's seats or a signed linked identity."""
+"""Read historical PR for a room's seats or signed linked identities."""
 import json
 import time
 import uuid
@@ -9,10 +9,12 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from .link.models import LinkedIdentity
 from .link.signing import verify_command_signature
 from .models import Player, RoomPlayer
 
 EMPTY = {"pr": None, "matches": 0, "decisions": 0}
+LEADERBOARD_PAGE_SIZE = 5
 
 
 def read_performance(player_ids):
@@ -60,6 +62,26 @@ def room_performance(request):
     }})
 
 
+def _leaderboard_performance(subjects, issuer):
+    if not isinstance(subjects, list) or not 1 <= len(subjects) <= LEADERBOARD_PAGE_SIZE:
+        return private_response({"detail": "Invalid identities."}, status=400)
+    try:
+        subjects = [str(uuid.UUID(subject)) for subject in subjects]
+    except (ValueError, TypeError, AttributeError):
+        return private_response({"detail": "Invalid identities."}, status=400)
+
+    player_ids = dict(LinkedIdentity.objects.filter(
+        issuer=issuer, external_id__in=subjects, user__player__isnull=False,
+    ).values_list("external_id", "user__player__id"))
+    performance = dict.fromkeys(subjects, EMPTY)
+    try:
+        players = read_performance(player_ids.values())
+        performance.update({subject: players[str(player_id)] for subject, player_id in player_ids.items()})
+    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        return private_response({"detail": "Performance unavailable."}, status=503)
+    return private_response({"players": performance})
+
+
 @api_view(["POST"])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -80,7 +102,12 @@ def linked_performance(request):
         return private_response({"detail": "Unauthorized."}, status=401)
     try:
         body = json.loads(raw)
-        if not isinstance(body, dict) or body.get("purpose") != "player_performance" or body.get("iss") != issuer:
+        if not isinstance(body, dict) or body.get("iss") != issuer:
+            raise ValueError()
+        purpose = body.get("purpose")
+        if purpose == "leaderboard_performance":
+            return _leaderboard_performance(body.get("subs"), issuer)
+        if purpose != "player_performance":
             raise ValueError()
         subject = str(uuid.UUID(body["sub"]))
     except (ValueError, KeyError, TypeError, AttributeError):

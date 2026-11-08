@@ -125,6 +125,16 @@ def _validate_claims(payload):
     if payload['tp'] < 1:
         raise TicketError('target points must be positive')
 
+    if 'friend' in payload and (
+        payload['friend'] is not True
+        or payload['trn'] != 0
+        or payload['fix'] >= 0
+        or payload.get('format') != 'match'
+        or type(payload.get('entry_deadline')) is not int
+        or payload['entry_deadline'] <= 0
+    ):
+        raise TicketError('invalid friend entry contract')
+
     if 'format' in payload and 'tc' not in payload:
         raise TicketError('missing time control')
 

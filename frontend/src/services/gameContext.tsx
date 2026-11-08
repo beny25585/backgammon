@@ -47,6 +47,7 @@ interface GameProviderProps {
   roomId: string;
   playerColor: Color;
   gameType?: GameType;
+  confirmEntry?: boolean;
   serverUrl?: string;
   onRoomCancelled?: () => void;
 }
@@ -106,6 +107,7 @@ export function GameProvider({
   roomId,
   playerColor: initialColor,
   gameType: initialGameType = "1v1",
+  confirmEntry = false,
   serverUrl,
   onRoomCancelled,
 }: GameProviderProps) {
@@ -135,10 +137,14 @@ export function GameProvider({
   const { noMovesMessage, revealNoMoves, clearNoMoves, captureFollowingRoll } = useNoMovesNotice(roomId);
   const [reconnected, setReconnected] = useState(false);
   const [connectionEpoch, setConnectionEpoch] = useState(0);
-  const [opponentConnected, setOpponentConnected] = useState(true);
+  const isTournament = initialGameType === "tournament";
+  const [opponentConnected, setOpponentConnected] = useState(!isTournament);
   const [reactionsRoom, setReactionsRoom] = useState<string | null>(null);
-  const [entryStartedRoom, setEntryStartedRoom] = useState<string | null>(null);
-  const entryStartedRoomRef = useRef<string | null>(null);
+  const [entry, setEntry] = useState<{ roomId: string; started: boolean } | null>(null);
+  const entryRef = useRef(entry);
+  const requiresEntryConfirmation = isTournament || confirmEntry;
+  const hasEntryConfirmation = requiresEntryConfirmation || entry?.roomId === roomId;
+  const entryPending = hasEntryConfirmation && !(entry?.roomId === roomId && entry.started);
   const [timeControl, setTimeControl] = useState<TimeControl | null>(null);
   const [targetPoints, setTargetPoints] = useState<number | null>(null);
   const [gameResult, setGameResult] = useState<GameResult | null>(null);
@@ -177,8 +183,7 @@ export function GameProvider({
   const socket = getSocketService(serverUrl);
   const supportsPlayerReactions = reactionsRoom === roomId;
   const playerReactionsEnabled = supportsPlayerReactions && !isLoading && opponentConnected &&
-    Boolean(state && state.phase !== "game_over") && !gameResult &&
-    (gameType !== "tournament" || entryStartedRoom === roomId);
+    Boolean(state && state.phase !== "game_over") && !gameResult && !entryPending;
   const {
     reactions: playerReactions, sendReaction, reactionCooldownUntil, reactionError,
     receiveReaction, receiveReactionError, resetReactions,
@@ -213,12 +218,14 @@ export function GameProvider({
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
       if (gameOverRef.current) return false;
-      if (gameTypeRef.current === "tournament" && entryStartedRoomRef.current !== roomId) return false;
+      const currentEntry = entryRef.current;
+      if ((requiresEntryConfirmation || currentEntry?.roomId === roomId) &&
+        !(currentEntry?.roomId === roomId && currentEntry.started)) return false;
       const sent = socket.send("state_update", payload);
       if (!sent) setError("Connection lost. Please wait for reconnection.");
       return sent;
     },
-    [socket, roomId],
+    [socket, roomId, requiresEntryConfirmation],
   );
 
   const fetchFinalizedResult = useCallback(
@@ -317,15 +324,22 @@ export function GameProvider({
     const token = getAccessToken();
 
     let hasReceivedState = false;
-    const entryPresence = initialGameType === "tournament" && token
-      ? bindTournamentEntryPresence(socket, roomId, token, (err) => {
-          setError(err instanceof Error ? err.message : connectionErrorTextRef.current);
-          setIsLoading(false);
-        }, () => {
-          entryStartedRoomRef.current = roomId;
-          setEntryStartedRoom(roomId);
-        })
-      : null;
+    let latestPresenceVersion = 0;
+    let entryPresence: ReturnType<typeof bindTournamentEntryPresence> | undefined;
+    const updateEntry = (started: boolean) => {
+      const next = { roomId, started };
+      entryRef.current = next;
+      setEntry(next);
+    };
+    const bindEntryPresence = () => {
+      if (!token || entryPresence) return;
+      updateEntry(false);
+      entryPresence = bindTournamentEntryPresence(socket, roomId, token, (err) => {
+        setError(err instanceof Error ? err.message : connectionErrorTextRef.current);
+        setIsLoading(false);
+      }, () => updateEntry(true));
+    };
+    if (requiresEntryConfirmation) bindEntryPresence();
 
     const connectAndSetup = async () => {
       try {
@@ -367,6 +381,8 @@ export function GameProvider({
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
+            if (msg.entryConfirmationRequired === true) bindEntryPresence();
+            entryPresence?.initialState(msg.roomStatus);
             resetReactions();
             setReactionsRoom(msg.supportsPlayerReactions === true ? roomId : null);
             setConnectionEpoch((epoch) => epoch + 1);
@@ -397,6 +413,7 @@ export function GameProvider({
             authoritativeStateRef.current = initialState;
             stateRef.current = initialState;
             setState(initialState);
+            setIsLoading(false);
 
             const players = (msg as Record<string, unknown>).players as
               | { white?: string | null; black?: string | null }
@@ -610,7 +627,7 @@ export function GameProvider({
           ) {
             setBlackName(payload.username);
           }
-          if (payload?.playerColor !== playerColorRef.current) {
+          if (!isTournament && payload?.playerColor !== playerColorRef.current) {
             setOpponentConnected(true);
           }
         });
@@ -620,7 +637,7 @@ export function GameProvider({
           const payload = (_message as Record<string, unknown>).payload as
             | { playerColor?: Color }
             | undefined;
-          if (payload?.playerColor !== playerColorRef.current) {
+          if (!isTournament && payload?.playerColor !== playerColorRef.current) {
             setOpponentConnected(false);
           }
         });
@@ -629,14 +646,20 @@ export function GameProvider({
           const data = (_message as Record<string, unknown>).payload as {
             connected: number;
             connectedColors?: Color[];
+            presenceVersion?: number;
           };
-          const opponent =
-            playerColorRef.current === "white" ? "black" : "white";
+          if (isTournament && typeof data.presenceVersion === "number") {
+            if (data.presenceVersion < latestPresenceVersion) return;
+            latestPresenceVersion = data.presenceVersion;
+          }
+          const color = playerColorRef.current;
+          const opponent = color === "white" ? "black" : "white";
           if (Array.isArray(data.connectedColors)) {
-            setOpponentConnected(data.connectedColors.includes(opponent));
+            setOpponentConnected(data.connectedColors.includes(opponent) &&
+              (!isTournament || data.connectedColors.includes(color)));
             return;
           }
-          setOpponentConnected(data.connected >= 2);
+          if (!isTournament) setOpponentConnected(data.connected >= 2);
         });
 
         socket.on("ai_status", (message) => {
@@ -686,11 +709,8 @@ export function GameProvider({
               setState(authoritative);
             }
           }
-          // The server auto-resolves the opening once both sockets connect, so
-          // a roll intent still in flight can hit a resolved opening. That
-          // "Cannot roll now" is benign — the UI only offers roll when it is
-          // the player's turn to roll. Once terminal, surface rejections
-          // instead of leaving zero feedback on a stale view.
+          // An opening intent still in flight can hit a resolved roll.
+          // Once terminal, surface rejections instead of leaving a stale view.
           if (msg === "Cannot roll now" && !gameOverRef.current) return;
           if (msg === "entry_waiting_for_players") return;
           if (msg === "Unknown action: reorder_dice") return;
@@ -920,6 +940,8 @@ export function GameProvider({
         socket.on("player_reaction", (message) => reactionHandlers.current.receiveReaction(message));
         socket.on("player_reaction_error", (message) => reactionHandlers.current.receiveReactionError(message));
         socket.on("connection_closed", () => {
+          entryPresence?.connectionClosed();
+          if (isTournament) setOpponentConnected(false);
           resetReactions();
           setReactionsRoom(null);
         });
@@ -945,7 +967,7 @@ export function GameProvider({
       entryPresence?.dispose();
       socket.removeAllListeners();
     };
-  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves, captureFollowingRoll, initialGameType, resetReactions]);
+  }, [roomId, socket, sendIntent, fetchFinalizedResult, revealNoMoves, clearNoMoves, captureFollowingRoll, requiresEntryConfirmation, isTournament, resetReactions]);
 
   // Tick down the server-authoritative next-game countdown shown in the result
   // overlay. The server owns the actual timer; this is display-only.
@@ -1280,7 +1302,8 @@ export function GameProvider({
         cancelRematch,
         reconnected,
         connectionEpoch,
-        opponentConnected: opponentConnected && (gameType !== "tournament" || entryStartedRoom === roomId),
+        entryPending: hasEntryConfirmation ? entryPending : undefined,
+        opponentConnected: opponentConnected && !entryPending,
         supportsPlayerReactions,
         playerReactionsEnabled,
         playerReactions,

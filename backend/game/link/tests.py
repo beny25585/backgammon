@@ -121,13 +121,13 @@ class LinkTestBase(TestCase):
         return self.client.get(ENTER_URL, {"ticket": token})
 
     def confirm_game_sockets(self, room):
-        from game.presence import confirm_tournament_entry, mark_connected
+        from game.presence import confirm_room_entry, mark_connected
         mark_connected(room.pk, 'white-test', 'white', now=100)
         mark_connected(room.pk, 'black-test', 'black', now=101)
         room.refresh_from_db()
         challenge = room.state['presence']['entryChallenge']
-        self.assertFalse(confirm_tournament_entry(room.pk, 'white-test', challenge, now=102))
-        self.assertTrue(confirm_tournament_entry(room.pk, 'black-test', challenge, now=103))
+        self.assertFalse(confirm_room_entry(room.pk, 'white-test', challenge, now=102))
+        self.assertTrue(confirm_room_entry(room.pk, 'black-test', challenge, now=103))
         room.refresh_from_db()
 
     def assertNothingRedeemed(self):
@@ -337,6 +337,171 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(room.status, 'waiting')
         self.assertIsNone(TournamentLink.objects.get().status_started_at)
 
+    def test_later_tournament_ticket_arms_one_preopening_forfeit_after_40_seconds(self):
+        from game.presence import check_room_presence, mark_connected, mark_heartbeat
+
+        self.assertEqual(self.enter(make_ticket(seat='p1', tp=5)).status_code, 302)
+        link = TournamentLink.objects.get()
+        room = link.room
+        connected_at = timezone.now()
+        connected_epoch = connected_at.timestamp()
+        mark_connected(room.pk, 'white-1', 'white', now=connected_epoch)
+        self.assertFalse(Task.objects.filter(key=f'presence:{room.pk}').exists())
+
+        redeemed_at = connected_at + timedelta(seconds=15)
+        with (
+            patch('time.time', return_value=redeemed_at.timestamp()),
+            patch('django.utils.timezone.now', return_value=redeemed_at),
+        ):
+            self.assertEqual(self.enter(make_ticket(seat='p2', tp=5)).status_code, 302)
+        self.assertEqual(room.players.count(), 2)
+        self.assertTrue(Task.objects.filter(key=f'presence:{room.pk}').exists())
+
+        for elapsed in (20, 35, 54):
+            mark_heartbeat(room.pk, 'white-1', now=connected_epoch + elapsed)
+        check_room_presence(room.pk, now=connected_epoch + 54)
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'waiting')
+        self.assertEqual(GameState.objects.get(room=room).state_data['phase'], 'opening_roll')
+        self.assertIsNone(link.result_body)
+
+        check_room_presence(room.pk, now=connected_epoch + 55)
+        check_room_presence(room.pk, now=connected_epoch + 56)
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'cancelled')
+        self.assertEqual(link.result_status, 'queued')
+        self.assertEqual(link.result_body['status'], 'completed')
+        self.assertEqual(link.result_body['end_reason'], 'forfeit')
+        self.assertEqual(link.result_body['winner_seat'], 'p1')
+        self.assertEqual(link.result_body['score'], {'p1': 5, 'p2': 0})
+        self.assertEqual(Task.objects.filter(key=f'result:{link.pk}').count(), 1)
+        self.assertFalse(Match.objects.filter(room=room).exists())
+
+    def test_second_tournament_socket_cancels_the_preopening_forfeit(self):
+        from game.presence import check_room_presence, confirm_room_entry, mark_connected, mark_heartbeat
+
+        for seat in ('p1', 'p2'):
+            self.assertEqual(self.enter(make_ticket(seat=seat)).status_code, 302)
+        link = TournamentLink.objects.get()
+        room = link.room
+        connected_at = time.time()
+        mark_connected(room.pk, 'white-1', 'white', now=connected_at)
+        self.assertTrue(Task.objects.filter(key=f'presence:{room.pk}').exists())
+
+        mark_heartbeat(room.pk, 'white-1', now=connected_at + 20)
+        mark_heartbeat(room.pk, 'white-1', now=connected_at + 39)
+        mark_connected(room.pk, 'black-1', 'black', now=connected_at + 39)
+        check_room_presence(room.pk, now=connected_at + 40)
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'waiting')
+        self.assertIsNone(link.result_body)
+
+        challenge = room.state['presence']['entryChallenge']
+        self.assertFalse(confirm_room_entry(room.pk, 'white-1', challenge, now=connected_at + 41))
+        self.assertTrue(confirm_room_entry(room.pk, 'black-1', challenge, now=connected_at + 41))
+        check_room_presence(room.pk, now=connected_at + 42)
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'playing')
+        self.assertIsNone(link.result_body)
+        self.assertFalse(Task.objects.filter(key=f'result:{link.pk}').exists())
+
+    def test_tournament_socket_return_after_deadline_cannot_cancel_preopening_forfeit(self):
+        from game.presence import mark_connected, mark_heartbeat
+
+        for seat in ('p1', 'p2'):
+            self.assertEqual(self.enter(make_ticket(seat=seat)).status_code, 302)
+        link = TournamentLink.objects.get()
+        room = link.room
+        mark_connected(room.pk, 'white-1', 'white', now=1000)
+        mark_heartbeat(room.pk, 'white-1', now=1020)
+        mark_heartbeat(room.pk, 'white-1', now=1039)
+        # The worker hasn't polled yet. The late socket must see the same result.
+        mark_connected(room.pk, 'black-1', 'black', now=1041)
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'cancelled')
+        self.assertEqual(link.result_body['winner_seat'], 'p1')
+        self.assertEqual(GameState.objects.get(room=room).state_data['gameEndReason'], 'forfeit')
+
+    def test_tournament_preopening_deadline_has_no_winner_when_both_sockets_are_absent(self):
+        from game.presence import check_room_presence, mark_connected, mark_disconnected
+
+        for seat in ('p1', 'p2'):
+            self.assertEqual(self.enter(make_ticket(seat=seat)).status_code, 302)
+        link = TournamentLink.objects.get()
+        room = link.room
+        connected_at = time.time()
+        mark_connected(room.pk, 'white-1', 'white', now=connected_at)
+        self.assertTrue(Task.objects.filter(key=f'presence:{room.pk}').exists())
+        mark_disconnected(room.pk, 'white-1', now=connected_at + 10)
+        check_room_presence(room.pk, now=connected_at + 40)
+        room.refresh_from_db()
+        link.refresh_from_db()
+
+        self.assertEqual(room.status, 'waiting')
+        self.assertIsNone(link.result_body)
+        self.assertFalse(Task.objects.filter(key=f'result:{link.pk}').exists())
+        self.assertFalse(Match.objects.filter(room=room).exists())
+
+    def test_tournament_socket_heartbeat_recovery_clears_the_previous_opening_deadline(self):
+        from game.presence import check_room_presence, mark_connected, mark_heartbeat
+
+        for seat in ('p1', 'p2'):
+            self.assertEqual(self.enter(make_ticket(seat=seat)).status_code, 302)
+        link = TournamentLink.objects.get()
+        room = link.room
+        mark_connected(room.pk, 'white-1', 'white', now=1000)
+        mark_connected(room.pk, 'black-1', 'black', now=1001)
+        mark_heartbeat(room.pk, 'white-1', now=1020)
+        mark_connected(room.pk, 'white-2', 'white', now=1027)
+        mark_heartbeat(room.pk, 'black-1', now=1040)
+        mark_heartbeat(room.pk, 'white-2', now=1055)
+        mark_heartbeat(room.pk, 'white-2', now=1067)
+        check_room_presence(room.pk, now=1067)
+        link.refresh_from_db()
+        self.assertIsNone(link.result_body)
+
+        for now in (1080, 1095, 1105):
+            mark_heartbeat(room.pk, 'white-2', now=now)
+        check_room_presence(room.pk, now=1105)
+        link.refresh_from_db()
+        self.assertEqual(link.result_body['winner_seat'], 'p1')
+
+    def test_confirmed_tournament_waits_40_seconds_if_opening_player_disconnects_before_roll(self):
+        from game.presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat, needs_admin_adjudication
+
+        for seat in ('p1', 'p2'):
+            self.assertEqual(self.enter(make_ticket(seat=seat, tp=5)).status_code, 302)
+        link = TournamentLink.objects.get()
+        room = link.room
+        self.confirm_game_sockets(room)
+        self.assertEqual(room.status, 'playing')
+        self.assertEqual(GameState.objects.get(room=room).state_data['phase'], 'opening_roll')
+
+        mark_disconnected(room.pk, 'white-test', now=104)
+        for now in (120, 135, 143):
+            mark_heartbeat(room.pk, 'black-test', now=now)
+        check_room_presence(room.pk, now=143)
+        link.refresh_from_db()
+        self.assertIsNone(link.result_body)
+
+        check_room_presence(room.pk, now=144)
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'cancelled')
+        self.assertEqual(link.result_body['end_reason'], 'forfeit')
+        self.assertEqual(link.result_body['winner_seat'], 'p2')
+        self.assertEqual(link.result_body['score'], {'p1': 0, 'p2': 5})
+        self.assertFalse(Match.objects.filter(room=room).exists())
+        mark_disconnected(room.pk, 'black-test', now=145)
+        self.assertTrue(mark_connected(room.pk, 'black-2', 'black', now=146))
+        room.refresh_from_db()
+        self.assertFalse(needs_admin_adjudication(room))
+
     def test_second_direct_play_seat_still_wakes_the_first_player(self):
         self.enter(make_ticket(sub=str(uuid.uuid4()), seat='p1', trn=0, fix=-482))
         with patch('game.link.views.get_channel_layer') as get_layer:
@@ -347,6 +512,57 @@ class EnterLinkTests(LinkTestBase):
         get_layer.return_value.group_send.assert_called_once_with(
             f'game_{room.id}', {'type': 'room_started'},
         )
+
+    def test_linked_friend_starts_once_after_two_current_socket_acknowledgements(self):
+        from game.presence import confirm_room_entry, mark_connected
+
+        deadline = int(time.time()) + 60
+        claims = dict(trn=0, fix=-482, friend=True, format='match', cube_max=64,
+                      jacoby=False, stake='50', loss_limit='50', entry_deadline=deadline)
+        for seat in ('p1', 'p2'):
+            response = self.enter(make_ticket(seat=seat, **claims))
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(parse_qs(response['Location'].split('#', 1)[1])['entryConfirm'], ['1'])
+
+        link = TournamentLink.objects.get()
+        room = link.room
+        self.assertEqual(room.players.count(), 2)
+        self.assertEqual(room.status, 'waiting')
+        self.assertEqual(room.state['entryDeadline'], deadline)
+        self.assertIsNone(link.status_started_at)
+        mark_connected(room.pk, 'white-1', 'white', now=deadline - 5)
+        mark_connected(room.pk, 'black-1', 'black', now=deadline - 4)
+        room.refresh_from_db()
+        challenge = room.state['presence']['entryChallenge']
+        self.assertFalse(confirm_room_entry(room.pk, 'white-1', challenge, now=deadline - 3))
+        room.refresh_from_db()
+        self.assertEqual(room.status, 'waiting')
+        with patch('game.presence._entry_event') as notify:
+            self.assertTrue(confirm_room_entry(room.pk, 'black-1', challenge, now=deadline - 2))
+            self.assertFalse(confirm_room_entry(room.pk, 'black-1', challenge, now=deadline - 1))
+        notify.assert_called_once_with(room.pk, {'type': 'room_started'})
+        room.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(room.status, 'playing')
+        self.assertIsNotNone(link.status_started_at)
+
+    def test_friend_confirmation_cannot_start_at_the_signed_deadline(self):
+        from game.presence import confirm_room_entry, mark_connected
+
+        deadline = int(time.time()) + 60
+        claims = dict(trn=0, fix=-482, friend=True, format='match', cube_max=64,
+                      jacoby=False, stake='50', loss_limit='50', entry_deadline=deadline)
+        for seat in ('p1', 'p2'):
+            self.assertEqual(self.enter(make_ticket(seat=seat, **claims)).status_code, 302)
+        room = TournamentLink.objects.get().room
+        mark_connected(room.pk, 'white-1', 'white', now=deadline - 3)
+        mark_connected(room.pk, 'black-1', 'black', now=deadline - 2)
+        room.refresh_from_db()
+        challenge = room.state['presence']['entryChallenge']
+        self.assertFalse(confirm_room_entry(room.pk, 'white-1', challenge, now=deadline - 1))
+        self.assertFalse(confirm_room_entry(room.pk, 'black-1', challenge, now=deadline))
+        room.refresh_from_db()
+        self.assertEqual(room.status, 'waiting')
 
     def test_the_first_seat_alone_does_not_start_the_room(self):
         with patch("game.link.views.get_channel_layer") as get_layer:

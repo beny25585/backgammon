@@ -9,7 +9,7 @@ from django.test import SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from game.models import GameRoom, GameState, Task
-from game.presence import confirm_tournament_entry, mark_connected
+from game.presence import confirm_room_entry, mark_connected
 from game.task_runner import run_task
 
 from . import tests as link_tests
@@ -54,10 +54,10 @@ class StatusEventStartTests(link_tests.LinkTestBase):
         mark_connected(room.pk, 'black-test', 'black', now=101)
         room.refresh_from_db()
         challenge = room.state['presence']['entryChallenge']
-        confirm_tournament_entry(room.pk, 'white-test', challenge, now=102)
+        confirm_room_entry(room.pk, 'white-test', challenge, now=102)
         with patch('game.link.live._snapshot_body', side_effect=RuntimeError('outbox failure')):
             with self.assertRaisesMessage(RuntimeError, 'outbox failure'):
-                confirm_tournament_entry(room.pk, 'black-test', challenge, now=103)
+                confirm_room_entry(room.pk, 'black-test', challenge, now=103)
         link = TournamentLink.objects.select_related('room').get()
         self.assertEqual(link.room.status, 'waiting')
         self.assertEqual(link.room.players.count(), 2)

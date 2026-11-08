@@ -1,15 +1,22 @@
 import asyncio
 import json
 import uuid
+from time import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+from asgiref.sync import async_to_sync
+from channels.db import database_sync_to_async
 from django.contrib.auth.models import User
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, TransactionTestCase
+from django.utils import timezone
 
 from game.consumers import GameConsumer, get_connected_snapshot, get_connection_identity
 from game.engine import BackgammonEngine
-from game.models import GameRoom, GameState, Match, Player, RoomPlayer
+from game.event_history import persist_game_action
+from game.link.models import TournamentLink
+from game.models import GameEvent, GameRoom, GameState, Match, Player, RoomPlayer
+from game.presence import STALE_SECONDS
 from game.consumers import _connected_user_colors, _connected_users
 
 
@@ -97,6 +104,159 @@ class ConnectionSnapshotTests(TestCase):
         self.assertEqual(Match.objects.filter(room=self.room).count(), 1)
 
 
+class TournamentOpeningDispatchTests(TransactionTestCase):
+    def setUp(self):
+        self.room = GameRoom.objects.create(code='OPEN01', status='playing')
+        self.link = TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=17, fixture_id=482, room=self.room,
+        )
+        for color in ('white', 'black'):
+            player = Player.objects.create(user=User.objects.create_user(f'opening-{color}'))
+            RoomPlayer.objects.create(room=self.room, player=player, color=color)
+        self.state = GameState.objects.create(
+            room=self.room, state_data=BackgammonEngine.get_initial_state(),
+        )
+
+    def receive_roll(self, color='white', *, opponent_fresh=True):
+        now = time()
+        opponent = 'black' if color == 'white' else 'white'
+        self.room.state = {
+            'presence': {
+                'everBothConnected': True,
+                'connections': {
+                    'acting-seat': {'color': color, 'lastSeen': now},
+                    'opponent-seat': {
+                        'color': opponent,
+                        'lastSeen': now if opponent_fresh else now - STALE_SECONDS - 1,
+                    },
+                },
+            },
+        }
+        self.room.save(update_fields=['state'])
+        consumer = GameConsumer()
+        consumer.room_id = str(self.room.pk)
+        consumer.room_group_name = f'game_{self.room.pk}'
+        consumer.linked_tournament_id = self.link.tournament_id
+        consumer.player_color = color
+        consumer.send = AsyncMock()
+        consumer.channel_layer = SimpleNamespace(group_send=AsyncMock())
+        consumer._arm_opening_result_watch = AsyncMock()
+        async_to_sync(consumer.receive)(json.dumps({
+            'type': 'state_update', 'payload': {'action': 'roll'},
+        }))
+        self.room.refresh_from_db()
+        self.state.refresh_from_db()
+        return consumer
+
+    def test_one_tournament_intent_persists_both_dice_and_broadcasts_once(self):
+        with patch('game.consumers.fetch_opening_dice', AsyncMock(return_value=(6, 2))) as dice:
+            consumer = self.receive_roll()
+        dice.assert_awaited_once()
+        self.assertEqual(self.state.state_data['openingRoll'], {'white': 6, 'black': 2})
+        self.assertEqual(self.state.state_data['phase'], 'opening_result')
+        self.assertEqual(self.state.state_data['dice'], [6, 2])
+        self.assertIsNone(self.state.state_data['turnStartedAt'])
+        self.assertEqual(self.room.last_sequence, 1)
+        self.assertEqual(GameEvent.objects.filter(room=self.room, event_type='roll').count(), 1)
+        consumer._arm_opening_result_watch.assert_awaited_once()
+        consumer.channel_layer.group_send.assert_awaited_once()
+        event = consumer.channel_layer.group_send.call_args.args[1]
+        self.assertEqual(event['payload']['openingRoll'], {'white': 6, 'black': 2})
+
+    def test_tournament_opening_finishes_using_the_existing_pair(self):
+        engine = BackgammonEngine(self.state.state_data)
+        engine.roll_opening_die('white', die=5)
+        self.state.state_data = {**engine.state, 'openingDice': [5, 3]}
+        self.state.save(update_fields=['state_data'])
+        self.room.last_sequence = 1
+        self.room.save(update_fields=['last_sequence'])
+        with patch('game.consumers.fetch_opening_dice', AsyncMock()) as dice:
+            self.receive_roll('black')
+        dice.assert_not_awaited()
+        self.assertEqual(self.state.state_data['openingRoll'], {'white': 5, 'black': 3})
+        self.assertEqual(self.state.state_data['phase'], 'opening_result')
+        self.assertEqual(self.room.last_sequence, 2)
+
+    def test_pending_tournament_roll_cannot_replace_a_committed_pair(self):
+        first = BackgammonEngine(BackgammonEngine.get_initial_state())
+        first.state['gameId'] = self.state.state_data['gameId']
+        first.roll_opening_die('white', die=5)
+        first.roll_opening_die('black', die=1)
+
+        async def finish_competing_roll():
+            await database_sync_to_async(persist_game_action)(
+                self.room.pk, first.state, 'white', 'roll',
+            )
+            return 6, 2
+
+        with patch('game.consumers.fetch_opening_dice', side_effect=finish_competing_roll):
+            consumer = self.receive_roll()
+        self.assertEqual(self.state.state_data['openingRoll'], {'white': 5, 'black': 1})
+        self.assertEqual(self.room.last_sequence, 1)
+        self.assertEqual(GameEvent.objects.filter(room=self.room, event_type='roll').count(), 1)
+        consumer._arm_opening_result_watch.assert_not_awaited()
+        consumer.channel_layer.group_send.assert_awaited_once()
+        self.assertEqual(consumer.channel_layer.group_send.call_args.args[1]['type'], 'room_status')
+
+    def test_started_tournament_opens_and_starts_the_clock_after_one_disconnect(self):
+        with patch('game.consumers.fetch_opening_dice', AsyncMock(return_value=(6, 2))) as dice:
+            consumer = self.receive_roll(opponent_fresh=False)
+        dice.assert_awaited_once()
+        self.assertEqual(self.state.state_data['openingRoll'], {'white': 6, 'black': 2})
+        self.assertEqual(self.state.state_data['phase'], 'opening_result')
+        self.assertIsNone(self.state.state_data['turnStartedAt'])
+        opening_clock = self.state.state_data['clock']
+
+        consumer._reschedule_timeout_from_state = AsyncMock()
+        before = int(time() * 1000)
+        with patch('game.consumers.ensure_inactivity_check', return_value=False) as inactivity:
+            async_to_sync(consumer._activate_opening_move)()
+        self.state.refresh_from_db()
+        self.room.refresh_from_db()
+
+        self.assertEqual(self.state.state_data['phase'], 'moving')
+        self.assertEqual(self.state.state_data['turn'], 'white')
+        self.assertEqual(self.state.state_data['dice'], [6, 2])
+        self.assertEqual(self.state.state_data['clock'], opening_clock)
+        self.assertGreaterEqual(self.state.state_data['turnStartedAt'], before)
+        self.assertEqual(self.state.state_data['inactivity']['player'], 'white')
+        self.assertEqual(self.room.last_sequence, 2)
+        self.assertEqual(
+            list(GameEvent.objects.filter(room=self.room).order_by('sequence').values_list('event_type', flat=True)),
+            ['roll', 'opening_result_done'],
+        )
+        inactivity.assert_called_once_with(self.room.pk)
+        consumer._reschedule_timeout_from_state.assert_awaited_once()
+
+    def test_tournament_opening_clock_stays_stopped_during_admin_hold(self):
+        with patch('game.consumers.fetch_opening_dice', AsyncMock(return_value=(6, 2))):
+            consumer = self.receive_roll()
+        self.room.state['presence']['needsAdminAdjudication'] = True
+        self.room.save(update_fields=['state'])
+        consumer._reschedule_timeout_from_state = AsyncMock()
+
+        with patch('game.consumers.ensure_inactivity_check') as inactivity:
+            async_to_sync(consumer._activate_opening_move)()
+        self.state.refresh_from_db()
+        self.room.refresh_from_db()
+
+        self.assertEqual(self.state.state_data['phase'], 'opening_result')
+        self.assertIsNone(self.state.state_data['turnStartedAt'])
+        self.assertEqual(self.room.last_sequence, 1)
+        inactivity.assert_not_called()
+        consumer._reschedule_timeout_from_state.assert_not_awaited()
+
+    def test_direct_game_still_reveals_only_the_acting_players_die(self):
+        self.link.tournament_id = 0
+        self.link.save(update_fields=['tournament_id'])
+        with patch('game.consumers.fetch_opening_dice', AsyncMock(return_value=(6, 2))) as dice:
+            self.receive_roll()
+        dice.assert_awaited_once()
+        self.assertEqual(self.state.state_data['openingRoll'], {'white': 6, 'black': None})
+        self.assertEqual(self.state.state_data['phase'], 'opening_roll')
+        self.assertEqual(self.state.state_data['turn'], 'black')
+
+
 class ConnectionDispatchTests(SimpleTestCase):
     async def test_waiting_game_cannot_fetch_or_roll_opening_dice(self):
         consumer = GameConsumer()
@@ -143,9 +303,45 @@ class ConnectionDispatchTests(SimpleTestCase):
             first = json.loads(consumer.send.call_args_list[0].args[0])
             self.assertTrue(first['initial'])
             self.assertEqual(first['payload']['version'], 9)
+            self.assertEqual(first['roomStatus'], 'playing')
+            self.assertFalse(first['entryConfirmationRequired'])
         finally:
             # Direct unit invocation has no Channels disconnect dispatch.
             await self.clean_consumer(consumer)
+
+    async def test_heartbeat_delivers_a_missed_entry_start_only_once(self):
+        consumer = GameConsumer()
+        consumer.room_id = str(uuid.uuid4())
+        consumer.channel_name = 'test-channel'
+        consumer.entry_confirmation_required = True
+        consumer.entry_start_notified = False
+        consumer.send = AsyncMock()
+        heartbeat = AsyncMock(side_effect=['waiting', 'playing', 'playing', asyncio.CancelledError])
+        with patch('game.consumers.HEARTBEAT_SECONDS', 0), \
+                patch('game.consumers.database_sync_to_async', return_value=heartbeat):
+            with self.assertRaises(asyncio.CancelledError):
+                await consumer._presence_heartbeat()
+
+        consumer.send.assert_awaited_once()
+        self.assertEqual(json.loads(consumer.send.call_args.args[0]), {'type': 'room_started', 'payload': {}})
+
+    async def test_tournament_room_status_uses_presence_shared_between_workers(self):
+        consumer, room = self.consumer()
+        consumer.room_id = room.id
+        consumer.room_group_name = f'game_{room.id}'
+        consumer.linked_tournament_id = 17
+        room.updated_at = timezone.now()
+        room.state = {'presence': {'connections': {
+            'worker-a': {'color': 'white', 'lastSeen': time()},
+            'worker-b': {'color': 'black', 'lastSeen': time()},
+        }}}
+        with patch('game.consumers.get_room', AsyncMock(return_value=room)):
+            await GameConsumer._broadcast_room_status(consumer)
+        consumer.channel_layer.group_send.assert_awaited_once_with(consumer.room_group_name, {
+            'type': 'room_status', 'status': 'playing', 'connected': 2,
+            'connectedColors': ['black', 'white'],
+            'presenceVersion': int(room.updated_at.timestamp() * 1_000_000),
+        })
 
     async def clean_consumer(self, consumer):
         if hasattr(consumer, '_presence_heartbeat_task'):

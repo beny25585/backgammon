@@ -16,6 +16,7 @@ function sendLog(
   message: string,
   meta: Record<string, unknown> = {},
 ) {
+  if (import.meta.env.MODE === "mobile") return;
   if (!verboseLogging && !enabledLevels.has(level)) return;
 
   const clientEpochMs = Date.now();

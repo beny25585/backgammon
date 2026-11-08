@@ -10,11 +10,29 @@ from datetime import timedelta
 
 import httpx
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
 from .engine import BackgammonEngine
-from .models import AiSession
+from .models import AiSession, GameRoom, GameState
+
+
+class BotLeaseLost(RuntimeError):
+    """This bot attempt can no longer update the room."""
+
+
+class BotStateChanged(RuntimeError):
+    """The bot must reload the committed room before continuing."""
+
+
+def bot_should_act(state):
+    phase = state.get('phase')
+    if phase == 'doubling_offered':
+        return state.get('doubleOfferedBy') == 'white'
+    return phase == 'opening_result' or (
+        state.get('turn') == 'black' and phase in ('opening_roll', 'rolling', 'moving')
+    )
 
 
 def claim(room_id):
@@ -28,6 +46,32 @@ def claim(room_id):
 
 def release(room_id, token):
     AiSession.objects.filter(room_id=room_id, lease_token=token).update(lease_until=None, lease_token='')
+
+
+def _saved_practice_state(room_id):
+    return GameState.objects.filter(room_id=room_id, room__status='playing').values_list('state_data', flat=True).first() or {}
+
+
+def claim_bot(room_id):
+    # Most wakeups during the human turn only need a read. Recheck under the
+    # room lock before acquiring a lease, in the same order as action writes.
+    if not bot_should_act(_saved_practice_state(room_id)):
+        return None
+    with transaction.atomic():
+        if not GameRoom.objects.select_for_update().filter(pk=room_id, status='playing').exists():
+            return None
+        if not bot_should_act(_saved_practice_state(room_id)):
+            return None
+        return claim(room_id)
+
+
+def owned_bot_session(room_id, token):
+    return AiSession.objects.filter(room_id=room_id, lease_token=token, lease_until__gt=timezone.now())
+
+
+def save_bot_target(room_id, token, target):
+    if not owned_bot_session(room_id, token).update(target_board=target):
+        raise BotLeaseLost('Practice bot no longer owns its target board')
 
 
 def native_board(state, color):
@@ -96,6 +140,4 @@ async def request_decision(state, difficulty, match=None, action='move'):
 
 
 async def request_board(state, difficulty, match=None):
-    target = (await request_decision(state, difficulty, match)).get('board')
-    executable_turn(state, target)
-    return target
+    return (await request_decision(state, difficulty, match)).get('board')

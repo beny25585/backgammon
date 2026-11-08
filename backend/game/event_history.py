@@ -2,7 +2,12 @@
 from django.db import transaction
 from django.utils import timezone
 
+from . import ai
 from .models import GameEvent, GameRoom, GameState, RoomPlayer
+
+
+class TournamentOpeningChanged(Exception):
+    """The room advanced, closed, or was suspended during the opening."""
 
 
 def event_game_id(payload):
@@ -10,7 +15,8 @@ def event_game_id(payload):
     return str(value) if value else 'initial'
 
 
-def persist_game_action(room_id, state, player_color, event_type):
+def persist_game_action(room_id, state, player_color, event_type, *, bot_lease=None, expected_version=None,
+                        release_on_handoff=True, tournament_opening=False):
     """One room lock, one commit; no queue or background event write per action.
 
     State versions also cover non-game updates. History ordinals advance only
@@ -18,6 +24,18 @@ def persist_game_action(room_id, state, player_color, event_type):
     """
     with transaction.atomic():
         room = GameRoom.objects.select_for_update().get(pk=room_id)
+        if bot_lease is not None and (
+            room.status != 'playing' or not ai.owned_bot_session(room_id, bot_lease).select_for_update().exists()
+        ):
+            raise ai.BotLeaseLost('Practice bot no longer owns this game state')
+        if bot_lease is not None and room.last_sequence != expected_version:
+            raise ai.BotStateChanged('Practice board changed before persistence')
+        if tournament_opening:
+            from .presence import needs_admin_adjudication
+
+            if (room.status != 'playing' or room.last_sequence != expected_version
+                    or needs_admin_adjudication(room)):
+                raise TournamentOpeningChanged()
         if room.status in ('completed', 'cancelled'):
             raise ValueError('Cannot change a closed game room')
         room.last_sequence += 1
@@ -40,6 +58,9 @@ def persist_game_action(room_id, state, player_color, event_type):
             history_sequence=room.history_sequence, event_type=event_type,
             payload={**stored, 'actorColor': player_color},
         )
+        if (bot_lease is not None and release_on_handoff and stored.get('phase') != 'game_over'
+                and not ai.bot_should_act(stored)):
+            ai.release(room_id, bot_lease)
     # Do not expose a version to callers if the transaction rolled back.
     state['version'] = room.last_sequence
     return room.last_sequence

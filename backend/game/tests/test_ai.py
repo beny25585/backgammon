@@ -1,13 +1,24 @@
 import copy
 import time
 import uuid
+from datetime import timedelta
 
 from django.contrib.auth.models import User
 from django.core import signing
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
-from game.ai import claim, release, native_board, executable_turn
+from game.ai import (
+    BotLeaseLost,
+    BotStateChanged,
+    claim,
+    claim_bot,
+    executable_turn,
+    native_board,
+    release,
+)
 from game.engine import BackgammonEngine
+from game.event_history import persist_game_action
 from game.models import AiSession, GameRoom, GameState, Player, RoomPlayer
 from game.presence import check_room_presence
 
@@ -29,6 +40,39 @@ class PracticeTests(TestCase):
         self.assertIsNone(claim(self.room.id))
         release(self.room.id, first)
         self.assertTrue(claim(self.room.id))
+
+    def test_stale_bot_attempt_cannot_persist_handoff_or_release_current_lease(self):
+        state = BackgammonEngine.get_initial_state()
+        state.update(turn='black', phase='moving', dice=[3, 1], remaining=[])
+        GameState.objects.create(room=self.room, state_data=state)
+        version = persist_game_action(self.room.pk, state, 'black', 'move')
+        previous_lease = claim(self.room.pk)
+        self.assertIsNotNone(previous_lease)
+        AiSession.objects.filter(pk=self.session.pk).update(lease_until=timezone.now() - timedelta(seconds=1))
+        current_lease = claim(self.room.pk)
+        self.assertIsNotNone(current_lease)
+        self.assertNotEqual(current_lease, previous_lease)
+
+        engine = BackgammonEngine(copy.deepcopy(state))
+        self.assertTrue(engine.end_turn()['success'])
+        for lease, expected_version, error in (
+            (previous_lease, version, BotLeaseLost), (current_lease, version - 1, BotStateChanged),
+        ):
+            with self.subTest(expected_version=expected_version), self.assertRaises(error):
+                persist_game_action(self.room.pk, engine.state, 'black', 'end_turn',
+                    bot_lease=lease, expected_version=expected_version)
+        release(self.room.pk, previous_lease)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.lease_token, current_lease)
+        self.assertEqual(GameState.objects.get(room=self.room).state_data, state)
+        self.assertEqual(list(self.room.events.values_list('sequence', flat=True)), [version])
+
+        self.assertEqual(persist_game_action(self.room.pk, engine.state, 'black', 'end_turn',
+            bot_lease=current_lease, expected_version=version), version + 1)
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.lease_token, '')
+        self.assertIsNone(claim_bot(self.room.pk))
+        self.assertIsNotNone(claim(self.room.pk))
 
 
     def test_ai_is_not_forfeited_for_absent_bot_socket(self):

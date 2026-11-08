@@ -44,6 +44,7 @@ interface GameScreenProps {
   closeExisting?: boolean;
   onLeave?: (outcome?: "won" | "lost") => void;
   homeLabel?: string;
+  restartOnResultClose?: boolean;
   gameType?: GameType;
   showRematch?: boolean;
   onPracticeAgain?: () => void;
@@ -75,6 +76,7 @@ function hasInterruptedOpeningMove(
 export default function GameScreen({
   closeExisting = false,
   onLeave,
+  restartOnResultClose = false,
   gameType: propGameType,
   showRematch = true,
   onPracticeAgain,
@@ -99,6 +101,7 @@ export default function GameScreen({
     reorderDice,
     reconnected,
     connectionEpoch,
+    entryPending,
     opponentConnected,
     undoMove,
     autoConfirmPending,
@@ -246,11 +249,16 @@ export default function GameScreen({
     state?.phase === "opening_roll" &&
     state.turn === playerColor &&
     state.openingRoll[playerColor] === null;
-  const automaticOpeningRollKey =
+  const openingRollKey =
     interruptedOpeningMoveKey ??
     (waitingForOpeningRoll
       ? `${state.turn}:${state.openingRoll.white ?? "-"}:${state.openingRoll.black ?? "-"}`
       : null);
+  const automaticOpeningRollKey = entryPending || !openingRollKey
+    ? null
+    : entryPending === undefined
+      ? openingRollKey
+      : `${connectionEpoch ?? 0}:${openingRollKey}`;
 
   useEffect(() => {
     if (!automaticOpeningRollKey) {
@@ -483,6 +491,7 @@ export default function GameScreen({
             <PrivateGameResult
               {...common}
               onPracticeAgain={onPracticeAgain}
+              restartOnClose={restartOnResultClose}
               showRematch={showRematch}
               rematchStatus={rematchState?.status ?? null}
               rematchReason={rematchState?.reason}

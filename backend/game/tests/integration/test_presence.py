@@ -56,6 +56,38 @@ class PresenceForfeitTests(TestCase):
         self.assertEqual(self.room.status, 'completed')
         self.assertEqual(Match.objects.filter(room=self.room).count(), 1)
 
+    @override_settings(GAMELINK_ENABLED=True)
+    def test_tournament_disconnect_queues_one_official_result_at_40_seconds(self):
+        link = TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=17, fixture_id=1008, room=self.room,
+        )
+        self.connect_both()
+        mark_disconnected(self.room.id, 'white-1', 1001)
+        mark_heartbeat(self.room.id, 'black-1', 1040)
+        self.assertEqual(check_room_presence(self.room.id, 1040)['status'], 'waiting')
+        link.refresh_from_db()
+        self.assertIsNone(link.result_body)
+        self.assertFalse(Task.objects.filter(key=f'result:{link.pk}').exists())
+
+        self.assertEqual(
+            check_room_presence(self.room.id, 1041),
+            {'status': 'forfeited', 'loser': 'white', 'winner': 'black'},
+        )
+        self.assertEqual(check_room_presence(self.room.id, 1042)['status'], 'closed')
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, 'completed')
+        self.assertEqual(Match.objects.filter(room=self.room).count(), 1)
+        link.refresh_from_db()
+        self.assertEqual(link.result_status, 'queued')
+        self.assertEqual(link.result_body['end_reason'], 'disconnect')
+        self.assertEqual(link.result_body['winner_seat'], 'p2')
+        self.assertEqual(link.result_body['score'], {'p1': self.room.white_score, 'p2': 5})
+        self.assertEqual(link.result_body['technical_result'], {
+            'reason': 'disconnect',
+            'played_score': {'p1': self.room.white_score, 'p2': self.room.black_score},
+        })
+        self.assertEqual(Task.objects.filter(key=f'result:{link.pk}').count(), 1)
+
     def test_reconnect_cancels_the_pending_forfeit(self):
         self.connect_both()
         mark_disconnected(self.room.id, 'white-1', 1001)

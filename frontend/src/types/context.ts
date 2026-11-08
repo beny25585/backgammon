@@ -88,6 +88,8 @@ export interface GameContextType {
   reconnected: boolean;
   /** Changes for every initial server snapshot, including rapid reconnects. */
   connectionEpoch?: number;
+  /** Present for rooms that use the server-confirmed entry protocol. */
+  entryPending?: boolean;
   opponentConnected: boolean;
   supportsPlayerReactions?: boolean;
   playerReactionsEnabled?: boolean;

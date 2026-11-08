@@ -328,6 +328,95 @@ class GameConsumerTests(TransactionTestCase):
                 break
         return comm_white, comm_black
 
+    @patch.object(GameConsumer, 'OPENING_RESULT_DELAY', 0.05)
+    @patch('game.consumers.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 2))
+    async def test_tournament_opening_after_opening_player_reconnects(self, opening_dice):
+        from game.link.models import TournamentLink
+
+        self.room.status = 'waiting'
+        await database_sync_to_async(self.room.save)(update_fields=['status'])
+        await database_sync_to_async(TournamentLink.objects.create)(
+            issuer='tournaments', tournament_id=17, fixture_id=482, room=self.room,
+        )
+        sockets = []
+
+        async def connect(user):
+            socket = self._make_communicator(user)
+            connected, _ = await socket.connect(timeout=10)
+            self.assertTrue(connected)
+            sockets.append(socket)
+            initial = await socket.receive_json_from()
+            self.assertTrue(initial['initial'])
+            self.assertTrue(initial['entryConfirmationRequired'])
+            return socket, initial
+
+        roll = {'type': 'state_update', 'payload': {'action': 'roll'}}
+        try:
+            white, initial_white = await connect(self.white_user)
+            black, initial_black = await connect(self.black_user)
+            self.assertEqual(initial_white['roomStatus'], 'waiting')
+            self.assertEqual(initial_black['roomStatus'], 'waiting')
+            challenge_event = await self._receive_until(black, lambda event: event['type'] == 'entry_challenge')
+            challenge = challenge_event['payload']['challenge']
+            await self._receive_until(
+                white, lambda event: event['type'] == 'entry_challenge'
+                and event['payload']['challenge'] == challenge,
+            )
+            acknowledge = {'type': 'entry_ready', 'payload': {'challenge': challenge}}
+            await white.send_json_to(acknowledge)
+            await white.send_json_to(roll)
+            early = await self._receive_until(white, lambda event: event['type'] == 'error')
+            self.assertEqual(early['message'], 'entry_waiting_for_players')
+            opening_dice.assert_not_awaited()
+
+            await black.send_json_to(acknowledge)
+            for socket in (white, black):
+                await self._receive_until(socket, lambda event: event['type'] == 'room_started')
+            await database_sync_to_async(self.room.refresh_from_db)()
+            self.assertEqual(self.room.status, 'playing')
+            self.assertTrue(self.room.state['presence']['everBothConnected'])
+
+            await white.disconnect()
+            sockets.remove(white)
+            await self._receive_until(
+                black, lambda event: event['type'] == 'room_status'
+                and event['payload']['connectedColors'] == ['black'],
+            )
+            await black.send_json_to(roll)
+            wrong_turn = await self._receive_until(black, lambda event: event['type'] == 'error')
+            self.assertEqual(wrong_turn['message'], 'Not your turn to roll')
+            opening_dice.assert_not_awaited()
+
+            white, resumed = await connect(self.white_user)
+            self.assertEqual(resumed['roomStatus'], 'playing')
+            self.assertEqual(resumed['payload']['phase'], 'opening_roll')
+            self.assertEqual(resumed['payload']['openingRoll'], {'white': None, 'black': None})
+            self.assertIsNone(resumed['payload'].get('turnStartedAt'))
+            await white.send_json_to(roll)
+
+            for socket in (white, black):
+                opening = await self._receive_until(
+                    socket, lambda event: event['type'] == 'state_update'
+                    and event['payload'].get('phase') == 'opening_result',
+                )
+                self.assertEqual(opening['payload']['openingRoll'], {'white': 6, 'black': 2})
+                self.assertIsNone(opening['payload']['turnStartedAt'])
+                moving = await self._receive_until(
+                    socket, lambda event: event['type'] == 'state_update'
+                    and event['payload'].get('phase') == 'moving',
+                )
+                self.assertEqual(moving['payload']['turn'], 'white')
+                self.assertEqual(moving['payload']['dice'], [6, 2])
+                self.assertIsInstance(moving['payload']['turnStartedAt'], int)
+            opening_dice.assert_awaited_once()
+            events = await database_sync_to_async(list)(
+                GameEvent.objects.filter(room=self.room).order_by('sequence').values_list('event_type', flat=True),
+            )
+            self.assertEqual(events, ['roll', 'opening_result_done'])
+        finally:
+            for socket in sockets:
+                await socket.disconnect()
+
     async def test_admin_review_reconnect_does_not_expire_clock_or_accept_actions(self):
         expired = BackgammonEngine.get_initial_state()
         expired.update({

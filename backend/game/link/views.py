@@ -32,7 +32,11 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from game.engine import BackgammonEngine
+from game.entry_lifecycle import entry_deadline
 from game.models import GameRoom, GameState, RoomPlayer, generate_room_code
+from game.presence import (
+    FRIEND_ENTRY_CONFIRMATION, requires_entry_confirmation, track_tournament_entry_after_seating,
+)
 
 from .identity import resolve_user
 from .models import RedeemedTicket, TournamentLink
@@ -148,6 +152,11 @@ def enter_link(request):
                     raise _ActiveRoom(blocking_room)
 
             link, room = _link_for_fixture(issuer, ticket)
+            if (room.status == 'waiting'
+                    and (ticket.get('friend') is True
+                         or (room.state or {}).get(FRIEND_ENTRY_CONFIRMATION) is True)
+                    and time.time() >= entry_deadline(room)):
+                raise _RoomClosed()
             if room.status in ('completed', 'cancelled'):
                 # A terminal room is still viewable by its participants so a
                 # fresh ticket (different jti) can re-establish their session
@@ -167,8 +176,9 @@ def enter_link(request):
             # colour they already have, whatever the new ticket says.
             seated, seat_created = RoomPlayer.objects.get_or_create(
                 room=room, player=player, defaults={'color': color})
-            started = _start_if_full(room)
+            started = _start_if_full(room, link)
             if seat_created and room.status == 'waiting':
+                track_tournament_entry_after_seating(room, link)
                 present_colors = set(room.players.values_list('color', flat=True))
                 missing_colors = sorted({'white', 'black'} - present_colors)
                 missing_seats = [value for value in ('p1', 'p2')
@@ -211,8 +221,7 @@ def enter_link(request):
                    missing_colors=missing_colors, missing_seats=missing_seats)
     if started:
         _entry_log(request, 'game_started', ticket=ticket, room=room, color=seated.color)
-        # Direct-play rooms still start when the second seat is filled.
-        # Tournament rooms start after both game sockets confirm a fresh round.
+        # Ungated rooms start when the second seat is filled.
         channel_layer = get_channel_layer()
         if channel_layer:
             async_to_sync(channel_layer.group_send)(
@@ -343,6 +352,8 @@ def _link_for_fixture(issuer, ticket):
         return link, room
 
     initial = BackgammonEngine.get_initial_state()
+    if ticket.get('friend') is True:
+        initial[FRIEND_ENTRY_CONFIRMATION] = True
     deadline = ticket.get('entry_deadline')
     if deadline is not None:
         if type(deadline) not in (int, float) or deadline <= time.time():
@@ -370,7 +381,9 @@ def _link_for_fixture(issuer, ticket):
     except IntegrityError:
         link = TournamentLink.objects.get(
             issuer=issuer, fixture_id=ticket['fix'])
-        return link, GameRoom.objects.select_for_update().get(pk=link.room_id)
+        room = GameRoom.objects.select_for_update().get(pk=link.room_id)
+        _sync_waiting_room_from_ticket(room, ticket)
+        return link, room
 
     logger.info(
         f"link room provisioned: issuer={issuer} fixture={ticket['fix']} room={room.code}")
@@ -391,6 +404,8 @@ def _sync_waiting_room_from_ticket(room, ticket):
         update_fields.append('time_control')
 
     state = dict(room.state or {})
+    if ticket.get('friend') is True:
+        state['entryDeadline'] = min(entry_deadline(room), ticket['entry_deadline'])
     from game.formats import apply_ticket
     apply_ticket(state, ticket)
     if state != room.state:
@@ -403,12 +418,11 @@ def _sync_waiting_room_from_ticket(room, ticket):
         room.save(update_fields=update_fields)
 
 
-def _start_if_full(room):
+def _start_if_full(room, link):
     """Flip a full room to `playing`. Returns whether this call was the one that started it."""
     if room.status != 'waiting' or room.players.count() < 2:
         return False
-    if TournamentLink.objects.filter(room_id=room.pk, tournament_id__gt=0).exists():
-        # Tournament seats reserve admission; visible game sockets confirm start.
+    if requires_entry_confirmation(room, link):
         return False
     room.status = 'playing'
     room.save(update_fields=['status', 'updated_at'])
@@ -452,6 +466,8 @@ def _handoff(user, room, color, frontend_url, conflict=False):
         # query parameter — frontend treats ?tournament=0 as not a tournament.
         if getattr(link, 'tournament_id', 0):
             fragment_data['tournament'] = str(link.tournament_id)
+        elif requires_entry_confirmation(room, link):
+            fragment_data['entryConfirm'] = '1'
         fragment_data['return'] = tournaments_frontend_url()
     fragment = urlencode(fragment_data)
     response = HttpResponseRedirect(f"{frontend_url}/link#{fragment}")

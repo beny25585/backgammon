@@ -62,6 +62,9 @@ test.afterEach(() => {
 test("acknowledges each current challenge only once while visible and connected", () => {
   binding = bindTournamentEntryPresence(socket, "room", "token", () => {});
   challenge("round-one");
+  expect(acknowledgements()).toEqual([]);
+  binding.initialState("waiting");
+  challenge("round-one");
   challenge("round-one");
   socket.emit("entry_challenge", { challenge: "missing-expiry" });
   socket.connected = false;
@@ -73,6 +76,7 @@ test("acknowledges each current challenge only once while visible and connected"
 
 test("a phone clock ahead of the server does not prevent challenge acknowledgement", () => {
   binding = bindTournamentEntryPresence(socket, "room", "token", () => {});
+  binding.initialState("waiting");
   challenge("server-round", Date.now() - 60_000);
   expect(acknowledgements()).toEqual([
     { type: "entry_ready", payload: { challenge: "server-round" } },
@@ -81,6 +85,7 @@ test("a phone clock ahead of the server does not prevent challenge acknowledgeme
 
 test("hiding clears waiting readiness before closing and returning needs a new connection", () => {
   binding = bindTournamentEntryPresence(socket, "room", "token", () => {});
+  binding.initialState("waiting");
   challenge("first");
   page.visibilityState = "hidden";
   page.dispatchEvent(new Event("visibilitychange"));
@@ -91,6 +96,9 @@ test("hiding clears waiting readiness before closing and returning needs a new c
   page.visibilityState = "visible";
   page.dispatchEvent(new Event("visibilitychange"));
   expect(socket.connections).toEqual([{ roomId: "room", token: "token" }]);
+  challenge("second");
+  expect(acknowledgements()).toHaveLength(1);
+  binding.initialState("waiting");
   challenge("second");
   expect(acknowledgements()).toHaveLength(2);
 });

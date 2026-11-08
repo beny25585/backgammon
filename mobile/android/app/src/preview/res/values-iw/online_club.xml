@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_club_unavailable_title">המועדון של 6B אינו זמין</string>
+    <string name="preview_club_unavailable_message">אפשר לבדוק את החיבור ולנסות שוב, או לחזור למסך הפתיחה.</string>
+    <string name="preview_club_retry">ניסיון נוסף</string>
+    <string name="preview_club_back">חזרה למסך הפתיחה</string>
+    <string name="preview_club_external_unavailable">לא ניתן לפתוח את הקישור בדפדפן.</string>
+</resources>

@@ -7,6 +7,7 @@ import styles from "./GameResult.module.css";
 interface Props extends RematchGameResultProps {
   showRematch?: boolean;
   onPracticeAgain?: () => void;
+  restartOnClose?: boolean;
 }
 
 export default function PrivateGameResult({
@@ -32,6 +33,7 @@ export default function PrivateGameResult({
   onRematch,
   showRematch = true,
   onPracticeAgain,
+  restartOnClose = false,
   rematchStatus,
   rematchReason,
   rematchReady,
@@ -145,9 +147,9 @@ export default function PrivateGameResult({
           <button
             type="button"
             onClick={onClose}
-            className={styles.secondaryAction}
+            className={restartOnClose ? styles.primaryAction : styles.secondaryAction}
           >
-            {t("common.backHome")}
+            {t(restartOnClose ? "game.playAgain" : "common.backHome")}
           </button>
         </>
       }

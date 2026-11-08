@@ -237,6 +237,9 @@ export default function GameResult({
       case "leave":
         return t("game.resultReasonLeave");
 
+      case "forfeit":
+        return t("game.resultReasonForfeit");
+
       case "time":
         return t("game.resultReasonTime");
 

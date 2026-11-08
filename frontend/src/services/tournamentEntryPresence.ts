@@ -4,7 +4,7 @@ type EntrySocket = Pick<GameSocketService,
   "on" | "off" | "send" | "connect" | "disconnect" | "isConnected"
 >;
 
-/** Own startup presence only; an already started game keeps its normal lifecycle. */
+/** Own linked game entry presence until the server confirms the start. */
 export function bindTournamentEntryPresence(
   socket: EntrySocket,
   roomId: string,
@@ -17,13 +17,14 @@ export function bindTournamentEntryPresence(
   let pageHidden = false;
   let suspended = document.visibilityState === "hidden" || navigator.onLine === false;
   let lastChallenge: string | null = null;
+  let awaitingInitialState = true;
   const visible = () => !disposed && !pageHidden
     && document.visibilityState !== "hidden" && navigator.onLine !== false;
 
   const suspend = () => {
     if (disposed || started) return;
     suspended = true;
-    lastChallenge = null;
+    connectionClosed();
     socket.send("entry_not_ready", {});
     socket.disconnect();
   };
@@ -51,8 +52,12 @@ export function bindTournamentEntryPresence(
     const status = (message as { payload?: { status?: unknown } })?.payload?.status;
     if (status === "playing") roomStarted();
   };
+  function connectionClosed() {
+    lastChallenge = null;
+    awaitingInitialState = true;
+  }
   const challenge = (message: unknown) => {
-    if (started || !visible() || suspended || !socket.isConnected()) return;
+    if (started || awaitingInitialState || !visible() || suspended || !socket.isConnected()) return;
     const payload = (message as {
       payload?: { challenge?: unknown; expiresAt?: unknown };
     })?.payload;
@@ -77,6 +82,11 @@ export function bindTournamentEntryPresence(
 
   return {
     canConnect: visible,
+    initialState(status: unknown) {
+      awaitingInitialState = false;
+      if (status === "playing") roomStarted();
+    },
+    connectionClosed,
     dispose() {
       suspend();
       disposed = true;

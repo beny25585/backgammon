@@ -31,10 +31,10 @@ function releaseVersion(): Plugin {
   };
 }
 
-export default defineConfig({
-  base: "/6b/backgammon/",
+export default defineConfig(({ mode }) => ({
+  base: mode === "mobile" ? "/" : "/6b/backgammon/",
   define: { [versionMarker]: JSON.stringify("") },
-  plugins: [tailwindcss(), react(), releaseVersion()],
+  plugins: [tailwindcss(), react(), mode !== "mobile" && releaseVersion()],
   resolve: {
     alias: {
       "@": srcRoot,
@@ -77,7 +77,8 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: "dist",
+    outDir: mode === "mobile" ? "../mobile/dist" : "dist",
+    emptyOutDir: mode === "mobile" ? true : undefined,
     sourcemap: false,
   },
-});
+}));

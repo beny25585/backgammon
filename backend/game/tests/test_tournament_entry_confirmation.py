@@ -7,7 +7,7 @@ from game.link.models import TournamentLink
 from game.link.tests import link_settings
 from game.models import GameRoom, GameState, Player, RoomPlayer, Task
 from game.presence import (
-    cancel_tournament_entry, confirm_tournament_entry, mark_connected, mark_disconnected,
+    cancel_room_entry, confirm_room_entry, mark_connected, mark_disconnected,
 )
 
 
@@ -31,7 +31,7 @@ class TournamentEntryConfirmationTests(TestCase):
     def test_two_sockets_and_one_acknowledgement_do_not_start(self):
         self.connect('white-1', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'white-1', challenge, now=102))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'white-1', challenge, now=102))
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'waiting')
         self.assertFalse(self.room.state['presence'].get('everBothConnected', False))
@@ -40,9 +40,9 @@ class TournamentEntryConfirmationTests(TestCase):
     def test_both_current_acknowledgements_start_and_publish_exactly_once(self):
         self.connect('white-1', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'white-1', challenge, now=102))
-        self.assertTrue(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=103))
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=104))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'white-1', challenge, now=102))
+        self.assertTrue(confirm_room_entry(self.room.pk, 'black-1', challenge, now=103))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'black-1', challenge, now=104))
         self.room.refresh_from_db()
         self.link.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
@@ -55,10 +55,10 @@ class TournamentEntryConfirmationTests(TestCase):
     def test_departed_player_acknowledgement_cannot_admit_the_opponent(self):
         self.connect('white-1', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
-        confirm_tournament_entry(self.room.pk, 'white-1', challenge, now=102)
+        confirm_room_entry(self.room.pk, 'white-1', challenge, now=102)
         mark_disconnected(self.room.pk, 'white-1', now=103)
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=104))
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'white-1', challenge, now=104))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'black-1', challenge, now=104))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'white-1', challenge, now=104))
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'waiting')
         self.assertFalse(self.room.state['presence'].get('needsAdminAdjudication', False))
@@ -66,9 +66,9 @@ class TournamentEntryConfirmationTests(TestCase):
     def test_hidden_client_clears_only_its_own_ready_acknowledgement(self):
         self.connect('white-1', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
-        confirm_tournament_entry(self.room.pk, 'white-1', challenge, now=102)
-        cancel_tournament_entry(self.room.pk, 'white-1')
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=103))
+        confirm_room_entry(self.room.pk, 'white-1', challenge, now=102)
+        cancel_room_entry(self.room.pk, 'white-1')
+        self.assertFalse(confirm_room_entry(self.room.pk, 'black-1', challenge, now=103))
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'waiting')
 
@@ -76,26 +76,26 @@ class TournamentEntryConfirmationTests(TestCase):
         previous = self.connect('white-1', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
         self.assertNotEqual(previous, challenge)
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'white-1', previous, now=102))
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=102))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'white-1', previous, now=102))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'black-1', challenge, now=102))
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'waiting')
 
     def test_expired_round_requires_new_acknowledgements_from_both_players(self):
         self.connect('white-1', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
-        confirm_tournament_entry(self.room.pk, 'white-1', challenge, now=102)
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=107))
+        confirm_room_entry(self.room.pk, 'white-1', challenge, now=102)
+        self.assertFalse(confirm_room_entry(self.room.pk, 'black-1', challenge, now=107))
         self.room.refresh_from_db()
         fresh = self.room.state['presence']['entryChallenge']
         self.assertNotEqual(challenge, fresh)
-        self.assertFalse(confirm_tournament_entry(self.room.pk, 'black-1', fresh, now=108))
-        self.assertTrue(confirm_tournament_entry(self.room.pk, 'white-1', fresh, now=109))
+        self.assertFalse(confirm_room_entry(self.room.pk, 'black-1', fresh, now=108))
+        self.assertTrue(confirm_room_entry(self.room.pk, 'white-1', fresh, now=109))
 
     def test_old_tab_disconnect_does_not_remove_other_tab_confirmation(self):
         self.connect('white-old', 'white', 100)
         self.connect('white-current', 'white', 100)
         challenge = self.connect('black-1', 'black', 101)
-        confirm_tournament_entry(self.room.pk, 'white-current', challenge, now=102)
+        confirm_room_entry(self.room.pk, 'white-current', challenge, now=102)
         mark_disconnected(self.room.pk, 'white-old', now=102)
-        self.assertTrue(confirm_tournament_entry(self.room.pk, 'black-1', challenge, now=103))
+        self.assertTrue(confirm_room_entry(self.room.pk, 'black-1', challenge, now=103))

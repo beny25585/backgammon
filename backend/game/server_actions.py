@@ -42,8 +42,8 @@ def run_in_background(coroutine):
 
 
 @measured_database_sync_to_async
-def persist_state_and_advance(room_id, state, player_color, event_type):
-    return persist_game_action(room_id, state, player_color, event_type)
+def persist_state_and_advance(room_id, state, player_color, event_type, **kwargs):
+    return persist_game_action(room_id, state, player_color, event_type, **kwargs)
 
 
 async def apply_server_game_action(
@@ -60,6 +60,7 @@ async def apply_server_game_action(
     on_game_over,
     on_state_update,
     on_turn_notice,
+    bot_lease=None,
 ) -> dict:
     """Run the shared post-action pipeline for one engine action.
 
@@ -101,6 +102,12 @@ async def apply_server_game_action(
     }
 
     previous_active = active_player(stored_state)
+    persist_kwargs = {} if bot_lease is None else {
+        'bot_lease': bot_lease,
+        'expected_version': room.last_sequence,
+    }
+    if (result or {}).get('tournament_opening'):
+        persist_kwargs.update(expected_version=room.last_sequence, tournament_opening=True)
 
     is_final_move = (
         action == "move"
@@ -224,7 +231,9 @@ async def apply_server_game_action(
         )
 
         persist_started = time_module.perf_counter()
-        sequence = await persist_state_and_advance(room.id, new_state, player_color, event_type)
+        if bot_lease is not None:
+            persist_kwargs['release_on_handoff'] = False
+        sequence = await persist_state_and_advance(room.id, new_state, player_color, event_type, **persist_kwargs)
         timings["persist_ms"] = _elapsed_ms(persist_started)
         new_state["version"] = sequence
 
@@ -344,6 +353,7 @@ async def apply_server_game_action(
         new_state,
         player_color,
         event_type,
+        **persist_kwargs,
     )
 
     timings["persist_ms"] = _elapsed_ms(persist_started)

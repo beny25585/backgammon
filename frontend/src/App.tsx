@@ -12,6 +12,8 @@ export default function App() {
   useGameBuildUpdate(location.pathname);
   const isGameRoute =
     location.pathname === "/local" || location.pathname.startsWith("/game/") || location.pathname.startsWith("/watch/");
+  const isMobileStart = import.meta.env.MODE === "mobile" &&
+    (location.pathname === "/local-start" || location.pathname === "/preview-start");
 
   useEffect(() => {
     function syncViewportHeight() {
@@ -53,7 +55,7 @@ export default function App() {
 
   return (
     <div dir={direction}>
-      {!isGameRoute && (
+      {!isGameRoute && !isMobileStart && (
         <div style={{ position: "fixed", top: 12, insetInlineEnd: 12, zIndex: 1000 }}>
           <LanguageSwitcher />
         </div>

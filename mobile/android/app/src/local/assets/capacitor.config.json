@@ -1,0 +1,10 @@
+{
+  "appId": "app.sixb.backgammon.pilot.local",
+  "appName": "6B Local",
+  "webDir": "dist",
+  "backgroundColor": "#03090A",
+  "server": {
+    "appStartPath": "/local-start",
+    "allowNavigation": ["backgammon.localhost"]
+  }
+}

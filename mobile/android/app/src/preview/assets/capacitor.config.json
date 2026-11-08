@@ -1,0 +1,13 @@
+{
+  "appId": "app.sixb.backgammon.pilot.preview",
+  "appName": "6B Online",
+  "webDir": "dist",
+  "backgroundColor": "#03090A",
+  "loggingBehavior": "none",
+  "android": {
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "appStartPath": "/preview-start"
+  }
+}

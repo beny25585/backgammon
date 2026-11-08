@@ -45,6 +45,27 @@ test("tournament result keeps self on the left when self is black", async ({
   await expect(component.getByText("Alice").first()).toBeVisible();
 });
 
+test("a tournament forfeit shows the technical win label", async ({ mount }) => {
+  const component = await mount(
+    <TournamentGameResult
+      winner="white"
+      whiteScore={1}
+      blackScore={0}
+      whiteName="Alice"
+      blackName="Bob"
+      playerColor="white"
+      winnerIsWhite={true}
+      winType="single"
+      reason="forfeit"
+      onClose={() => {}}
+    />,
+    { hooksConfig: { locale: "he" } },
+  );
+
+  await expect(component.getByText("ניצחון טכני", { exact: true })).toBeVisible();
+  await expect(component.getByText("ניצחון רגיל", { exact: true })).toHaveCount(0);
+});
+
 test("tournament round and next opponent are rendered once as match detail rows", async ({
   mount,
 }) => {

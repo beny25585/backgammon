@@ -95,11 +95,14 @@ def publish_snapshot(room_id, state=None, *, raise_on_error=False):
 
 
 def _snapshot_body(link, room):
+    from game.presence import FRIEND_ENTRY_CONFIRMATION
+
     game_state = getattr(room, 'gamestate', None)
     state = game_state.state_data if game_state is not None else {}
     state = state or {}
-    presence = dict((room.state or {}).get('presence') or {})
-    return {
+    room_state = room.state or {}
+    presence = dict(room_state.get('presence') or {})
+    body = {
         'v': 1,
         'tournament_id': link.tournament_id,
         'fixture_id': link.fixture_id,
@@ -121,6 +124,10 @@ def _snapshot_body(link, room):
         },
         'match_score': {'white': room.white_score, 'black': room.black_score},
     }
+    if (room_state.get(FRIEND_ENTRY_CONFIRMATION) is True and room.status == 'playing'
+            and presence.get('everBothConnected') is True):
+        body['entry_confirmed'] = True
+    return body
 
 
 def _send_snapshot(body, *, raise_on_error=False, durable=False):

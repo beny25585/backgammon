@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="preview_club_unavailable_title">6B club unavailable</string>
+    <string name="preview_club_unavailable_message">Check your connection and try again, or return to the start screen.</string>
+    <string name="preview_club_retry">Try again</string>
+    <string name="preview_club_back">Back to start</string>
+    <string name="preview_club_external_unavailable">Could not open the link in your browser.</string>
+</resources>

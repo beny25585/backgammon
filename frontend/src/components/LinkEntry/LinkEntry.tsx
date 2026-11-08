@@ -59,6 +59,7 @@ export default function LinkEntry() {
     if (tournament) params.set("tournament", tournament);
     if (returnUrl) params.set("return", returnUrl);
     if (fragment.get("practice") === "1") params.set("practice", "1");
+    if (fragment.get("entryConfirm") === "1") params.set("entryConfirm", "1");
     if (fragment.get('conflict') === '1') {
       setConflict({ path: `/game/${encodeURIComponent(room)}?${params.toString()}`, room, waiting: fragment.get('waiting') === '1' });
       return;

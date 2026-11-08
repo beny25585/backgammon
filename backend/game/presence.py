@@ -19,16 +19,23 @@ HEARTBEAT_SECONDS = 10
 STALE_SECONDS = 25
 WATCH_SECONDS = 10
 ENTRY_CONFIRM_SECONDS = 5
+FRIEND_ENTRY_CONFIRMATION = 'friendEntryConfirmation'
 WATCH_TASK = 'game.presence.check_room_presence'
 ACTIVE_GAME_PHASES = {'rolling', 'moving', 'doubling_offered'}
 
 
-def _waiting_tournament(room):
-    from .link.models import TournamentLink
+def requires_entry_confirmation(room, link):
+    return link is not None and (
+        link.tournament_id > 0
+        or (link.tournament_id == 0 and link.fixture_id < 0
+            and (room.state or {}).get(FRIEND_ENTRY_CONFIRMATION) is True)
+    )
 
-    return room.status == 'waiting' and TournamentLink.objects.filter(
-        room_id=room.pk, tournament_id__gt=0,
-    ).exists()
+
+def _waiting_for_entry_confirmation(room):
+    return room.status == 'waiting' and requires_entry_confirmation(
+        room, getattr(room, 'tournament_link', None),
+    )
 
 
 def _entry_event(room_id, event):
@@ -50,12 +57,16 @@ def _new_entry_challenge(room, presence, now):
 
 
 @transaction.atomic
-def confirm_tournament_entry(room_id, channel_name, challenge, now=None):
+def confirm_room_entry(room_id, channel_name, challenge, now=None):
     """Start only after both current sockets acknowledge the same fresh round."""
-    now = time.time() if now is None else now
     room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
-    if not room or not _waiting_tournament(room):
+    if not room or not _waiting_for_entry_confirmation(room):
         return False
+    now = time.time() if now is None else now
+    if (room.state or {}).get(FRIEND_ENTRY_CONFIRMATION) is True:
+        from .entry_lifecycle import entry_deadline
+        if now >= entry_deadline(room):
+            return False
     state, presence = _presence(room)
     entry = presence['connections'].get(channel_name)
     if not entry or not challenge or challenge != presence.get('entryChallenge'):
@@ -94,9 +105,9 @@ def confirm_tournament_entry(room_id, channel_name, challenge, now=None):
 
 
 @transaction.atomic
-def cancel_tournament_entry(room_id, channel_name):
+def cancel_room_entry(room_id, channel_name):
     room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
-    if not room or not _waiting_tournament(room):
+    if not room or not _waiting_for_entry_confirmation(room):
         return
     state, presence = _presence(room)
     entry = presence['connections'].get(channel_name)
@@ -127,6 +138,10 @@ def connected_colors(room, now=None):
     if now is None:
         now = time.time()
     _state, presence = _presence(room)
+    return _connected_colors(presence, now)
+
+
+def _connected_colors(presence, now):
     colors = set()
     for entry in presence.get('connections', {}).values():
         last_seen = entry.get('lastSeen')
@@ -151,20 +166,40 @@ def _schedule(room_id, delay=WATCH_SECONDS):
                            timezone.now() + timedelta(seconds=delay))
 
 
-def _requires_organizer_adjudication(room):
-    from .link.models import TournamentLink
-
-    tournament_id = (
-        TournamentLink.objects
-        .filter(room_id=room.id)
-        .values_list('tournament_id', flat=True)
-        .first()
+def _waiting_tournament_has_both_seats(room, link):
+    return (
+        room.status == 'waiting' and link is not None
+        and link.tournament_id > 0 and room.players.count() == 2
     )
 
-    if tournament_id is None:
-        return True
 
-    return tournament_id != 0
+def _track_waiting_tournament_absence(room, presence, colors, now):
+    if len(colors) == 1:
+        missing = 'black' if 'white' in colors else 'white'
+        since = presence['absentSince'].get(missing, now)
+        presence['absentSince'] = {missing: since}
+        _schedule(room.pk, max(0, ABSENCE_SECONDS - (now - since)))
+    else:
+        presence['absentSince'] = {}
+        if colors:
+            _schedule(room.pk)
+
+
+def track_tournament_entry_after_seating(room, link):
+    """The second ticket may arrive after the first socket. Caller locks the room."""
+    if not _waiting_tournament_has_both_seats(room, link):
+        return
+    now = time.time()
+    state, presence = _presence(room)
+    _track_waiting_tournament_absence(room, presence, _connected_colors(presence, now), now)
+    state['presence'] = presence
+    room.state = state
+    room.save(update_fields=['state', 'updated_at'])
+
+
+def _requires_organizer_adjudication(room):
+    link = getattr(room, 'tournament_link', None)
+    return link is None or link.tournament_id != 0
 
 
 def _publish_admin_transition(room):
@@ -178,24 +213,45 @@ def _publish_admin_transition(room):
     return enqueue_status_event(room, 'admin_required' if needs_admin else 'admin_cleared')
 
 
+def _settle_late_tournament_entry(room, link, presence, color, colors, now):
+    since = presence['absentSince'].get(color)
+    if (link is None or link.tournament_id <= 0 or presence.get('needsAdminAdjudication')
+            or since is None or now - since < ABSENCE_SECONDS or len(colors) != 1 or color in colors):
+        return False
+    if room.status == 'playing' and not presence.get('everBothConnected'):
+        return False
+    game_state = GameState.objects.filter(room=room).first()
+    # A late arrival cannot beat the deadline just because the worker has not polled yet.
+    return (_before_tournament_opening(room, link, game_state)
+            and check_room_presence(room.pk, now)['status'] == 'forfeited')
+
+
 @transaction.atomic
 def mark_connected(room_id, channel_name, color, now=None):
     now = time.time() if now is None else now
     room = GameRoom.objects.select_for_update().get(pk=room_id)
     from .entry_lifecycle import expire_unstarted_room
     if expire_unstarted_room(room_id) in ('cancelled', 'missing'):
-        return False
+        # A technical result is replayable even though the unplayed room was cancelled.
+        return GameState.objects.filter(room=room, state_data__gameEndReason='forfeit').exists()
     state, presence = _presence(room)
-    waiting_tournament = _waiting_tournament(room)
+    link = getattr(room, 'tournament_link', None)
+    waiting_for_confirmation = _waiting_for_entry_confirmation(room)
+    waiting_tournament = _waiting_tournament_has_both_seats(room, link)
     requires_organizer = _requires_organizer_adjudication(room)
     previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
     if not requires_organizer and presence.get('needsAdminAdjudication'):
         presence['needsAdminAdjudication'] = False
         presence['absentSince'] = {}
+    previous_colors = _connected_colors(presence, now)
+    if ((waiting_tournament or room.status == 'playing')
+            and _settle_late_tournament_entry(room, link, presence, color, previous_colors, now)):
+        return True
+    if waiting_tournament and not previous_colors:
+        presence['absentSince'] = {}
     presence['connections'][channel_name] = {'color': color, 'lastSeen': now}
-    colors = {entry.get('color') for entry in presence['connections'].values()
-              if now - float(entry.get('lastSeen', 0)) <= STALE_SECONDS}
-    if {'white', 'black'} <= colors and not waiting_tournament:
+    colors = _connected_colors(presence, now)
+    if {'white', 'black'} <= colors and not waiting_for_confirmation:
         first_full_presence = not presence.get('everBothConnected', False)
         presence['everBothConnected'] = True
         # Once both players have gone missing, only an organizer may resolve
@@ -204,8 +260,10 @@ def mark_connected(room_id, channel_name, color, now=None):
             presence['absentSince'] = {}
         if first_full_presence:
             _schedule(room.id)
-    if waiting_tournament:
+    if waiting_for_confirmation:
         _new_entry_challenge(room, presence, now)
+        if waiting_tournament:
+            _track_waiting_tournament_absence(room, presence, colors, now)
     state['presence'] = presence
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
@@ -224,12 +282,30 @@ def mark_heartbeat(room_id, channel_name, now=None):
     entry = presence['connections'].get(channel_name)
     if not entry:
         return
+    if (room.status in ('waiting', 'playing')
+            and now - float(entry.get('lastSeen', 0)) > STALE_SECONDS):
+        link = getattr(room, 'tournament_link', None)
+        if link is not None and link.tournament_id > 0:
+            color = entry['color']
+            colors = _connected_colors(presence, now)
+            waiting_tournament = _waiting_tournament_has_both_seats(room, link)
+            if color not in colors and (waiting_tournament or room.status == 'playing'):
+                if _settle_late_tournament_entry(room, link, presence, color, colors, now):
+                    return 'cancelled'
+                if waiting_tournament:
+                    if not colors:
+                        presence['absentSince'] = {}
+                    _track_waiting_tournament_absence(room, presence, colors | {color}, now)
+                elif colors and not presence.get('needsAdminAdjudication'):
+                    presence['absentSince'] = {}
     presence['connections'][channel_name] = {**entry, 'lastSeen': now}
-    if _waiting_tournament(room) and now - float(presence.get('entryChallengeAt', 0)) >= ENTRY_CONFIRM_SECONDS:
+    if (_waiting_for_entry_confirmation(room)
+            and now - float(presence.get('entryChallengeAt', 0)) >= ENTRY_CONFIRM_SECONDS):
         _new_entry_challenge(room, presence, now)
     state['presence'] = presence
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
+    return room.status
 
 
 @transaction.atomic
@@ -246,7 +322,9 @@ def mark_disconnected(room_id, channel_name, now=None):
         return False
     color = removed.get('color')
     colors = _colors(presence)
-    if presence.get('everBothConnected') and color not in colors:
+    if _waiting_tournament_has_both_seats(room, getattr(room, 'tournament_link', None)):
+        _track_waiting_tournament_absence(room, presence, _connected_colors(presence, now), now)
+    elif room.status == 'playing' and presence.get('everBothConnected') and color not in colors:
         presence['absentSince'][color] = now
         missing = {'white', 'black'} - colors
         if len(missing) == 2:
@@ -276,6 +354,32 @@ def needs_admin_adjudication(room):
     return bool(((room.state or {}).get('presence') or {}).get('needsAdminAdjudication'))
 
 
+def _before_tournament_opening(room, link, game_state):
+    return (
+        link is not None and link.tournament_id > 0 and game_state is not None
+        and (game_state.state_data or {}).get('phase') in ('opening_roll', 'opening_result')
+        and not (room.state or {}).get('match', {}).get('games')
+    )
+
+
+def _forfeit_before_opening(room, link, game_state, winner):
+    from .link.outbox import enqueue_forfeit
+
+    state = dict(game_state.state_data or {})
+    state.update(phase='game_over', winner=winner, winType='single',
+                 gameEndReason='forfeit', gameEndPoints=0, turnStartedAt=None)
+    room.status = 'cancelled'
+    room.white_score = room.target_points if winner == 'white' else 0
+    room.black_score = room.target_points if winner == 'black' else 0
+    room.save(update_fields=['status', 'white_score', 'black_score', 'updated_at'])
+    game_state.state_data = state
+    game_state.save(update_fields=['state_data', 'updated_at'])
+    enqueue_forfeit(link, room, winner)
+    payload = game_ended_payload(state, winner, 'single', 'forfeit', room)
+    payload.update(matchOver=True, nextGame=False)
+    _entry_event(room.pk, {'type': 'game_ended', 'payload': payload})
+
+
 def check_room_presence(room_id, now=None):
     """Forfeit one absent player after 40s; never choose a winner if both are absent."""
     now = time.time() if now is None else now
@@ -285,7 +389,11 @@ def check_room_presence(room_id, now=None):
         from .scheduling import check_ownership
         room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
         check_ownership(lock=True)
-        if not room or room.status != 'playing':
+        if not room or room.status not in ('waiting', 'playing'):
+            return {'status': 'closed'}
+        link = getattr(room, 'tournament_link', None)
+        waiting_for_tournament = _waiting_tournament_has_both_seats(room, link)
+        if room.status == 'waiting' and not waiting_for_tournament:
             return {'status': 'closed'}
         if (room.state or {}).get('ai'):
             return {'status': 'practice'}
@@ -295,12 +403,12 @@ def check_room_presence(room_id, now=None):
         if not requires_organizer and previous_needs_admin:
             presence['needsAdminAdjudication'] = False
             presence['absentSince'] = {}
-        if not presence.get('everBothConnected'):
+        if not waiting_for_tournament and not presence.get('everBothConnected'):
             return {'status': 'not_started'}
         game_state = GameState.objects.select_for_update().filter(room=room).first()
-        game_started = bool(
-            game_state and (game_state.state_data or {}).get('phase') in ACTIVE_GAME_PHASES
-        )
+        phase = (game_state.state_data or {}).get('phase') if game_state else None
+        game_started = phase in ACTIVE_GAME_PHASES
+        before_tournament_opening = _before_tournament_opening(room, link, game_state)
 
         for connection_id, entry in list(presence['connections'].items()):
             if now - float(entry.get('lastSeen', 0)) > STALE_SECONDS:
@@ -316,11 +424,13 @@ def check_room_presence(room_id, now=None):
             # Sticky terminal-review state: a later reconnect cannot create an
             # automatic winner after both players were absent together.
             missing = {'white', 'black'} - colors
+        elif waiting_for_tournament and len(missing) != 1:
+            presence['absentSince'] = {}
         elif len(missing) == 1:
             presence['needsAdminAdjudication'] = False
             color = next(iter(missing))
             absent_since = presence['absentSince'].setdefault(color, now)
-            if not game_started:
+            if not game_started and not before_tournament_opening:
                 state['presence'] = presence
                 room.state = state
                 room.save(update_fields=['state', 'updated_at'])
@@ -347,14 +457,17 @@ def check_room_presence(room_id, now=None):
         if not loser:
             if presence.get('needsAdminAdjudication'):
                 return {'status': 'admin_required', 'missing': sorted(missing)}
-            if len(missing) != 1:
+            if len(missing) != 1 and (colors or not waiting_for_tournament):
                 _schedule(room.id)
             return {'status': 'waiting', 'missing': sorted(missing)}
 
         # Keep the eligibility decision and finalization under the same room
         # lock so a reconnect cannot race between them.
-        state_data = dict(game_state.state_data or {})
         winner = 'black' if loser == 'white' else 'white'
+        if before_tournament_opening:
+            _forfeit_before_opening(room, link, game_state, winner)
+            return {'status': 'forfeited', 'loser': loser, 'winner': winner}
+        state_data = dict(game_state.state_data or {})
         win_type = forfeit_win_type(state_data, loser, reason='disconnect')
         state_data.update(
             phase='game_over', winner=winner, winType=win_type,

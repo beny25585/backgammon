@@ -19,6 +19,8 @@ import {
   applyMove,
   applyOpeningRoll,
   applyRoll,
+  rollDie,
+  rollDice as rollLocalDice,
   reorderDice as reorderGameDice,
   offerDouble,
   respondDouble,
@@ -70,10 +72,18 @@ interface LocalGameProviderProps {
   matchTarget?: number;
   timeControl?: TimeControl | null;
   gameType?: GameType;
+  offline?: boolean;
   onQuitMatch?: () => void;
 }
 
 const BOT_DELAY = 1500;
+
+function rollLocalOpeningDice(): [number, number] {
+  const first = rollDie();
+  let second = rollDie();
+  while (second === first) second = rollDie();
+  return [first, second];
+}
 
 export function LocalGameProvider({
   children,
@@ -81,6 +91,7 @@ export function LocalGameProvider({
   matchTarget = 7,
   timeControl,
   gameType: initialGameType = "local",
+  offline = false,
   onQuitMatch,
 }: LocalGameProviderProps) {
   const [state, setState] = useState<GameState>(() => newGame());
@@ -115,7 +126,9 @@ export function LocalGameProvider({
     async (color: Color): Promise<number | null> => {
       try {
         if (!openingDiceRef.current) {
-          openingDiceRef.current = await fetchDice("opening");
+          openingDiceRef.current = offline
+            ? rollLocalOpeningDice()
+            : await fetchDice("opening");
         }
         return openingDiceRef.current[color === "white" ? 0 : 1];
       } catch (e) {
@@ -123,10 +136,11 @@ export function LocalGameProvider({
         return null;
       }
     },
-    [],
+    [offline],
   );
 
   const getTurnDice = useCallback(async (): Promise<number[] | null> => {
+    if (offline) return rollLocalDice();
     try {
       const [a, b] = await fetchDice("normal");
       return a === b ? [a, a, a, a] : [a, b];
@@ -134,7 +148,7 @@ export function LocalGameProvider({
       setError(e instanceof Error ? e.message : "Dice service unavailable");
       return null;
     }
-  }, []);
+  }, [offline]);
 
   const setTurnColor = useCallback(
     (color: Color) => {
@@ -265,6 +279,7 @@ export function LocalGameProvider({
 
   // Auto-save match on completion (local/AI mode only — online mode saves server-side)
   useEffect(() => {
+    if (offline) return;
     if (!matchWinner) {
       savedMatchRef.current = false;
       return;
@@ -296,7 +311,7 @@ export function LocalGameProvider({
         },
       ],
     }).catch(() => {});
-  }, [matchWinner, matchScore, state, MATCH_TARGET, botColor, humanColor]);
+  }, [offline, matchWinner, matchScore, state, MATCH_TARGET, botColor, humanColor]);
 
   // ── Bot turn automation ──────────────────────────────────────────
 

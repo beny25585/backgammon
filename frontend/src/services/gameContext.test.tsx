@@ -26,6 +26,7 @@ import {
 interface FakeSocket {
   sent: string[];
   emit: (message: unknown) => void;
+  close: (code?: number) => void;
   onmessage?: unknown;
   send: (data: string) => void;
 }
@@ -73,7 +74,7 @@ async function seedFakeSocket(page: Page, emitFinalOnOpen = false) {
       readyState = 1; // OPEN
       onopen: (() => void) | null = null;
       onmessage: ((event: { data: string }) => void) | null = null;
-      onclose: (() => void) | null = null;
+      onclose: ((event: CloseEvent) => void) | null = null;
       onerror: (() => void) | null = null;
       sent: string[] = [];
       constructor(_url: string) {
@@ -106,9 +107,9 @@ async function seedFakeSocket(page: Page, emitFinalOnOpen = false) {
       send(data: string) {
         this.sent.push(data);
       }
-      close() {
+      close(code = 1000) {
         this.readyState = 3;
-        this.onclose?.();
+        this.onclose?.(new CloseEvent("close", { code, wasClean: code === 1000 }));
       }
       emit(message: unknown) {
         this.onmessage?.({ data: JSON.stringify(message) });
@@ -131,12 +132,21 @@ async function sentMessages(page: Page): Promise<WsMessage[]> {
   });
 }
 
-async function emitInitialState(page: Page, state: GameState, playerColor: "white" | "black" = "white") {
+type WireGameState = Omit<GameState, "turnStartedAt"> & {
+  turnStartedAt?: number | null;
+};
+
+async function emitInitialState(
+  page: Page,
+  state: WireGameState,
+  playerColor: "white" | "black" = "white",
+  entry?: { entryConfirmationRequired: boolean; roomStatus: "waiting" | "playing"; timeControl?: string },
+) {
   await page.waitForFunction(() => {
     const w = window as unknown as Record<string, unknown>;
     return Boolean(w.__fakeWs);
   });
-  await page.evaluate(({ s, color }) => {
+  await page.evaluate(({ s, color, metadata }) => {
     const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
     ws.emit({
       type: "state_update",
@@ -145,11 +155,12 @@ async function emitInitialState(page: Page, state: GameState, playerColor: "whit
       initial: true,
       players: { white: "whiteUser", black: "blackUser" },
       timeControl: "none",
+      ...metadata,
     });
-  }, { s: state, color: playerColor });
+  }, { s: state, color: playerColor, metadata: entry });
 }
 
-async function emitBroadcast(page: Page, state: GameState, playerColor: "white" | "black" = "white", action?: string) {
+async function emitBroadcast(page: Page, state: WireGameState, playerColor: "white" | "black" = "white", action?: string) {
   await page.waitForFunction(() => {
     const w = window as unknown as Record<string, unknown>;
     return Boolean(w.__fakeWs);
@@ -245,6 +256,155 @@ test("authoritative playing status permits reentry to an already started tournam
     { type: "state_update", payload: { action: "roll" } },
   ]);
 });
+
+test("tournament opening rolls once after server approval without waiting for presence", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <MemoryRouter>
+      <GameProvider roomId="tournament-room" playerColor="white" gameType="tournament">
+        <GameScreen />
+      </GameProvider>
+    </MemoryRouter>,
+  );
+  const state = { ...newGame(), version: 1, clock: { white: 120_000, black: 120_000 }, turnStartedAt: null };
+  const openingRequests = async () => (await sentMessages(page))
+    .filter((message) => message.type === "state_update");
+  const setPresence = (status: "waiting" | "playing", connectedColors: string[], presenceVersion: number) =>
+    page.evaluate(({ status, connectedColors, presenceVersion }) => {
+      const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+      ws.emit({ type: "room_status", payload: {
+        status, connectedColors, connected: connectedColors.length, presenceVersion,
+      } });
+    }, { status, connectedColors, presenceVersion });
+  const waiting = component.getByText("Your opponent has not entered the game yet");
+
+  await emitInitialState(page, state, "white", {
+    entryConfirmationRequired: true, roomStatus: "waiting", timeControl: "normal",
+  });
+  await setPresence("waiting", ["white", "black"], 1);
+  await expect(waiting).toBeVisible();
+  expect(await openingRequests()).toHaveLength(0);
+
+  await setPresence("playing", ["white"], 2);
+  await expect.poll(openingRequests).toEqual([
+    { type: "state_update", payload: { action: "roll" } },
+  ]);
+  await page.evaluate(() => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    ws.emit({ type: "player_joined", payload: { playerColor: "black" } });
+  });
+  await expect(waiting).toBeVisible();
+  expect(await openingRequests()).toHaveLength(1);
+
+  await setPresence("playing", ["white", "black"], 3);
+  await expect(waiting).toHaveCount(0);
+  await setPresence("playing", ["white"], 2);
+  await expect(waiting).toHaveCount(0);
+  await setPresence("playing", ["white", "black"], 3);
+  await setPresence("playing", ["white"], 4);
+  await expect(waiting).toBeVisible();
+  expect(await openingRequests()).toHaveLength(1);
+
+  await setPresence("playing", ["white", "black"], 5);
+  await expect(waiting).toHaveCount(0);
+  expect(await openingRequests()).toHaveLength(1);
+  const openingResult: WireGameState = {
+    ...state, phase: "opening_result", version: 2,
+    openingRoll: { white: 5, black: 3 }, dice: [5, 3], remaining: [5, 3],
+  };
+  await emitBroadcast(page, openingResult, "white", "roll");
+  await expect(component.getByTestId("opening-result-overlay")).toBeVisible();
+  const openingDice = component.locator('[data-roll-kind="opening"]');
+  const whiteDie = openingDice.and(component.locator('[data-roll-owner="self"]')).getByTestId("die");
+  const blackDie = openingDice.and(component.locator('[data-roll-owner="opponent"]')).getByTestId("die");
+  await expect(whiteDie).toHaveAttribute("data-die-value", "5");
+  await expect(blackDie).toHaveAttribute("data-die-value", "3");
+  expect(await openingRequests()).toHaveLength(1);
+
+  await page.evaluate(() => {
+    const sockets = window as unknown as Record<string, FakeSocket>;
+    sockets.__previousFakeWs = sockets.__fakeWs;
+    sockets.__fakeWs.close(1006);
+  });
+  await page.waitForFunction(() => {
+    const sockets = window as unknown as Record<string, FakeSocket>;
+    return sockets.__fakeWs !== sockets.__previousFakeWs;
+  });
+  await emitInitialState(page, openingResult, "white", {
+    entryConfirmationRequired: true, roomStatus: "playing", timeControl: "normal",
+  });
+  await expect(component.getByText("Connection restored.")).toBeVisible();
+  await expect(whiteDie).toHaveAttribute("data-die-value", "5");
+  await expect(blackDie).toHaveAttribute("data-die-value", "3");
+  expect(await openingRequests()).toHaveLength(0);
+
+  const myClock = component.getByTestId("clock-my");
+  const opponentClock = component.getByTestId("clock-opp");
+  await expect(myClock).toHaveClass(/\bidle\b/);
+  await expect(myClock).toContainText("2:00");
+  await expect(opponentClock).toContainText("2:00");
+
+  await pauseGameClock(page);
+  const turnStartedAt = await page.evaluate(() => Date.now() - 12_000);
+  await emitBroadcast(page, { ...openingResult, phase: "moving", version: 3, turnStartedAt });
+  await expect(myClock).toHaveClass(/\bmyActive\b/);
+  await page.clock.runFor(1250);
+  await expect(myClock).toContainText("1:59");
+  await expect(opponentClock).toContainText("2:00");
+  expect(await openingRequests()).toHaveLength(0);
+});
+
+for (const source of ["room_started", "playing_snapshot"] as const) {
+  test(`linked friend opening waits for ${source} and rolls once`, async ({ mount, page }) => {
+    await seedFakeSocket(page);
+    const component = await mount(
+      <MemoryRouter>
+        <GameProvider roomId="friend-room" playerColor="white" confirmEntry={source === "room_started"}>
+          <GameScreen />
+        </GameProvider>
+      </MemoryRouter>,
+    );
+    const state = { ...newGame(), version: 1 };
+    await emitInitialState(page, state, "white", {
+      entryConfirmationRequired: true, roomStatus: "waiting",
+    });
+    await expect(component.getByText("Your opponent has not entered the game yet")).toBeVisible();
+    await page.evaluate(() => {
+      const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+      ws.emit({ type: "room_status", payload: {
+        connected: 2, connectedColors: ["white", "black"], status: "waiting",
+      } });
+      const challenge = { challenge: "friend-round", expiresAt: Date.now() + 5000 };
+      ws.emit({ type: "entry_challenge", payload: challenge });
+      ws.emit({ type: "entry_challenge", payload: challenge });
+    });
+    expect(await sentMessages(page)).toEqual([
+      { type: "entry_ready", payload: { challenge: "friend-round" } },
+    ]);
+
+    if (source === "playing_snapshot") {
+      await emitInitialState(page, state, "white", {
+        entryConfirmationRequired: true, roomStatus: "playing",
+      });
+    } else {
+      await page.evaluate(() => {
+        const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+        ws.emit({ type: "room_started", payload: {} });
+      });
+    }
+    await expect.poll(async () => (await sentMessages(page)).filter((m) => m.type === "state_update"))
+      .toEqual([{ type: "state_update", payload: { action: "roll" } }]);
+
+    await page.evaluate(() => {
+      const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+      ws.emit({ type: "room_started", payload: {} });
+      ws.emit({ type: "room_status", payload: {
+        connected: 2, connectedColors: ["white", "black"], status: "playing",
+      } });
+    });
+    expect((await sentMessages(page)).filter((m) => m.type === "state_update")).toHaveLength(1);
+  });
+}
 
 test("initial snapshot scales the online preset and keeps the authoritative bank", async ({
   mount,

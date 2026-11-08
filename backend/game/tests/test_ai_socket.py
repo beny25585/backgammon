@@ -3,6 +3,7 @@ import copy
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from channels.db import database_sync_to_async
 from channels.testing import WebsocketCommunicator
 from django.contrib.auth.models import User
@@ -12,6 +13,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from game.ai import native_board
 from game.ai_consumer import PracticeGameConsumer
 from game.engine import BackgammonEngine
+from game.event_history import persist_game_action
 from game.models import AiSession, GameRoom, GameState, Player, RoomPlayer
 
 
@@ -71,11 +73,22 @@ class PracticeSocketTests(TransactionTestCase):
         await database_sync_to_async(GameState.objects.filter(room=self.room).update)(state_data=state)
         consumer = self.bot_consumer()
         sleep = AsyncMock()
+        handoff_leases = []
+
+        async def capture_handoff(_group, event):
+            payload = event.get('payload', {})
+            if (event.get('event_type') == 'state_update'
+                    and (payload.get('turn'), payload.get('phase')) == ('white', 'rolling')):
+                session = await AiSession.objects.aget(room=self.room)
+                handoff_leases.append((session.lease_token, session.lease_until))
+
+        consumer.channel_layer.group_send.side_effect = capture_handoff
 
         with patch('game.ai_consumer.asyncio', SimpleNamespace(sleep=sleep)):
             await consumer._play_bot()
 
         sleep.assert_not_awaited()
+        self.assertEqual(handoff_leases, [('', None)])
         stored = await database_sync_to_async(GameState.objects.get)(room=self.room)
         self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
         await self.assert_bot_released_lease(consumer)
@@ -256,6 +269,77 @@ class PracticeSocketTests(TransactionTestCase):
                 and e.get('payload', {}).get('turn') == 'white')
             dice.assert_not_called()
         await comm.disconnect()
+
+    async def test_transient_board_request_failure_retries_the_persisted_roll(self):
+        consumer = self.bot_consumer()
+        attempted_rolls = []
+
+        async def request_board(state, difficulty, match):
+            attempted_rolls.append((tuple(state['dice']), tuple(state['remaining'])))
+            if len(attempted_rolls) == 1:
+                raise httpx.ReadTimeout('Open Sage timed out')
+            return await self.fake_board(state, difficulty, match)
+
+        dice = AsyncMock(return_value=(3, 1))
+        with patch('game.ai_consumer.asyncio', SimpleNamespace(sleep=AsyncMock())), patch(
+                'game.ai.request_board', side_effect=request_board), patch(
+                'game.consumers.fetch_turn_dice', dice):
+            await consumer._play_bot()
+
+        dice.assert_awaited_once()
+        self.assertEqual(attempted_rolls, [((3, 1), (3, 1))] * 2)
+        roll = await self.room.events.aget(event_type='roll')
+        self.assertEqual(roll.payload['dice'], [3, 1])
+        stored = await GameState.objects.aget(room=self.room)
+        self.assertEqual((stored.state_data['phase'], stored.state_data['turn']), ('rolling', 'white'))
+        await self.assert_bot_released_lease(consumer)
+
+    async def test_reconnect_resumes_partial_turn_with_persisted_target(self):
+        await self.assert_reconnect_resumes_partial_turn(save_target=True)
+
+    async def test_reconnect_resumes_partial_turn_without_persisted_target(self):
+        await self.assert_reconnect_resumes_partial_turn(save_target=False)
+
+    async def assert_reconnect_resumes_partial_turn(self, *, save_target):
+        state = BackgammonEngine.get_initial_state()
+        state.update(phase='moving', turn='black', dice=[3, 1], remaining=[3, 1], doublingEnabled=False)
+        engine = BackgammonEngine(state)
+        persist_action = database_sync_to_async(persist_game_action)
+        await persist_action(self.room.pk, engine.state, 'black', 'roll')
+        first = engine.all_legal_moves('black')[0]
+        self.assertTrue(engine.make_move(first['from'], first['to'], 'black')['success'])
+        await persist_action(self.room.pk, engine.state, 'black', 'move')
+
+        legal_boards = []
+        for move in engine.all_legal_moves('black'):
+            resumed = BackgammonEngine(copy.deepcopy(engine.state))
+            self.assertTrue(resumed.make_move(move['from'], move['to'], 'black')['success'])
+            legal_boards.append(native_board(resumed.state, 'black'))
+        if save_target:
+            target = legal_boards[-1]
+            self.assertNotEqual(target, legal_boards[0])
+            await AiSession.objects.filter(room=self.room).aupdate(target_board=target)
+            legal_boards = [target]
+
+        comm = self.communicator()
+        with patch('game.ai.request_board', new=AsyncMock()) as request_board, patch(
+                'game.consumers.fetch_turn_dice', new=AsyncMock()) as dice:
+            self.assertTrue((await comm.connect())[0])
+            try:
+                initial = await self.receive_until(comm, lambda e: e.get('initial'))
+                self.assertEqual(initial['payload']['dice'], [3, 1])
+                self.assertEqual(initial['payload']['remaining'], engine.state['remaining'])
+                self.assertEqual(initial['payload']['version'], 2)
+                event = await self.receive_until(comm, lambda e: e.get('type') == 'state_update'
+                    and (e['payload']['turn'], e['payload']['phase']) == ('white', 'rolling'))
+                self.assertIn(native_board(event['payload'], 'black'), legal_boards)
+            finally:
+                await comm.disconnect()
+
+        dice.assert_not_awaited()
+        request_board.assert_not_awaited()
+        events = [event async for event in self.room.events.values_list('sequence', 'event_type')]
+        self.assertEqual(events, [(1, 'roll'), (2, 'move'), (3, 'move'), (4, 'end_turn')])
 
     async def test_bot_declines_double_and_scores_old_cube(self):
         state = BackgammonEngine.get_initial_state()

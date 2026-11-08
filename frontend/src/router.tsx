@@ -6,7 +6,7 @@ import {
   useLocation,
 } from "react-router-dom";
 import { useSearchParams } from "react-router-dom";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getAccessToken, clearTokens, isTokenExpired } from "./services/auth";
 import { clearRoom } from "./services/roomStorage";
 
@@ -15,6 +15,7 @@ import GameScreen from "./components/GameScreen";
 import LinkEntry from "./components/LinkEntry";
 import MatchDetail from "./components/MatchDetail";
 import MatchHistory from "./components/MatchHistory";
+import MobileStart from "./components/MobileStart/MobileStart";
 import SpectatorScreen from "./components/spectator/SpectatorScreen";
 import { GameProvider } from "./services/gameContext";
 import { LocalGameProvider } from "./services/localGameContext";
@@ -157,9 +158,11 @@ function GameRoute() {
 
   return (
     <GameProvider
+      key={roomId}
       roomId={roomId || ""}
       playerColor={playerColor}
       gameType={gameType}
+      confirmEntry={params.get("entryConfirm") === "1"}
       onRoomCancelled={() => handleLeave()}
       serverUrl={
         (
@@ -199,17 +202,23 @@ function GameRoute() {
   );
 }
 
-function LocalRoute() {
+function LocalRoute({ offline = false }: { offline?: boolean }) {
   const [params] = useSearchParams();
-  const botParam = params.get("bot");
+  const [matchVersion, setMatchVersion] = useState(0);
+  const startNewMatch = useCallback(() => {
+    setMatchVersion((version) => version + 1);
+  }, []);
+  const leaveMatch = offline ? startNewMatch : returnToTournament;
+  const botParam = offline ? "black" : params.get("bot");
   const targetParam = params.get("target");
   const timeParam = params.get("time");
-  const modeParam = params.get("mode");
+  const modeParam = offline ? null : params.get("mode");
   const botColor: Color | undefined =
     botParam === "white" || botParam === "black" ? botParam : undefined;
-  const parsedTarget = targetParam ? parseInt(targetParam, 10) : 7;
+  const defaultTarget = offline ? 1 : 7;
+  const parsedTarget = targetParam ? parseInt(targetParam, 10) : defaultTarget;
   const matchTarget =
-    Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 7;
+    Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : defaultTarget;
   const timeControl = useMemo(
     () => parseTimeControl(timeParam, matchTarget),
     [timeParam, matchTarget],
@@ -224,14 +233,18 @@ function LocalRoute() {
           : "quick";
   return (
     <LocalGameProvider
+      key={matchVersion}
       botColor={botColor}
       matchTarget={matchTarget}
       timeControl={timeControl}
       gameType={localGameType}
-      onQuitMatch={returnToTournament}
+      offline={offline}
+      onQuitMatch={leaveMatch}
     >
       <GameScreen
-        onLeave={returnToTournament}
+        onLeave={leaveMatch}
+        restartOnResultClose={offline}
+        showRematch={!offline}
         homeLabel={
           localGameType === "tournament"
             ? "Back to Tournament"
@@ -253,6 +266,17 @@ function SpectatorRoute() {
 }
 
 export default function Router() {
+  if (import.meta.env.MODE === "mobile") {
+    return (
+      <Routes>
+        <Route path="/local-start" element={<MobileStart target="local" />} />
+        <Route path="/preview-start" element={<MobileStart target="preview" />} />
+        <Route path="/local" element={<LocalRoute offline />} />
+        <Route path="*" element={<Navigate to="/local?bot=black" replace />} />
+      </Routes>
+    );
+  }
+
   return (
     <Routes>
       <Route path="/" element={<RedirectToTournaments />} />
