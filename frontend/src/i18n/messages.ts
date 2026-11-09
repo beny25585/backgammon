@@ -247,6 +247,7 @@ export const messages = {
       errorPrefix: "Error",
       dismissError: "Dismiss error",
       reconnected: "Connection restored.",
+      adminReviewPending: "The match is paused.",
       opponentDisconnected:
         "Your opponent disconnected. If they do not reconnect within {seconds}s, you win.",
       opponentNotConnected: "Your opponent has not entered the game yet",
@@ -814,6 +815,7 @@ export const messages = {
       errorPrefix: "שגיאה",
       dismissError: "סגירת שגיאה",
       reconnected: "החיבור חודש.",
+      adminReviewPending: "המשחק מושהה.",
       opponentDisconnected:
         "היריב התנתק. אם לא יחזור בתוך {seconds} שניות, המשחק יסתיים בניצחון שלך.",
       opponentNotConnected: "היריב עדיין לא נכנס למשחק",

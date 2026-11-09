@@ -102,6 +102,7 @@ export default function GameScreen({
     reconnected,
     connectionEpoch,
     entryPending,
+    adminReviewPending,
     opponentConnected,
     undoMove,
     autoConfirmPending,
@@ -211,6 +212,7 @@ export default function GameScreen({
     if (
       opponentConnected ||
       reconnected ||
+      adminReviewPending ||
       gameResult?.matchOver ||
       !gameHasStarted
     ) {
@@ -238,7 +240,7 @@ export default function GameScreen({
       window.clearTimeout(initialTimer);
       window.clearInterval(interval);
     };
-  }, [gameHasStarted, gameResult?.matchOver, opponentConnected, reconnected]);
+  }, [adminReviewPending, gameHasStarted, gameResult?.matchOver, opponentConnected, reconnected]);
 
   const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
   const interruptedOpeningMoveKey =
@@ -254,7 +256,7 @@ export default function GameScreen({
     (waitingForOpeningRoll
       ? `${state.turn}:${state.openingRoll.white ?? "-"}:${state.openingRoll.black ?? "-"}`
       : null);
-  const automaticOpeningRollKey = entryPending || !openingRollKey
+  const automaticOpeningRollKey = entryPending || adminReviewPending || !openingRollKey
     ? null
     : entryPending === undefined
       ? openingRollKey
@@ -303,6 +305,7 @@ export default function GameScreen({
 
   const needsToRoll =
     !gameResult &&
+    !adminReviewPending &&
     state?.phase === "rolling" &&
     !interruptedOpeningMove &&
     state.remaining.length === 0 &&
@@ -311,7 +314,7 @@ export default function GameScreen({
     ? `${roomId ?? "local"}:${playerColor}:${state?.version ?? 0}:${turnStartedAt ?? 0}`
     : null;
   const rollPaused = isLoading || showCloseExisting ||
-    !opponentConnected || Boolean(gameResult);
+    !opponentConnected || Boolean(gameResult) || adminReviewPending === true;
   const blockedOnBar = Boolean(state && isBarEntryFullyBlocked(state, playerColor));
 
   const { handleRoll, handleOfferDouble, countdownSeconds } = useTurnRollActions({
@@ -506,7 +509,9 @@ export default function GameScreen({
 
       {/* Non-final game wins auto-continue; no overlay */}
       {!matchFinished && (
-        <>
+        adminReviewPending ? (
+          <ConnectionStatus connected={false} text={t("game.adminReviewPending")} />
+        ) : <>
           {reconnected && <ConnectionStatus connected text={t("game.reconnected")} />}
           {!opponentConnected &&
             !reconnected &&
@@ -553,7 +558,7 @@ export default function GameScreen({
           clock={clock}
           turnStartedAt={turnStartedAt}
           timeControl={timeControl}
-          noMovesMessage={matchFinished ? null : noMovesMessage}
+          noMovesMessage={matchFinished || adminReviewPending ? null : noMovesMessage}
           bracketUrl={bracketUrl}
         />
       </div>

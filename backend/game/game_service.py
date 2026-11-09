@@ -9,10 +9,12 @@ here, for the same reason: every ending has to be reported, so the hook
 belongs where every ending already passes.
 """
 
+import time
 import uuid
 
 from django.db import transaction
 
+from .clock import active_player, deadline_for
 from .link.models import TournamentLink
 from .link.outbox import enqueue_result, STATUS_CANCELLED
 from .models import GameEvent, GameRoom, GameState, Match, RoomPlayer
@@ -311,7 +313,7 @@ def _save_scored_state(room, state, winner, win_type, reason):
         room=room, defaults={'state_data': stored})
 
 
-def finalize_room(room, state, winner, win_type, reason):
+def finalize_room(room, state, winner, win_type, reason, *, validate_timeout=False):
     """Score the finished game, save a Match, and close the room.
 
     Idempotent: once the room is completed/cancelled, later calls are no-ops.
@@ -321,6 +323,18 @@ def finalize_room(room, state, winner, win_type, reason):
         locked = GameRoom.objects.select_for_update().get(pk=room.pk)
         if locked.status in ('completed', 'cancelled'):
             return None
+        if validate_timeout:
+            from .presence import needs_admin_adjudication
+
+            if locked.status != 'playing' or needs_admin_adjudication(locked):
+                return None
+            current = GameState.objects.filter(room=locked).values_list('state_data', flat=True).first() or {}
+            loser = 'black' if winner == 'white' else 'white'
+            reserve = (current.get('clock') or {}).get(loser)
+            deadline = deadline_for(current, locked.time_control, locked.target_points)
+            if active_player(current) != loser or (
+                    reserve != 0 and (deadline is None or deadline > int(time.time() * 1000))):
+                return None
 
         # Leaving a series is a room-level intent, including the interval after
         # a scored game. Use the current persisted board if auto-next-game raced

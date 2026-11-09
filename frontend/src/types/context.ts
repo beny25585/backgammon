@@ -90,6 +90,8 @@ export interface GameContextType {
   connectionEpoch?: number;
   /** Present for rooms that use the server-confirmed entry protocol. */
   entryPending?: boolean;
+  /** The server has paused gameplay pending an organizer decision. */
+  adminReviewPending?: boolean;
   opponentConnected: boolean;
   supportsPlayerReactions?: boolean;
   playerReactionsEnabled?: boolean;

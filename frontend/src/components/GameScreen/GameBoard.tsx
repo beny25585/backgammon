@@ -116,7 +116,8 @@ export default function GameBoard({
   recoveringOpening = false,
 }: GameBoardProps) {
   const reactions = usePlayerReactionControls(playerColor);
-  const { connectionEpoch, isLoading } = useGame();
+  const { connectionEpoch, isLoading, adminReviewPending } = useGame();
+  const gameplayBlocked = readOnly || adminReviewPending;
   const [selection, setSelection] = useState<{
     from: Source | null;
     version: number;
@@ -143,7 +144,7 @@ export default function GameBoard({
   const [hiddenTurnNotice, setHiddenTurnNotice] =
     useState<GuidanceMessage | null>(null);
 
-  const isMyTurn = !readOnly && state.turn === playerColor && state.phase === "moving";
+  const isMyTurn = !gameplayBlocked && state.turn === playerColor && state.phase === "moving";
   const selectedBoardTheme = boardTheme ?? DEFAULT_BOARD_THEME;
   const stateVersion = state.version ?? 0;
   const hasPlayedMoveThisTurn =
@@ -364,7 +365,7 @@ export default function GameBoard({
   const boardThrow = dicePlayback.roll;
   const originalDiceCount = state.dice[0] === state.dice[1] ? 4 : state.dice.length;
   const interruptThrow = Boolean(boardThrow && (
-    readOnly || autoPointSequenceActive || autoConfirmPending ||
+    gameplayBlocked || autoPointSequenceActive || autoConfirmPending ||
     boardThrow.dice !== diceValues || state.remaining.length !== originalDiceCount
   ));
   if (interruptThrow) {
@@ -476,17 +477,17 @@ export default function GameBoard({
           onSelect={handleSelect}
           onMove={handleMove}
           legalFromPoints={legalFromPoints}
-          onUndo={autoConfirmPending ? undefined : undoMove}
-          onConfirm={autoConfirmPending ? undefined : endTurn}
+          onUndo={autoConfirmPending || adminReviewPending ? undefined : undoMove}
+          onConfirm={autoConfirmPending || adminReviewPending ? undefined : endTurn}
           onRoll={needsToRoll ? onRoll : undefined}
           autoRollCountdown={autoRollCountdown}
-          onOfferDouble={offerDouble}
+          onOfferDouble={adminReviewPending ? undefined : offerDouble}
           autoMove={activeAutoMove}
           turnNotice={visibleTurnNotice}
           noticeSide={noMovesMessage ? blockedSide : "right"}
           rollDetails={rollDetails}
           onAutoPointSequenceChange={setAutoPointSequenceActive}
-          inputDisabled={autoConfirmPending || readOnly}
+          inputDisabled={autoConfirmPending || gameplayBlocked}
           captureScope={gameAnimationScope}
           hasPendingMoves={hasPendingMoves}
           overlay={
@@ -498,8 +499,8 @@ export default function GameBoard({
                   {liveDice}
                 </BoardHalfOverlay>
               )}
-              <GuidanceBanner state={state} playerColor={playerColor}
-                respondToDouble={respondToDouble ?? (() => {})} boardAligned />
+              {!adminReviewPending && <GuidanceBanner state={state} playerColor={playerColor}
+                respondToDouble={respondToDouble ?? (() => {})} boardAligned />}
             </>
           }
         />

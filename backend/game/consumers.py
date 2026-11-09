@@ -16,7 +16,7 @@ from .ai import BotLeaseLost, BotStateChanged
 from .models import GameRoom, GameState, RoomPlayer, Player
 from .clock import active_player, compute_clock, deadline_for
 from .db_timing import measured_database_sync_to_async
-from .event_history import TournamentOpeningChanged, event_game_id as event_game_id, persist_game_action
+from .event_history import TournamentStateChanged, event_game_id as event_game_id, persist_game_action
 from .room_execution import serialized_room_operation
 from .game_service import finalize_room, game_ended_payload, record_game_end
 from .server_actions import (
@@ -401,6 +401,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             'payload': state_data,
             'playerColor': self.player_color,
             'initial': True,
+            'adminReviewPending': admin_review_pending,
             'roomStatus': room.status,
             'entryConfirmationRequired': self.entry_confirmation_required,
             'supportsPlayerReactions': not self.is_ai,
@@ -479,7 +480,7 @@ class GameConsumer(AsyncWebsocketConsumer):
 
         # The client requests the opening roll after entry. A returning player
         # in opening_result only re-arms the short countdown.
-        if state_data.get('phase') == 'opening_result':
+        if not admin_review_pending and state_data.get('phase') == 'opening_result':
             await self._arm_opening_result_watch()
 
     async def disconnect(self, close_code):
@@ -671,7 +672,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 logger.warning(
                     f"WS unknown message type: {message_type} player={self.player_color}")
                 await self._send_error(f'Unknown message type: {message_type}')
-        except TournamentOpeningChanged:
+        except TournamentStateChanged:
             await self._broadcast_room_status()
         except Exception as exc:
             logger.exception("WS receive error")
@@ -865,6 +866,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             on_state_update=_on_state_update,
             on_turn_notice=_on_turn_notice,
             bot_lease=bot_lease,
+            guard_tournament_state=self._is_tournament_room,
         )
 
         pipeline_ms = int(
@@ -952,7 +954,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 result = engine.roll_opening_die(opponent, die=die)
             if state['phase'] == 'opening_roll' and all(die is None for die in state['openingRoll'].values()):
                 state.pop('openingDice', None)
-            return {**result, 'tournament_opening': True}
+            return result
         if state.get('phase') == 'rolling' and state.get('turn') == self.player_color:
             if engine.is_bar_fully_blocked(self.player_color):
                 return engine.pass_blocked_turn(self.player_color)
@@ -979,6 +981,8 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _activate_opening_move(self, *, bot_lease=None):
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
+            return
+        if self._is_tournament_room and await database_sync_to_async(needs_admin_adjudication)(room):
             return
 
         gs = await get_game_state(room)
@@ -1030,10 +1034,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             'release_on_handoff': not timed_out,
         }
         if self._is_tournament_room:
-            persist_kwargs.update(expected_version=room.last_sequence, tournament_opening=True)
+            persist_kwargs.update(expected_version=room.last_sequence, guard_tournament_state=True)
         try:
             await record_event_and_advance(room, None, 'opening_result_done', state, **persist_kwargs)
-        except TournamentOpeningChanged:
+        except TournamentStateChanged:
             return
 
         if timed_out and new_active:
@@ -1579,8 +1583,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         ):
             return
         if force_close:
+            timeout_guard = {'validate_timeout': True} if reason == 'time' and self._is_tournament_room else {}
             match_obj = await database_sync_to_async(finalize_room)(
-                room, state, winner, win_type, reason
+                room, state, winner, win_type, reason, **timeout_guard
             )
             if match_obj is None:
                 return
@@ -1726,7 +1731,13 @@ class GameConsumer(AsyncWebsocketConsumer):
             state['clock'] = clock
             state['turnStartedAt'] = turn_started_at
 
-        await record_event_and_advance(room, None, 'next_game', state)
+        persist_kwargs = {}
+        if self._is_tournament_room:
+            persist_kwargs.update(expected_version=room.last_sequence, guard_tournament_state=True)
+        try:
+            await record_event_and_advance(room, None, 'next_game', state, **persist_kwargs)
+        except TournamentStateChanged:
+            return
 
         if clock is not None and new_active:
             await self._reschedule_timeout_from_state()
@@ -1945,6 +1956,34 @@ class GameConsumer(AsyncWebsocketConsumer):
         status.update(connected=count, connectedColors=colors)
         await self.channel_layer.group_send(self.room_group_name, status)
 
+    async def tournament_pause_changed(self, event):
+        state = event['payload']
+        paused = event['adminReviewPending']
+        await self.send(json.dumps({
+            'type': 'state_update',
+            'payload': state,
+            'playerColor': None,
+            'adminReviewPending': paused,
+        }))
+        room = await get_room(self.room_id)
+        if not room or room.status != 'playing' or room.last_sequence != state['version']:
+            return
+        if paused:
+            for task_name in ('_timeout_task', '_opening_watch_task'):
+                task = getattr(self, task_name, None)
+                if task:
+                    task.cancel()
+            task = _auto_next_tasks.pop(self.room_group_name, None)
+            if task:
+                task.cancel()
+            _auto_next_deadlines.pop(self.room_group_name, None)
+        else:
+            await self._schedule_timeout_from_snapshot(state, room)
+            if state.get('phase') == 'opening_result':
+                await self._arm_opening_result_watch()
+            elif state.get('phase') == 'game_over' and state.get('matchScored'):
+                await self._replay_game_end(state, room)
+
     async def game_message(self, event):
         if event.get('event_type') == 'state_update':
             payload = event.get('payload') or {}
@@ -1974,6 +2013,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         }
         if event.get('action'):
             message['action'] = event['action']
+        if event['event_type'] == 'state_update' and self._is_tournament_room:
+            message['adminReviewPending'] = False
         await self.send(json.dumps(message))
         if (self._is_tournament_room and event.get('action') == 'roll'
                 and event['event_type'] == 'state_update'

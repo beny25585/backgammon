@@ -127,6 +127,8 @@ export function GameProvider({
   const [blackName, setBlackName] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [adminReviewPending, setAdminReviewPending] = useState(false);
+  const adminReviewPendingRef = useRef(false);
   const autoConfirmArmedRef = useRef(false);
   const endTurnInFlightRef = useRef(false);
   const [autoConfirmPending, setAutoConfirmPending] = useState(false);
@@ -183,7 +185,7 @@ export function GameProvider({
   const socket = getSocketService(serverUrl);
   const supportsPlayerReactions = reactionsRoom === roomId;
   const playerReactionsEnabled = supportsPlayerReactions && !isLoading && opponentConnected &&
-    Boolean(state && state.phase !== "game_over") && !gameResult && !entryPending;
+    Boolean(state && state.phase !== "game_over") && !gameResult && !entryPending && !adminReviewPending;
   const {
     reactions: playerReactions, sendReaction, reactionCooldownUntil, reactionError,
     receiveReaction, receiveReactionError, resetReactions,
@@ -217,7 +219,7 @@ export function GameProvider({
 
   const sendIntent = useCallback(
     (payload: Record<string, unknown>) => {
-      if (gameOverRef.current) return false;
+      if (gameOverRef.current || adminReviewPendingRef.current) return false;
       const currentEntry = entryRef.current;
       if ((requiresEntryConfirmation || currentEntry?.roomId === roomId) &&
         !(currentEntry?.roomId === roomId && currentEntry.started)) return false;
@@ -326,6 +328,17 @@ export function GameProvider({
     let hasReceivedState = false;
     let latestPresenceVersion = 0;
     let entryPresence: ReturnType<typeof bindTournamentEntryPresence> | undefined;
+    const updateAdminReview = (pending: boolean) => {
+      if (pending === adminReviewPendingRef.current) return;
+      adminReviewPendingRef.current = pending;
+      setAdminReviewPending(pending);
+      if (pending) {
+        pendingActionsRef.current = [];
+        autoConfirmArmedRef.current = false;
+        endTurnInFlightRef.current = false;
+        setAutoConfirmPending(false);
+      }
+    };
     const updateEntry = (started: boolean) => {
       const next = { roomId, started };
       entryRef.current = next;
@@ -381,6 +394,7 @@ export function GameProvider({
 
           // Initial message from server on connect (contains our own color).
           if (isInitial) {
+            updateAdminReview(msg.adminReviewPending === true);
             if (msg.entryConfirmationRequired === true) bindEntryPresence();
             entryPresence?.initialState(msg.roomStatus);
             resetReactions();
@@ -467,6 +481,9 @@ export function GameProvider({
             return;
           }
           if (version > 0) lastVersionRef.current = version;
+          if (typeof msg.adminReviewPending === "boolean") {
+            updateAdminReview(msg.adminReviewPending);
+          }
 
           const prev = stateRef.current;
           const next = raw as unknown as GameState;
@@ -804,15 +821,14 @@ export function GameProvider({
           );
         });
 
-        socket.on("admin_review_required", (message) => {
-          const payload = (message as Record<string, unknown>).payload as
-            | Record<string, unknown>
-            | undefined;
-          setError(
-            typeof payload?.message === "string"
-              ? payload.message
-              : "Match paused pending organizer decision",
-          );
+        socket.on("admin_review_required", () => {
+          if (adminReviewPendingRef.current) return;
+          updateAdminReview(true);
+          const authoritative = authoritativeStateRef.current;
+          if (authoritative) {
+            stateRef.current = authoritative;
+            setState(authoritative);
+          }
         });
 
         socket.on("turn_notice", (message) => {
@@ -997,6 +1013,7 @@ export function GameProvider({
       to: Target,
       options?: MakeMoveOptions,
     ) => {
+      if (adminReviewPendingRef.current) return;
       const current = stateRef.current;
 
       if (!current || current.phase !== "moving") return;
@@ -1174,6 +1191,7 @@ export function GameProvider({
   );
 
   const endTurn = useCallback(() => {
+    if (adminReviewPendingRef.current) return;
     const current = stateRef.current;
     if (!current || current.phase !== "moving") return;
     if (current.turn !== playerColorRef.current) return;
@@ -1194,6 +1212,7 @@ export function GameProvider({
   }, [sendIntent, autoConfirmPending]);
 
   const undoMove = useCallback(() => {
+    if (adminReviewPendingRef.current) return;
     autoConfirmArmedRef.current = false;
     setAutoConfirmPending(false);
     const current = stateRef.current;
@@ -1218,7 +1237,7 @@ export function GameProvider({
 
   const giveUp = useCallback(() => {
     const current = stateRef.current;
-    if (!current) return;
+    if (!current || adminReviewPendingRef.current) return;
     socket.send("give_up", {});
   }, [socket]);
 
@@ -1263,6 +1282,7 @@ export function GameProvider({
   const clearError = useCallback(() => setError(null), []);
 
   const handleNextGame = useCallback(() => {
+    if (adminReviewPendingRef.current) return;
     setGameResult(null);
     sendIntent({ action: "next_game" });
   }, [sendIntent]);
@@ -1303,6 +1323,7 @@ export function GameProvider({
         reconnected,
         connectionEpoch,
         entryPending: hasEntryConfirmation ? entryPending : undefined,
+        adminReviewPending,
         opponentConnected: opponentConnected && !entryPending,
         supportsPlayerReactions,
         playerReactionsEnabled,

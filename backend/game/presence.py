@@ -9,6 +9,7 @@ from channels.layers import get_channel_layer
 from django.db import transaction
 from django.utils import timezone
 
+from .clock import active_player, apply_transition, parse_time_control
 from .game_service import finalize_room, game_ended_payload
 from .formats import forfeit_win_type
 from .models import GameRoom, GameState, Task
@@ -213,6 +214,86 @@ def _publish_admin_transition(room):
     return enqueue_status_event(room, 'admin_required' if needs_admin else 'admin_cleared')
 
 
+def _set_tournament_pause(room, presence, paused, now, game_state=None):
+    """Save the pause and its clock under the caller's room lock."""
+    if game_state is None:
+        game_state = GameState.objects.select_for_update().filter(room=room).first()
+    if game_state is None:
+        return
+
+    stored = dict(game_state.state_data or {})
+    now_ms = int(now * 1000)
+    active = active_player(stored)
+    timing = parse_time_control(room.time_control, room.target_points)
+    paused_at = presence.get('pausedAtMs')
+    if paused_at is None:
+        # A lease can expire before the presence worker runs. Freeze at the
+        # last observed loss, including the second seat's expired lease.
+        losses = [presence['absentSince'].get(color) for color in ('white', 'black')]
+        losses.extend(
+            float(entry.get('lastSeen', 0)) + STALE_SECONDS
+            for entry in presence['connections'].values()
+            if now - float(entry.get('lastSeen', 0)) > STALE_SECONDS
+        )
+        paused_at = min(now_ms, max(
+            (int(loss * 1000) for loss in losses if loss is not None),
+            default=now_ms,
+        ))
+
+    used_delay = presence.pop('pausedTurnDelayUsedMs', 0)
+    started = stored.get('turnStartedAt')
+    if timing and active and started is not None:
+        # Also handles older watchdog holds that left the clock running.
+        base_ms, delay_ms = timing
+        elapsed = max(0, paused_at - started)
+        bank = stored.get('clock') or {'white': base_ms, 'black': base_ms}
+        stored['clock'] = apply_transition(bank, active, None, elapsed, delay_ms)
+        used_delay = min(elapsed, delay_ms)
+
+    if paused:
+        presence['pausedAtMs'] = paused_at
+        presence['pausedTurnDelayUsedMs'] = used_delay
+        stored['turnStartedAt'] = None
+    else:
+        presence.pop('pausedAtMs', None)
+        stored['turnStartedAt'] = now_ms - used_delay if timing and active else None
+        if timing and active and not stored.get('clock'):
+            stored['clock'] = dict.fromkeys(('white', 'black'), timing[0])
+        inactivity = stored.get('inactivity')
+        if inactivity:
+            held_ms = max(0, now_ms - paused_at)
+            inactivity = dict(inactivity)
+            for key in ('lastActionAtMs', 'warnedAtMs', 'deadlineMs'):
+                if inactivity.get(key) is not None:
+                    inactivity[key] += held_ms
+            stored['inactivity'] = inactivity
+
+    presence['needsAdminAdjudication'] = paused
+    if not paused:
+        presence['absentSince'] = {}
+    room.last_sequence += 1
+    stored['version'] = room.last_sequence
+    room.save(update_fields=['last_sequence'])
+    game_state.state_data = stored
+    game_state.save(update_fields=['state_data', 'updated_at'])
+    _entry_event(room.pk, {
+        'type': 'tournament_pause_changed',
+        'payload': stored,
+        'adminReviewPending': paused,
+    })
+
+
+def _sync_tournament_pause(room, link, presence, colors, now, game_state=None):
+    if (room.status != 'playing' or link is None or link.tournament_id <= 0
+            or not presence.get('everBothConnected')):
+        return
+    paused = bool(presence.get('needsAdminAdjudication'))
+    if not paused and not colors:
+        _set_tournament_pause(room, presence, True, now, game_state)
+    elif paused and {'white', 'black'} <= colors:
+        _set_tournament_pause(room, presence, False, now, game_state)
+
+
 def _settle_late_tournament_entry(room, link, presence, color, colors, now):
     since = presence['absentSince'].get(color)
     if (link is None or link.tournament_id <= 0 or presence.get('needsAdminAdjudication')
@@ -249,13 +330,14 @@ def mark_connected(room_id, channel_name, color, now=None):
         return True
     if waiting_tournament and not previous_colors:
         presence['absentSince'] = {}
+    if not previous_colors:
+        _sync_tournament_pause(room, link, presence, previous_colors, now)
     presence['connections'][channel_name] = {'color': color, 'lastSeen': now}
     colors = _connected_colors(presence, now)
+    _sync_tournament_pause(room, link, presence, colors, now)
     if {'white', 'black'} <= colors and not waiting_for_confirmation:
         first_full_presence = not presence.get('everBothConnected', False)
         presence['everBothConnected'] = True
-        # Once both players have gone missing, only an organizer may resolve
-        # the match. Reconnecting must not silently resume automatic forfeits.
         if not presence.get('needsAdminAdjudication'):
             presence['absentSince'] = {}
         if first_full_presence:
@@ -282,6 +364,8 @@ def mark_heartbeat(room_id, channel_name, now=None):
     entry = presence['connections'].get(channel_name)
     if not entry:
         return
+    previous_needs_admin = bool(presence.get('needsAdminAdjudication'))
+    link = None
     if (room.status in ('waiting', 'playing')
             and now - float(entry.get('lastSeen', 0)) > STALE_SECONDS):
         link = getattr(room, 'tournament_link', None)
@@ -298,13 +382,20 @@ def mark_heartbeat(room_id, channel_name, now=None):
                     _track_waiting_tournament_absence(room, presence, colors | {color}, now)
                 elif colors and not presence.get('needsAdminAdjudication'):
                     presence['absentSince'] = {}
+            if not colors:
+                _sync_tournament_pause(room, link, presence, colors, now)
     presence['connections'][channel_name] = {**entry, 'lastSeen': now}
+    if presence.get('needsAdminAdjudication'):
+        link = link or getattr(room, 'tournament_link', None)
+        _sync_tournament_pause(room, link, presence, _connected_colors(presence, now), now)
     if (_waiting_for_entry_confirmation(room)
             and now - float(presence.get('entryChallengeAt', 0)) >= ENTRY_CONFIRM_SECONDS):
         _new_entry_challenge(room, presence, now)
     state['presence'] = presence
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
+    if previous_needs_admin != bool(presence.get('needsAdminAdjudication')):
+        _publish_admin_transition(room)
     return room.status
 
 
@@ -321,14 +412,18 @@ def mark_disconnected(room_id, channel_name, now=None):
     if not removed:
         return False
     color = removed.get('color')
-    colors = _colors(presence)
-    if _waiting_tournament_has_both_seats(room, getattr(room, 'tournament_link', None)):
+    link = getattr(room, 'tournament_link', None)
+    linked_tournament = link is not None and link.tournament_id > 0
+    colors = _connected_colors(presence, now) if linked_tournament else _colors(presence)
+    if _waiting_tournament_has_both_seats(room, link):
         _track_waiting_tournament_absence(room, presence, _connected_colors(presence, now), now)
     elif room.status == 'playing' and presence.get('everBothConnected') and color not in colors:
-        presence['absentSince'][color] = now
+        presence['absentSince'][color] = min(now, float(removed.get('lastSeen', now)) + STALE_SECONDS) if linked_tournament else now
         missing = {'white', 'black'} - colors
         if len(missing) == 2:
-            if requires_organizer:
+            if linked_tournament:
+                _sync_tournament_pause(room, link, presence, colors, now)
+            elif requires_organizer:
                 presence['needsAdminAdjudication'] = True
             else:
                 presence['needsAdminAdjudication'] = False
@@ -338,12 +433,13 @@ def mark_disconnected(room_id, channel_name, now=None):
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
     if previous_needs_admin != bool(presence.get('needsAdminAdjudication')):
-        game_state = GameState.objects.select_for_update().filter(room=room).first()
-        if game_state:
-            frozen = dict(game_state.state_data or {})
-            frozen['turnStartedAt'] = None
-            game_state.state_data = frozen
-            game_state.save(update_fields=['state_data', 'updated_at'])
+        if not linked_tournament:
+            game_state = GameState.objects.select_for_update().filter(room=room).first()
+            if game_state:
+                frozen = dict(game_state.state_data or {})
+                frozen['turnStartedAt'] = None
+                game_state.state_data = frozen
+                game_state.save(update_fields=['state_data', 'updated_at'])
         _publish_admin_transition(room)
     return presence.get('everBothConnected', False)
 
@@ -420,11 +516,16 @@ def check_room_presence(room_id, now=None):
 
         colors = _colors(presence)
         missing = {'white', 'black'} - colors
+        _sync_tournament_pause(room, link, presence, colors, now, game_state)
+        # One returning seat cannot turn a double absence into a forfeit.
         if presence.get('needsAdminAdjudication') and requires_organizer:
-            # Sticky terminal-review state: a later reconnect cannot create an
-            # automatic winner after both players were absent together.
-            missing = {'white', 'black'} - colors
-        elif waiting_for_tournament and len(missing) != 1:
+            state['presence'] = presence
+            room.state = state
+            room.save(update_fields=['state', 'updated_at'])
+            if not previous_needs_admin:
+                _publish_admin_transition(room)
+            return {'status': 'admin_required', 'missing': sorted(missing)}
+        if waiting_for_tournament and len(missing) != 1:
             presence['absentSince'] = {}
         elif len(missing) == 1:
             presence['needsAdminAdjudication'] = False

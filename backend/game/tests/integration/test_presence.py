@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 
+from ...clock import deadline_for
 from ...engine import BackgammonEngine
 from ...models import GameRoom, GameState, Match, Player, RoomPlayer, Task
 from ...presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat, needs_admin_adjudication
@@ -63,6 +64,7 @@ class PresenceForfeitTests(TestCase):
         )
         self.connect_both()
         mark_disconnected(self.room.id, 'white-1', 1001)
+        mark_heartbeat(self.room.id, 'black-1', 1020)
         mark_heartbeat(self.room.id, 'black-1', 1040)
         self.assertEqual(check_room_presence(self.room.id, 1040)['status'], 'waiting')
         link.refresh_from_db()
@@ -118,10 +120,21 @@ class PresenceForfeitTests(TestCase):
         self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
 
     @override_settings(GAMELINK_ENABLED=True)
-    def test_two_missing_players_require_admin_adjudication(self):
-        TournamentLink.objects.create(
+    def test_double_disconnect_resumes_once_when_both_colors_return(self):
+        link = TournamentLink.objects.create(
             issuer='tournaments', tournament_id=17, fixture_id=1005, room=self.room,
         )
+        self.room.time_control = 'fast'
+        self.room.white_score, self.room.black_score = 2, 1
+        self.room.last_sequence = 7
+        self.room.save(update_fields=['time_control', 'white_score', 'black_score', 'last_sequence'])
+        game_state = GameState.objects.get(room=self.room)
+        game_state.state_data.update(turnStartedAt=987_000, remaining=[2], version=7)
+        game_state.save(update_fields=['state_data'])
+        saved_board = {key: game_state.state_data[key] for key in (
+            'points', 'bar', 'home', 'phase', 'turn', 'dice', 'remaining',
+        )}
+
         self.connect_both()
         mark_disconnected(self.room.id, 'white-1', 1001)
         with patch('game.link.live.httpx.post') as post:
@@ -136,32 +149,86 @@ class PresenceForfeitTests(TestCase):
         self.room.refresh_from_db()
         self.assertEqual(self.room.status, 'playing')
         self.assertTrue(self.room.state['presence']['needsAdminAdjudication'])
-        self.assertEqual(
-            GameState.objects.get(room=self.room).state_data['clock'],
-            {'white': 30000, 'black': 30000},
-        )
+        game_state.refresh_from_db()
+        paused = game_state.state_data
+        self.assertEqual(paused['clock'], {'white': 25_000, 'black': 30_000})
+        self.assertIsNone(paused['turnStartedAt'])
+        self.assertEqual(paused['version'], 8)
         self.assertEqual(Task.objects.filter(name=STATUS_TASK).count(), 1)
 
-        # Returning later does not restart the old automatic-forfeit deadline.
+        # Repeated connections from one color must not resume the room or rearm its forfeit.
         mark_connected(self.room.id, 'white-2', 'white', 1110)
+        mark_connected(self.room.id, 'white-3', 'white', 1130)
         mark_heartbeat(self.room.id, 'white-2', 1200)
         result = check_room_presence(self.room.id, 1200)
-        self.assertEqual(
-            result, {'status': 'admin_required', 'missing': ['black']})
-        self.room.refresh_from_db()
-        self.assertEqual(self.room.status, 'playing')
-        self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
+        self.assertEqual(result, {'status': 'admin_required', 'missing': ['black']})
+        game_state.refresh_from_db()
+        self.assertEqual(game_state.state_data, paused)
+        self.assertEqual(Task.objects.filter(name=STATUS_TASK).count(), 1)
 
         mark_connected(self.room.id, 'black-2', 'black', 1210)
-        result = check_room_presence(self.room.id, 1220)
-        self.assertEqual(result, {'status': 'admin_required', 'missing': []})
         self.room.refresh_from_db()
-        self.assertTrue(self.room.state['presence']['needsAdminAdjudication'])
-        self.assertEqual(Match.objects.filter(room=self.room).count(), 0)
-        self.assertEqual(
-            GameState.objects.get(room=self.room).state_data['clock'],
-            {'white': 30000, 'black': 30000},
+        self.assertEqual(self.room.status, 'playing')
+        self.assertFalse(needs_admin_adjudication(self.room))
+        self.assertEqual(self.room.state['presence']['absentSince'], {})
+        self.assertEqual((self.room.white_score, self.room.black_score), (2, 1))
+        self.assertEqual(self.room.last_sequence, 9)
+        game_state.refresh_from_db()
+        resumed = game_state.state_data
+        self.assertEqual({key: resumed[key] for key in saved_board}, saved_board)
+        self.assertEqual(resumed['version'], 9)
+        self.assertEqual(resumed['clock'], paused['clock'])
+        self.assertEqual(deadline_for(resumed, self.room.time_control, self.room.target_points), 1_235_000)
+
+        mark_heartbeat(self.room.id, 'black-2', 1211)
+        self.assertEqual(check_room_presence(self.room.id, 1220), {'status': 'waiting', 'missing': []})
+        game_state.refresh_from_db()
+        self.assertEqual(game_state.state_data, resumed)
+        self.assertCountEqual(
+            [task.kwargs['body']['event_type'] for task in Task.objects.filter(name=STATUS_TASK)],
+            ['admin_required', 'admin_cleared'],
         )
+        self.assertFalse(Match.objects.filter(room=self.room).exists())
+        self.assertFalse(Task.objects.filter(key=f'result:{link.pk}').exists())
+
+    def test_stale_double_disconnect_resumes_after_fresh_heartbeat_of_both_colors(self):
+        TournamentLink.objects.create(
+            issuer='tournaments', tournament_id=17, fixture_id=1010, room=self.room,
+        )
+        self.room.time_control = 'fast'
+        self.room.save(update_fields=['time_control'])
+        game_state = GameState.objects.get(room=self.room)
+        game_state.state_data['turnStartedAt'] = 1_023_000
+        game_state.save(update_fields=['state_data'])
+        self.connect_both()
+
+        self.assertEqual(
+            check_room_presence(self.room.id, 1031),
+            {'status': 'admin_required', 'missing': ['black', 'white']},
+        )
+        game_state.refresh_from_db()
+        paused = game_state.state_data
+        self.assertIsNone(paused['turnStartedAt'])
+        self.assertEqual(paused['clock'], {'white': 30_000, 'black': 30_000})
+
+        mark_connected(self.room.id, 'white-2', 'white', 1110)
+        mark_connected(self.room.id, 'black-2', 'black', 1140)
+        self.room.refresh_from_db()
+        self.assertTrue(needs_admin_adjudication(self.room))
+        game_state.refresh_from_db()
+        self.assertEqual(game_state.state_data, paused)
+
+        mark_heartbeat(self.room.id, 'white-2', 1141)
+        self.room.refresh_from_db()
+        self.assertFalse(needs_admin_adjudication(self.room))
+        game_state.refresh_from_db()
+        resumed = game_state.state_data
+        self.assertEqual(resumed['version'], paused['version'] + 1)
+        self.assertEqual(resumed['clock'], paused['clock'])
+        used_delay = 1_141_000 - resumed['turnStartedAt']
+        self.assertGreater(used_delay, 0)
+        self.assertLess(used_delay, 10_000)
+        self.assertFalse(Match.objects.filter(room=self.room).exists())
 
     def test_second_socket_keeps_player_present(self):
         self.connect_both()

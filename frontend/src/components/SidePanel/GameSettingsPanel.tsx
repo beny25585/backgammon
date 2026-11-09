@@ -31,7 +31,7 @@ type GameAction = "giveUp" | "leave";
 function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, checkerStyle, onCheckerStyleChange, soundEnabled,
   onSoundEnabledChange, bracketUrl, autoRoll, onAutoRollChange }: GameSettingsPanelProps) {
   const { t, direction, locale, toggleLocale } = useI18n();
-  const { giveUp, targetPoints, matchScore } = useGame();
+  const { giveUp, targetPoints, matchScore, adminReviewPending } = useGame();
   const [confirmingAction, setConfirmingAction] = useState<GameAction | null>(null);
   const confirmationRef = useRef<GameAction | null>(null);
   const actions = [
@@ -40,7 +40,7 @@ function GameSettingsPanel({ state, onLeave, boardTheme, onBoardThemeChange, che
       labelKey: "game.giveUp",
       confirmKey: "game.giveUpCurrentConfirm",
       toneClass: "border-orange-400/40 bg-orange-950/10 text-orange-300 hover:border-orange-300/70 hover:bg-orange-400/10",
-      visible: true,
+      visible: !adminReviewPending,
     },
     {
       id: "leave",

@@ -61,6 +61,7 @@ async def apply_server_game_action(
     on_state_update,
     on_turn_notice,
     bot_lease=None,
+    guard_tournament_state=False,
 ) -> dict:
     """Run the shared post-action pipeline for one engine action.
 
@@ -106,8 +107,8 @@ async def apply_server_game_action(
         'bot_lease': bot_lease,
         'expected_version': room.last_sequence,
     }
-    if (result or {}).get('tournament_opening'):
-        persist_kwargs.update(expected_version=room.last_sequence, tournament_opening=True)
+    if guard_tournament_state:
+        persist_kwargs.update(expected_version=room.last_sequence, guard_tournament_state=True)
 
     is_final_move = (
         action == "move"

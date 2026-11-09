@@ -6,8 +6,8 @@ from . import ai
 from .models import GameEvent, GameRoom, GameState, RoomPlayer
 
 
-class TournamentOpeningChanged(Exception):
-    """The room advanced, closed, or was suspended during the opening."""
+class TournamentStateChanged(Exception):
+    """The tournament room advanced, closed, or was paused before the action committed."""
 
 
 def event_game_id(payload):
@@ -16,7 +16,7 @@ def event_game_id(payload):
 
 
 def persist_game_action(room_id, state, player_color, event_type, *, bot_lease=None, expected_version=None,
-                        release_on_handoff=True, tournament_opening=False):
+                        release_on_handoff=True, guard_tournament_state=False):
     """One room lock, one commit; no queue or background event write per action.
 
     State versions also cover non-game updates. History ordinals advance only
@@ -30,12 +30,12 @@ def persist_game_action(room_id, state, player_color, event_type, *, bot_lease=N
             raise ai.BotLeaseLost('Practice bot no longer owns this game state')
         if bot_lease is not None and room.last_sequence != expected_version:
             raise ai.BotStateChanged('Practice board changed before persistence')
-        if tournament_opening:
+        if guard_tournament_state:
             from .presence import needs_admin_adjudication
 
             if (room.status != 'playing' or room.last_sequence != expected_version
                     or needs_admin_adjudication(room)):
-                raise TournamentOpeningChanged()
+                raise TournamentStateChanged()
         if room.status in ('completed', 'cancelled'):
             raise ValueError('Cannot change a closed game room')
         room.last_sequence += 1
