@@ -115,7 +115,7 @@ class ClockSchedulingTests(SimpleTestCase):
         consumer = GameConsumer()
         consumer.room_id = 'room'
         consumer._finalize_and_broadcast = AsyncMock()
-        room = SimpleNamespace(status='playing', time_control='normal', target_points=1)
+        room = SimpleNamespace(status='playing', time_control='normal', target_points=1, state={})
         state = SimpleNamespace(state_data={'phase': 'rolling', 'turn': 'black',
             'clock': {'white': 0, 'black': 60000}, 'turnStartedAt': 100000})
         with patch('game.consumers.get_room', AsyncMock(return_value=room)), \
@@ -130,7 +130,7 @@ class ClockSchedulingTests(SimpleTestCase):
         consumer = GameConsumer()
         consumer.room_id = 'room'
         consumer._finalize_and_broadcast = AsyncMock()
-        room = SimpleNamespace(status='playing', time_control='normal', target_points=1)
+        room = SimpleNamespace(status='playing', time_control='normal', target_points=1, state={})
         state = SimpleNamespace(state_data={'phase': 'moving', 'turn': 'white',
             'clock': {'white': 50000, 'black': 60000}, 'turnStartedAt': 100000})
         with patch('game.consumers.get_room', AsyncMock(return_value=room)), \
