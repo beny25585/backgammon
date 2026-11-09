@@ -471,8 +471,8 @@ class EnterLinkTests(LinkTestBase):
         link.refresh_from_db()
         self.assertEqual(link.result_body['winner_seat'], 'p1')
 
-    def test_confirmed_tournament_waits_40_seconds_if_opening_player_disconnects_before_roll(self):
-        from game.presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat, needs_admin_adjudication
+    def test_confirmed_tournament_does_not_forfeit_while_opening_roll_is_pending(self):
+        from game.presence import check_room_presence, mark_connected, mark_disconnected, mark_heartbeat
 
         for seat in ('p1', 'p2'):
             self.assertEqual(self.enter(make_ticket(seat=seat, tp=5)).status_code, 302)
@@ -480,27 +480,23 @@ class EnterLinkTests(LinkTestBase):
         room = link.room
         self.confirm_game_sockets(room)
         self.assertEqual(room.status, 'playing')
+        self.assertTrue(room.state['presence']['serverOpeningPending'])
         self.assertEqual(GameState.objects.get(room=room).state_data['phase'], 'opening_roll')
 
         mark_disconnected(room.pk, 'white-test', now=104)
-        for now in (120, 135, 143):
+        for now in (120, 135, 144):
             mark_heartbeat(room.pk, 'black-test', now=now)
-        check_room_presence(room.pk, now=143)
-        link.refresh_from_db()
-        self.assertIsNone(link.result_body)
 
         check_room_presence(room.pk, now=144)
+        self.assertTrue(mark_connected(room.pk, 'white-2', 'white', now=145))
         room.refresh_from_db()
         link.refresh_from_db()
-        self.assertEqual(room.status, 'cancelled')
-        self.assertEqual(link.result_body['end_reason'], 'forfeit')
-        self.assertEqual(link.result_body['winner_seat'], 'p2')
-        self.assertEqual(link.result_body['score'], {'p1': 0, 'p2': 5})
+        self.assertEqual(room.status, 'playing')
+        self.assertTrue(room.state['presence']['serverOpeningPending'])
+        self.assertEqual(GameState.objects.get(room=room).state_data['phase'], 'opening_roll')
+        self.assertIsNone(link.result_body)
+        self.assertFalse(Task.objects.filter(key=f'result:{link.pk}').exists())
         self.assertFalse(Match.objects.filter(room=room).exists())
-        mark_disconnected(room.pk, 'black-test', now=145)
-        self.assertTrue(mark_connected(room.pk, 'black-2', 'black', now=146))
-        room.refresh_from_db()
-        self.assertFalse(needs_admin_adjudication(room))
 
     def test_second_direct_play_seat_still_wakes_the_first_player(self):
         self.enter(make_ticket(sub=str(uuid.uuid4()), seat='p1', trn=0, fix=-482))

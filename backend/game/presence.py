@@ -347,7 +347,7 @@ def _sync_tournament_pause(room, link, presence, colors, now, game_state=None):
 def _settle_late_tournament_entry(room, link, presence, color, colors, now):
     since = presence['absentSince'].get(color)
     if (link is None or link.tournament_id <= 0 or presence.get('needsAdminAdjudication')
-            or presence.get('openingBothAbsent')
+            or presence.get('serverOpeningPending') or presence.get('openingBothAbsent')
             or since is None or now - since < ABSENCE_SECONDS or len(colors) != 1 or color in colors):
         return False
     if room.status == 'playing' and not presence.get('everBothConnected'):
@@ -572,12 +572,16 @@ def check_room_presence(room_id, now=None):
         colors = _colors(presence)
         missing = {'white', 'black'} - colors
         _sync_tournament_pause(room, link, presence, colors, now, game_state)
-        if presence.get('openingBothAbsent'):
+        opening_pending = presence.get('serverOpeningPending')
+        if opening_pending or presence.get('openingBothAbsent'):
             state['presence'] = presence
             room.state = state
             room.save(update_fields=['state', 'updated_at'])
             if previous_needs_admin:
                 _publish_admin_transition(room)
+            if opening_pending:
+                # Keep watching so disconnect rules resume after the first turn starts.
+                _schedule(room.pk)
             return {'status': 'waiting', 'missing': sorted(missing)}
 
         # One returning seat cannot turn a double absence into a forfeit.

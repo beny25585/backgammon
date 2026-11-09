@@ -10,6 +10,7 @@ from game.link.live import STATUS_TASK
 from game.link.models import TournamentLink
 from game.models import GameEvent, GameRoom, GameState, Match, Player, RoomPlayer, Task
 from game.presence import (
+    WATCH_TASK,
     check_room_presence,
     confirm_room_entry,
     mark_connected,
@@ -107,6 +108,38 @@ class ServerTournamentOpeningTests(TestCase):
             [task.kwargs['body']['event_type'] for task in Task.objects.filter(name=STATUS_TASK)],
             ['started'],
         )
+
+    @patch('game.tournament_opening.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 2))
+    def test_delayed_first_turn_starts_before_pending_disconnect_forfeit(self, fetch_dice):
+        task = self.confirm_entry()
+        self.assertTrue(self.run_at(task, self.at(1)))
+        self.assertEqual(self.state.state_data['phase'], 'opening_result')
+
+        mark_disconnected(self.room.pk, 'white-1', now=self.at(2).timestamp())
+        for seconds in (20, 40):
+            mark_heartbeat(self.room.pk, 'black-1', now=self.at(seconds).timestamp())
+        watch = Task.objects.get(name=WATCH_TASK, key=f'presence:{self.room.pk}')
+        deadline = self.at(42)
+        with patch('game.presence.time.time', return_value=deadline.timestamp()):
+            self.assertTrue(self.run_at(watch, deadline))
+        self.link.refresh_from_db()
+        self.assertIsNone(self.link.result_body)
+        self.assertEqual(watch.status, 'pending')
+
+        clock_start = self.at(43)
+        self.assertTrue(self.run_at(task, clock_start))
+        self.assertEqual(task.status, 'done')
+        self.assertEqual(self.room.status, 'playing')
+        self.assertEqual(self.state.state_data['phase'], 'moving')
+        self.assertEqual(self.state.state_data['turn'], 'white')
+        self.assertEqual(self.state.state_data['dice'], [6, 2])
+        self.assertEqual(self.state.state_data['turnStartedAt'], int(clock_start.timestamp() * 1000))
+        fetch_dice.assert_awaited_once()
+
+        with patch('game.presence.time.time', return_value=watch.run_at.timestamp()):
+            self.assertTrue(self.run_at(watch, watch.run_at))
+        self.link.refresh_from_db()
+        self.assertEqual(self.link.result_body['end_reason'], 'disconnect')
 
     @patch('game.tournament_opening.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 2))
     def test_first_return_is_not_forfeited_using_the_startup_double_absence(self, _fetch_dice):
