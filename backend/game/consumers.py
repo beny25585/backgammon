@@ -31,6 +31,10 @@ from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
 from .link.rematch import RematchServiceError, send_direct_play_rematch_action
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
+from .tournament_opening import (
+    OPENING_RESULT_DELAY as SERVER_OPENING_RESULT_DELAY,
+    run_queued_tournament_opening,
+)
 
 from .game_service import RoomCancellationError, cancel_waiting_room
 
@@ -215,8 +219,8 @@ _auto_next_deadlines: dict = {}
 
 class GameConsumer(AsyncWebsocketConsumer):
     NO_MOVES_REVEAL_MS = 350
-    # How long the opening result stays on screen before the winner must roll.
-    OPENING_RESULT_DELAY = 3.0
+    # How long to display the opening dice before the first move.
+    OPENING_RESULT_DELAY = SERVER_OPENING_RESULT_DELAY
     # How long a finished (but not match-ending) game waits before the server
     # auto-starts the next game of the match.
     # The server owns continuous-match transitions; clients do not race to
@@ -478,8 +482,8 @@ class GameConsumer(AsyncWebsocketConsumer):
         if room.status == 'playing' and room_has_both_players(self.room_group_name):
             await self.room_started({})
 
-        # The client requests the opening roll after entry. A returning player
-        # in opening_result only re-arms the short countdown.
+        # Re-arm the reveal on reconnect. Confirmed tournament openings also
+        # have a durable task that can finish without any connected socket.
         if not admin_review_pending and state_data.get('phase') == 'opening_result':
             await self._arm_opening_result_watch()
 
@@ -628,6 +632,10 @@ class GameConsumer(AsyncWebsocketConsumer):
                 if await database_sync_to_async(confirm_room_entry)(
                     self.room_id, self.channel_name, challenge,
                 ):
+                    if self._is_tournament_room:
+                        run_in_background(database_sync_to_async(
+                            run_queued_tournament_opening, thread_sensitive=False,
+                        )(self.room_id))
                     await self._broadcast_room_status()
             elif message_type == 'entry_not_ready':
                 await database_sync_to_async(cancel_room_entry)(self.room_id, self.channel_name)
@@ -737,6 +745,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             if state.get('phase') == 'opening_result':
                 return
             if state.get('phase') == 'opening_roll':
+                if ((room.state or {}).get('presence') or {}).get('serverOpeningPending'):
+                    return
                 state = copy.deepcopy(state)
         engine_init_started = time_module.perf_counter()
         engine = BackgammonEngine(state)
@@ -981,6 +991,11 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _activate_opening_move(self, *, bot_lease=None):
         room = await get_room(self.room_id)
         if not room or room.status != 'playing':
+            return
+        if self._is_tournament_room and ((room.state or {}).get('presence') or {}).get('serverOpeningPending'):
+            await database_sync_to_async(
+                run_queued_tournament_opening, thread_sensitive=False,
+            )(self.room_id)
             return
         if self._is_tournament_room and await database_sync_to_async(needs_admin_adjudication)(room):
             return
@@ -2020,6 +2035,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                 and event['event_type'] == 'state_update'
                 and (event['payload'] or {}).get('phase') == 'opening_result'):
             await self._arm_opening_result_watch()
+        elif (self._is_tournament_room and event.get('action') == 'opening_result_done'
+              and event['event_type'] == 'state_update'):
+            await self._reschedule_timeout_from_state()
 
     async def player_joined(self, event):
         await self.send(json.dumps({

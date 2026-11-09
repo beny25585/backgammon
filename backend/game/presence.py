@@ -94,6 +94,12 @@ def confirm_room_entry(room_id, channel_name, challenge, now=None):
         presence['needsAdminAdjudication'] = False
         room.status = 'playing'
         fields.append('status')
+        link = getattr(room, 'tournament_link', None)
+        if link is not None and link.tournament_id > 0:
+            from .tournament_opening import schedule_tournament_opening
+
+            presence['serverOpeningPending'] = True
+            schedule_tournament_opening(room.pk)
     state['presence'] = presence
     room.state = state
     room.save(update_fields=fields)
@@ -288,6 +294,34 @@ def _sync_tournament_pause(room, link, presence, colors, now, game_state=None):
             or not presence.get('everBothConnected')):
         return
     paused = bool(presence.get('needsAdminAdjudication'))
+    # Recover already-confirmed rooms that were using the older opening flow.
+    if (not presence.get('serverOpeningPending') and not presence.get('openingBothAbsent')
+            and (paused or not colors)
+            and presence.get('entryChallenge')):
+        if game_state is None:
+            game_state = GameState.objects.select_for_update().filter(room=room).first()
+        if _before_tournament_opening(room, link, game_state):
+            from .tournament_opening import schedule_tournament_opening
+
+            presence['serverOpeningPending'] = True
+            if paused:
+                presence['openingBothAbsent'] = True
+            schedule_tournament_opening(room.pk)
+
+    if presence.get('serverOpeningPending') and not colors:
+        presence['openingBothAbsent'] = True
+    if presence.get('openingBothAbsent'):
+        # A player returning from the opening's double absence must not
+        # inherit a single-player disconnect deadline from before it.
+        presence['absentSince'] = {}
+        if {'white', 'black'} <= colors:
+            presence.pop('openingBothAbsent')
+            _schedule(room.pk)
+    if presence.get('serverOpeningPending') or presence.get('openingBothAbsent'):
+        if paused:
+            _set_tournament_pause(room, presence, False, now, game_state)
+        return
+
     if not paused and not colors:
         _set_tournament_pause(room, presence, True, now, game_state)
     elif paused and {'white', 'black'} <= colors:
@@ -297,6 +331,7 @@ def _sync_tournament_pause(room, link, presence, colors, now, game_state=None):
 def _settle_late_tournament_entry(room, link, presence, color, colors, now):
     since = presence['absentSince'].get(color)
     if (link is None or link.tournament_id <= 0 or presence.get('needsAdminAdjudication')
+            or presence.get('openingBothAbsent')
             or since is None or now - since < ABSENCE_SECONDS or len(colors) != 1 or color in colors):
         return False
     if room.status == 'playing' and not presence.get('everBothConnected'):
@@ -385,7 +420,7 @@ def mark_heartbeat(room_id, channel_name, now=None):
             if not colors:
                 _sync_tournament_pause(room, link, presence, colors, now)
     presence['connections'][channel_name] = {**entry, 'lastSeen': now}
-    if presence.get('needsAdminAdjudication'):
+    if presence.get('needsAdminAdjudication') or presence.get('openingBothAbsent'):
         link = link or getattr(room, 'tournament_link', None)
         _sync_tournament_pause(room, link, presence, _connected_colors(presence, now), now)
     if (_waiting_for_entry_confirmation(room)
@@ -517,6 +552,14 @@ def check_room_presence(room_id, now=None):
         colors = _colors(presence)
         missing = {'white', 'black'} - colors
         _sync_tournament_pause(room, link, presence, colors, now, game_state)
+        if presence.get('openingBothAbsent'):
+            state['presence'] = presence
+            room.state = state
+            room.save(update_fields=['state', 'updated_at'])
+            if previous_needs_admin:
+                _publish_admin_transition(room)
+            return {'status': 'waiting', 'missing': sorted(missing)}
+
         # One returning seat cannot turn a double absence into a forfeit.
         if presence.get('needsAdminAdjudication') and requires_organizer:
             state['presence'] = presence
