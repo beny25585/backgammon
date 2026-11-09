@@ -189,16 +189,21 @@ def check_first_turn_clock(room_id, game_id, started_at, loser):
                             [str(room_id), game_id, started_at, loser], _at_ms(deadline))
             return {'status': 'waiting'}
 
-        winner = 'black' if loser == 'white' else 'white'
-        win_type = forfeit_win_type(state, loser, reason='time')
-        final = {**state, 'phase': 'game_over', 'winner': winner, 'winType': win_type,
-                 'clock': {**state['clock'], loser: 0}, 'turnStartedAt': None,
-                 'message': f'{loser} ran out of time'}
-        match = finalize_room(room, final, winner, win_type, 'time', validate_timeout=True)
-        if match is None:
-            return {'status': 'closed'}
-        room.refresh_from_db()
-        payload = game_ended_payload(final, winner, win_type, 'time', room)
-        payload.update(matchId=str(match.pk), matchOver=True, nextGame=False)
-        _broadcast(room.pk, {'type': 'game_ended', 'payload': payload})
-        return {'status': 'forfeited', 'loser': loser, 'winner': winner}
+        return settle_tournament_clock(room, state, loser)
+
+
+def settle_tournament_clock(room, state, loser):
+    """Record the expired clock and publish its result under the caller's room lock."""
+    winner = 'black' if loser == 'white' else 'white'
+    win_type = forfeit_win_type(state, loser, reason='time')
+    final = {**state, 'phase': 'game_over', 'winner': winner, 'winType': win_type,
+             'clock': {**state['clock'], loser: 0}, 'turnStartedAt': None,
+             'message': f'{loser} ran out of time'}
+    match = finalize_room(room, final, winner, win_type, 'time', validate_timeout=True)
+    if match is None:
+        return {'status': 'closed'}
+    room.refresh_from_db()
+    payload = game_ended_payload(final, winner, win_type, 'time', room)
+    payload.update(matchId=str(match.pk), matchOver=True, nextGame=False)
+    _broadcast(room.pk, {'type': 'game_ended', 'payload': payload})
+    return {'status': 'forfeited', 'loser': loser, 'winner': winner}

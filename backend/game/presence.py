@@ -9,7 +9,7 @@ from channels.layers import get_channel_layer
 from django.db import transaction
 from django.utils import timezone
 
-from .clock import active_player, apply_transition, parse_time_control
+from .clock import active_player, apply_transition, deadline_for, parse_time_control
 from .game_service import finalize_room, game_ended_payload
 from .formats import forfeit_win_type
 from .models import GameRoom, GameState, Task
@@ -310,6 +310,22 @@ def _sync_tournament_pause(room, link, presence, colors, now, game_state=None):
 
     if presence.get('serverOpeningPending') and not colors:
         presence['openingBothAbsent'] = True
+    if not presence.get('serverOpeningPending') and parse_time_control(room.time_control, room.target_points):
+        # A timed match stays playable. Start a fresh disconnect grace period
+        # for the absent player when the first player returns.
+        was_empty = presence.pop('openingBothAbsent', False)
+        was_empty = presence.pop('timedBothAbsent', False) or was_empty
+        if paused:
+            _set_tournament_pause(room, presence, False, now, game_state)
+        if not colors:
+            presence['timedBothAbsent'] = True
+            presence['absentSince'] = {}
+        elif was_empty or paused:
+            presence['absentSince'] = {color: now for color in {'white', 'black'} - colors}
+            if len(colors) == 1:
+                _schedule(room.pk, ABSENCE_SECONDS)
+        return
+
     if presence.get('openingBothAbsent'):
         # A player returning from the opening's double absence must not
         # inherit a single-player disconnect deadline from before it.
@@ -420,7 +436,8 @@ def mark_heartbeat(room_id, channel_name, now=None):
             if not colors:
                 _sync_tournament_pause(room, link, presence, colors, now)
     presence['connections'][channel_name] = {**entry, 'lastSeen': now}
-    if presence.get('needsAdminAdjudication') or presence.get('openingBothAbsent'):
+    if (presence.get('needsAdminAdjudication') or presence.get('openingBothAbsent')
+            or presence.get('timedBothAbsent')):
         link = link or getattr(room, 'tournament_link', None)
         _sync_tournament_pause(room, link, presence, _connected_colors(presence, now), now)
     if (_waiting_for_entry_confirmation(room)
@@ -463,7 +480,10 @@ def mark_disconnected(room_id, channel_name, now=None):
             else:
                 presence['needsAdminAdjudication'] = False
                 presence['absentSince'] = {}
-        _schedule(room.id, WATCH_SECONDS if len(missing) == 2 else ABSENCE_SECONDS)
+        if presence.get('timedBothAbsent'):
+            _schedule(room.id, 0)
+        else:
+            _schedule(room.id, WATCH_SECONDS if len(missing) == 2 else ABSENCE_SECONDS)
     state['presence'] = presence
     room.state = state
     room.save(update_fields=['state', 'updated_at'])
@@ -512,7 +532,7 @@ def _forfeit_before_opening(room, link, game_state, winner):
 
 
 def check_room_presence(room_id, now=None):
-    """Forfeit one absent player after 40s; never choose a winner if both are absent."""
+    """Check a single absence or the game clock when both players are away."""
     now = time.time() if now is None else now
     loser = None
     payload = None
@@ -584,7 +604,7 @@ def check_room_presence(room_id, now=None):
             else:
                 _schedule(room.id, ABSENCE_SECONDS - (now - float(absent_since)))
         elif len(missing) == 2:
-            if requires_organizer:
+            if requires_organizer and not presence.get('timedBothAbsent'):
                 presence['needsAdminAdjudication'] = True
             else:
                 presence['needsAdminAdjudication'] = False
@@ -601,7 +621,20 @@ def check_room_presence(room_id, now=None):
         if not loser:
             if presence.get('needsAdminAdjudication'):
                 return {'status': 'admin_required', 'missing': sorted(missing)}
-            if len(missing) != 1 and (colors or not waiting_for_tournament):
+            if presence.get('timedBothAbsent'):
+                from .tournament_opening import settle_tournament_clock
+
+                stored = game_state.state_data if game_state else {}
+                deadline = deadline_for(stored, room.time_control, room.target_points)
+                active = active_player(stored)
+                now_ms = int(now * 1000)
+                exhausted = (active and stored.get('turnStartedAt') is not None
+                             and (stored.get('clock') or {}).get(active) == 0)
+                if exhausted or (deadline is not None and deadline <= now_ms):
+                    return settle_tournament_clock(room, stored, active)
+                delay = WATCH_SECONDS if deadline is None else min(WATCH_SECONDS, (deadline - now_ms) / 1000)
+                _schedule(room.id, delay)
+            elif len(missing) != 1 and (colors or not waiting_for_tournament):
                 _schedule(room.id)
             return {'status': 'waiting', 'missing': sorted(missing)}
 

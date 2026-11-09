@@ -313,8 +313,9 @@ export default function GameScreen({
   const regularRollKey = needsToRoll
     ? `${roomId ?? "local"}:${playerColor}:${state?.version ?? 0}:${turnStartedAt ?? 0}`
     : null;
+  const timedTournament = (propGameType ?? contextGameType) === "tournament" && Boolean(timeControl);
   const rollPaused = isLoading || showCloseExisting ||
-    !opponentConnected || Boolean(gameResult) || adminReviewPending === true;
+    (!opponentConnected && !timedTournament) || Boolean(gameResult) || adminReviewPending === true;
   const blockedOnBar = Boolean(state && isBarEntryFullyBlocked(state, playerColor));
 
   const { handleRoll, handleOfferDouble, countdownSeconds } = useTurnRollActions({
