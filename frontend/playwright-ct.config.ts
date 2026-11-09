@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 // Provide a fallback declaration for `process` to avoid requiring @types/node in this config file.
 declare const process: any;
 
+// Playwright forces color in its workers, so remove the conflicting inherited flag.
+delete process.env.NO_COLOR;
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const srcRoot = path.resolve(__dirname, "./src");
 
