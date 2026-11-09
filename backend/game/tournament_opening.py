@@ -88,7 +88,7 @@ def _persist_roll(room, stored, pair, now):
 
 
 def _activate_first_turn(room, stored, presence, now):
-    from .presence import connected_colors
+    from .presence import connected_colors, tournament_unentered_color
 
     ready_at = stored.get('openingResultReadyAtMs')
     if ready_at is not None and now < _at_ms(ready_at):
@@ -101,6 +101,9 @@ def _activate_first_turn(room, stored, presence, now):
         raise ValueError(result['message'])
     state = engine.state
     state.pop('openingResultReadyAtMs', None)
+    unentered_color = tournament_unentered_color(room)
+    if unentered_color:
+        state['waitingForEntryColor'] = unentered_color
 
     now_ms = int(now.timestamp() * 1000)
     clock, started_at, active, timed_out, deadline_ms = compute_clock(
@@ -112,7 +115,7 @@ def _activate_first_turn(room, stored, presence, now):
 
     presence.pop('serverOpeningPending', None)
     colors = connected_colors(room, now.timestamp())
-    if not colors:
+    if not colors and not unentered_color:
         presence['openingBothAbsent'] = True
         presence['absentSince'] = {}
     elif {'white', 'black'} <= colors:
@@ -125,12 +128,58 @@ def _activate_first_turn(room, stored, presence, now):
     if inactivity is not None:
         ensure_inactivity_check(room.pk)
     if timed_out or deadline_ms is not None:
-        schedule_unique(f'first-turn-clock:{room.pk}', CLOCK_TASK,
-                        [str(room.pk), event_game_id(state), started_at, active],
-                        now if timed_out else _at_ms(deadline_ms))
+        _schedule_first_turn_clock(room, state, active, started_at,
+                                   now if timed_out else _at_ms(deadline_ms))
     _broadcast(room.pk, {'type': 'game_message', 'event_type': 'state_update',
                          'payload': state, 'playerColor': None, 'action': 'opening_result_done'})
     return {'status': 'moving'}
+
+
+def _schedule_first_turn_clock(room, state, active, started_at, run_at, *, resumed=False):
+    args = [str(room.pk), event_game_id(state), started_at, active]
+    if resumed:
+        args.append(True)
+    schedule_unique(_clock_key(room.pk, resumed), CLOCK_TASK, args, run_at)
+
+
+def _clock_key(room_id, resumed):
+    return f'entry-resumed-clock:{room_id}' if resumed else f'first-turn-clock:{room_id}'
+
+
+def resume_after_solo_entry(room, now):
+    """Release the never-entered seat's turn under the admission lock."""
+    game_state = GameState.objects.select_for_update().get(room=room)
+    stored = game_state.state_data
+    if 'waitingForEntryColor' not in stored:
+        return
+
+    state = dict(stored)
+    state.pop('waitingForEntryColor')
+    now_ms = int(now * 1000)
+    deadline_ms = None
+    if stored.get('turnStartedAt') is not None or active_player(stored) != active_player(state):
+        clock, started_at, active, timed_out, deadline_ms = compute_clock(
+            stored, state, now_ms, room.time_control, room.target_points,
+        )
+        if timed_out:
+            settle_tournament_clock(room, stored, active)
+            return
+        if clock is not None:
+            state.update(clock=clock, turnStartedAt=started_at)
+    refresh_after_action(state, now_ms)
+
+    room.last_sequence += 1
+    room.save(update_fields=['last_sequence'])
+    state['version'] = room.last_sequence
+    game_state.state_data = state
+    game_state.save(update_fields=['state_data', 'updated_at'])
+    if state.get('inactivity'):
+        ensure_inactivity_check(room.pk)
+    if deadline_ms is not None:
+        _schedule_first_turn_clock(room, state, active_player(state), state['turnStartedAt'],
+                                   _at_ms(deadline_ms), resumed=True)
+    _broadcast(room.pk, {'type': 'game_message', 'event_type': 'state_update',
+                         'payload': state, 'playerColor': None, 'action': 'tournament_entry'})
 
 
 def run_tournament_opening(room_id):
@@ -167,15 +216,17 @@ def run_tournament_opening(room_id):
     return {'status': 'not_pending'}
 
 
-def check_first_turn_clock(room_id, game_id, started_at, loser):
+def check_first_turn_clock(room_id, game_id, started_at, loser, resumed=False):
     """Expire the initial turn even when there is no socket to watch its clock."""
-    from .presence import needs_admin_adjudication
+    from .presence import needs_admin_adjudication, tournament_waiting_for_player
 
     with transaction.atomic():
         room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
         check_ownership(lock=True)
         if room is None or room.status != 'playing' or needs_admin_adjudication(room):
             return {'status': 'closed'}
+        if tournament_waiting_for_player(room):
+            return {'status': 'waiting_for_entry'}
         state = GameState.objects.get(room=room).state_data
         if (event_game_id(state) != game_id or state.get('turnStartedAt') != started_at
                 or active_player(state) != loser):
@@ -185,8 +236,7 @@ def check_first_turn_clock(room_id, game_id, started_at, loser):
         if deadline is None and (state.get('clock') or {}).get(loser) != 0:
             return {'status': 'superseded'}
         if deadline is not None and timezone.now() < _at_ms(deadline):
-            schedule_unique(f'first-turn-clock:{room_id}', CLOCK_TASK,
-                            [str(room_id), game_id, started_at, loser], _at_ms(deadline))
+            _schedule_first_turn_clock(room, state, loser, started_at, _at_ms(deadline), resumed=resumed)
             return {'status': 'waiting'}
 
         return settle_tournament_clock(room, state, loser)

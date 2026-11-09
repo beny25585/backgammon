@@ -43,7 +43,7 @@ def refresh_after_action(new_state, now_ms):
     games) clears the block. Returns the block, or None when nobody is
     responsible.
     """
-    responsible = active_player(new_state)
+    responsible = None if new_state.get('waitingForEntryColor') else active_player(new_state)
     if responsible is None:
         new_state.pop('inactivity', None)
         return None
@@ -92,7 +92,7 @@ def check_room_inactivity(room_id, now=None):
     from channels.layers import get_channel_layer
 
     from .models import GameRoom, GameState
-    from .presence import needs_admin_adjudication
+    from .presence import needs_admin_adjudication, tournament_waiting_for_player
 
     now_ms = int(now * 1000) if now is not None else int(time_module.time() * 1000)
     with transaction.atomic():
@@ -115,6 +115,8 @@ def check_room_inactivity(room_id, now=None):
                 room.status,
             )
             return {'status': 'admin_review'}
+        if tournament_waiting_for_player(room):
+            return {'status': 'waiting_for_entry'}
         game_state = GameState.objects.select_for_update().filter(room=room).first()
         if game_state is None:
             logger.info(

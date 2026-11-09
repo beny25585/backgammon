@@ -376,6 +376,16 @@ def enqueue_forfeit(link, room, winner_color):
     )
 
 
+def enqueue_tournament_no_show(link, room, winner_color):
+    """Report attendance to the club without creating a scored match."""
+    return enqueue_result(
+        link, None, room, STATUS_COMPLETED,
+        winner_color=winner_color,
+        end_reason='opponent_no_show' if winner_color else 'double_no_show',
+        score={'p1': 0, 'p2': 0},
+    )
+
+
 def _iso_utc(value):
     """Format a datetime as the `2026-08-27T12:02:20Z` the wire format asks for."""
     return value.astimezone(dt_timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')

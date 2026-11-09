@@ -251,6 +251,8 @@ export const messages = {
       opponentDisconnected:
         "Your opponent disconnected. If they do not reconnect within {seconds}s, you win.",
       opponentNotConnected: "Your opponent has not entered the game yet",
+      waitingForTournamentEntry: "Waiting for your opponent to enter · {time}",
+      tournamentEntryClockExpired: "Your time ran out. Waiting for your opponent to enter.",
       youFirst: "You go first!",
       openingRollTie: "Tie. Rolling again.",
       rematchWaiting: "Waiting for opponent to accept…",
@@ -380,6 +382,7 @@ export const messages = {
       resultReasonGiveUp: "Opponent resigned",
       resultReasonLeave: "Opponent left the match",
       resultReasonForfeit: "Technical win",
+      resultReasonNoShow: "Match decided by no-show",
       resultReasonTime: "Win on time",
       resultReasonInactivity: "Opponent lost due to inactivity",
       resultReasonInactivitySelf: "You lost due to inactivity",
@@ -819,6 +822,8 @@ export const messages = {
       opponentDisconnected:
         "היריב התנתק. אם לא יחזור בתוך {seconds} שניות, המשחק יסתיים בניצחון שלך.",
       opponentNotConnected: "היריב עדיין לא נכנס למשחק",
+      waitingForTournamentEntry: "ממתינים לכניסת היריב · {time}",
+      tournamentEntryClockExpired: "הזמן שלך נגמר. ממתינים לכניסת היריב.",
       youFirst: "אתה מתחיל!",
       openingRollTie: "שוויון. מגלגלים שוב.",
       rematchWaiting: "ממתין לאישור היריב…",
@@ -948,6 +953,7 @@ export const messages = {
       resultReasonGiveUp: "היריב נכנע",
       resultReasonLeave: "היריב יצא מהמשחק",
       resultReasonForfeit: "ניצחון טכני",
+      resultReasonNoShow: "המשחק הוכרע באי־התייצבות",
       resultReasonTime: "ניצחון בזמן",
       resultReasonInactivity: "היריב הפסיד עקב חוסר פעילות",
       resultReasonInactivitySelf: "הפסדת עקב חוסר פעילות",

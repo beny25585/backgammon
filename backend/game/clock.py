@@ -57,9 +57,10 @@ def active_player(state):
     phase = state.get('phase')
     if phase in ('waiting', 'game_over', 'opening_roll', 'opening_result'):
         return None
+    responsible = state.get('turn')
     if phase == 'doubling_offered' and state.get('doubleOfferedBy'):
-        return 'black' if state['doubleOfferedBy'] == 'white' else 'white'
-    return state.get('turn')
+        responsible = 'black' if state['doubleOfferedBy'] == 'white' else 'white'
+    return None if responsible == state.get('waitingForEntryColor') else responsible
 
 
 def apply_transition(clock, prev_active, new_active, elapsed_ms, delay_ms):

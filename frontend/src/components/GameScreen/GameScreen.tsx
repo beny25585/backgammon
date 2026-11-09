@@ -11,6 +11,7 @@ import SamsungDarkModeHelp from "../SamsungDarkModeHelp/SamsungDarkModeHelp";
 import { useI18n } from "../../i18n/I18nProvider";
 import type { Color, GameState } from "../../lib/backgammon/engine";
 import { canOfferDouble, isBarEntryFullyBlocked } from "../../lib/backgammon/engine";
+import { formatClock } from "../../lib/clock";
 import {
   DEFAULT_BOARD_THEME,
   isBoardTheme,
@@ -104,6 +105,7 @@ export default function GameScreen({
     entryPending,
     adminReviewPending,
     opponentConnected,
+    opponentEntryDeadline,
     undoMove,
     autoConfirmPending,
     hasPendingMoves,
@@ -147,6 +149,9 @@ export default function GameScreen({
   }, [playActionSound, endTurn]);
   const displayedError = (() => {
     switch (error) {
+      case "tournament_entry_clock_expired":
+        return t("game.tournamentEntryClockExpired");
+
       case "room_cancelled":
         return t("game.roomCancelledMessage");
 
@@ -196,28 +201,32 @@ export default function GameScreen({
   const [checkerStyle, setCheckerStyle] = useStoredPreference(
     CHECKER_STYLE_STORAGE_KEY, DEFAULT_CHECKER_STYLE, parseCheckerStyle,
   );
-  const [disconnectCountdown, setDisconnectCountdown] = useState<number | null>(
-    null,
-  );
+  const [connectionCountdown, setConnectionCountdown] = useState<{
+    firstEntryDeadline: number | null;
+    seconds: number;
+  } | null>(null);
   const automaticOpeningRollRef = useRef<string | null>(null);
   const rematchNavigationRef = useRef<string | null>(null);
   const gameHasStarted =
     state?.phase === "rolling" ||
     state?.phase === "moving" ||
     state?.phase === "doubling_offered";
+  const firstEntryDeadline = !opponentConnected && opponentEntryDeadline != null
+    ? opponentEntryDeadline * 1000 : null;
+  const secondsToConnect = connectionCountdown?.firstEntryDeadline === firstEntryDeadline
+    ? connectionCountdown.seconds : null;
 
-  // The server decides the forfeit. This countdown only makes its 40-second
-  // reconnect grace period visible to the player who remains in the room.
+  // Display the server's first-entry deadline or the existing reconnect estimate.
+  // The server decides the result in either case.
   useEffect(() => {
     if (
       opponentConnected ||
-      reconnected ||
       adminReviewPending ||
       gameResult?.matchOver ||
-      !gameHasStarted
+      (firstEntryDeadline === null && (reconnected || !gameHasStarted))
     ) {
       const resetTimer = window.setTimeout(() => {
-        setDisconnectCountdown(null);
+        setConnectionCountdown(null);
       }, 0);
 
       return () => {
@@ -225,11 +234,13 @@ export default function GameScreen({
       };
     }
 
-    const deadline = Date.now() + 40_000;
+    const deadline = firstEntryDeadline ?? Date.now() + 40_000;
 
     const updateCountdown = () => {
-      setDisconnectCountdown(
-        Math.max(0, Math.ceil((deadline - Date.now()) / 1000)),
+      const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setConnectionCountdown((previous) =>
+        previous?.firstEntryDeadline === firstEntryDeadline && previous.seconds === seconds
+          ? previous : { firstEntryDeadline, seconds },
       );
     };
 
@@ -240,7 +251,7 @@ export default function GameScreen({
       window.clearTimeout(initialTimer);
       window.clearInterval(interval);
     };
-  }, [adminReviewPending, gameHasStarted, gameResult?.matchOver, opponentConnected, reconnected]);
+  }, [adminReviewPending, firstEntryDeadline, gameHasStarted, gameResult?.matchOver, opponentConnected, reconnected]);
 
   const interruptedOpeningMove = hasInterruptedOpeningMove(state, playerColor);
   const interruptedOpeningMoveKey =
@@ -315,7 +326,8 @@ export default function GameScreen({
     : null;
   const timedTournament = (propGameType ?? contextGameType) === "tournament" && Boolean(timeControl);
   const rollPaused = isLoading || showCloseExisting ||
-    (!opponentConnected && !timedTournament) || Boolean(gameResult) || adminReviewPending === true;
+    (!opponentConnected && !timedTournament && firstEntryDeadline === null) ||
+    Boolean(gameResult) || adminReviewPending === true;
   const blockedOnBar = Boolean(state && isBarEntryFullyBlocked(state, playerColor));
 
   const { handleRoll, handleOfferDouble, countdownSeconds } = useTurnRollActions({
@@ -513,18 +525,17 @@ export default function GameScreen({
         adminReviewPending ? (
           <ConnectionStatus connected={false} text={t("game.adminReviewPending")} />
         ) : <>
-          {reconnected && <ConnectionStatus connected text={t("game.reconnected")} />}
-          {!opponentConnected &&
-            !reconnected &&
-            !gameHasStarted && (
-              <ConnectionStatus connected={false} text={t("game.opponentNotConnected")} />
-            )}
-          {!opponentConnected &&
-            !reconnected &&
-            gameHasStarted &&
-            disconnectCountdown !== null && (
-              <ConnectionStatus connected={false} text={t("game.opponentDisconnected", { seconds: disconnectCountdown })} />
-            )}
+          {firstEntryDeadline !== null ? (
+            <ConnectionStatus connected={false} text={secondsToConnect === null
+              ? t("game.opponentNotConnected")
+              : t("game.waitingForTournamentEntry", { time: formatClock(secondsToConnect * 1000) })} />
+          ) : reconnected ? (
+            <ConnectionStatus connected text={t("game.reconnected")} />
+          ) : !opponentConnected && !gameHasStarted ? (
+            <ConnectionStatus connected={false} text={t("game.opponentNotConnected")} />
+          ) : !opponentConnected && secondsToConnect !== null ? (
+            <ConnectionStatus connected={false} text={t("game.opponentDisconnected", { seconds: secondsToConnect })} />
+          ) : null}
           <InactivityBanner state={state} playerColor={playerColor} />
         </>
       )}

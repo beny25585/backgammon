@@ -93,6 +93,8 @@ export interface GameContextType {
   /** The server has paused gameplay pending an organizer decision. */
   adminReviewPending?: boolean;
   opponentConnected: boolean;
+  /** Epoch seconds for the opponent's first entry into a solo-entry tournament room. */
+  opponentEntryDeadline?: number | null;
   supportsPlayerReactions?: boolean;
   playerReactionsEnabled?: boolean;
   playerReactions?: Partial<Record<Color, PlayerReaction>>;

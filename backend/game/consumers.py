@@ -27,7 +27,8 @@ from .presence import (HEARTBEAT_SECONDS,  check_room_presence, mark_connected,
                        mark_disconnected, mark_heartbeat, needs_admin_adjudication,
                        both_players_connected, connected_colors,
                        STALE_SECONDS, confirm_room_entry, cancel_room_entry,
-                       requires_entry_confirmation)
+                       requires_entry_confirmation, tournament_entry_status,
+                       tournament_unentered_color, tournament_waiting_for_player)
 from .link.rematch import RematchServiceError, send_direct_play_rematch_action
 from .engine import BackgammonEngine
 from .dice import DiceServiceError, fetch_opening_dice, fetch_turn_dice
@@ -138,7 +139,7 @@ def get_connected_snapshot(room_id, channel_name, player_color):
                     state_data = normalized
                     game_state.state_data = state_data
                     game_state.save(update_fields=['state_data', 'updated_at'])
-            if timed_out:
+            if timed_out and not tournament_waiting_for_player(room):
                 timed_out_color = active
         return room, state_data, admin_review_pending, timed_out_color
 
@@ -408,6 +409,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             'adminReviewPending': admin_review_pending,
             'roomStatus': room.status,
             'entryConfirmationRequired': self.entry_confirmation_required,
+            **tournament_entry_status(room),
             'supportsPlayerReactions': not self.is_ai,
             'players': players,
             'timeControl': room.time_control,
@@ -419,6 +421,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         }))
         self._presence_heartbeat_task = asyncio.create_task(
             self._presence_heartbeat())
+
+        if self._is_tournament_room and ((room.state or {}).get('presence') or {}).get('serverOpeningPending'):
+            run_in_background(database_sync_to_async(
+                run_queued_tournament_opening, thread_sensitive=False,
+            )(self.room_id))
 
         if admin_review_pending:
             await self.send(json.dumps({
@@ -921,6 +928,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 intent_total_ms,
             )
 
+        if outcome['outcome'] == 'awaiting_tournament_entry':
+            return await self._send_error('tournament_entry_clock_expired', action=action)
         if bot_lease is not None and outcome['outcome'] == 'state_update':
             return outcome['state']
 
@@ -1254,6 +1263,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         engine.state['doublingEnabled'] = doubling_enabled
         from .formats import carry_contract
         carry_contract(state, engine.state, room)
+        unentered_color = tournament_unentered_color(room)
+        if unentered_color:
+            engine.state['waitingForEntryColor'] = unentered_color
         # Match-level clock: remaining time survives, turnStartedAt does not (no charge for transition)
         if 'clock' in state and isinstance(state['clock'], dict):
             engine.state['clock'] = dict(state['clock'])
@@ -1879,7 +1891,7 @@ class GameConsumer(AsyncWebsocketConsumer):
     async def _forfeit_on_time(self, winner, loser):
         """Mark the game over because `loser` ran out of time and broadcast it."""
         room = await get_room(self.room_id)
-        if not room or room.status != 'playing':
+        if not room or room.status != 'playing' or tournament_waiting_for_player(room):
             return
         if await database_sync_to_async(needs_admin_adjudication)(room):
             return
@@ -1965,6 +1977,7 @@ class GameConsumer(AsyncWebsocketConsumer):
             count = len(colors)
             if room:
                 status['presenceVersion'] = int(room.updated_at.timestamp() * 1_000_000)
+                status.update(tournament_entry_status(room))
         else:
             colors = list(_connected_user_colors.get(self.room_group_name, {}).values())
             count = len(_connected_users.get(self.room_group_name, {}))
@@ -2065,6 +2078,9 @@ class GameConsumer(AsyncWebsocketConsumer):
         }
         if 'presenceVersion' in event:
             payload['presenceVersion'] = event['presenceVersion']
+        if 'tournamentEntryDeadline' in event:
+            payload['tournamentEntryDeadline'] = event['tournamentEntryDeadline']
+            payload['joinedColors'] = event['joinedColors']
         await self.send(json.dumps({
             'type': 'room_status',
             'payload': payload,

@@ -202,6 +202,12 @@ async def apply_server_game_action(
 
     timings["clock_ms"] = _elapsed_ms(clock_started)
 
+    if timed_out and new_active:
+        from .presence import tournament_waiting_for_player
+
+        if tournament_waiting_for_player(room):
+            return {'outcome': 'awaiting_tournament_entry'}
+
     if clock is not None:
         new_state["clock"] = clock
         new_state["turnStartedAt"] = turn_started_at

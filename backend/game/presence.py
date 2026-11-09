@@ -2,7 +2,7 @@
 
 import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
@@ -22,6 +22,7 @@ WATCH_SECONDS = 10
 ENTRY_CONFIRM_SECONDS = 5
 FRIEND_ENTRY_CONFIRMATION = 'friendEntryConfirmation'
 WATCH_TASK = 'game.presence.check_room_presence'
+TOURNAMENT_ENTRY_TASK = 'game.presence.expire_tournament_entry'
 ACTIVE_GAME_PHASES = {'rolling', 'moving', 'doubling_offered'}
 
 
@@ -34,8 +35,10 @@ def requires_entry_confirmation(room, link):
 
 
 def _waiting_for_entry_confirmation(room):
-    return room.status == 'waiting' and requires_entry_confirmation(
-        room, getattr(room, 'tournament_link', None),
+    return (
+        room.status == 'waiting'
+        and tournament_entry_deadline(room) is None
+        and requires_entry_confirmation(room, getattr(room, 'tournament_link', None))
     )
 
 
@@ -135,6 +138,92 @@ def _presence(room):
     presence['connections'] = dict(presence.get('connections') or {})
     presence['absentSince'] = dict(presence.get('absentSince') or {})
     return state, presence
+
+
+def tournament_entry_deadline(room):
+    deadline = (room.state or {}).get('tournamentEntryDeadline')
+    return deadline if type(deadline) is int and deadline > 0 else None
+
+
+def tournament_entry_status(room):
+    deadline = tournament_entry_deadline(room)
+    if deadline is None:
+        return {}
+    presence = (room.state or {}).get('presence') or {}
+    return {'tournamentEntryDeadline': deadline, 'joinedColors': presence.get('joinedColors', [])}
+
+
+def tournament_waiting_for_player(room):
+    status = tournament_entry_status(room)
+    return bool(status) and len(status['joinedColors']) < 2
+
+
+def tournament_unentered_color(room):
+    status = tournament_entry_status(room)
+    joined = status.get('joinedColors', [])
+    if len(joined) == 1:
+        return 'black' if joined[0] == 'white' else 'white'
+    return None
+
+
+def schedule_tournament_entry_deadline(room):
+    from .scheduling import schedule_unique
+
+    deadline = tournament_entry_deadline(room)
+    if deadline is not None:
+        run_at = datetime.fromtimestamp(deadline, tz=datetime_timezone.utc)
+        schedule_unique(f'tournament-entry:{room.pk}', TOURNAMENT_ENTRY_TASK, [str(room.pk)], run_at)
+
+
+def _resolve_tournament_entry(room, link, presence, now):
+    deadline = tournament_entry_deadline(room)
+    joined = presence.get('joinedColors', [])
+    if (deadline is None or now < deadline or len(joined) == 2 or link is None
+            or link.tournament_id <= 0 or room.status not in ('waiting', 'playing')):
+        return False
+
+    from .link.outbox import enqueue_tournament_no_show
+
+    winner = joined[0] if joined else None
+    room.status = 'cancelled'
+    room.save(update_fields=['status', 'updated_at'])
+    enqueue_tournament_no_show(link, room, winner)
+    if winner is None:
+        _entry_event(room.pk, {'type': 'room_expired'})
+        return True
+
+    game_state = GameState.objects.select_for_update().get(room=room)
+    state = dict(game_state.state_data or {})
+    state.update(phase='game_over', winner=winner, winType='single',
+                 gameEndReason='opponent_no_show', gameEndPoints=0, turnStartedAt=None)
+    state.pop('waitingForEntryColor', None)
+    game_state.state_data = state
+    game_state.save(update_fields=['state_data', 'updated_at'])
+    payload = game_ended_payload(state, winner, 'single', 'opponent_no_show', room)
+    payload.update(matchOver=True, nextGame=False)
+    _entry_event(room.pk, {'type': 'game_ended', 'payload': payload})
+    return True
+
+
+@transaction.atomic
+def expire_tournament_entry(room_id):
+    from .scheduling import check_ownership
+
+    room = GameRoom.objects.select_for_update().filter(pk=room_id).first()
+    check_ownership(lock=True)
+    if room is None or room.status not in ('waiting', 'playing'):
+        return {'status': 'closed'}
+    deadline = tournament_entry_deadline(room)
+    _state, presence = _presence(room)
+    if deadline is None or len(presence.get('joinedColors', [])) == 2:
+        return {'status': 'closed'}
+    now = time.time()
+    if now < deadline:
+        schedule_tournament_entry_deadline(room)
+        return {'status': 'waiting'}
+    link = getattr(room, 'tournament_link', None)
+    resolved = _resolve_tournament_entry(room, link, presence, now)
+    return {'status': 'no_show' if resolved else 'closed'}
 
 
 def _colors(presence):
@@ -360,14 +449,23 @@ def _settle_late_tournament_entry(room, link, presence, color, colors, now):
 
 @transaction.atomic
 def mark_connected(room_id, channel_name, color, now=None):
-    now = time.time() if now is None else now
     room = GameRoom.objects.select_for_update().get(pk=room_id)
+    now = time.time() if now is None else now
     from .entry_lifecycle import expire_unstarted_room
     if expire_unstarted_room(room_id) in ('cancelled', 'missing'):
         # A technical result is replayable even though the unplayed room was cancelled.
-        return GameState.objects.filter(room=room, state_data__gameEndReason='forfeit').exists()
+        return GameState.objects.filter(
+            room=room, state_data__gameEndReason__in=('forfeit', 'opponent_no_show'),
+        ).exists()
     state, presence = _presence(room)
     link = getattr(room, 'tournament_link', None)
+    solo_entry = tournament_entry_deadline(room) is not None
+    joined = set(presence.get('joinedColors', []))
+    if solo_entry and room.status in ('waiting', 'playing'):
+        if _resolve_tournament_entry(room, link, presence, now):
+            return bool(joined)
+        if state.get('tournamentEntryBound') is not True or link is None or link.tournament_id <= 0:
+            return False
     waiting_for_confirmation = _waiting_for_entry_confirmation(room)
     waiting_tournament = _waiting_tournament_has_both_seats(room, link)
     requires_organizer = _requires_organizer_adjudication(room)
@@ -385,6 +483,21 @@ def mark_connected(room_id, channel_name, color, now=None):
         _sync_tournament_pause(room, link, presence, previous_colors, now)
     presence['connections'][channel_name] = {'color': color, 'lastSeen': now}
     colors = _connected_colors(presence, now)
+    solo_started = solo_entry and room.status == 'waiting'
+    second_admitted = solo_entry and room.status == 'playing' and len(joined) == 1 and color not in joined
+    if solo_started or second_admitted:
+        presence['joinedColors'] = sorted(joined | {color})
+        if solo_started:
+            from .tournament_opening import schedule_tournament_opening
+
+            room.status = 'playing'
+            presence['serverOpeningPending'] = True
+            schedule_tournament_opening(room.pk)
+            _schedule(room.pk)
+        else:
+            presence['everBothConnected'] = True
+            presence['absentSince'] = {missing: now for missing in joined - colors}
+            _schedule(room.pk)
     _sync_tournament_pause(room, link, presence, colors, now)
     if {'white', 'black'} <= colors and not waiting_for_confirmation:
         first_full_presence = not presence.get('everBothConnected', False)
@@ -399,7 +512,19 @@ def mark_connected(room_id, channel_name, color, now=None):
             _track_waiting_tournament_absence(room, presence, colors, now)
     state['presence'] = presence
     room.state = state
-    room.save(update_fields=['state', 'updated_at'])
+    fields = ['state', 'updated_at']
+    if solo_started:
+        fields.append('status')
+    room.save(update_fields=fields)
+    if solo_started:
+        from .link.live import enqueue_status_event
+
+        enqueue_status_event(room, 'started')
+        _entry_event(room.pk, {'type': 'room_started'})
+    if second_admitted:
+        from .tournament_opening import resume_after_solo_entry
+
+        resume_after_solo_entry(room, now)
     if previous_needs_admin != bool(presence.get('needsAdminAdjudication')):
         _publish_admin_transition(room)
     return True

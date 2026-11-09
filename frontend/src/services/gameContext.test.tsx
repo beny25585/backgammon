@@ -140,7 +140,13 @@ async function emitInitialState(
   page: Page,
   state: WireGameState,
   playerColor: "white" | "black" = "white",
-  entry?: { entryConfirmationRequired: boolean; roomStatus: "waiting" | "playing"; timeControl?: string },
+  entry?: {
+    entryConfirmationRequired: boolean;
+    roomStatus: "waiting" | "playing";
+    timeControl?: string;
+    tournamentEntryDeadline?: number;
+    joinedColors?: ("white" | "black")[];
+  },
 ) {
   await page.waitForFunction(() => {
     const w = window as unknown as Record<string, unknown>;
@@ -255,6 +261,41 @@ test("authoritative playing status permits reentry to an already started tournam
   expect((await sentMessages(page)).filter((message) => message.type === "state_update")).toEqual([
     { type: "state_update", payload: { action: "roll" } },
   ]);
+});
+
+test("a solo tournament shows the entry deadline until the opponent first joins", async ({ mount, page }) => {
+  await seedFakeSocket(page);
+  const component = await mount(
+    <MemoryRouter>
+      <GameProvider roomId="solo-tournament" playerColor="white" gameType="tournament">
+        <GameScreen />
+      </GameProvider>
+    </MemoryRouter>,
+  );
+  await pauseGameClock(page);
+  const deadline = await page.evaluate(() => Date.now() / 1000 + 540);
+  await emitInitialState(page, midGameState(), "white", {
+    entryConfirmationRequired: true, roomStatus: "playing", tournamentEntryDeadline: deadline,
+    joinedColors: ["white"],
+  });
+  await expect(component.getByText("Your opponent has not entered the game yet")).toBeVisible();
+  await page.clock.runFor(1);
+  const firstEntryNotice = component.getByText(/Waiting for your opponent to enter · 9:00/);
+  await expect(firstEntryNotice).toBeVisible();
+  await expect(component.getByText(/Your opponent disconnected/)).toHaveCount(0);
+
+  await page.evaluate((tournamentEntryDeadline) => {
+    const ws = (window as unknown as Record<string, FakeSocket>).__fakeWs;
+    for (const connectedColors of [["white", "black"], ["white"]]) {
+      ws.emit({ type: "room_status", payload: {
+        status: "playing", connected: connectedColors.length, connectedColors,
+        tournamentEntryDeadline, joinedColors: ["white", "black"],
+      } });
+    }
+  }, deadline);
+  await expect(firstEntryNotice).toHaveCount(0);
+  await page.clock.runFor(1);
+  await expect(component.getByText(/Your opponent disconnected.*within 40s/)).toBeVisible();
 });
 
 test("tournament opening rolls once after server approval without waiting for presence", async ({ mount, page }) => {

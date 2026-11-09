@@ -240,6 +240,9 @@ export default function GameResult({
       case "forfeit":
         return t("game.resultReasonForfeit");
 
+      case "opponent_no_show":
+        return t("game.resultReasonNoShow");
+
       case "time":
         return t("game.resultReasonTime");
 

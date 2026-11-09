@@ -13,6 +13,7 @@ from game.presence import (
     WATCH_TASK,
     check_room_presence,
     confirm_room_entry,
+    expire_tournament_entry,
     mark_connected,
     mark_disconnected,
     mark_heartbeat,
@@ -62,6 +63,14 @@ class ServerTournamentOpeningTests(TestCase):
         self.room.refresh_from_db()
         self.state.refresh_from_db()
         return ran
+
+    def enable_solo_entry(self):
+        self.room.state = {
+            **self.room.state,
+            'tournamentEntryDeadline': int(self.at(600).timestamp()),
+            'tournamentEntryBound': True,
+        }
+        self.room.save(update_fields=['state'])
 
     def disconnect_both(self):
         mark_disconnected(self.room.pk, 'white-1', now=self.at(1).timestamp())
@@ -193,3 +202,48 @@ class ServerTournamentOpeningTests(TestCase):
         self.link.refresh_from_db()
         self.assertEqual(self.link.result_body['end_reason'], 'time')
         self.assertEqual(self.link.result_body['winner_seat'], 'p2')
+
+    @patch('game.tournament_opening.fetch_opening_dice', new_callable=AsyncMock, return_value=(2, 6))
+    def test_solo_entry_starts_opening_but_waits_to_charge_never_entered_color(self, _fetch_dice):
+        self.enable_solo_entry()
+        mark_connected(self.room.pk, 'white-1', 'white', now=self.now.timestamp())
+        self.room.refresh_from_db()
+        self.assertEqual(self.room.status, 'playing')
+        self.assertEqual(self.room.state['presence']['joinedColors'], ['white'])
+        opening = Task.objects.get(name=OPENING_TASK)
+        self.assertTrue(self.run_at(opening, self.at(1)))
+        self.assertTrue(self.run_at(opening, opening.run_at))
+        self.assertEqual(self.state.state_data['turn'], 'black')
+        self.assertIsNone(self.state.state_data['turnStartedAt'])
+        self.assertFalse(Task.objects.filter(name=CLOCK_TASK).exists())
+
+        mark_connected(self.room.pk, 'black-1', 'black', now=self.at(90).timestamp())
+        self.room.refresh_from_db()
+        self.state.refresh_from_db()
+        self.assertEqual(self.room.state['presence']['joinedColors'], ['black', 'white'])
+        self.assertEqual(self.room.state['presence']['absentSince'], {'white': self.at(90).timestamp()})
+        self.assertEqual(self.state.state_data['turnStartedAt'], int(self.at(90).timestamp() * 1000))
+        self.assertEqual(self.state.state_data['clock']['black'], 150_000)
+        self.assertEqual(Task.objects.get(name=CLOCK_TASK).run_at, self.at(250))
+
+    @patch('game.tournament_opening.fetch_opening_dice', new_callable=AsyncMock, return_value=(6, 2))
+    def test_solo_clock_cannot_award_win_to_never_entered_color(self, _fetch_dice):
+        self.enable_solo_entry()
+        mark_connected(self.room.pk, 'white-1', 'white', now=self.now.timestamp())
+        opening = Task.objects.get(name=OPENING_TASK)
+        self.assertTrue(self.run_at(opening, self.at(1)))
+        self.assertTrue(self.run_at(opening, opening.run_at))
+        clock = Task.objects.get(name=CLOCK_TASK)
+        self.assertTrue(self.run_at(clock, clock.run_at))
+        self.assertEqual(self.room.status, 'playing')
+        self.assertFalse(Match.objects.filter(room=self.room).exists())
+
+        mark_connected(self.room.pk, 'black-late', 'black', now=self.at(600).timestamp())
+        self.assertEqual(expire_tournament_entry(self.room.pk)['status'], 'closed')
+        self.room.refresh_from_db()
+        self.link.refresh_from_db()
+        self.assertEqual(self.room.status, 'cancelled')
+        self.assertEqual(self.room.state['presence']['joinedColors'], ['white'])
+        self.assertEqual(self.link.result_body['end_reason'], 'opponent_no_show')
+        self.assertEqual(self.link.result_body['winner_seat'], 'p1')
+        self.assertFalse(Match.objects.filter(room=self.room).exists())

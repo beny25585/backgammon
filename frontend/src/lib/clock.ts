@@ -50,10 +50,11 @@ export function activePlayerOf(state: GameState | null): Color | null {
   ) {
     return null;
   }
+  let active = state.turn;
   if (state.phase === "doubling_offered" && state.doubleOfferedBy) {
-    return state.doubleOfferedBy === "white" ? "black" : "white";
+    active = state.doubleOfferedBy === "white" ? "black" : "white";
   }
-  return state.turn;
+  return active === state.waitingForEntryColor ? null : active;
 }
 
 export function applyClockTransition(

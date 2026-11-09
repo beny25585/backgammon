@@ -324,9 +324,10 @@ def finalize_room(room, state, winner, win_type, reason, *, validate_timeout=Fal
         if locked.status in ('completed', 'cancelled'):
             return None
         if validate_timeout:
-            from .presence import needs_admin_adjudication
+            from .presence import needs_admin_adjudication, tournament_waiting_for_player
 
-            if locked.status != 'playing' or needs_admin_adjudication(locked):
+            if (locked.status != 'playing' or needs_admin_adjudication(locked)
+                    or tournament_waiting_for_player(locked)):
                 return None
             current = GameState.objects.filter(room=locked).values_list('state_data', flat=True).first() or {}
             loser = 'black' if winner == 'white' else 'white'

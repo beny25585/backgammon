@@ -141,6 +141,7 @@ export function GameProvider({
   const [connectionEpoch, setConnectionEpoch] = useState(0);
   const isTournament = initialGameType === "tournament";
   const [opponentConnected, setOpponentConnected] = useState(!isTournament);
+  const [opponentEntryDeadline, setOpponentEntryDeadline] = useState<number | null>(null);
   const [reactionsRoom, setReactionsRoom] = useState<string | null>(null);
   const [entry, setEntry] = useState<{ roomId: string; started: boolean } | null>(null);
   const entryRef = useRef(entry);
@@ -328,6 +329,14 @@ export function GameProvider({
     let hasReceivedState = false;
     let latestPresenceVersion = 0;
     let entryPresence: ReturnType<typeof bindTournamentEntryPresence> | undefined;
+    const updateOpponentEntryDeadline = (deadline: unknown, joinedColors: unknown) => {
+      if (!isTournament) return;
+      const opponent = playerColorRef.current === "white" ? "black" : "white";
+      setOpponentEntryDeadline(
+        typeof deadline === "number" && Number.isFinite(deadline) &&
+          Array.isArray(joinedColors) && !joinedColors.includes(opponent) ? deadline : null,
+      );
+    };
     const updateAdminReview = (pending: boolean) => {
       if (pending === adminReviewPendingRef.current) return;
       adminReviewPendingRef.current = pending;
@@ -414,6 +423,7 @@ export function GameProvider({
               playerColorRef.current = msg.playerColor as Color;
               setPlayerColor(playerColorRef.current);
             }
+            updateOpponentEntryDeadline(msg.tournamentEntryDeadline, msg.joinedColors);
             const v = typeof raw.version === "number" ? raw.version : 0;
             lastVersionRef.current = v;
             if (hasReceivedState) {
@@ -664,10 +674,15 @@ export function GameProvider({
             connected: number;
             connectedColors?: Color[];
             presenceVersion?: number;
+            tournamentEntryDeadline?: number;
+            joinedColors?: Color[];
           };
           if (isTournament && typeof data.presenceVersion === "number") {
             if (data.presenceVersion < latestPresenceVersion) return;
             latestPresenceVersion = data.presenceVersion;
+          }
+          if (data.joinedColors !== undefined) {
+            updateOpponentEntryDeadline(data.tournamentEntryDeadline, data.joinedColors);
           }
           const color = playerColorRef.current;
           const opponent = color === "white" ? "black" : "white";
@@ -1325,6 +1340,7 @@ export function GameProvider({
         entryPending: hasEntryConfirmation ? entryPending : undefined,
         adminReviewPending,
         opponentConnected: opponentConnected && !entryPending,
+        opponentEntryDeadline,
         supportsPlayerReactions,
         playerReactionsEnabled,
         playerReactions,

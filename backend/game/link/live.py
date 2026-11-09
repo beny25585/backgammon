@@ -8,7 +8,7 @@ import uuid
 
 import httpx
 from django.conf import settings
-from django.db import connection
+from django.db import connection, transaction
 from django.utils import timezone
 
 from .models import TournamentLink
@@ -92,6 +92,26 @@ def publish_snapshot(room_id, state=None, *, raise_on_error=False):
         return
 
     _send_snapshot(_snapshot_body(link, link.room), raise_on_error=raise_on_error)
+
+
+def bind_solo_tournament_room(link, room):
+    """Obtain the club's admission before handing a solo room to a player."""
+    from game.models import GameRoom
+
+    body = _snapshot_body(link, room)
+    body.update(solo_entry=True, entry_deadline=room.state['tournamentEntryDeadline'])
+    response = _send_snapshot(body, raise_on_error=True)
+    acknowledgement = response.json()
+    if (not isinstance(acknowledgement, dict) or acknowledgement.get('solo_entry') is not True
+            or acknowledgement.get('status') not in ('recorded', 'already_recorded')):
+        raise ValueError('Club did not acknowledge the solo tournament room')
+
+    with transaction.atomic():
+        room = GameRoom.objects.select_for_update().get(pk=room.pk)
+        if room.status == 'waiting' and not room.state.get('tournamentEntryBound'):
+            room.state = {**room.state, 'tournamentEntryBound': True}
+            room.save(update_fields=['state', 'updated_at'])
+    return room
 
 
 def _snapshot_body(link, room):

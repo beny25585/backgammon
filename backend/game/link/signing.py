@@ -135,6 +135,16 @@ def _validate_claims(payload):
     ):
         raise TicketError('invalid friend entry contract')
 
+    if 'solo_entry' in payload and (
+        payload['solo_entry'] is not True
+        or payload['trn'] <= 0
+        or payload['fix'] <= 0
+        or 'format' in payload
+        or type(payload.get('entry_deadline')) is not int
+        or payload['entry_deadline'] <= 0
+    ):
+        raise TicketError('invalid solo tournament entry contract')
+
     if 'format' in payload and 'tc' not in payload:
         raise TicketError('missing time control')
 

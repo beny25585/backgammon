@@ -80,6 +80,8 @@ export interface GameState {
   clock?: { white: number; black: number };
   /** Server wall-clock ms when the current turn began (for the delay countdown). */
   turnStartedAt?: number;
+  /** Tournament seat whose turn clock cannot start until their first entry. */
+  waitingForEntryColor?: Color;
   /** Server-owned inactivity tracking (anti-stall rule). Absent before the first actionable state. */
   inactivity?: {
     player: Color;

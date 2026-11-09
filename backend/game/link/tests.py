@@ -337,6 +337,44 @@ class EnterLinkTests(LinkTestBase):
         self.assertEqual(room.status, 'waiting')
         self.assertIsNone(TournamentLink.objects.get().status_started_at)
 
+    @patch('game.link.live._send_snapshot')
+    def test_solo_tournament_handoff_requires_club_binding_and_retries_same_room(self, send_snapshot):
+        deadline = int(time.time()) + 300
+        subject = str(uuid.uuid4())
+        claims = {'solo_entry': True, 'entry_deadline': deadline}
+        send_snapshot.return_value.json.return_value = {'status': 'recorded'}
+
+        refused = self.enter(make_ticket(sub=subject, **claims))
+        self.assertEqual(refused.status_code, 503)
+        room = TournamentLink.objects.get().room
+        self.assertFalse(room.state.get('tournamentEntryBound'))
+        self.assertEqual(room.state['tournamentEntryDeadline'], deadline)
+        self.assertTrue(Task.objects.filter(key=f'tournament-entry:{room.pk}').exists())
+
+        send_snapshot.return_value.json.return_value = {
+            'status': 'already_recorded', 'solo_entry': True,
+        }
+        response = self.enter(make_ticket(sub=subject, **claims))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(
+            parse_qs(response['Location'].split('#', 1)[1])['room'], [str(room.pk)],
+        )
+        room.refresh_from_db()
+        self.assertTrue(room.state['tournamentEntryBound'])
+        self.assertEqual(room.status, 'waiting')
+
+        response = self.enter(make_ticket(seat='p2', **claims))
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(room.players.count(), 2)
+        room.refresh_from_db()
+        self.assertEqual(room.status, 'waiting')
+        self.assertEqual(send_snapshot.call_count, 2)
+        body = send_snapshot.call_args.args[0]
+        self.assertEqual(
+            (body['solo_entry'], body['entry_deadline'], body['room_id'], body['status']),
+            (True, deadline, str(room.pk), 'waiting'),
+        )
+
     def test_later_tournament_ticket_arms_one_preopening_forfeit_after_40_seconds(self):
         from game.presence import check_room_presence, mark_connected, mark_heartbeat
 

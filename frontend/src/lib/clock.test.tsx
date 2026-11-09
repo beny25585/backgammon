@@ -40,6 +40,12 @@ test("activePlayerOf charges the player while choosing roll or double", () => {
   expect(activePlayerOf({ ...newGame(), phase: "moving", turn: "white", dice: [3, 5], remaining: [3, 5] })).toBe("white");
 });
 
+test("activePlayerOf pauses only the tournament seat that has yet to enter", () => {
+  const state = { ...newGame(), phase: "moving" as const, waitingForEntryColor: "black" as const };
+  expect(activePlayerOf({ ...state, turn: "black" })).toBeNull();
+  expect(activePlayerOf({ ...state, turn: "white" })).toBe("white");
+});
+
 test("applyClockTransition charges only time beyond the delay", () => {
   const clock = { white: 120_000, black: 120_000 };
   // Moved in 5s, within the 10s delay: nothing charged or accumulated.

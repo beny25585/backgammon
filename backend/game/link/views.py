@@ -17,6 +17,7 @@ from datetime import datetime
 from datetime import timezone as dt_timezone
 from urllib.parse import urlencode, urlparse
 
+import httpx
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from django.conf import settings
@@ -35,10 +36,12 @@ from game.engine import BackgammonEngine
 from game.entry_lifecycle import entry_deadline
 from game.models import GameRoom, GameState, RoomPlayer, generate_room_code
 from game.presence import (
-    FRIEND_ENTRY_CONFIRMATION, requires_entry_confirmation, track_tournament_entry_after_seating,
+    FRIEND_ENTRY_CONFIRMATION, requires_entry_confirmation, schedule_tournament_entry_deadline,
+    tournament_entry_deadline, track_tournament_entry_after_seating,
 )
 
 from .identity import resolve_user
+from .live import bind_solo_tournament_room
 from .models import RedeemedTicket, TournamentLink
 from .signing import TicketError, verify_command_signature, verify_ticket
 
@@ -164,6 +167,10 @@ def enter_link(request):
                 if not room.players.filter(player=player).exists():
                     raise _RoomClosed()
             color = link.color_for_seat(seat)
+            solo_deadline = tournament_entry_deadline(room)
+            if (solo_deadline is not None and time.time() >= solo_deadline
+                    and color not in room.state.get('presence', {}).get('joinedColors', [])):
+                raise _RoomClosed()
 
             # A well-behaved issuer never mints two tickets for the same seat of one fixture, so
             # reaching this means the issuer is confused or forged. Refuse it cleanly: without the
@@ -213,6 +220,17 @@ def enter_link(request):
         _entry_log(request, 'game_entry_refused', ticket=ticket, room=room,
                    reason=reason, error=exc)
         raise
+    if solo_deadline is not None and not room.state.get('tournamentEntryBound'):
+        try:
+            room = bind_solo_tournament_room(link, room)
+        except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+            _entry_log(request, 'game_entry_refused', ticket=ticket, room=room,
+                       reason='solo_room_binding_failed', error=exc)
+            return Response({'error': 'Could not enter this match. Return to the tournament and try again.'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not room.state.get('tournamentEntryBound'):
+            return Response({'error': 'This match has already ended.'}, status=status.HTTP_409_CONFLICT)
+
     _entry_log(request, 'game_entry_seated', ticket=ticket, room=room,
                color=seated.color, user_id=user.pk)
     if missing_colors:
@@ -358,7 +376,8 @@ def _link_for_fixture(issuer, ticket):
     if deadline is not None:
         if type(deadline) not in (int, float) or deadline <= time.time():
             raise _RoomClosed()
-        initial['entryDeadline'] = deadline
+        key = 'tournamentEntryDeadline' if ticket.get('solo_entry') is True else 'entryDeadline'
+        initial[key] = deadline
     from game.formats import apply_ticket
     apply_ticket(initial, ticket)
     try:
@@ -378,6 +397,8 @@ def _link_for_fixture(issuer, ticket):
                 room=room,
                 rating_policy='server-v1',
             )
+            if ticket.get('solo_entry') is True:
+                schedule_tournament_entry_deadline(room)
     except IntegrityError:
         link = TournamentLink.objects.get(
             issuer=issuer, fixture_id=ticket['fix'])
@@ -392,6 +413,9 @@ def _link_for_fixture(issuer, ticket):
 
 def _sync_waiting_room_from_ticket(room, ticket):
     """Keep a not-yet-started linked room aligned with the latest tournament settings."""
+    if (ticket.get('solo_entry') is True
+            and tournament_entry_deadline(room) != ticket['entry_deadline']):
+        raise _RoomClosed()
     if room.status != 'waiting':
         return
 
@@ -422,7 +446,7 @@ def _start_if_full(room, link):
     """Flip a full room to `playing`. Returns whether this call was the one that started it."""
     if room.status != 'waiting' or room.players.count() < 2:
         return False
-    if requires_entry_confirmation(room, link):
+    if tournament_entry_deadline(room) is not None or requires_entry_confirmation(room, link):
         return False
     room.status = 'playing'
     room.save(update_fields=['status', 'updated_at'])
